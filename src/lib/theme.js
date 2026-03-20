@@ -9,37 +9,40 @@ export const theme = {
   primaryBorder: 'rgba(93, 173, 226, 0.25)',
 
   // Surfaces
-  bg: '#f5f7fa',
+  bg: '#f5f5f5',
   surface: '#ffffff',
-  surfaceHover: '#fafbfc',
-  surfaceAlt: '#f8f9fa',
+  surfaceAlt: '#fafbfc',
+  surfaceHover: '#f3f4f6',
 
   // Borders
-  border: '#e5e7eb',
-  borderLight: '#f0f0f0',
+  border: '#e1e4e8',
+  borderLight: '#e5e5e5',
 
   // Text
   text: '#2c3e50',
-  textSecondary: '#6c757d',
-  textMuted: '#9ca3af',
+  textSecondary: '#666666',
+  textMuted: '#999999',
 
   // Semantic
-  success: '#10b981',
-  successLight: 'rgba(16, 185, 129, 0.08)',
+  success: '#28a745',
+  successLight: 'rgba(40, 167, 69, 0.08)',
   warning: '#f59e0b',
   warningLight: 'rgba(245, 158, 11, 0.08)',
-  error: '#ef4444',
-  errorLight: 'rgba(239, 68, 68, 0.08)',
+  error: '#dc3545',
+  errorLight: 'rgba(220, 53, 69, 0.08)',
+
+  // Sage
+  sageGreen: '#6bb644',
 
   // Shadows
   shadow: '0 1px 3px rgba(0, 0, 0, 0.08)',
-  shadowMd: '0 4px 12px rgba(0, 0, 0, 0.1)',
+  shadowMd: '0 2px 8px rgba(0, 0, 0, 0.08)',
 
   // Shape
   radius: 8,
 
   // Typography
-  font: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif",
+  font: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
   mono: "SFMono-Regular, Menlo, Consolas, monospace",
 }
 

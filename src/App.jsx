@@ -9,6 +9,7 @@ import MSPPage from './pages/MSPPage'
 import MSPClientPortal from './pages/MSPClientPortal'
 import QuoteEditor from './pages/QuoteEditor'
 import ProposalBuilder from './pages/ProposalBuilder'
+import CallDetail from './pages/CallDetail'
 import CoachAdmin from './pages/CoachAdmin'
 import Settings from './pages/Settings'
 import { Spinner } from './components/Shared'
@@ -41,6 +42,7 @@ export default function App() {
             <Route path="/" element={<Pipeline />} />
             <Route path="/deal/new" element={<NewDeal />} />
             <Route path="/deal/:id" element={<DealDetail />} />
+            <Route path="/deal/:dealId/call/:conversationId" element={<CallDetail />} />
             <Route path="/deal/:dealId/msp" element={<MSPPage />} />
             <Route path="/deal/:dealId/quote/new" element={<QuoteEditor />} />
             <Route path="/deal/:dealId/quote/:quoteId" element={<QuoteEditor />} />
