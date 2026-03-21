@@ -474,6 +474,7 @@ export default function DealDetail() {
               )}
             </div>
           </div>
+          <Button primary onClick={() => setShowTranscriptUpload(true)} style={{ padding: '6px 12px', fontSize: 11 }}>Upload Transcript</Button>
           <Button danger onClick={async () => {
             if (!window.confirm('Delete this deal? This cannot be undone.')) return
             await supabase.from('deals').delete().eq('id', deal.id)
@@ -518,10 +519,15 @@ export default function DealDetail() {
               </div>
             )}
 
-            {/* ROW 1 — Call History */}
-            <Card title={`Call History & Analysis (${conversations.length})`}>
+            {/* TOP — Call History with Next Steps in header */}
+            <Card title={`Call History (${conversations.length})`} action={
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, maxWidth: 500 }}>
+                <span style={{ fontSize: 10, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Next Steps:</span>
+                <EditableField label="" value={deal.next_steps} field="next_steps" table="deals" recordId={deal.id} type="textarea" onSaved={(f, v) => setDeal(p => ({ ...p, [f]: v }))} />
+              </div>
+            }>
               {companyProfile && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', background: T.primaryLight, borderRadius: 6, marginBottom: 6, border: `1px solid ${T.primaryBorder}` }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px', background: T.primaryLight, borderRadius: 6, marginBottom: 6, border: `1px solid ${T.primaryBorder}` }}>
                   <Badge color={T.primary}>Research</Badge>
                   <div style={{ flex: 1, fontSize: 13, fontWeight: 600, color: T.text }}>Pre-QDC Research</div>
                   {companyProfile.researched_at && <span style={{ fontSize: 11, color: T.textSecondary }}>{formatDateLong(companyProfile.researched_at)}</span>}
@@ -529,34 +535,43 @@ export default function DealDetail() {
                 </div>
               )}
               {conversations.length === 0 ? (
-                <div style={{ color: T.textMuted, fontSize: 13, padding: '8px 0' }}>No calls yet. Upload a transcript to get started.</div>
+                <div style={{ color: '#bbb', fontSize: 13, fontStyle: 'italic', padding: '8px 0' }}>No calls yet. Upload a transcript to get started.</div>
               ) : conversations.map(cv => {
                 const score = callScores[cv.id]
-                const scoreColor = score >= 80 ? T.success : score >= 60 ? T.primary : score >= 40 ? T.warning : T.error
+                const scoreColor = score >= 80 ? '#27ae60' : score >= 60 ? T.primary : score >= 40 ? T.warning : '#e74c3c'
                 return (
-                  <div key={cv.id} onClick={() => navigate(`/deal/${id}/call/${cv.id}`)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', background: T.surfaceAlt, borderRadius: 6, marginBottom: 6, border: `1px solid ${T.borderLight}`, cursor: 'pointer', transition: 'border-color 0.15s' }}
+                  <div key={cv.id} onClick={() => navigate(`/deal/${id}/call/${cv.id}`)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px', background: T.surfaceAlt, borderRadius: 6, marginBottom: 4, border: `1px solid ${T.borderLight}`, cursor: 'pointer', transition: 'border-color 0.15s' }}
                     onMouseEnter={e => e.currentTarget.style.borderColor = T.primary} onMouseLeave={e => e.currentTarget.style.borderColor = T.borderLight}>
                     <Badge color={T.primary}>{cv.call_type}</Badge>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{cv.title || 'Untitled'}</div>
-                      {cv.ai_summary && <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cv.ai_summary.substring(0, 120)}{cv.ai_summary.length > 120 ? '...' : ''}</div>}
+                      {cv.ai_summary && <div style={{ fontSize: 11, color: T.textMuted, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cv.ai_summary.substring(0, 140)}</div>}
                     </div>
                     <span style={{ fontSize: 11, color: T.textSecondary, whiteSpace: 'nowrap' }}>{formatDate(cv.call_date)}</span>
-                    {cv.processed ? <Badge color={T.success}>Complete</Badge> : (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 600, color: T.warning, textTransform: 'uppercase', animation: 'pulse 2s ease-in-out infinite' }}>
-                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: T.warning }} />Processing...
-                      </span>
-                    )}
+                    {cv.processed ? <Badge color={T.success}>Complete</Badge> : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 600, color: T.warning, textTransform: 'uppercase', animation: 'pulse 2s ease-in-out infinite' }}><span style={{ width: 6, height: 6, borderRadius: '50%', background: T.warning }} />Processing...</span>}
                     {cv.task_count > 0 && <Badge color={T.textMuted}>{cv.task_count} tasks</Badge>}
-                    {score != null && <span style={{ fontSize: 14, fontWeight: 700, color: scoreColor, fontFeatureSettings: '"tnum"', minWidth: 24, textAlign: 'right' }}>{score}</span>}
+                    {score != null && <span style={{ fontSize: 20, fontWeight: 800, color: scoreColor, fontFeatureSettings: '"tnum"', minWidth: 28, textAlign: 'right' }}>{score}</span>}
                   </div>
                 )
               })}
             </Card>
 
-            {/* ROW 2 — Three columns: Scores+Deal | Company | Key Contacts */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16, marginBottom: 0 }}>
-              <Card title="Scores & Deal Info">
+            {/* ROW 1 — 2fr 1fr: Company Profile | Scores & Deal */}
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16 }}>
+              <Card title="COMPANY PROFILE">
+                <EditableField label="Overview" value={companyProfile?.overview} field="overview" table="company_profile" recordId={companyProfile?.id} type="textarea" onSaved={(f, v) => setCompanyProfile(p => ({ ...p, [f]: v }))} />
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 12 }}>
+                  <EditableField label="Industry" value={companyProfile?.industry} field="industry" table="company_profile" recordId={companyProfile?.id} onSaved={(f, v) => setCompanyProfile(p => ({ ...p, [f]: v }))} />
+                  <EditableField label="Revenue" value={companyProfile?.revenue} field="revenue" table="company_profile" recordId={companyProfile?.id} onSaved={(f, v) => setCompanyProfile(p => ({ ...p, [f]: v }))} />
+                  <EditableField label="Employees" value={companyProfile?.employee_count} field="employee_count" table="company_profile" recordId={companyProfile?.id} onSaved={(f, v) => setCompanyProfile(p => ({ ...p, [f]: v }))} />
+                  <EditableField label="Headquarters" value={companyProfile?.headquarters} field="headquarters" table="company_profile" recordId={companyProfile?.id} onSaved={(f, v) => setCompanyProfile(p => ({ ...p, [f]: v }))} />
+                  <EditableField label="Tech Stack" value={companyProfile?.tech_stack} field="tech_stack" table="company_profile" recordId={companyProfile?.id} type="textarea" displayAs="list" onSaved={(f, v) => setCompanyProfile(p => ({ ...p, [f]: v }))} />
+                </div>
+                <EditableField label="Business Goals" value={companyProfile?.business_goals} field="business_goals" table="company_profile" recordId={companyProfile?.id} type="textarea" displayAs="list" onSaved={(f, v) => setCompanyProfile(p => ({ ...p, [f]: v }))} />
+                <EditableField label="Growth Plans" value={companyProfile?.growth_plans} field="growth_plans" table="company_profile" recordId={companyProfile?.id} type="textarea" displayAs="list" onSaved={(f, v) => setCompanyProfile(p => ({ ...p, [f]: v }))} />
+                <EditableField label="Recent News" value={companyProfile?.recent_news} field="recent_news" table="company_profile" recordId={companyProfile?.id} type="textarea" displayAs="list" onSaved={(f, v) => setCompanyProfile(p => ({ ...p, [f]: v }))} />
+              </Card>
+              <Card title="SCORES & DEAL INFO">
                 <ScoreBar score={deal.fit_score || 0} label="Fit" />
                 <ScoreBar score={deal.deal_health_score || 0} label="Health" />
                 <div style={{ marginTop: 12 }}>
@@ -566,196 +581,163 @@ export default function DealDetail() {
                   <EditableField label="CMRR" value={deal.cmrr} field="cmrr" table="deals" recordId={deal.id} type="number" onSaved={(f, v) => setDeal(p => ({ ...p, [f]: v }))} />
                   <EditableField label="Target Close" value={deal.target_close_date} field="target_close_date" table="deals" recordId={deal.id} type="date" onSaved={(f, v) => setDeal(p => ({ ...p, [f]: v }))} />
                 </div>
+                {/* Running Problem Cost */}
+                <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${T.borderLight}` }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Running Problem Cost</div>
+                  <div style={{ fontSize: 28, fontWeight: 800, color: '#e74c3c', fontFeatureSettings: '"tnum"' }}>
+                    {totalPainCost > 0 ? formatCurrency(totalPainCost) : '$0'}
+                  </div>
+                  <EditableField label="Hard Dollars" value={analysis?.running_problem_cost_dollars} field="running_problem_cost_dollars" table="deal_analysis" recordId={analysis?.id} type="number" onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
+                  <EditableField label="Hours" value={analysis?.running_problem_cost_hours} field="running_problem_cost_hours" table="deal_analysis" recordId={analysis?.id} type="number" onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
+                  <EditableField label="Notes" value={analysis?.running_problem_cost_notes} field="running_problem_cost_notes" table="deal_analysis" recordId={analysis?.id} onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
+                </div>
               </Card>
-              <Card title="Company Profile">
-                <EditableField label="Industry" value={companyProfile?.industry} field="industry" table="company_profile" recordId={companyProfile?.id} onSaved={(f, v) => setCompanyProfile(p => ({ ...p, [f]: v }))} />
-                <EditableField label="Revenue" value={companyProfile?.revenue} field="revenue" table="company_profile" recordId={companyProfile?.id} onSaved={(f, v) => setCompanyProfile(p => ({ ...p, [f]: v }))} />
-                <EditableField label="Employees" value={companyProfile?.employee_count} field="employee_count" table="company_profile" recordId={companyProfile?.id} onSaved={(f, v) => setCompanyProfile(p => ({ ...p, [f]: v }))} />
-                <EditableField label="Headquarters" value={companyProfile?.headquarters} field="headquarters" table="company_profile" recordId={companyProfile?.id} onSaved={(f, v) => setCompanyProfile(p => ({ ...p, [f]: v }))} />
-                <EditableField label="Tech Stack" value={companyProfile?.tech_stack} field="tech_stack" table="company_profile" recordId={companyProfile?.id} type="textarea" displayAs="list" onSaved={(f, v) => setCompanyProfile(p => ({ ...p, [f]: v }))} />
-                <EditableField label="Overview" value={companyProfile?.overview} field="overview" table="company_profile" recordId={companyProfile?.id} type="textarea" onSaved={(f, v) => setCompanyProfile(p => ({ ...p, [f]: v }))} />
-              </Card>
-              <Card title={`Key Contacts (${contacts.length})`} action={<Button style={{ padding: '3px 8px', fontSize: 10 }} onClick={() => setTab('contacts')}>View All</Button>}>
-                {contacts.length === 0 ? <div style={{ color: T.textMuted, fontSize: 13 }}>No contacts yet</div> : contacts.slice(0, 5).map(c => (
+            </div>
+
+            {/* ROW 2 — 1fr 2fr: Key Contacts | Key Dates */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 16 }}>
+              <Card title={`KEY CONTACTS (${contacts.length})`} action={<Button style={{ padding: '3px 8px', fontSize: 10 }} onClick={() => setTab('contacts')}>View All</Button>}>
+                {contacts.length === 0 ? <div style={{ color: '#bbb', fontSize: 13, fontStyle: 'italic' }}>No contacts yet</div> : contacts.slice(0, 6).map(c => (
                   <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: `1px solid ${T.borderLight}` }}>
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{c.name || c.contact_name}</div>
-                      <div style={{ fontSize: 11, color: T.textSecondary }}>{c.title}</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{c.name || c.contact_name}</div>
+                      <div style={{ fontSize: 11, color: T.textSecondary }}>{c.title}{c.role_in_deal ? ` - ${c.role_in_deal}` : ''}</div>
                     </div>
                     <div style={{ display: 'flex', gap: 3 }}>
-                      {c.is_champion && <Badge color={T.success}>CH</Badge>}
+                      {c.is_champion && <Badge color="#27ae60">Champion</Badge>}
                       {c.is_economic_buyer && <Badge color={T.primary}>EB</Badge>}
-                      {c.is_signer && <Badge color={T.warning}>SG</Badge>}
+                      {c.is_signer && <Badge color="#f59e0b">Signer</Badge>}
                     </div>
                   </div>
                 ))}
               </Card>
+              <Card title="KEY DATES">
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                  {[
+                    ['Decision Date', analysis?.decision_date, 'decision_date'],
+                    ['Signature Date', analysis?.signature_date, 'signature_date'],
+                    ['Kickoff Date', analysis?.kickoff_date, 'kickoff_date'],
+                    ['Go-Live Date', analysis?.go_live_date, 'go_live_date'],
+                    ['Busy Season', analysis?.busy_season, 'busy_season'],
+                    ['Target Close', deal.target_close_date, null],
+                  ].map(([lbl, val, fld]) => {
+                    const d = val && fld !== 'busy_season' ? daysUntil(val) : null
+                    const pillColor = d != null ? (d < 0 ? '#e74c3c' : d <= 14 ? T.warning : d <= 30 ? T.primary : '#27ae60') : null
+                    return (
+                      <div key={lbl}>
+                        {fld && fld !== 'busy_season' ? (
+                          <EditableField label={lbl} value={val} field={fld} table="deal_analysis" recordId={analysis?.id} type="date" onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
+                        ) : fld === 'busy_season' ? (
+                          <EditableField label={lbl} value={val} field={fld} table="deal_analysis" recordId={analysis?.id} onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
+                        ) : (
+                          <div style={{ marginBottom: 12 }}>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 3 }}>{lbl}</div>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{val ? formatDateLong(val) : <span style={{ color: '#bbb', fontStyle: 'italic' }}>Not set</span>}</div>
+                          </div>
+                        )}
+                        {d != null && <span style={{ fontSize: 10, fontWeight: 700, color: pillColor, background: pillColor + '15', padding: '2px 8px', borderRadius: 10, display: 'inline-block', marginTop: -6, marginBottom: 4 }}>{d < 0 ? `${Math.abs(d)}d ago` : `${d}d away`}</span>}
+                      </div>
+                    )
+                  })}
+                </div>
+              </Card>
             </div>
 
-            {/* ROW 3 — Two columns: BANT | Solution & Risk */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: 16 }}>
-              <Card title="BANT Qualification">
+            {/* ROW 3 — 1fr 1fr: Deal Analysis | Qualification */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <Card title="DEAL ANALYSIS">
+                <EditableField label="Pain Points" value={analysis?.pain_points} field="pain_points" table="deal_analysis" recordId={analysis?.id} type="textarea" displayAs="list" onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
+                <EditableField label="Quantified Pain" value={analysis?.quantified_pain} field="quantified_pain" table="deal_analysis" recordId={analysis?.id} type="textarea" displayAs="list" onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
+                <EditableField label="Business Impact" value={analysis?.business_impact} field="business_impact" table="deal_analysis" recordId={analysis?.id} type="textarea" displayAs="list" onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
+                <EditableField label="Driving Factors" value={analysis?.driving_factors} field="driving_factors" table="deal_analysis" recordId={analysis?.id} type="textarea" displayAs="list" onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
+                <EditableField label="Decision Criteria" value={analysis?.decision_criteria} field="decision_criteria" table="deal_analysis" recordId={analysis?.id} type="textarea" displayAs="list" onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
+                <EditableField label="Timeline Drivers" value={analysis?.timeline_drivers} field="timeline_drivers" table="deal_analysis" recordId={analysis?.id} onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
+                <EditableField label="Integrations Needed" value={analysis?.integrations_needed} field="integrations_needed" table="deal_analysis" recordId={analysis?.id} type="textarea" displayAs="list" onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
+                <EditableField label="Exec Alignment" value={analysis?.exec_alignment} field="exec_alignment" table="deal_analysis" recordId={analysis?.id} onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
+                <EditableField label="Ideal Solution" value={analysis?.ideal_solution} field="ideal_solution" table="deal_analysis" recordId={analysis?.id} type="textarea" onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
+              </Card>
+              <Card title="QUALIFICATION">
                 <EditableField label="Champion" value={analysis?.champion} field="champion" table="deal_analysis" recordId={analysis?.id} onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
                 <EditableField label="Economic Buyer" value={analysis?.economic_buyer} field="economic_buyer" table="deal_analysis" recordId={analysis?.id} onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
                 <EditableField label="Budget" value={analysis?.budget} field="budget" table="deal_analysis" recordId={analysis?.id} onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
+                <EditableField label="Current Spend" value={analysis?.current_spend} field="current_spend" table="deal_analysis" recordId={analysis?.id} onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
                 <EditableField label="Decision Process" value={analysis?.decision_process} field="decision_process" table="deal_analysis" recordId={analysis?.id} onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
-                <EditableField label="Timeline Drivers" value={analysis?.timeline_drivers} field="timeline_drivers" table="deal_analysis" recordId={analysis?.id} onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
-                <EditableField label="Decision Criteria" value={analysis?.decision_criteria} field="decision_criteria" table="deal_analysis" recordId={analysis?.id} type="textarea" displayAs="list" onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
-                <Card title="Key Dates" style={{ marginTop: 8 }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                    <EditableField label="Decision" value={analysis?.decision_date} field="decision_date" table="deal_analysis" recordId={analysis?.id} type="date" onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
-                    <EditableField label="Signature" value={analysis?.signature_date} field="signature_date" table="deal_analysis" recordId={analysis?.id} type="date" onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
-                    <EditableField label="Kickoff" value={analysis?.kickoff_date} field="kickoff_date" table="deal_analysis" recordId={analysis?.id} type="date" onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
-                    <EditableField label="Go-Live" value={analysis?.go_live_date} field="go_live_date" table="deal_analysis" recordId={analysis?.id} type="date" onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
+                <EditableField label="Decision Method" value={analysis?.decision_method} field="decision_method" table="deal_analysis" recordId={analysis?.id} onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
+                <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
+                  <div style={{ flex: 1, background: T.errorLight, borderRadius: 6, padding: 10 }}>
+                    <EditableField label="Red Flags" value={analysis?.red_flags} field="red_flags" table="deal_analysis" recordId={analysis?.id} type="textarea" displayAs="list" onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
                   </div>
-                </Card>
-              </Card>
-              <Card title="Solution & Context">
-                <EditableField label="Driving Factors" value={analysis?.driving_factors} field="driving_factors" table="deal_analysis" recordId={analysis?.id} type="textarea" displayAs="list" onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
-                <EditableField label="Integrations Needed" value={analysis?.integrations_needed} field="integrations_needed" table="deal_analysis" recordId={analysis?.id} type="textarea" displayAs="list" onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
-                <EditableField label="Exec Alignment" value={analysis?.exec_alignment} field="exec_alignment" table="deal_analysis" recordId={analysis?.id} onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
-                <EditableField label="Busy Season" value={analysis?.busy_season} field="busy_season" table="deal_analysis" recordId={analysis?.id} onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
-                <EditableField label="Business Goals" value={companyProfile?.business_goals} field="business_goals" table="company_profile" recordId={companyProfile?.id} type="textarea" displayAs="list" onSaved={(f, v) => setCompanyProfile(p => ({ ...p, [f]: v }))} />
-                <EditableField label="Growth Plans" value={companyProfile?.growth_plans} field="growth_plans" table="company_profile" recordId={companyProfile?.id} type="textarea" displayAs="list" onSaved={(f, v) => setCompanyProfile(p => ({ ...p, [f]: v }))} />
-                {competitors.length > 0 && (
-                  <div style={{ marginTop: 8 }}>
-                    <div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, textTransform: 'uppercase', marginBottom: 6 }}>Competition</div>
-                    {competitors.map(c => (
-                      <div key={c.id} style={{ padding: '6px 10px', background: T.surfaceAlt, borderRadius: 4, marginBottom: 4, border: `1px solid ${T.borderLight}` }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{c.competitor_name}</div>
-                        {c.strategy && <div style={{ fontSize: 11, color: T.textSecondary }}>{c.strategy}</div>}
-                      </div>
-                    ))}
+                  <div style={{ flex: 1, background: T.successLight, borderRadius: 6, padding: 10 }}>
+                    <EditableField label="Green Flags" value={analysis?.green_flags} field="green_flags" table="deal_analysis" recordId={analysis?.id} type="textarea" displayAs="list" onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
                   </div>
-                )}
+                </div>
               </Card>
             </div>
 
-            {/* ROW 4 — Three columns: Pain Points | Red Flags & Risks | Green Flags & Events */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16 }}>
-              {/* Pain Points */}
-              <Card title="Pain Points" action={<Button style={{ padding: '3px 8px', fontSize: 10 }} onClick={() => setShowAddPain(true)}>+ Add</Button>}>
-                <div style={{ marginBottom: 8, padding: 10, background: T.surfaceAlt, borderRadius: 6, border: `1px solid ${T.borderLight}` }}>
-                  <div style={{ fontSize: 10, color: T.textMuted, textTransform: 'uppercase', marginBottom: 2 }}>Running Cost</div>
-                  <div style={{ fontSize: 22, fontWeight: 700, color: painCostColor, fontFeatureSettings: '"tnum"' }}>{totalPainCost > 0 ? formatCurrency(totalPainCost) : '$0'}</div>
+            {/* ROW 4 — Full width: Deal Risks */}
+            <Card title={`DEAL RISKS (${risks.length})`} action={<Button style={{ padding: '4px 10px', fontSize: 10 }} onClick={() => setShowAddRisk(true)}>+ Add Risk</Button>}>
+              {showAddRisk && (
+                <div style={{ padding: 10, background: T.surfaceAlt, borderRadius: 6, marginBottom: 8, border: `1px solid ${T.borderLight}` }}>
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
+                    <input style={{ ...inputStyle, flex: 2 }} value={newRisk.risk_description} onChange={e => setNewRisk(p => ({ ...p, risk_description: e.target.value }))} placeholder="Risk description *" autoFocus />
+                    <select style={{ ...inputStyle, cursor: 'pointer', flex: 1 }} value={newRisk.severity} onChange={e => setNewRisk(p => ({ ...p, severity: e.target.value }))}>
+                      {['critical', 'high', 'medium', 'low'].map(s => <option key={s} value={s}>{s}</option>)}</select>
+                    <select style={{ ...inputStyle, cursor: 'pointer', flex: 1 }} value={newRisk.category} onChange={e => setNewRisk(p => ({ ...p, category: e.target.value }))}>
+                      {RISK_CATEGORIES.map(c => <option key={c} value={c}>{c.replace(/_/g, ' ')}</option>)}</select>
+                    <Button primary onClick={addRisk} style={{ fontSize: 11, padding: '4px 12px' }}>Add</Button>
+                    <Button onClick={() => setShowAddRisk(false)} style={{ fontSize: 11, padding: '4px 8px' }}>Cancel</Button>
+                  </div>
                 </div>
-                <EditableField label="AI Pain Points" value={analysis?.pain_points} field="pain_points" table="deal_analysis" recordId={analysis?.id} type="textarea" displayAs="list" onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
-                {showAddPain && (
-                  <div style={{ padding: 10, background: T.surfaceAlt, borderRadius: 6, marginBottom: 8, border: `1px solid ${T.borderLight}` }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 6 }}>
-                      <input style={inputStyle} value={newPain.pain_description} onChange={e => setNewPain(p => ({ ...p, pain_description: e.target.value }))} placeholder="Description *" autoFocus />
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <select style={{ ...inputStyle, cursor: 'pointer', flex: 1 }} value={newPain.category} onChange={e => setNewPain(p => ({ ...p, category: e.target.value }))}>
-                          {PAIN_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}</select>
-                        <input type="number" style={{ ...inputStyle, flex: 1 }} value={newPain.annual_cost} onChange={e => setNewPain(p => ({ ...p, annual_cost: e.target.value }))} placeholder="$ Annual cost" />
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: 4 }}><Button primary onClick={addPainPoint} style={{ fontSize: 11, padding: '4px 10px' }}>Add</Button><Button onClick={() => setShowAddPain(false)} style={{ fontSize: 11, padding: '4px 10px' }}>Cancel</Button></div>
-                  </div>
-                )}
-                {painPoints.map(p => (
-                  <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: T.surfaceAlt, borderRadius: 6, marginBottom: 4, border: `1px solid ${T.borderLight}` }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: T.text }}>{p.pain_description}</div>
-                      <div style={{ display: 'flex', gap: 4, marginTop: 2 }}>
-                        <Badge color={T.primary}>{p.category}</Badge>
-                        {p.source === 'ai_extracted' && <Badge color={T.primary}>AI</Badge>}
-                      </div>
-                    </div>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: T.text, fontFeatureSettings: '"tnum"', whiteSpace: 'nowrap' }}>{p.annual_cost ? formatCurrency(p.annual_cost) : ''}</div>
-                    <DeleteBtn onClick={() => deletePainPoint(p.id)} />
-                  </div>
-                ))}
-              </Card>
+              )}
+              {risks.length === 0 ? <div style={{ color: '#bbb', fontSize: 13, fontStyle: 'italic' }}>No risks identified.</div> : risks.map(r => (
+                <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: T.surfaceAlt, borderRadius: 6, marginBottom: 4, border: `1px solid ${T.borderLight}` }}>
+                  <Badge color={SEVERITY_COLORS[r.severity] || T.textMuted}>{r.severity}</Badge>
+                  <div style={{ flex: 1, fontSize: 13, fontWeight: 600, color: T.text }}>{r.risk_description}</div>
+                  <Badge color={T.primary}>{(r.category || '').replace(/_/g, ' ')}</Badge>
+                  <select style={{ fontSize: 10, fontWeight: 600, padding: '2px 6px', borderRadius: 3, border: `1px solid ${STATUS_COLORS[r.status] || T.textMuted}30`, background: (STATUS_COLORS[r.status] || T.textMuted) + '12', color: STATUS_COLORS[r.status] || T.textMuted, cursor: 'pointer', fontFamily: T.font }}
+                    value={r.status} onChange={e => updateRiskField(r.id, 'status', e.target.value)}>
+                    {RISK_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                  {r.source === 'ai_extracted' && <Badge color={T.primary}>AI</Badge>}
+                  <DeleteBtn onClick={() => deleteRisk(r.id)} />
+                </div>
+              ))}
+            </Card>
 
-              {/* Red Flags & Risks */}
-              <Card title="Red Flags & Risks" action={<Button style={{ padding: '3px 8px', fontSize: 10 }} onClick={() => setShowAddRisk(true)}>+ Add</Button>}>
-                <div style={{ background: T.errorLight, borderRadius: 6, padding: 10, marginBottom: 8 }}>
-                  <EditableField label="Red Flags" value={analysis?.red_flags} field="red_flags" table="deal_analysis" recordId={analysis?.id} type="textarea" displayAs="list" onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
+            {/* ROW 5 — Full width: Pain Points */}
+            <Card title={`PAIN POINTS (${painPoints.length})`} action={<Button style={{ padding: '4px 10px', fontSize: 10 }} onClick={() => setShowAddPain(true)}>+ Add Pain Point</Button>}>
+              {showAddPain && (
+                <div style={{ padding: 10, background: T.surfaceAlt, borderRadius: 6, marginBottom: 8, border: `1px solid ${T.borderLight}` }}>
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
+                    <input style={{ ...inputStyle, flex: 2 }} value={newPain.pain_description} onChange={e => setNewPain(p => ({ ...p, pain_description: e.target.value }))} placeholder="Description *" autoFocus />
+                    <select style={{ ...inputStyle, cursor: 'pointer', flex: 1 }} value={newPain.category} onChange={e => setNewPain(p => ({ ...p, category: e.target.value }))}>
+                      {PAIN_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}</select>
+                    <input type="number" style={{ ...inputStyle, flex: 1 }} value={newPain.annual_cost} onChange={e => setNewPain(p => ({ ...p, annual_cost: e.target.value }))} placeholder="$ Annual" />
+                    <input style={{ ...inputStyle, flex: 1 }} value={newPain.affected_team} onChange={e => setNewPain(p => ({ ...p, affected_team: e.target.value }))} placeholder="Team" />
+                    <Button primary onClick={addPainPoint} style={{ fontSize: 11, padding: '4px 12px' }}>Add</Button>
+                    <Button onClick={() => setShowAddPain(false)} style={{ fontSize: 11, padding: '4px 8px' }}>Cancel</Button>
+                  </div>
                 </div>
-                {showAddRisk && (
-                  <div style={{ padding: 10, background: T.surfaceAlt, borderRadius: 6, marginBottom: 8, border: `1px solid ${T.borderLight}` }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 6 }}>
-                      <input style={inputStyle} value={newRisk.risk_description} onChange={e => setNewRisk(p => ({ ...p, risk_description: e.target.value }))} placeholder="Risk description *" autoFocus />
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <select style={{ ...inputStyle, cursor: 'pointer', flex: 1 }} value={newRisk.severity} onChange={e => setNewRisk(p => ({ ...p, severity: e.target.value }))}>
-                          {['critical', 'high', 'medium', 'low'].map(s => <option key={s} value={s}>{s}</option>)}</select>
-                        <select style={{ ...inputStyle, cursor: 'pointer', flex: 1 }} value={newRisk.category} onChange={e => setNewRisk(p => ({ ...p, category: e.target.value }))}>
-                          {RISK_CATEGORIES.map(c => <option key={c} value={c}>{c.replace(/_/g, ' ')}</option>)}</select>
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: 4 }}><Button primary onClick={addRisk} style={{ fontSize: 11, padding: '4px 10px' }}>Add</Button><Button onClick={() => setShowAddRisk(false)} style={{ fontSize: 11, padding: '4px 10px' }}>Cancel</Button></div>
-                  </div>
-                )}
-                {risks.map(r => (
-                  <div key={r.id} style={{ padding: '8px 10px', background: T.surfaceAlt, borderRadius: 6, marginBottom: 4, border: `1px solid ${T.borderLight}` }}>
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 12, fontWeight: 600, color: T.text, cursor: 'pointer' }} onClick={() => setExpandedRisk(expandedRisk === r.id ? null : r.id)}>{r.risk_description}</div>
-                        <div style={{ display: 'flex', gap: 3, marginTop: 2 }}>
-                          <Badge color={SEVERITY_COLORS[r.severity] || T.textMuted}>{r.severity}</Badge>
-                          <Badge color={STATUS_COLORS[r.status] || T.textMuted}>{r.status}</Badge>
-                          {r.source === 'ai_extracted' && <Badge color={T.primary}>AI</Badge>}
-                        </div>
-                      </div>
-                      <DeleteBtn onClick={() => deleteRisk(r.id)} />
-                    </div>
-                    {expandedRisk === r.id && r.mitigation_plan && <div style={{ marginTop: 6, fontSize: 11, color: T.textSecondary, lineHeight: 1.4 }}>{r.mitigation_plan}</div>}
-                  </div>
-                ))}
-              </Card>
+              )}
+              {painPoints.length === 0 ? <div style={{ color: '#bbb', fontSize: 13, fontStyle: 'italic' }}>No pain points identified yet.</div> : painPoints.map(p => (
+                <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: T.surfaceAlt, borderRadius: 6, marginBottom: 4, border: `1px solid ${T.borderLight}` }}>
+                  <div style={{ flex: 2, fontSize: 13, fontWeight: 600, color: T.text }}>{p.pain_description}</div>
+                  <Badge color={T.primary}>{p.category}</Badge>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#2ecc71', fontFeatureSettings: '"tnum"', whiteSpace: 'nowrap', minWidth: 60 }}>{p.annual_cost ? formatCurrency(p.annual_cost) : '--'}</div>
+                  {p.affected_team && <span style={{ fontSize: 11, color: T.textSecondary }}>{p.affected_team}</span>}
+                  {p.source === 'ai_extracted' ? <Badge color={T.primary}>AI</Badge> : <Badge color={T.textMuted}>Manual</Badge>}
+                  <span onClick={() => updatePainField(p.id, 'verified', !p.verified)} style={{ cursor: 'pointer', fontSize: 10, fontWeight: 600, color: p.verified ? '#27ae60' : '#bbb', padding: '1px 6px', borderRadius: 3, background: p.verified ? 'rgba(39,174,96,0.08)' : 'transparent', border: `1px solid ${p.verified ? 'rgba(39,174,96,0.3)' : T.borderLight}` }}>
+                    {p.verified ? 'VERIFIED' : 'UNVERIFIED'}
+                  </span>
+                  <DeleteBtn onClick={() => deletePainPoint(p.id)} />
+                </div>
+              ))}
+            </Card>
 
-              {/* Green Flags & Events */}
-              <Card title="Green Flags & Wins" action={
-                <div style={{ display: 'flex', gap: 3 }}>
-                  <Button style={{ padding: '3px 6px', fontSize: 9 }} onClick={() => setShowAddEvent(true)}>+ Event</Button>
-                  <Button style={{ padding: '3px 6px', fontSize: 9 }} onClick={() => setShowAddCatalyst(true)}>+ Catalyst</Button>
-                </div>
-              }>
-                <div style={{ background: T.successLight, borderRadius: 6, padding: 10, marginBottom: 8 }}>
-                  <EditableField label="Green Flags" value={analysis?.green_flags} field="green_flags" table="deal_analysis" recordId={analysis?.id} type="textarea" displayAs="list" onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
-                </div>
-                {showAddEvent && (
-                  <div style={{ padding: 10, background: T.surfaceAlt, borderRadius: 6, marginBottom: 8, border: `1px solid ${T.borderLight}` }}>
-                    <input style={{ ...inputStyle, marginBottom: 6 }} value={newEvent.event_description} onChange={e => setNewEvent(p => ({ ...p, event_description: e.target.value }))} placeholder="Event description *" autoFocus />
-                    <div style={{ display: 'flex', gap: 4 }}><Button primary onClick={addEvent} style={{ fontSize: 11, padding: '4px 10px' }}>Add</Button><Button onClick={() => setShowAddEvent(false)} style={{ fontSize: 11, padding: '4px 10px' }}>Cancel</Button></div>
-                  </div>
-                )}
-                {showAddCatalyst && (
-                  <div style={{ padding: 10, background: T.surfaceAlt, borderRadius: 6, marginBottom: 8, border: `1px solid ${T.borderLight}` }}>
-                    <input style={{ ...inputStyle, marginBottom: 6 }} value={newCatalyst.catalyst} onChange={e => setNewCatalyst(p => ({ ...p, catalyst: e.target.value }))} placeholder="Catalyst *" autoFocus />
-                    <div style={{ display: 'flex', gap: 4 }}><Button primary onClick={addCatalyst} style={{ fontSize: 11, padding: '4px 10px' }}>Add</Button><Button onClick={() => setShowAddCatalyst(false)} style={{ fontSize: 11, padding: '4px 10px' }}>Cancel</Button></div>
-                  </div>
-                )}
-                {events.map(ev => (
-                  <div key={ev.id} style={{ padding: '6px 10px', background: T.surfaceAlt, borderRadius: 6, marginBottom: 4, borderLeft: `3px solid ${STRENGTH_COLORS[ev.strength] || T.textMuted}` }}>
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
-                      <div style={{ flex: 1, fontSize: 12, fontWeight: 600, color: T.text }}>{ev.event_description}</div>
-                      <DeleteBtn onClick={() => deleteEvent(ev.id)} />
-                    </div>
-                  </div>
-                ))}
-                {catalysts.map(cat => (
-                  <div key={cat.id} style={{ padding: '6px 10px', background: T.surfaceAlt, borderRadius: 6, marginBottom: 4, borderLeft: `3px solid ${URGENCY_COLORS[cat.urgency] || T.textMuted}` }}>
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
-                      <div style={{ flex: 1, fontSize: 12, fontWeight: 600, color: T.text }}>{cat.catalyst}</div>
-                      <Badge color={T.primary}>{cat.category}</Badge>
-                      <DeleteBtn onClick={() => deleteCatalyst(cat.id)} />
-                    </div>
-                  </div>
-                ))}
-              </Card>
-            </div>
-
-            {/* ROW 5 — Two columns: Next Steps | Notes */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: 16 }}>
-              <Card title="Next Steps">
-                <EditableField label="" value={deal.next_steps} field="next_steps" table="deals" recordId={deal.id} type="textarea" onSaved={(f, v) => setDeal(p => ({ ...p, [f]: v }))} />
-              </Card>
-              <Card title="My Notes">
-                <EditableField label="" value={deal.notes} field="notes" table="deals" recordId={deal.id} type="textarea" onSaved={(f, v) => setDeal(p => ({ ...p, [f]: v }))} />
-              </Card>
-            </div>
+            {/* ROW 6 — Full width: Notes */}
+            <Card title="NOTES">
+              <EditableField label="" value={deal.notes} field="notes" table="deals" recordId={deal.id} type="textarea" onSaved={(f, v) => setDeal(p => ({ ...p, [f]: v }))} />
+            </Card>
           </div>
         )}
 
