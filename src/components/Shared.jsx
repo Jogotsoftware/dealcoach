@@ -36,7 +36,7 @@ export function Card({ children, title, action, style: s, className }) {
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           background: T.surfaceAlt,
         }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>
+          <span style={{ fontSize: 14, fontWeight: 800, color: '#1a1a2e', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
             {title}
           </span>
           {action}

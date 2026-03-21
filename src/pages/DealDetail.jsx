@@ -7,6 +7,10 @@ import TranscriptUpload from '../components/TranscriptUpload'
 import { callGenerateEmail } from '../lib/webhooks'
 import { useAuth } from '../hooks/useAuth'
 
+// === LOCAL LABEL STYLE (darker than Shared.jsx default) ===
+const ddLabelStyle = { fontSize: 11, fontWeight: 700, color: '#2c3e50', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4, display: 'block' }
+const unknownStyle = { color: '#e8a0a0', fontStyle: 'italic', fontWeight: 400 }
+
 // === EDITABLE FIELD COMPONENT ===
 function EditableField({ label, value, field, table, recordId, onSaved, type = 'text', options, displayAs }) {
   const [editing, setEditing] = useState(false)
@@ -37,7 +41,7 @@ function EditableField({ label, value, field, table, recordId, onSaved, type = '
     if (type === 'select' && options) {
       return (
         <div style={{ marginBottom: 12 }}>
-          <div style={{ ...labelStyle }}>{label}</div>
+          <div style={ddLabelStyle}>{label}</div>
           <select style={{ ...inputStyle, cursor: 'pointer' }} value={val} onChange={e => { setVal(e.target.value); }}
             onBlur={save} autoFocus>
             <option value="">--</option>
@@ -49,7 +53,7 @@ function EditableField({ label, value, field, table, recordId, onSaved, type = '
     if (type === 'textarea') {
       return (
         <div style={{ marginBottom: 12 }}>
-          <div style={{ ...labelStyle }}>{label}</div>
+          <div style={ddLabelStyle}>{label}</div>
           <textarea style={{ ...inputStyle, minHeight: 80, resize: 'vertical' }} value={val}
             onChange={e => setVal(e.target.value)} onBlur={save} autoFocus />
         </div>
@@ -58,7 +62,7 @@ function EditableField({ label, value, field, table, recordId, onSaved, type = '
     if (type === 'date') {
       return (
         <div style={{ marginBottom: 12 }}>
-          <div style={{ ...labelStyle }}>{label}</div>
+          <div style={ddLabelStyle}>{label}</div>
           <input type="date" style={inputStyle} value={val} onChange={e => setVal(e.target.value)}
             onBlur={save} onKeyDown={handleKeyDown} autoFocus />
         </div>
@@ -66,7 +70,7 @@ function EditableField({ label, value, field, table, recordId, onSaved, type = '
     }
     return (
       <div style={{ marginBottom: 12 }}>
-        <div style={{ ...labelStyle }}>{label}</div>
+        <div style={ddLabelStyle}>{label}</div>
         <input type={type === 'number' ? 'number' : 'text'} style={inputStyle} value={val}
           onChange={e => setVal(e.target.value)} onBlur={save} onKeyDown={handleKeyDown} autoFocus />
       </div>
@@ -85,7 +89,7 @@ function EditableField({ label, value, field, table, recordId, onSaved, type = '
         <div style={{ marginBottom: 12, cursor: 'pointer', position: 'relative' }}
           onClick={() => setEditing(true)}
           onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
-          <div style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: 4 }}>
+          <div style={{ ...ddLabelStyle, display: 'flex', alignItems: 'center', gap: 4 }}>
             {label}
             {hover && <span style={{ fontSize: 10, color: T.textMuted }}>{'\u270E'}</span>}
             {saved && <span style={{ fontSize: 10, color: T.success, fontWeight: 600 }}>Saved</span>}
@@ -105,13 +109,13 @@ function EditableField({ label, value, field, table, recordId, onSaved, type = '
     <div style={{ marginBottom: 12, cursor: 'pointer', position: 'relative' }}
       onClick={() => setEditing(true)}
       onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
-      <div style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: 4 }}>
+      <div style={{ ...ddLabelStyle, display: 'flex', alignItems: 'center', gap: 4 }}>
         {label}
         {hover && <span style={{ fontSize: 10, color: T.textMuted }}>{'\u270E'}</span>}
         {saved && <span style={{ fontSize: 10, color: T.success, fontWeight: 600 }}>Saved</span>}
       </div>
-      <div style={{ fontSize: 13, color: T.text, lineHeight: 1.5, whiteSpace: type === 'textarea' ? 'pre-wrap' : undefined }}>
-        {displayVal || <span style={{ color: T.textMuted, fontStyle: 'italic' }}>Click to edit</span>}
+      <div style={{ fontSize: 13, lineHeight: 1.5, whiteSpace: type === 'textarea' ? 'pre-wrap' : undefined, ...((!displayVal || displayVal === 'Unknown') ? unknownStyle : { color: T.text, fontWeight: 600 }) }}>
+        {(!displayVal || displayVal === 'Unknown') ? (displayVal === 'Unknown' ? 'Unknown' : 'Click to edit') : displayVal}
       </div>
     </div>
   )
@@ -120,10 +124,15 @@ function EditableField({ label, value, field, table, recordId, onSaved, type = '
 // === LIST FIELD (renders semicolon-separated text as bullet list) ===
 function ListField({ label, value }) {
   const items = (value || '').split(/[;|\n]/).map(s => s.trim()).filter(s => s.length > 3)
-  if (!items.length || (items.length === 1 && items[0] === 'Unknown')) return <Field label={label} value="Unknown" />
+  if (!items.length || (items.length === 1 && items[0] === 'Unknown')) return (
+    <div style={{ marginBottom: 12 }}>
+      <div style={ddLabelStyle}>{label}</div>
+      <div style={unknownStyle}>Unknown</div>
+    </div>
+  )
   return (
     <div style={{ marginBottom: 12 }}>
-      <div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>{label}</div>
+      <div style={ddLabelStyle}>{label}</div>
       {items.map((item, i) => (
         <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 4, fontSize: 13, color: T.text, lineHeight: 1.5 }}>
           <span style={{ color: T.textMuted, flexShrink: 0 }}>&bull;</span>
@@ -136,11 +145,16 @@ function ListField({ label, value }) {
 
 // === PARAGRAPH FIELD (renders long text with line breaks on periods/semicolons) ===
 function ParagraphField({ label, value }) {
-  if (!value || value === 'Unknown') return <Field label={label} value="Unknown" />
+  if (!value || value === 'Unknown') return (
+    <div style={{ marginBottom: 12 }}>
+      <div style={ddLabelStyle}>{label}</div>
+      <div style={unknownStyle}>Unknown</div>
+    </div>
+  )
   const lines = value.split(/[;|\n]/).map(s => s.trim()).filter(s => s.length > 3)
   return (
     <div style={{ marginBottom: 12 }}>
-      <div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>{label}</div>
+      <div style={ddLabelStyle}>{label}</div>
       {lines.map((line, i) => (
         <div key={i} style={{ fontSize: 13, color: T.text, lineHeight: 1.6, marginBottom: 4 }}>{line}</div>
       ))}
@@ -571,7 +585,7 @@ export default function DealDetail() {
             {/* TOP — Call History with Next Steps in header */}
             <Card title={`Call History (${conversations.length})`} action={
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, maxWidth: 500 }}>
-                <span style={{ fontSize: 10, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Next Steps:</span>
+                <span style={{ fontSize: 10, fontWeight: 700, color: '#2c3e50', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Next Steps:</span>
                 <EditableField label="" value={deal.next_steps} field="next_steps" table="deals" recordId={deal.id} type="textarea" onSaved={(f, v) => setDeal(p => ({ ...p, [f]: v }))} />
               </div>
             }>
@@ -632,7 +646,7 @@ export default function DealDetail() {
                 </div>
                 {/* Running Problem Cost */}
                 <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${T.borderLight}` }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Running Problem Cost</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#2c3e50', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Running Problem Cost</div>
                   <div style={{ fontSize: 28, fontWeight: 800, color: '#e74c3c', fontFeatureSettings: '"tnum"' }}>
                     {totalPainCost > 0 ? formatCurrency(totalPainCost) : '$0'}
                   </div>
@@ -680,8 +694,8 @@ export default function DealDetail() {
                           <EditableField label={lbl} value={val} field={fld} table="deal_analysis" recordId={analysis?.id} onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
                         ) : (
                           <div style={{ marginBottom: 12 }}>
-                            <div style={{ fontSize: 11, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 3 }}>{lbl}</div>
-                            <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{val ? formatDateLong(val) : <span style={{ color: '#bbb', fontStyle: 'italic' }}>Not set</span>}</div>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: '#2c3e50', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 3 }}>{lbl}</div>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{val ? formatDateLong(val) : <span style={{ color: '#e8a0a0', fontStyle: 'italic', fontWeight: 400 }}>Not set</span>}</div>
                           </div>
                         )}
                         {d != null && <span style={{ fontSize: 10, fontWeight: 700, color: pillColor, background: pillColor + '15', padding: '2px 8px', borderRadius: 10, display: 'inline-block', marginTop: -6, marginBottom: 4 }}>{d < 0 ? `${Math.abs(d)}d ago` : `${d}d away`}</span>}
@@ -1110,9 +1124,9 @@ export default function DealDetail() {
                 </div>
                 {expandedEmail === em.id && (
                   <div style={{ marginTop: 12 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase', marginBottom: 4 }}>Subject</div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#2c3e50', textTransform: 'uppercase', marginBottom: 4 }}>Subject</div>
                     <div style={{ fontSize: 14, fontWeight: 600, color: T.text, marginBottom: 12 }}>{em.subject}</div>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase', marginBottom: 4 }}>Body</div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#2c3e50', textTransform: 'uppercase', marginBottom: 4 }}>Body</div>
                     <div style={{ fontSize: 13, color: T.text, lineHeight: 1.7, whiteSpace: 'pre-wrap', background: T.surfaceAlt, padding: 14, borderRadius: 6, border: `1px solid ${T.borderLight}`, marginBottom: 12 }}>{em.body}</div>
                     <div style={{ display: 'flex', gap: 8 }}>
                       <Button onClick={() => navigator.clipboard.writeText(`Subject: ${em.subject}\n\n${em.body}`)} style={{ fontSize: 11, padding: '4px 12px' }}>Copy to Clipboard</Button>
