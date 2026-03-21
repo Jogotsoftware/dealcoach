@@ -7,9 +7,18 @@ import TranscriptUpload from '../components/TranscriptUpload'
 import { callGenerateEmail } from '../lib/webhooks'
 import { useAuth } from '../hooks/useAuth'
 
-// === LOCAL LABEL STYLE (darker than Shared.jsx default) ===
-const ddLabelStyle = { fontSize: 11, fontWeight: 700, color: '#2c3e50', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4, display: 'block' }
+// === LOCAL LABEL STYLE ===
+const ddLabelStyle = { fontSize: 11, fontWeight: 800, color: '#1a2a3a', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6, borderBottom: '1px solid #e0e4e8', paddingBottom: 4, display: 'block' }
 const unknownStyle = { color: '#e8a0a0', fontStyle: 'italic', fontWeight: 400 }
+
+// === BULLET ITEM with bold colon prefix ===
+function BulletText({ text }) {
+  if (text.includes(':')) {
+    const colonIdx = text.indexOf(':')
+    return <><span style={{ fontWeight: 700, color: '#2c3e50' }}>{text.substring(0, colonIdx)}:</span>{text.substring(colonIdx + 1)}</>
+  }
+  return text
+}
 
 // === EDITABLE FIELD COMPONENT ===
 function EditableField({ label, value, field, table, recordId, onSaved, type = 'text', options, displayAs }) {
@@ -97,7 +106,7 @@ function EditableField({ label, value, field, table, recordId, onSaved, type = '
           {items.map((item, i) => (
             <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 3, fontSize: 13, color: T.text, lineHeight: 1.5 }}>
               <span style={{ color: T.textMuted, flexShrink: 0 }}>&bull;</span>
-              <span>{item}</span>
+              <span><BulletText text={item} /></span>
             </div>
           ))}
         </div>
@@ -136,7 +145,7 @@ function ListField({ label, value }) {
       {items.map((item, i) => (
         <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 4, fontSize: 13, color: T.text, lineHeight: 1.5 }}>
           <span style={{ color: T.textMuted, flexShrink: 0 }}>&bull;</span>
-          <span>{item}</span>
+          <span><BulletText text={item} /></span>
         </div>
       ))}
     </div>

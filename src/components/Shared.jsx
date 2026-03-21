@@ -99,8 +99,8 @@ export function Field({ label, value, mono }) {
   return (
     <div style={{ marginBottom: 12 }}>
       <div style={{
-        fontSize: 11, color: T.textSecondary, textTransform: 'uppercase',
-        letterSpacing: '0.06em', marginBottom: 3, fontWeight: 600,
+        fontSize: 11, fontWeight: 800, color: '#1a2a3a', textTransform: 'uppercase',
+        letterSpacing: '0.08em', marginBottom: 6, borderBottom: '1px solid #e0e4e8', paddingBottom: 4,
       }}>
         {label}
       </div>
@@ -180,8 +180,9 @@ export const inputStyle = {
 }
 
 export const labelStyle = {
-  fontSize: 11, color: T.textSecondary, textTransform: 'uppercase',
-  letterSpacing: '0.06em', marginBottom: 4, display: 'block', fontWeight: 600,
+  fontSize: 11, fontWeight: 800, color: '#1a2a3a', textTransform: 'uppercase',
+  letterSpacing: '0.08em', marginBottom: 6, borderBottom: '1px solid #e0e4e8',
+  paddingBottom: 4, display: 'block',
 }
 
 // === EMPTY STATE ===
