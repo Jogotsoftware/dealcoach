@@ -131,6 +131,9 @@ export default function DealDetail() {
   const [editingCompetitor, setEditingCompetitor] = useState(null)
   const [editCompData, setEditCompData] = useState({})
 
+  // Research polling
+  const [researchStatus, setResearchStatus] = useState(null) // null | 'in_progress' | 'complete'
+
   // Form toggles
   const [showAddRisk, setShowAddRisk] = useState(false)
   const [showAddEvent, setShowAddEvent] = useState(false)
@@ -201,6 +204,24 @@ export default function DealDetail() {
       setLoading(false)
     }
   }
+
+  // Poll for research completion when company_profile has no researched_at
+  useEffect(() => {
+    if (!companyProfile || companyProfile.researched_at) {
+      setResearchStatus(null)
+      return
+    }
+    setResearchStatus('in_progress')
+    const interval = setInterval(async () => {
+      const { data } = await supabase.from('company_profile').select('researched_at').eq('deal_id', id).single()
+      if (data?.researched_at) {
+        setResearchStatus('complete')
+        clearInterval(interval)
+        setTimeout(() => { setResearchStatus(null); loadDeal() }, 3000)
+      }
+    }, 5000)
+    return () => clearInterval(interval)
+  }, [companyProfile?.researched_at, id])
 
   async function saveContact(contactId) {
     const { error } = await supabase.from('contacts').update(editContactData).eq('id', contactId)
@@ -336,9 +357,42 @@ export default function DealDetail() {
 
       <div style={{ padding: 24, maxWidth: 1200 }}>
 
+        {/* Research status banner */}
+        {researchStatus === 'in_progress' && (
+          <div style={{
+            padding: '12px 18px', borderRadius: 8, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10,
+            background: T.primaryLight, border: `1px solid ${T.primaryBorder}`, animation: 'pulse 2s ease-in-out infinite',
+          }}>
+            <span style={{ display: 'inline-block', width: 14, height: 14, border: `2px solid ${T.primary}`, borderTop: '2px solid transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
+            <span style={{ fontSize: 13, color: T.primary, fontWeight: 600 }}>AI Research in Progress -- analyzing company data...</span>
+            <style>{`@keyframes spin { to { transform: rotate(360deg) } } @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.7 } }`}</style>
+          </div>
+        )}
+        {researchStatus === 'complete' && (
+          <div style={{
+            padding: '12px 18px', borderRadius: 8, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10,
+            background: T.successLight, border: `1px solid ${T.success}25`,
+          }}>
+            <span style={{ fontSize: 14, color: T.success }}>&#10003;</span>
+            <span style={{ fontSize: 13, color: T.success, fontWeight: 600 }}>Research Complete -- reloading deal data...</span>
+          </div>
+        )}
+
         {/* ===== OVERVIEW TAB ===== */}
         {tab === 'overview' && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+
+            {/* Transcript processing info bar */}
+            {conversations.some(c => !c.processed) && (
+              <div style={{
+                gridColumn: '1 / -1', padding: '10px 16px', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 10,
+                background: T.primaryLight, border: `1px solid ${T.primaryBorder}`,
+              }}>
+                <span style={{ display: 'inline-block', width: 12, height: 12, border: `2px solid ${T.primary}`, borderTop: '2px solid transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
+                <span style={{ fontSize: 12, color: T.primary, flex: 1 }}>AI is analyzing a transcript. Refresh to see results.</span>
+                <Button onClick={loadDeal} style={{ padding: '4px 12px', fontSize: 11 }}>Refresh</Button>
+              </div>
+            )}
 
             {/* CALL HISTORY & ANALYSIS */}
             <Card title={`Call History & Analysis (${conversations.length})`} style={{ gridColumn: '1 / -1' }}>
@@ -382,7 +436,14 @@ export default function DealDetail() {
                       )}
                     </div>
                     <span style={{ fontSize: 11, color: T.textSecondary, whiteSpace: 'nowrap' }}>{formatDate(cv.call_date)}</span>
-                    {cv.processed && <Badge color={T.success}>Processed</Badge>}
+                    {cv.processed ? (
+                      <Badge color={T.success}>Complete</Badge>
+                    ) : (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 600, color: T.warning, textTransform: 'uppercase', letterSpacing: '0.04em', animation: 'pulse 2s ease-in-out infinite' }}>
+                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: T.warning }} />
+                        Processing...
+                      </span>
+                    )}
                     {cv.task_count > 0 && <Badge color={T.textMuted}>{cv.task_count} tasks</Badge>}
                     {score != null && (
                       <span style={{ fontSize: 14, fontWeight: 700, color: scoreColor, fontFeatureSettings: '"tnum"', minWidth: 24, textAlign: 'right' }}>{score}</span>

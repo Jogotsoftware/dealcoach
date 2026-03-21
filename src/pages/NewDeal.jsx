@@ -11,6 +11,7 @@ export default function NewDeal() {
   const navigate = useNavigate()
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
+  const [createdMsg, setCreatedMsg] = useState(null)
   // Default close date 3 months out
   const [defaultCloseDate] = useState(() => {
     const d = new Date()
@@ -64,13 +65,14 @@ export default function NewDeal() {
       }
 
       // The DB trigger auto-creates company_profile and deal_analysis
-      // Kick off research Edge Function (non-blocking, fire-and-forget)
+      // Show toast and kick off research
+      setCreatedMsg(`Deal created. AI is researching ${form.company_name.trim()}...`)
       callResearchFunction(data.id).catch(err =>
         console.warn('Research failed:', err)
       )
 
-      // Navigate to the new deal
-      navigate(`/deal/${data.id}`)
+      // Navigate after brief delay so user sees the message
+      setTimeout(() => navigate(`/deal/${data.id}`), 800)
     } catch (err) {
       console.error('Error creating deal:', err)
       setError(err.message)
@@ -207,6 +209,18 @@ export default function NewDeal() {
               </div>
             </div>
           </Card>
+
+          {createdMsg && (
+            <div style={{
+              padding: '12px 16px', borderRadius: 6, fontSize: 13, marginBottom: 16,
+              background: T.primaryLight, color: T.primary, border: `1px solid ${T.primaryBorder}`,
+              display: 'flex', alignItems: 'center', gap: 10, fontWeight: 600,
+            }}>
+              <span style={{ display: 'inline-block', width: 14, height: 14, border: `2px solid ${T.primary}`, borderTop: '2px solid transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+              {createdMsg}
+              <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+            </div>
+          )}
 
           {error && (
             <div style={{

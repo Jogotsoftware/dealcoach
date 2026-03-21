@@ -11,6 +11,7 @@ export default function TranscriptUpload({ deals, onClose, onUploaded }) {
   })
   const [file, setFile] = useState(null)
   const [saving, setSaving] = useState(false)
+  const [processing, setProcessing] = useState(false)
   const [error, setError] = useState(null)
   const [result, setResult] = useState(null)
 
@@ -56,27 +57,30 @@ export default function TranscriptUpload({ deals, onClose, onUploaded }) {
 
       if (convErr) throw convErr
 
-      // 2. Send to Supabase Edge Function for AI processing
+      if (onUploaded) onUploaded(conv)
+
+      // 2. Show processing state and send to Edge Function
+      setSaving(false)
+      setProcessing(true)
+      setResult({ saved: true, processing: true, message: 'Processing transcript with AI...' })
+
       const res = await callProcessTranscript(conv.id)
+      setProcessing(false)
+
       if (res.error) {
         setResult({
           saved: true,
           processing: false,
-          message: `Transcript saved. Processing error: ${res.error}`,
+          error: true,
+          message: `Transcript saved but processing failed: ${res.error}`,
         })
       } else {
         setResult({
           saved: true,
-          processing: true,
-          message: `Transcript saved and processed.${res.tasks_created ? ` ${res.tasks_created} tasks created.` : ''}${res.contacts_found ? ` ${res.contacts_found} contacts found.` : ''}`,
+          processing: false,
+          error: false,
+          message: `Analysis complete.${res.tasks_created ? ` ${res.tasks_created} tasks created.` : ''}${res.contacts_found ? ` ${res.contacts_found} contacts found.` : ''} Close this dialog to see results.`,
         })
-      }
-
-      if (onUploaded) onUploaded(conv)
-
-      // Auto-close after 2 seconds on success
-      if (!res.error) {
-        setTimeout(() => onClose(), 2000)
       }
     } catch (err) {
       console.error('Upload error:', err)
@@ -211,12 +215,17 @@ export default function TranscriptUpload({ deals, onClose, onUploaded }) {
           {/* Result */}
           {result && (
             <div style={{
-              padding: '10px 14px', borderRadius: 6, fontSize: 13,
-              background: result.processing ? T.successLight : T.warningLight,
-              color: result.processing ? T.success : T.warning,
-              border: `1px solid ${result.processing ? T.success : T.warning}25`,
+              padding: '12px 16px', borderRadius: 6, fontSize: 13,
+              background: result.processing ? T.primaryLight : result.error ? T.errorLight : T.successLight,
+              color: result.processing ? T.primary : result.error ? T.error : T.success,
+              border: `1px solid ${result.processing ? T.primary : result.error ? T.error : T.success}25`,
+              display: 'flex', alignItems: 'center', gap: 10,
             }}>
-              {result.message}
+              {result.processing && (
+                <span style={{ display: 'inline-block', width: 14, height: 14, border: `2px solid ${T.primary}`, borderTop: '2px solid transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
+              )}
+              <span style={{ fontWeight: result.processing ? 400 : 600 }}>{result.message}</span>
+              {result.processing && <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>}
             </div>
           )}
         </div>
@@ -227,10 +236,12 @@ export default function TranscriptUpload({ deals, onClose, onUploaded }) {
           borderTop: `1px solid ${T.border}`, background: T.surfaceAlt,
           borderRadius: '0 0 12px 12px',
         }}>
-          <Button onClick={onClose}>Cancel</Button>
-          <Button primary onClick={handleSubmit} disabled={!canSubmit}>
-            {saving ? 'Uploading...' : 'Upload & Process'}
-          </Button>
+          <Button onClick={onClose}>{result && !result.processing ? 'Close' : 'Cancel'}</Button>
+          {!result?.saved && (
+            <Button primary onClick={handleSubmit} disabled={!canSubmit}>
+              {saving ? 'Saving...' : processing ? 'Processing...' : 'Upload & Process'}
+            </Button>
+          )}
         </div>
       </div>
     </div>
