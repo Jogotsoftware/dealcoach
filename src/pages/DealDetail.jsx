@@ -622,7 +622,10 @@ export default function DealDetail() {
                       {cv.ai_summary && <div style={{ fontSize: 11, color: T.textMuted, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cv.ai_summary.substring(0, 140)}</div>}
                     </div>
                     <span style={{ fontSize: 11, color: T.textSecondary, whiteSpace: 'nowrap' }}>{formatDate(cv.call_date)}</span>
-                    {cv.processed ? <Badge color={T.success}>Complete</Badge> : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 600, color: T.warning, textTransform: 'uppercase', animation: 'pulse 2s ease-in-out infinite' }}><span style={{ width: 6, height: 6, borderRadius: '50%', background: T.warning }} />Processing...</span>}
+                    {cv.processed ? <Badge color={T.success}>Complete</Badge> : (<>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 600, color: T.warning, textTransform: 'uppercase', animation: 'pulse 2s ease-in-out infinite' }}><span style={{ width: 6, height: 6, borderRadius: '50%', background: T.warning }} />Processing...</span>
+                      <Button primary style={{ padding: '3px 10px', fontSize: 11 }} onClick={async (e) => { e.stopPropagation(); const { callProcessTranscript } = await import('../lib/webhooks'); const res = await callProcessTranscript(cv.id); if (res.error) alert('Processing failed: ' + res.error); else { alert('Processing complete!'); loadDeal() } }}>Reprocess</Button>
+                    </>)}
                     {cv.task_count > 0 && <Badge color={T.textMuted}>{cv.task_count} tasks</Badge>}
                     {score != null && <span style={{ fontSize: 20, fontWeight: 800, color: scoreColor, fontFeatureSettings: '"tnum"', minWidth: 28, textAlign: 'right' }}>{score}</span>}
                   </div>

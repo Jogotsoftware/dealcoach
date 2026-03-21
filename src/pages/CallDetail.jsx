@@ -123,7 +123,9 @@ export default function CallDetail() {
               {conversation.call_date ? formatDateLong(conversation.call_date) : 'No date'}
             </span>
             {conversation.call_type && <Badge color={T.primary}>{conversation.call_type}</Badge>}
-            {conversation.processed && <Badge color={T.success}>Processed</Badge>}
+            {conversation.processed ? <Badge color={T.success}>Processed</Badge> : (
+              <Button primary style={{ padding: '3px 10px', fontSize: 11 }} onClick={async () => { const { callProcessTranscript } = await import('../lib/webhooks'); const res = await callProcessTranscript(conversationId); if (res.error) alert('Processing failed: ' + res.error); else { alert('Processing complete!'); loadData() } }}>Reprocess</Button>
+            )}
             <Button onClick={() => setShowEmailGen(true)} style={{ padding: '4px 10px', fontSize: 11 }}>Generate Email</Button>
           </div>
         </div>
