@@ -2,16 +2,24 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { theme as T, formatDateLong } from '../lib/theme'
-import { Card, Badge, ScoreBar, Button, Spinner } from '../components/Shared'
+import { Card, Badge, ScoreBar, Button, Spinner, inputStyle, labelStyle } from '../components/Shared'
+import { callGenerateEmail } from '../lib/webhooks'
+import { useAuth } from '../hooks/useAuth'
 
 export default function CallDetail() {
   const { dealId, conversationId } = useParams()
   const navigate = useNavigate()
+  const { profile } = useAuth()
   const [loading, setLoading] = useState(true)
   const [conversation, setConversation] = useState(null)
   const [analysis, setAnalysis] = useState(null)
   const [companyName, setCompanyName] = useState('')
   const [showTranscript, setShowTranscript] = useState(false)
+  const [showEmailGen, setShowEmailGen] = useState(false)
+  const [emailTemplates, setEmailTemplates] = useState([])
+  const [selTpl, setSelTpl] = useState('')
+  const [genLoading, setGenLoading] = useState(false)
+  const [genResult, setGenResult] = useState(null)
 
   useEffect(() => {
     loadData()
@@ -40,6 +48,10 @@ export default function CallDetail() {
     if (convRes.data) setConversation(convRes.data)
     if (analysisRes.data) setAnalysis(analysisRes.data)
     if (dealRes.data) setCompanyName(dealRes.data.company_name || '')
+    if (profile?.active_coach_id) {
+      const { data: eTpls } = await supabase.from('email_templates').select('*').eq('coach_id', profile.active_coach_id).eq('active', true).order('sort_order')
+      setEmailTemplates(eTpls || [])
+    }
     setLoading(false)
   }
 
@@ -112,6 +124,7 @@ export default function CallDetail() {
             </span>
             {conversation.call_type && <Badge color={T.primary}>{conversation.call_type}</Badge>}
             {conversation.processed && <Badge color={T.success}>Processed</Badge>}
+            <Button onClick={() => setShowEmailGen(true)} style={{ padding: '4px 10px', fontSize: 11 }}>Generate Email</Button>
           </div>
         </div>
         {/* Large overall score on the right */}
@@ -308,6 +321,57 @@ export default function CallDetail() {
         </div>
 
       </div>
+
+      {/* Generate Email Modal */}
+      {showEmailGen && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.3)', backdropFilter: 'blur(4px)' }}
+          onClick={() => { if (!genLoading) { setShowEmailGen(false); setGenResult(null) } }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, width: 600, maxHeight: '85vh', overflow: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.15)' }}>
+            <div style={{ padding: '16px 20px', borderBottom: `1px solid ${T.border}` }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: T.text }}>Generate Email from This Call</div>
+            </div>
+            <div style={{ padding: '14px 20px' }}>
+              {!genResult ? (
+                <>
+                  <div style={{ marginBottom: 12 }}>
+                    <label style={labelStyle}>Template *</label>
+                    <select style={{ ...inputStyle, cursor: 'pointer' }} value={selTpl} onChange={e => setSelTpl(e.target.value)}>
+                      <option value="">Select...</option>
+                      {emailTemplates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    </select>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                    <Button onClick={() => { setShowEmailGen(false); setGenResult(null) }}>Cancel</Button>
+                    <Button primary disabled={!selTpl || genLoading} onClick={async () => {
+                      setGenLoading(true)
+                      const res = await callGenerateEmail(dealId, selTpl, conversationId)
+                      setGenLoading(false)
+                      if (res.error) { setGenResult({ error: res.error }) }
+                      else { setGenResult({ subject: res.subject || res.email?.subject || '', body: res.body || res.email?.body || '' }) }
+                    }}>{genLoading ? 'Generating...' : 'Generate'}</Button>
+                  </div>
+                </>
+              ) : genResult.error ? (
+                <div>
+                  <div style={{ padding: 12, background: T.errorLight, borderRadius: 6, color: T.error, fontSize: 13, marginBottom: 12 }}>{genResult.error}</div>
+                  <Button onClick={() => setGenResult(null)}>Try Again</Button>
+                </div>
+              ) : (
+                <div>
+                  <div style={{ marginBottom: 10 }}><label style={labelStyle}>Subject</label><input style={{ ...inputStyle, fontWeight: 600 }} value={genResult.subject} onChange={e => setGenResult(p => ({ ...p, subject: e.target.value }))} /></div>
+                  <div style={{ marginBottom: 10 }}><label style={labelStyle}>Body</label><textarea style={{ ...inputStyle, minHeight: 250, resize: 'vertical', lineHeight: 1.7 }} value={genResult.body} onChange={e => setGenResult(p => ({ ...p, body: e.target.value }))} /></div>
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                    <Button onClick={() => navigator.clipboard.writeText(`Subject: ${genResult.subject}\n\n${genResult.body}`)}>Copy</Button>
+                    <Button onClick={() => window.open(`mailto:?subject=${encodeURIComponent(genResult.subject)}&body=${encodeURIComponent(genResult.body)}`, '_blank')}>Open in Mail</Button>
+                    <Button onClick={() => setGenResult(null)}>Regenerate</Button>
+                    <Button primary onClick={() => { setShowEmailGen(false); setGenResult(null) }}>Done</Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

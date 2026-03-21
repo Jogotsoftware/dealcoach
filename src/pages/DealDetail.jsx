@@ -4,6 +4,8 @@ import { supabase } from '../lib/supabase'
 import { theme as T, formatCurrency, formatDate, formatDateLong, daysUntil, STAGES, FORECAST_CATEGORIES, CALL_TYPES, TASK_CATEGORIES } from '../lib/theme'
 import { Card, Badge, ForecastBadge, StageBadge, ScoreBar, Field, StatusDot, TabBar, Button, EmptyState, Spinner, inputStyle, labelStyle } from '../components/Shared'
 import TranscriptUpload from '../components/TranscriptUpload'
+import { callGenerateEmail } from '../lib/webhooks'
+import { useAuth } from '../hooks/useAuth'
 
 // === EDITABLE FIELD COMPONENT ===
 function EditableField({ label, value, field, table, recordId, onSaved, type = 'text', options, displayAs }) {
@@ -173,6 +175,7 @@ const CATALYST_CATEGORIES = ['regulatory', 'market', 'competitive', 'internal', 
 export default function DealDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const { profile } = useAuth()
   const [tab, setTab] = useState('overview')
   const [loading, setLoading] = useState(true)
   const [deal, setDeal] = useState(null)
@@ -223,6 +226,16 @@ export default function DealDetail() {
   const [showAddContact, setShowAddContact] = useState(false)
   const [newContact, setNewContact] = useState({ name: '', title: '', email: '', role_in_deal: '' })
 
+  // Email generation
+  const [showEmailGenerator, setShowEmailGenerator] = useState(false)
+  const [emailTemplates, setEmailTemplates] = useState([])
+  const [selectedEmailTpl, setSelectedEmailTpl] = useState('')
+  const [selectedEmailConv, setSelectedEmailConv] = useState('')
+  const [generatingEmail, setGeneratingEmail] = useState(false)
+  const [emailResult, setEmailResult] = useState(null)
+  const [generatedEmails, setGeneratedEmails] = useState([])
+  const [expandedEmail, setExpandedEmail] = useState(null)
+
   useEffect(() => { if (id && id !== 'new') loadDeal() }, [id])
 
   async function loadDeal() {
@@ -261,6 +274,16 @@ export default function DealDetail() {
       setEvents(eventsRes.data || [])
       setCatalysts(catalystsRes.data || [])
       setPainPoints(painsRes.data || [])
+
+      // Load generated emails
+      const { data: genEmails } = await supabase.from('generated_emails').select('*').eq('deal_id', id).order('created_at', { ascending: false })
+      setGeneratedEmails(genEmails || [])
+
+      // Load email templates for the coach
+      if (profile?.active_coach_id) {
+        const { data: eTpls } = await supabase.from('email_templates').select('*').eq('coach_id', profile.active_coach_id).eq('active', true).order('sort_order')
+        setEmailTemplates(eTpls || [])
+      }
 
       // Load call scores for each conversation
       const convIds = (convosRes.data || []).map(c => c.id)
@@ -423,6 +446,30 @@ export default function DealDetail() {
     if (!error && data) { setContacts(prev => [...prev, data]); setShowAddContact(false); setNewContact({ name: '', title: '', email: '', role_in_deal: '' }) }
   }
 
+  async function generateEmail() {
+    if (!selectedEmailTpl) return
+    setGeneratingEmail(true)
+    setEmailResult(null)
+    const res = await callGenerateEmail(id, selectedEmailTpl, selectedEmailConv || null)
+    setGeneratingEmail(false)
+    if (res.error) {
+      setEmailResult({ error: res.error })
+    } else {
+      setEmailResult({ subject: res.subject || res.email?.subject || '', body: res.body || res.email?.body || '', id: res.id || res.email?.id })
+      loadDeal()
+    }
+  }
+
+  async function deleteGeneratedEmail(emailId) {
+    await supabase.from('generated_emails').delete().eq('id', emailId)
+    setGeneratedEmails(prev => prev.filter(e => e.id !== emailId))
+  }
+
+  async function updateGeneratedEmail(emailId, field, value) {
+    await supabase.from('generated_emails').update({ [field]: value }).eq('id', emailId)
+    setGeneratedEmails(prev => prev.map(e => e.id === emailId ? { ...e, [field]: value } : e))
+  }
+
   if (loading) return <Spinner />
   if (!deal) return <div style={{ padding: 40, textAlign: 'center', color: T.textMuted }}>Deal not found</div>
 
@@ -443,6 +490,7 @@ export default function DealDetail() {
     { key: 'msp', label: 'MSP' },
     { key: 'proposal', label: 'Proposal' },
     { key: 'tasks', label: `Tasks (${openTasks.length})` },
+    { key: 'emails', label: `Emails (${generatedEmails.length})` },
   ]
 
   return (
@@ -474,6 +522,7 @@ export default function DealDetail() {
               )}
             </div>
           </div>
+          <Button onClick={() => setShowEmailGenerator(true)} style={{ padding: '6px 12px', fontSize: 11 }}>Generate Email</Button>
           <Button primary onClick={() => setShowTranscriptUpload(true)} style={{ padding: '6px 12px', fontSize: 11 }}>Upload Transcript</Button>
           <Button danger onClick={async () => {
             if (!window.confirm('Delete this deal? This cannot be undone.')) return
@@ -1030,6 +1079,122 @@ export default function DealDetail() {
               </Card>
             )}
             {openTasks.length === 0 && doneTasks.length === 0 && <EmptyState message="No tasks for this deal yet." />}
+          </div>
+        )}
+
+        {/* ===== EMAILS TAB ===== */}
+        {tab === 'emails' && (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: T.text }}>Generated Emails ({generatedEmails.length})</h3>
+              <Button primary onClick={() => setShowEmailGenerator(true)}>Generate New</Button>
+            </div>
+            {generatedEmails.length === 0 ? (
+              <EmptyState message="No emails generated yet. Click 'Generate New' to create one from a template." />
+            ) : generatedEmails.map(em => (
+              <Card key={em.id}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ fontSize: 11, color: T.textSecondary, whiteSpace: 'nowrap' }}>{em.created_at ? formatDate(em.created_at.split('T')[0]) : ''}</span>
+                  {em.email_type && <Badge color={T.primary}>{em.email_type.replace(/_/g, ' ')}</Badge>}
+                  <div style={{ flex: 1, fontSize: 13, fontWeight: 600, color: T.text, cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                    onClick={() => setExpandedEmail(expandedEmail === em.id ? null : em.id)}>
+                    {em.subject || 'No subject'}
+                  </div>
+                  {em.recipient && <span style={{ fontSize: 11, color: T.textSecondary }}>{em.recipient}</span>}
+                  <select style={{ fontSize: 10, fontWeight: 600, padding: '2px 6px', borderRadius: 3, border: `1px solid ${T.border}`, background: em.status === 'sent' ? T.successLight : T.surfaceAlt, color: em.status === 'sent' ? T.success : T.textSecondary, cursor: 'pointer', fontFamily: T.font }}
+                    value={em.status || 'draft'} onChange={e => updateGeneratedEmail(em.id, 'status', e.target.value)}>
+                    <option value="draft">Draft</option><option value="sent">Sent</option><option value="archived">Archived</option>
+                  </select>
+                  <button onClick={() => deleteGeneratedEmail(em.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, fontSize: 14 }}
+                    onMouseEnter={e => e.currentTarget.style.color = T.error} onMouseLeave={e => e.currentTarget.style.color = T.textMuted}>&times;</button>
+                </div>
+                {expandedEmail === em.id && (
+                  <div style={{ marginTop: 12 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase', marginBottom: 4 }}>Subject</div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: T.text, marginBottom: 12 }}>{em.subject}</div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase', marginBottom: 4 }}>Body</div>
+                    <div style={{ fontSize: 13, color: T.text, lineHeight: 1.7, whiteSpace: 'pre-wrap', background: T.surfaceAlt, padding: 14, borderRadius: 6, border: `1px solid ${T.borderLight}`, marginBottom: 12 }}>{em.body}</div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <Button onClick={() => navigator.clipboard.writeText(`Subject: ${em.subject}\n\n${em.body}`)} style={{ fontSize: 11, padding: '4px 12px' }}>Copy to Clipboard</Button>
+                      <Button onClick={() => window.open(`mailto:${em.recipient || ''}?subject=${encodeURIComponent(em.subject || '')}&body=${encodeURIComponent(em.body || '')}`, '_blank')} style={{ fontSize: 11, padding: '4px 12px' }}>Open in Mail</Button>
+                    </div>
+                  </div>
+                )}
+              </Card>
+            ))}
+          </div>
+        )}
+
+        {/* Generate Email Modal */}
+        {showEmailGenerator && (
+          <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.3)', backdropFilter: 'blur(4px)' }}
+            onClick={() => { if (!generatingEmail) { setShowEmailGenerator(false); setEmailResult(null) } }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, width: 650, maxHeight: '90vh', overflow: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.15)' }}>
+              <div style={{ padding: '20px 24px', borderBottom: `1px solid ${T.border}` }}>
+                <div style={{ fontSize: 18, fontWeight: 700, color: T.text }}>Generate Email</div>
+                <div style={{ fontSize: 13, color: T.textSecondary }}>AI will generate an email using deal context and your template</div>
+              </div>
+              <div style={{ padding: '16px 24px' }}>
+                {!emailResult ? (
+                  <>
+                    <div style={{ marginBottom: 14 }}>
+                      <label style={labelStyle}>Email Template *</label>
+                      <select style={{ ...inputStyle, cursor: 'pointer' }} value={selectedEmailTpl} onChange={e => setSelectedEmailTpl(e.target.value)}>
+                        <option value="">Select template...</option>
+                        {emailTemplates.map(t => <option key={t.id} value={t.id}>{t.name} ({(t.email_type || '').replace(/_/g, ' ')})</option>)}
+                      </select>
+                      {selectedEmailTpl && emailTemplates.find(t => t.id === selectedEmailTpl)?.description && (
+                        <div style={{ fontSize: 12, color: T.textSecondary, marginTop: 4 }}>{emailTemplates.find(t => t.id === selectedEmailTpl).description}</div>
+                      )}
+                    </div>
+                    <div style={{ marginBottom: 14 }}>
+                      <label style={labelStyle}>From Call (optional)</label>
+                      <select style={{ ...inputStyle, cursor: 'pointer' }} value={selectedEmailConv} onChange={e => setSelectedEmailConv(e.target.value)}>
+                        <option value="">No specific call</option>
+                        {conversations.map(c => <option key={c.id} value={c.id}>{c.title || c.call_type} - {formatDate(c.call_date)}</option>)}
+                      </select>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                      <Button onClick={() => { setShowEmailGenerator(false); setEmailResult(null) }}>Cancel</Button>
+                      <Button primary onClick={generateEmail} disabled={!selectedEmailTpl || generatingEmail}>
+                        {generatingEmail ? (
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{ display: 'inline-block', width: 12, height: 12, border: '2px solid #fff', borderTop: '2px solid transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                            Generating...
+                          </span>
+                        ) : 'Generate'}
+                      </Button>
+                    </div>
+                  </>
+                ) : emailResult.error ? (
+                  <div>
+                    <div style={{ padding: '12px 16px', background: T.errorLight, borderRadius: 6, color: T.error, fontSize: 13, marginBottom: 12 }}>{emailResult.error}</div>
+                    <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                      <Button onClick={() => setEmailResult(null)}>Try Again</Button>
+                      <Button onClick={() => { setShowEmailGenerator(false); setEmailResult(null) }}>Close</Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <div style={{ marginBottom: 12 }}>
+                      <label style={labelStyle}>Subject</label>
+                      <input style={{ ...inputStyle, fontWeight: 600 }} value={emailResult.subject} onChange={e => setEmailResult(p => ({ ...p, subject: e.target.value }))} />
+                    </div>
+                    <div style={{ marginBottom: 12 }}>
+                      <label style={labelStyle}>Body</label>
+                      <textarea style={{ ...inputStyle, minHeight: 300, resize: 'vertical', lineHeight: 1.7 }} value={emailResult.body} onChange={e => setEmailResult(p => ({ ...p, body: e.target.value }))} />
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                      <Button onClick={() => navigator.clipboard.writeText(`Subject: ${emailResult.subject}\n\n${emailResult.body}`)}>Copy to Clipboard</Button>
+                      <Button onClick={() => window.open(`mailto:?subject=${encodeURIComponent(emailResult.subject || '')}&body=${encodeURIComponent(emailResult.body || '')}`, '_blank')}>Open in Mail</Button>
+                      <Button onClick={() => setEmailResult(null)}>Regenerate</Button>
+                      <Button primary onClick={() => { setShowEmailGenerator(false); setEmailResult(null) }}>Done</Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+            </div>
           </div>
         )}
       </div>

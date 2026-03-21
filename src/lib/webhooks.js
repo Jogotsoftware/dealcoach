@@ -469,3 +469,32 @@ export async function callProcessTranscript(conversationId) {
     return { error: err.message }
   }
 }
+
+/**
+ * Call the Supabase Edge Function to generate an email from a template.
+ */
+export async function callGenerateEmail(dealId, templateId, conversationId = null) {
+  console.log('Calling generate-email for deal:', dealId, 'template:', templateId)
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) return { error: 'Not authenticated' }
+
+  try {
+    const response = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-email`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ deal_id: dealId, template_id: templateId, conversation_id: conversationId }),
+      }
+    )
+    const res = await response.json()
+    console.log('Generate email response:', res)
+    return res
+  } catch (err) {
+    return { error: err.message }
+  }
+}

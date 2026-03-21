@@ -23,6 +23,10 @@ export default function CoachAdmin() {
   const [repScoringConfigs, setRepScoringConfigs] = useState([])
   const [mspTemplates, setMspTemplates] = useState([])
   const [templateStages, setTemplateStages] = useState([])
+  const [emailTemplatesAdmin, setEmailTemplatesAdmin] = useState([])
+  const [showAddEmailTemplate, setShowAddEmailTemplate] = useState(false)
+  const [newEmailTpl, setNewEmailTpl] = useState({ name: '', email_type: 'follow_up', description: '' })
+  const [expandedEmailTemplate, setExpandedEmailTemplate] = useState(null)
 
   // Editing states
   const [editingCoach, setEditingCoach] = useState(false)
@@ -77,6 +81,9 @@ export default function CoachAdmin() {
         setScoringConfigs(scoringRes.data || [])
         setRepScoringConfigs(repScoringRes.data || [])
         setMspTemplates(templatesRes.data || [])
+
+        const { data: emailTpls } = await supabase.from('email_templates').select('*').eq('coach_id', activeCoach.id).order('sort_order')
+        setEmailTemplatesAdmin(emailTpls || [])
 
         // Load template stages/milestones
         const tplIds = (templatesRes.data || []).map(t => t.id)
@@ -191,6 +198,26 @@ export default function CoachAdmin() {
     setTemplateStages(prev => prev.filter(s => s.template_id !== id))
   }
 
+  async function addEmailTemplate() {
+    if (!newEmailTpl.name.trim() || !coach) return
+    const { data, error } = await supabase.from('email_templates').insert({
+      coach_id: coach.id, name: newEmailTpl.name.trim(), email_type: newEmailTpl.email_type,
+      description: newEmailTpl.description || null, active: true, sort_order: emailTemplatesAdmin.length + 1,
+    }).select().single()
+    if (!error && data) { setEmailTemplatesAdmin(prev => [...prev, data]); setShowAddEmailTemplate(false); setNewEmailTpl({ name: '', email_type: 'follow_up', description: '' }) }
+  }
+
+  async function updateEmailTemplate(id, field, value) {
+    await supabase.from('email_templates').update({ [field]: value }).eq('id', id)
+    setEmailTemplatesAdmin(prev => prev.map(t => t.id === id ? { ...t, [field]: value } : t))
+  }
+
+  async function deleteEmailTemplate(id) {
+    if (!window.confirm('Delete this email template?')) return
+    await supabase.from('email_templates').delete().eq('id', id)
+    setEmailTemplatesAdmin(prev => prev.filter(t => t.id !== id))
+  }
+
   async function addDocument() {
     if (!newDoc.name.trim() || !coach) return
     const { data, error } = await supabase.from('coach_documents').insert({
@@ -221,7 +248,12 @@ export default function CoachAdmin() {
     { key: 'scoring', label: `Scoring (${scoringConfigs.length})` },
     { key: 'rep_scoring', label: `Rep Scoring (${repScoringConfigs.length})` },
     { key: 'templates', label: `MSP Templates (${mspTemplates.length})` },
+    { key: 'emails', label: `Email Templates (${emailTemplatesAdmin.length})` },
   ]
+
+  const EMAIL_TYPES = ['sc_briefing', 'scoping_kt', 'exec_alignment', 'follow_up', 'internal_update', 'custom']
+  const RECIPIENT_TYPES = ['internal', 'external', 'client', 'partner']
+  const CONTEXT_FIELDS = ['pain_points', 'contacts', 'competition', 'deal_analysis', 'company_profile', 'transcripts', 'tasks', 'scores', 'msp']
 
   return (
     <div>
@@ -576,6 +608,95 @@ export default function CoachAdmin() {
                                   onMouseEnter={e => e.currentTarget.style.color = T.error} onMouseLeave={e => e.currentTarget.style.color = T.textMuted}>&#10005;</button>
                               </div>
                             ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            {/* ══════════ EMAIL TEMPLATES ══════════ */}
+            {tab === 'emails' && (
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+                  <Button primary onClick={() => setShowAddEmailTemplate(true)}>+ Create Email Template</Button>
+                </div>
+
+                {showAddEmailTemplate && (
+                  <Card title="New Email Template" style={{ marginBottom: 16 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+                      <div><label style={labelStyle}>Name *</label><input style={inputStyle} value={newEmailTpl.name} onChange={e => setNewEmailTpl(p => ({ ...p, name: e.target.value }))} autoFocus /></div>
+                      <div><label style={labelStyle}>Email Type</label><select style={{ ...inputStyle, cursor: 'pointer' }} value={newEmailTpl.email_type} onChange={e => setNewEmailTpl(p => ({ ...p, email_type: e.target.value }))}>
+                        {EMAIL_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}</select></div>
+                    </div>
+                    <div style={{ marginBottom: 10 }}><label style={labelStyle}>Description</label><textarea style={{ ...inputStyle, minHeight: 60, resize: 'vertical' }} value={newEmailTpl.description} onChange={e => setNewEmailTpl(p => ({ ...p, description: e.target.value }))} /></div>
+                    <div style={{ display: 'flex', gap: 6 }}><Button primary onClick={addEmailTemplate}>Save</Button><Button onClick={() => setShowAddEmailTemplate(false)}>Cancel</Button></div>
+                  </Card>
+                )}
+
+                {emailTemplatesAdmin.length === 0 ? (
+                  <Card><div style={{ textAlign: 'center', padding: 32, color: T.textMuted }}>No email templates. Create one to enable AI-generated emails.</div></Card>
+                ) : emailTemplatesAdmin.map(tpl => {
+                  const isExpanded = expandedEmailTemplate === tpl.id
+                  return (
+                    <div key={tpl.id} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.radius, boxShadow: T.shadow, marginBottom: 12, overflow: 'hidden' }}>
+                      {/* Header */}
+                      <div style={{ padding: '12px 18px', background: T.surfaceAlt, borderBottom: isExpanded ? `1px solid ${T.border}` : 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+                        onClick={() => setExpandedEmailTemplate(isExpanded ? null : tpl.id)}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <span style={{ fontSize: 12, color: T.textMuted, transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}>{'\u25B6'}</span>
+                          <span style={{ fontSize: 14, fontWeight: 700, color: T.text }}>{tpl.name}</span>
+                          <Badge color={T.primary}>{(tpl.email_type || '').replace(/_/g, ' ')}</Badge>
+                          {tpl.recipient_type && <Badge color={T.textMuted}>{tpl.recipient_type}</Badge>}
+                        </div>
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }} onClick={e => e.stopPropagation()}>
+                          <div onClick={() => updateEmailTemplate(tpl.id, 'active', !tpl.active)} style={{ width: 36, height: 20, borderRadius: 10, cursor: 'pointer', background: tpl.active ? T.success : T.borderLight, position: 'relative', transition: 'background 0.2s' }}>
+                            <div style={{ width: 16, height: 16, borderRadius: '50%', background: '#fff', position: 'absolute', top: 2, left: tpl.active ? 18 : 2, boxShadow: T.shadow, transition: 'left 0.2s' }} />
+                          </div>
+                          <button onClick={() => deleteEmailTemplate(tpl.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, fontSize: 14 }}
+                            onMouseEnter={e => e.currentTarget.style.color = T.error} onMouseLeave={e => e.currentTarget.style.color = T.textMuted}>&times;</button>
+                        </div>
+                      </div>
+
+                      {/* Expanded editor */}
+                      {isExpanded && (
+                        <div style={{ padding: 18 }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                            <div><label style={labelStyle}>Name</label><input style={inputStyle} defaultValue={tpl.name} onBlur={e => updateEmailTemplate(tpl.id, 'name', e.target.value)} /></div>
+                            <div><label style={labelStyle}>Email Type</label><select style={{ ...inputStyle, cursor: 'pointer' }} defaultValue={tpl.email_type} onChange={e => updateEmailTemplate(tpl.id, 'email_type', e.target.value)}>
+                              {EMAIL_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}</select></div>
+                          </div>
+                          <div style={{ marginBottom: 12 }}><label style={labelStyle}>Description</label><textarea style={{ ...inputStyle, minHeight: 50, resize: 'vertical' }} defaultValue={tpl.description || ''} onBlur={e => updateEmailTemplate(tpl.id, 'description', e.target.value)} /></div>
+                          <div style={{ marginBottom: 12 }}>
+                            <label style={labelStyle}>Subject Template</label>
+                            <input style={inputStyle} defaultValue={tpl.subject_template || ''} onBlur={e => updateEmailTemplate(tpl.id, 'subject_template', e.target.value)} placeholder="e.g. {{company_name}} - Follow Up from {{call_type}}" />
+                            <div style={{ fontSize: 10, color: T.textMuted, marginTop: 4 }}>Tokens: {'{{company_name}} {{deal_value}} {{forecast_category}} {{call_type}} {{call_date}}'}</div>
+                          </div>
+                          <div style={{ marginBottom: 12 }}><label style={labelStyle}>Body Template (tell AI what to generate)</label><textarea style={{ ...inputStyle, fontFamily: T.mono, fontSize: 12, minHeight: 150, resize: 'vertical' }} defaultValue={tpl.body_template || ''} onBlur={e => updateEmailTemplate(tpl.id, 'body_template', e.target.value)} placeholder="Describe the email content, structure, and key points to include..." /></div>
+                          <div style={{ marginBottom: 12 }}><label style={labelStyle}>AI Instructions (tone, format, rules)</label><textarea style={{ ...inputStyle, fontSize: 12, minHeight: 80, resize: 'vertical' }} defaultValue={tpl.ai_instructions || ''} onBlur={e => updateEmailTemplate(tpl.id, 'ai_instructions', e.target.value)} placeholder="e.g. Professional tone, bullet points for action items, max 300 words" /></div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
+                            <div><label style={labelStyle}>Recipient Type</label><select style={{ ...inputStyle, cursor: 'pointer' }} defaultValue={tpl.recipient_type || 'internal'} onChange={e => updateEmailTemplate(tpl.id, 'recipient_type', e.target.value)}>
+                              {RECIPIENT_TYPES.map(r => <option key={r} value={r}>{r}</option>)}</select></div>
+                            <div><label style={labelStyle}>Default Recipients</label><input style={inputStyle} defaultValue={tpl.default_recipients || ''} onBlur={e => updateEmailTemplate(tpl.id, 'default_recipients', e.target.value)} placeholder="email@example.com" /></div>
+                            <div><label style={labelStyle}>Sort Order</label><input type="number" style={inputStyle} defaultValue={tpl.sort_order || 0} onBlur={e => updateEmailTemplate(tpl.id, 'sort_order', Number(e.target.value) || 0)} /></div>
+                          </div>
+                          <div style={{ marginBottom: 8 }}><label style={labelStyle}>Context to Include</label></div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
+                            {CONTEXT_FIELDS.map(cf => {
+                              const current = tpl.context_include || []
+                              const checked = Array.isArray(current) ? current.includes(cf) : false
+                              return (
+                                <label key={cf} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: T.text, cursor: 'pointer' }}>
+                                  <input type="checkbox" checked={checked} onChange={() => {
+                                    const newVal = checked ? current.filter(x => x !== cf) : [...current, cf]
+                                    updateEmailTemplate(tpl.id, 'context_include', newVal)
+                                  }} />
+                                  {cf.replace(/_/g, ' ')}
+                                </label>
+                              )
+                            })}
+                          </div>
                         </div>
                       )}
                     </div>
