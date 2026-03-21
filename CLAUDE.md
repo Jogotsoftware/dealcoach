@@ -39,9 +39,10 @@ DealCoach is an AI-powered sales coaching and deal intelligence platform for ent
 | /deal/:dealId/quote/new | QuoteEditor.jsx | CPQ quote builder |
 | /deal/:dealId/quote/:quoteId | QuoteEditor.jsx | Edit existing quote |
 | /deal/:dealId/proposal | ProposalBuilder.jsx | Proposal builder with insights |
+| /deal/:dealId/call/:conversationId | CallDetail.jsx | Call transcript + AI analysis + coaching |
 | /msp/shared/:token | MSPClientPortal.jsx | Public client-facing MSP |
-| /coach | CoachAdmin.jsx | Coach config, prompts, docs, scoring |
-| /settings | Settings.jsx | Profile, quota, preferences |
+| /coach | CoachAdmin.jsx | Coach config, prompts, docs, scoring, MSP templates |
+| /settings | Settings.jsx | Profile, quota, coach selection, my team, preferences |
 
 ### AI Processing Flow (Make.com)
 Each call type has its own Make.com webhook URL configured in `.env`:
@@ -75,13 +76,28 @@ The webhook payload (`src/lib/webhooks.js`) includes:
 
 **Tasks**: tasks, categories, tags, task_tags
 
-**MSP**: msp_stages, msp_milestones, msp_resources, msp_shared_links, msp_custom_steps, msp_predefined_steps, msp_customer_portals
+**MSP**: msp_stages, msp_milestones, msp_resources, msp_shared_links, msp_custom_steps, msp_predefined_steps, msp_customer_portals, msp_templates, msp_template_stages, msp_template_milestones
 
 **CPQ/Proposals**: products, quotes, quote_line_items, payment_schedules, quote_tco_breakdown, quote_favorites, quote_favorite_items, proposal_documents, proposal_insights, proposal_shares, proposal_settings, project_dates
 
 **Team/Quota**: user_team_members, deal_team_contacts, rep_quotas
 
-**AI/History**: ai_response_log, next_steps_history
+**AI/History**: ai_response_log, next_steps_history, call_analyses, deal_risks, deal_pain_points, rep_quota_months, rep_scoring_configs
+
+**Modules/Access**: modules, user_module_access
+
+### Roles & Permissions
+- `profiles.role`: system_admin, admin, manager, rep
+- Coach Admin (/coach) is admin-only
+- All reps can select any active coach from Settings
+
+### Key Features
+- **Call History**: DealDetail Overview shows call progression with AI scores, links to CallDetail page
+- **Editable Fields**: All deal_analysis, deals, company_profile, contacts, and competitors are inline-editable
+- **MSP Templates**: Admins create templates in Coach Admin; reps apply templates to auto-populate MSP stages/milestones
+- **My Team Contacts**: Settings page allows reps to manage their SC/partner team; members can be assigned to deals
+- **Coach Selection**: Reps choose their active coach in Settings (profiles.active_coach_id)
+- **Closed Revenue Adjustment**: Reps can manually adjust closed_amount per month in quota table
 
 ### Key Auto-Triggers
 - `deals_create_related`: AFTER INSERT on deals → auto-creates company_profile + deal_analysis (all "Unknown")

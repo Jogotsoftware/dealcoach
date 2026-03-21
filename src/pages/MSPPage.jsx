@@ -39,6 +39,11 @@ export default function MSPPage() {
   const [showAddResource, setShowAddResource] = useState(false)
   const [newResource, setNewResource] = useState({ resource_name: '', resource_type: 'document', resource_url: '', description: '' })
 
+  // MSP Templates
+  const [templates, setTemplates] = useState([])
+  const [selectedTemplate, setSelectedTemplate] = useState('')
+  const [applyingTemplate, setApplyingTemplate] = useState(false)
+
   useEffect(() => { loadData() }, [dealId])
 
   async function loadData() {
@@ -56,10 +61,70 @@ export default function MSPPage() {
       setMilestones(msRes.data || [])
       setResources(resRes.data || [])
       setSharedLinks(linksRes.data || [])
+
+      // Load MSP templates if no stages yet
+      if (!stagesRes.data?.length) {
+        const { data: tpls } = await supabase.from('msp_templates').select('*').order('is_default', { ascending: false })
+        setTemplates(tpls || [])
+        const defaultTpl = (tpls || []).find(t => t.is_default)
+        if (defaultTpl) setSelectedTemplate(defaultTpl.id)
+      }
     } catch (err) {
       console.error('Error loading MSP:', err)
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function applyTemplate() {
+    if (!selectedTemplate || !deal?.target_close_date) return
+    setApplyingTemplate(true)
+    try {
+      const [tplStagesRes, tplMilestonesRes] = await Promise.all([
+        supabase.from('msp_template_stages').select('*').eq('template_id', selectedTemplate).order('stage_order'),
+        supabase.from('msp_template_milestones').select('*').eq('template_id', selectedTemplate).order('milestone_order'),
+      ])
+      const tplStages = tplStagesRes.data || []
+      const tplMilestones = tplMilestonesRes.data || []
+
+      const closeDate = new Date(deal.target_close_date + 'T00:00:00')
+
+      // Calculate stage dates working backwards from close date
+      let totalDays = tplStages.reduce((s, st) => s + (st.default_duration_days || 14), 0)
+      let currentDate = new Date(closeDate)
+      currentDate.setDate(currentDate.getDate() - totalDays)
+
+      for (const tplStage of tplStages) {
+        const startDate = new Date(currentDate)
+        const duration = tplStage.default_duration_days || 14
+        const endDate = new Date(startDate)
+        endDate.setDate(endDate.getDate() + duration)
+
+        const { data: insertedStage } = await supabase.from('msp_stages').insert({
+          deal_id: dealId, stage_name: tplStage.stage_name, stage_order: tplStage.stage_order,
+          start_date: startDate.toISOString().split('T')[0], notes: tplStage.notes || null,
+        }).select().single()
+
+        if (insertedStage) {
+          const stageMilestones = tplMilestones.filter(m => m.template_stage_id === tplStage.id)
+          for (const tplMs of stageMilestones) {
+            const dueDate = new Date(startDate)
+            dueDate.setDate(dueDate.getDate() + (tplMs.default_days_offset || 0))
+            await supabase.from('msp_milestones').insert({
+              deal_id: dealId, msp_stage_id: insertedStage.id, milestone_name: tplMs.milestone_name,
+              milestone_order: tplMs.milestone_order, due_date: dueDate.toISOString().split('T')[0],
+              status: 'pending',
+            })
+          }
+        }
+        currentDate = endDate
+      }
+
+      loadData()
+    } catch (err) {
+      console.error('Error applying template:', err)
+    } finally {
+      setApplyingTemplate(false)
     }
   }
 
@@ -248,10 +313,28 @@ export default function MSPPage() {
             )}
 
             {stagesWithMs.length === 0 ? (
-              <EmptyState
-                message="No MSP stages yet. Create your first stage to start building the timeline."
-                action={<Button primary onClick={() => setShowAddStage(true)} style={{ marginTop: 8 }}>Create First Stage</Button>}
-              />
+              <Card>
+                <div style={{ textAlign: 'center', padding: 32 }}>
+                  <div style={{ fontSize: 14, color: T.textMuted, marginBottom: 16 }}>No MSP stages yet. Apply a template or create stages manually.</div>
+                  {templates.length > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'center', gap: 8, alignItems: 'center', marginBottom: 12 }}>
+                      {templates.length > 1 && (
+                        <select style={{ ...inputStyle, width: 'auto', padding: '8px 12px', cursor: 'pointer' }}
+                          value={selectedTemplate} onChange={e => setSelectedTemplate(e.target.value)}>
+                          {templates.map(t => <option key={t.id} value={t.id}>{t.name}{t.is_default ? ' (Default)' : ''}</option>)}
+                        </select>
+                      )}
+                      <Button primary onClick={applyTemplate} disabled={applyingTemplate || !deal?.target_close_date}>
+                        {applyingTemplate ? 'Applying...' : 'Apply Template'}
+                      </Button>
+                    </div>
+                  )}
+                  {!deal?.target_close_date && templates.length > 0 && (
+                    <div style={{ fontSize: 11, color: T.warning, marginBottom: 8 }}>Set a target close date on the deal to use templates (dates are calculated from close date).</div>
+                  )}
+                  <Button onClick={() => setShowAddStage(true)}>Create Stage Manually</Button>
+                </div>
+              </Card>
             ) : (
               <div style={{ position: 'relative', paddingLeft: 40 }}>
                 {/* Vertical line */}

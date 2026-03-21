@@ -121,6 +121,15 @@ export default function DealDetail() {
   const [events, setEvents] = useState([])
   const [catalysts, setCatalysts] = useState([])
   const [painPoints, setPainPoints] = useState([])
+  const [callScores, setCallScores] = useState({})
+
+  // Contact editing
+  const [editingContact, setEditingContact] = useState(null)
+  const [editContactData, setEditContactData] = useState({})
+
+  // Competitor editing
+  const [editingCompetitor, setEditingCompetitor] = useState(null)
+  const [editCompData, setEditCompData] = useState({})
 
   // Form toggles
   const [showAddRisk, setShowAddRisk] = useState(false)
@@ -175,10 +184,37 @@ export default function DealDetail() {
       setEvents(eventsRes.data || [])
       setCatalysts(catalystsRes.data || [])
       setPainPoints(painsRes.data || [])
+
+      // Load call scores for each conversation
+      const convIds = (convosRes.data || []).map(c => c.id)
+      if (convIds.length > 0) {
+        const { data: scores } = await supabase.from('call_analyses').select('conversation_id, overall_score').in('conversation_id', convIds)
+        if (scores) {
+          const map = {}
+          scores.forEach(s => { map[s.conversation_id] = s.overall_score })
+          setCallScores(map)
+        }
+      }
     } catch (err) {
       console.error('Error loading deal:', err)
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function saveContact(contactId) {
+    const { error } = await supabase.from('contacts').update(editContactData).eq('id', contactId)
+    if (!error) {
+      setContacts(prev => prev.map(c => c.id === contactId ? { ...c, ...editContactData } : c))
+      setEditingContact(null)
+    }
+  }
+
+  async function saveCompetitor(compId) {
+    const { error } = await supabase.from('deal_competitors').update(editCompData).eq('id', compId)
+    if (!error) {
+      setCompetitors(prev => prev.map(c => c.id === compId ? { ...c, ...editCompData } : c))
+      setEditingCompetitor(null)
     }
   }
 
@@ -298,6 +334,58 @@ export default function DealDetail() {
         {/* ===== OVERVIEW TAB ===== */}
         {tab === 'overview' && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+
+            {/* CALL HISTORY & ANALYSIS */}
+            <Card title={`Call History & Analysis (${conversations.length})`} style={{ gridColumn: '1 / -1' }}>
+              {/* Pre-QDC Research row */}
+              {companyProfile && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px',
+                  background: T.primaryLight, borderRadius: 6, marginBottom: 6, border: `1px solid ${T.primaryBorder}`,
+                }}>
+                  <Badge color={T.primary}>Research</Badge>
+                  <div style={{ flex: 1, fontSize: 13, fontWeight: 600, color: T.text }}>Pre-QDC Research</div>
+                  {companyProfile.researched_at && (
+                    <span style={{ fontSize: 11, color: T.textSecondary }}>{formatDateLong(companyProfile.researched_at)}</span>
+                  )}
+                  <span style={{ fontSize: 12, color: T.textSecondary }}>
+                    {companyProfile.industry || 'No data yet'}
+                  </span>
+                </div>
+              )}
+              {conversations.length === 0 ? (
+                <div style={{ color: T.textMuted, fontSize: 13, padding: '8px 0' }}>No calls yet. Upload a transcript to get started.</div>
+              ) : conversations.map(cv => {
+                const score = callScores[cv.id]
+                const scoreColor = score >= 80 ? T.success : score >= 60 ? T.primary : score >= 40 ? T.warning : T.error
+                return (
+                  <div key={cv.id} onClick={() => navigate(`/deal/${id}/call/${cv.id}`)} style={{
+                    display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px',
+                    background: T.surfaceAlt, borderRadius: 6, marginBottom: 6,
+                    border: `1px solid ${T.borderLight}`, cursor: 'pointer', transition: 'border-color 0.15s',
+                  }}
+                    onMouseEnter={e => e.currentTarget.style.borderColor = T.primary}
+                    onMouseLeave={e => e.currentTarget.style.borderColor = T.borderLight}
+                  >
+                    <Badge color={T.primary}>{cv.call_type}</Badge>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{cv.title || 'Untitled'}</div>
+                      {cv.ai_summary && (
+                        <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {cv.ai_summary.substring(0, 100)}{cv.ai_summary.length > 100 ? '...' : ''}
+                        </div>
+                      )}
+                    </div>
+                    <span style={{ fontSize: 11, color: T.textSecondary, whiteSpace: 'nowrap' }}>{formatDate(cv.call_date)}</span>
+                    {cv.processed && <Badge color={T.success}>Processed</Badge>}
+                    {cv.task_count > 0 && <Badge color={T.textMuted}>{cv.task_count} tasks</Badge>}
+                    {score != null && (
+                      <span style={{ fontSize: 14, fontWeight: 700, color: scoreColor, fontFeatureSettings: '"tnum"', minWidth: 24, textAlign: 'right' }}>{score}</span>
+                    )}
+                  </div>
+                )
+              })}
+            </Card>
 
             {/* WHY THIS DEAL? */}
             <Card title="Why This Deal?" style={{ gridColumn: '1 / -1' }}
@@ -590,10 +678,30 @@ export default function DealDetail() {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                   {competitors.map(c => (
                     <div key={c.id} style={{ padding: 12, background: T.surfaceAlt, borderRadius: 6, border: `1px solid ${T.borderLight}` }}>
-                      <div style={{ fontSize: 14, fontWeight: 600, color: T.text, marginBottom: 6 }}>{c.competitor_name}</div>
-                      <Field label="Strengths" value={c.strengths} />
-                      <Field label="Weaknesses" value={c.weaknesses} />
-                      <Field label="Strategy" value={c.strategy} />
+                      {editingCompetitor === c.id ? (
+                        <div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            <div><label style={labelStyle}>Name</label><input style={inputStyle} value={editCompData.competitor_name || ''} onChange={e => setEditCompData(p => ({ ...p, competitor_name: e.target.value }))} /></div>
+                            <div><label style={labelStyle}>Strengths</label><textarea style={{ ...inputStyle, minHeight: 50, resize: 'vertical' }} value={editCompData.strengths || ''} onChange={e => setEditCompData(p => ({ ...p, strengths: e.target.value }))} /></div>
+                            <div><label style={labelStyle}>Weaknesses</label><textarea style={{ ...inputStyle, minHeight: 50, resize: 'vertical' }} value={editCompData.weaknesses || ''} onChange={e => setEditCompData(p => ({ ...p, weaknesses: e.target.value }))} /></div>
+                            <div><label style={labelStyle}>Strategy</label><textarea style={{ ...inputStyle, minHeight: 50, resize: 'vertical' }} value={editCompData.strategy || ''} onChange={e => setEditCompData(p => ({ ...p, strategy: e.target.value }))} /></div>
+                          </div>
+                          <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                            <Button primary onClick={() => saveCompetitor(c.id)}>Save</Button>
+                            <Button onClick={() => setEditingCompetitor(null)}>Cancel</Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                            <div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>{c.competitor_name}</div>
+                            <Button style={{ padding: '3px 8px', fontSize: 10 }} onClick={() => { setEditingCompetitor(c.id); setEditCompData({ ...c }) }}>Edit</Button>
+                          </div>
+                          <Field label="Strengths" value={c.strengths} />
+                          <Field label="Weaknesses" value={c.weaknesses} />
+                          <Field label="Strategy" value={c.strategy} />
+                        </>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -643,24 +751,57 @@ export default function DealDetail() {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                   {contacts.map(c => (
                     <Card key={c.id}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+                      {editingContact === c.id ? (
                         <div>
-                          <div style={{ fontSize: 15, fontWeight: 700, color: T.text }}>{c.name}</div>
-                          <div style={{ fontSize: 12, color: T.textSecondary }}>{c.title}{c.department ? ` - ${c.department}` : ''}</div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+                            <div><label style={labelStyle}>Name</label><input style={inputStyle} value={editContactData.name || ''} onChange={e => setEditContactData(p => ({ ...p, name: e.target.value }))} /></div>
+                            <div><label style={labelStyle}>Title</label><input style={inputStyle} value={editContactData.title || ''} onChange={e => setEditContactData(p => ({ ...p, title: e.target.value }))} /></div>
+                            <div><label style={labelStyle}>Email</label><input style={inputStyle} value={editContactData.email || ''} onChange={e => setEditContactData(p => ({ ...p, email: e.target.value }))} /></div>
+                            <div><label style={labelStyle}>Department</label><input style={inputStyle} value={editContactData.department || ''} onChange={e => setEditContactData(p => ({ ...p, department: e.target.value }))} /></div>
+                            <div><label style={labelStyle}>Role in Deal</label><input style={inputStyle} value={editContactData.role_in_deal || ''} onChange={e => setEditContactData(p => ({ ...p, role_in_deal: e.target.value }))} /></div>
+                            <div><label style={labelStyle}>Priorities</label><input style={inputStyle} value={editContactData.priorities || ''} onChange={e => setEditContactData(p => ({ ...p, priorities: e.target.value }))} /></div>
+                            <div><label style={labelStyle}>Communication Style</label><input style={inputStyle} value={editContactData.communication_style || ''} onChange={e => setEditContactData(p => ({ ...p, communication_style: e.target.value }))} /></div>
+                            <div><label style={labelStyle}>Influence</label>
+                              <select style={{ ...inputStyle, cursor: 'pointer' }} value={editContactData.influence_level || ''} onChange={e => setEditContactData(p => ({ ...p, influence_level: e.target.value }))}>
+                                <option value="">Unknown</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
+                              </select></div>
+                          </div>
+                          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                            {['is_champion', 'is_economic_buyer', 'is_signer'].map(flag => (
+                              <label key={flag} style={{ fontSize: 12, color: T.textSecondary, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <input type="checkbox" checked={editContactData[flag] || false} onChange={e => setEditContactData(p => ({ ...p, [flag]: e.target.checked }))} />
+                                {flag.replace('is_', '').replace('_', ' ')}
+                              </label>
+                            ))}
+                          </div>
+                          <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+                            <Button primary onClick={() => saveContact(c.id)}>Save</Button>
+                            <Button onClick={() => setEditingContact(null)}>Cancel</Button>
+                          </div>
                         </div>
-                        <div style={{ display: 'flex', gap: 4 }}>
-                          {c.is_champion && <Badge color={T.success}>Champion</Badge>}
-                          {c.is_economic_buyer && <Badge color={T.primary}>EB</Badge>}
-                          {c.is_signer && <Badge color={T.warning}>Signer</Badge>}
-                          <Badge color={c.influence_level === 'high' ? T.error : c.influence_level === 'medium' ? T.warning : T.textMuted}>
-                            {c.influence_level || 'Unknown'}
-                          </Badge>
-                        </div>
-                      </div>
-                      <Field label="Role in Deal" value={c.role_in_deal} />
-                      <Field label="Priorities" value={c.priorities} />
-                      <Field label="Communication Style" value={c.communication_style} />
-                      {c.email && <div style={{ fontSize: 12, color: T.primary }}>{c.email}</div>}
+                      ) : (
+                        <>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+                            <div>
+                              <div style={{ fontSize: 15, fontWeight: 700, color: T.text }}>{c.name}</div>
+                              <div style={{ fontSize: 12, color: T.textSecondary }}>{c.title}{c.department ? ` - ${c.department}` : ''}</div>
+                            </div>
+                            <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                              {c.is_champion && <Badge color={T.success}>Champion</Badge>}
+                              {c.is_economic_buyer && <Badge color={T.primary}>EB</Badge>}
+                              {c.is_signer && <Badge color={T.warning}>Signer</Badge>}
+                              <Badge color={c.influence_level === 'high' ? T.error : c.influence_level === 'medium' ? T.warning : T.textMuted}>
+                                {c.influence_level || 'Unknown'}
+                              </Badge>
+                              <Button style={{ padding: '3px 8px', fontSize: 10 }} onClick={() => { setEditingContact(c.id); setEditContactData({ ...c }) }}>Edit</Button>
+                            </div>
+                          </div>
+                          <Field label="Role in Deal" value={c.role_in_deal} />
+                          <Field label="Priorities" value={c.priorities} />
+                          <Field label="Communication Style" value={c.communication_style} />
+                          {c.email && <div style={{ fontSize: 12, color: T.primary }}>{c.email}</div>}
+                        </>
+                      )}
                     </Card>
                   ))}
                 </div>
