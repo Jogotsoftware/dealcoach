@@ -230,7 +230,7 @@ export default function CoachAdmin() {
         <TabBar tabs={tabs} active={tab} onChange={setTab} />
       </div>
 
-      <div style={{ padding: 24, maxWidth: 1100 }}>
+      <div style={{ padding: '16px 24px' }}>
         {!coach ? (
           <Card><div style={{ textAlign: 'center', padding: 32, color: T.textMuted }}>No active coach configured.</div></Card>
         ) : (

@@ -609,7 +609,7 @@ export default function QuoteEditor() {
         </div>
       </div>
 
-      <div style={{ padding: 24, maxWidth: 1200, margin: '0 auto' }}>
+      <div style={{ padding: '16px 24px' }}>
 
         {/* ══════════ SECTION 1: QUOTE DETAILS ══════════ */}
         <Section title="Quote Details" badge={<Badge color={statusColors[status]}>{statusLabels[status]}</Badge>}>

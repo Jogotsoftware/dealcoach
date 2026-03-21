@@ -285,7 +285,7 @@ export default function ProposalBuilder() {
         <TabBar tabs={tabs} active={tab} onChange={setTab} />
       </div>
 
-      <div style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
+      <div style={{ padding: '16px 24px' }}>
 
         {/* ══════════ BUILDER TAB ══════════ */}
         {tab === 'builder' && (

@@ -131,7 +131,7 @@ export default function CallDetail() {
       </div>
 
       {/* Content area - single column full width */}
-      <div style={{ padding: 24, maxWidth: 1200, margin: '0 auto' }}>
+      <div style={{ padding: '16px 24px' }}>
 
         {/* SECTION 1: AI Summary */}
         <div style={sectionStyle}>AI Summary</div>

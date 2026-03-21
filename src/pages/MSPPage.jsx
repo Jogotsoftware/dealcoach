@@ -228,7 +228,7 @@ export default function MSPPage() {
         <TabBar tabs={tabs} active={tab} onChange={setTab} />
       </div>
 
-      <div style={{ padding: 24, maxWidth: 1100 }}>
+      <div style={{ padding: '16px 24px' }}>
 
         {/* TIMELINE TAB */}
         {tab === 'timeline' && (
