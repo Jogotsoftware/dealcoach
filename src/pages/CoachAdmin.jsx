@@ -23,7 +23,6 @@ export default function CoachAdmin() {
   const [repScoringConfigs, setRepScoringConfigs] = useState([])
   const [mspTemplates, setMspTemplates] = useState([])
   const [templateStages, setTemplateStages] = useState([])
-  const [templateMilestones, setTemplateMilestones] = useState([])
 
   // Editing states
   const [editingCoach, setEditingCoach] = useState(false)
@@ -41,10 +40,8 @@ export default function CoachAdmin() {
   const [showAddTemplate, setShowAddTemplate] = useState(false)
   const [newTemplate, setNewTemplate] = useState({ name: '', description: '' })
   const [showAddTemplateStage, setShowAddTemplateStage] = useState(null)
-  const [newTemplateStage, setNewTemplateStage] = useState({ stage_name: '', default_duration_days: 14 })
+  const [newTemplateStage, setNewTemplateStage] = useState({ stage_name: '', due_date_offset: 0 })
   const [expandedTemplate, setExpandedTemplate] = useState(null)
-  const [showAddMilestone, setShowAddMilestone] = useState(null)
-  const [newMilestone, setNewMilestone] = useState({ milestone_name: '', default_days_offset: 0 })
 
   useEffect(() => { loadCoach() }, [profile])
 
@@ -76,12 +73,8 @@ export default function CoachAdmin() {
         // Load template stages/milestones
         const tplIds = (templatesRes.data || []).map(t => t.id)
         if (tplIds.length > 0) {
-          const [stagesRes, msRes] = await Promise.all([
-            supabase.from('msp_template_stages').select('*').in('template_id', tplIds).order('stage_order'),
-            supabase.from('msp_template_milestones').select('*').in('template_id', tplIds).order('milestone_order'),
-          ])
-          setTemplateStages(stagesRes.data || [])
-          setTemplateMilestones(msRes.data || [])
+          const { data: stagesData } = await supabase.from('msp_template_stages').select('*').in('template_id', tplIds).order('stage_order')
+          setTemplateStages(stagesData || [])
         }
       }
     } catch (err) {
@@ -165,9 +158,10 @@ export default function CoachAdmin() {
     const nextOrder = existing.length > 0 ? Math.max(...existing.map(s => s.stage_order)) + 1 : 1
     const { data, error } = await supabase.from('msp_template_stages').insert({
       template_id: templateId, stage_name: newTemplateStage.stage_name,
-      stage_order: nextOrder, default_duration_days: Number(newTemplateStage.default_duration_days) || 14,
+      stage_order: nextOrder, due_date_offset: Number(newTemplateStage.due_date_offset) || 0,
+      default_duration_days: Number(newTemplateStage.due_date_offset) || 0,
     }).select().single()
-    if (!error && data) { setTemplateStages(prev => [...prev, data]); setShowAddTemplateStage(null); setNewTemplateStage({ stage_name: '', default_duration_days: 14 }) }
+    if (!error && data) { setTemplateStages(prev => [...prev, data]); setShowAddTemplateStage(null); setNewTemplateStage({ stage_name: '', due_date_offset: 0 }) }
   }
 
   async function updateTemplateStage(id, field, value) {
@@ -176,43 +170,17 @@ export default function CoachAdmin() {
   }
 
   async function deleteTemplateStage(id) {
-    if (!window.confirm('Delete this stage and its milestones?')) return
-    await supabase.from('msp_template_milestones').delete().eq('template_stage_id', id)
+    if (!window.confirm('Delete this step?')) return
     await supabase.from('msp_template_stages').delete().eq('id', id)
     setTemplateStages(prev => prev.filter(s => s.id !== id))
-    setTemplateMilestones(prev => prev.filter(m => m.template_stage_id !== id))
-  }
-
-  async function addTemplateMilestone(stageId) {
-    if (!newMilestone.milestone_name.trim()) return
-    const existing = templateMilestones.filter(m => m.template_stage_id === stageId)
-    const nextOrder = existing.length > 0 ? Math.max(...existing.map(m => m.milestone_order)) + 1 : 1
-    const { data, error } = await supabase.from('msp_template_milestones').insert({
-      template_stage_id: stageId, milestone_name: newMilestone.milestone_name,
-      milestone_order: nextOrder, default_days_offset: Number(newMilestone.default_days_offset) || 0,
-    }).select().single()
-    if (!error && data) { setTemplateMilestones(prev => [...prev, data]); setShowAddMilestone(null); setNewMilestone({ milestone_name: '', default_days_offset: 0 }) }
-  }
-
-  async function updateTemplateMilestone(id, field, value) {
-    await supabase.from('msp_template_milestones').update({ [field]: value }).eq('id', id)
-    setTemplateMilestones(prev => prev.map(m => m.id === id ? { ...m, [field]: value } : m))
-  }
-
-  async function deleteTemplateMilestone(id) {
-    await supabase.from('msp_template_milestones').delete().eq('id', id)
-    setTemplateMilestones(prev => prev.filter(m => m.id !== id))
   }
 
   async function deleteTemplate(id) {
-    if (!window.confirm('Delete this template and all its stages?')) return
-    const stageIds = templateStages.filter(s => s.template_id === id).map(s => s.id)
-    if (stageIds.length) await supabase.from('msp_template_milestones').delete().in('template_stage_id', stageIds)
+    if (!window.confirm('Delete this template and all its steps?')) return
     await supabase.from('msp_template_stages').delete().eq('template_id', id)
     await supabase.from('msp_templates').delete().eq('id', id)
     setMspTemplates(prev => prev.filter(t => t.id !== id))
     setTemplateStages(prev => prev.filter(s => s.template_id !== id))
-    setTemplateMilestones(prev => prev.filter(m => !stageIds.includes(m.template_stage_id)))
   }
 
   if (loading) return <Spinner />
@@ -530,8 +498,8 @@ export default function CoachAdmin() {
                           {/* Add stage form */}
                           {showAddTemplateStage === tpl.id && (
                             <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', padding: 12, background: T.surfaceAlt, borderRadius: 6, marginBottom: 12, border: `1px solid ${T.borderLight}` }}>
-                              <div style={{ flex: 1 }}><label style={labelStyle}>Stage Name *</label><input style={inputStyle} value={newTemplateStage.stage_name} onChange={e => setNewTemplateStage(p => ({ ...p, stage_name: e.target.value }))} autoFocus /></div>
-                              <div style={{ width: 120 }}><label style={labelStyle}>Duration (days)</label><input type="number" style={inputStyle} value={newTemplateStage.default_duration_days} onChange={e => setNewTemplateStage(p => ({ ...p, default_duration_days: e.target.value }))} /></div>
+                              <div style={{ flex: 1 }}><label style={labelStyle}>Step Name *</label><input style={inputStyle} value={newTemplateStage.stage_name} onChange={e => setNewTemplateStage(p => ({ ...p, stage_name: e.target.value }))} autoFocus /></div>
+                              <div style={{ width: 140 }}><label style={labelStyle}>Days offset from start</label><input type="number" style={inputStyle} value={newTemplateStage.due_date_offset} onChange={e => setNewTemplateStage(p => ({ ...p, due_date_offset: e.target.value }))} /></div>
                               <Button primary onClick={() => addTemplateStage(tpl.id)}>Add</Button>
                               <Button onClick={() => setShowAddTemplateStage(null)}>Cancel</Button>
                             </div>
@@ -539,67 +507,24 @@ export default function CoachAdmin() {
 
                           {tplStages.length === 0 ? (
                             <div style={{ color: T.textMuted, fontSize: 13, textAlign: 'center', padding: 16 }}>No stages. Click "+ Stage" to add one.</div>
-                          ) : tplStages.map((s, si) => {
-                            const stageMilestones = templateMilestones.filter(m => m.template_stage_id === s.id)
-                            return (
-                              <div key={s.id} style={{ marginBottom: 12 }}>
-                                {/* Stage row */}
-                                <div style={{
-                                  display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
-                                  background: T.surfaceAlt, borderRadius: 6, border: `1px solid ${T.borderLight}`,
-                                }}>
-                                  <span style={{ width: 24, height: 24, borderRadius: '50%', background: T.primary, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{si + 1}</span>
-                                  <input style={{ ...inputStyle, flex: 1, padding: '4px 8px', fontSize: 13, fontWeight: 600 }}
-                                    defaultValue={s.stage_name} onBlur={e => updateTemplateStage(s.id, 'stage_name', e.target.value)} />
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                                    <input type="number" style={{ ...inputStyle, width: 60, padding: '4px 6px', fontSize: 12, textAlign: 'center' }}
-                                      defaultValue={s.default_duration_days} onBlur={e => updateTemplateStage(s.id, 'default_duration_days', Number(e.target.value) || 14)} />
-                                    <span style={{ fontSize: 11, color: T.textMuted }}>days</span>
-                                  </div>
-                                  <Button style={{ padding: '3px 8px', fontSize: 10 }}
-                                    onClick={() => { setShowAddMilestone(s.id); setNewMilestone({ milestone_name: '', default_days_offset: 0 }) }}>+ Milestone</Button>
-                                  <button onClick={() => deleteTemplateStage(s.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, fontSize: 14 }}
-                                    onMouseEnter={e => e.currentTarget.style.color = T.error} onMouseLeave={e => e.currentTarget.style.color = T.textMuted}>&#10005;</button>
+                          ) : tplStages.map((s, si) => (
+                              <div key={s.id} style={{
+                                display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
+                                background: T.surfaceAlt, borderRadius: 6, border: `1px solid ${T.borderLight}`, marginBottom: 4,
+                              }}>
+                                <span style={{ width: 24, height: 24, borderRadius: '50%', background: T.primary, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{si + 1}</span>
+                                <input style={{ ...inputStyle, flex: 1, padding: '4px 8px', fontSize: 13, fontWeight: 600 }}
+                                  defaultValue={s.stage_name} onBlur={e => updateTemplateStage(s.id, 'stage_name', e.target.value)} />
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                  <input type="number" style={{ ...inputStyle, width: 60, padding: '4px 6px', fontSize: 12, textAlign: 'center' }}
+                                    defaultValue={s.due_date_offset || s.default_duration_days || 0}
+                                    onBlur={e => { updateTemplateStage(s.id, 'due_date_offset', Number(e.target.value) || 0); updateTemplateStage(s.id, 'default_duration_days', Number(e.target.value) || 0) }} />
+                                  <span style={{ fontSize: 11, color: T.textMuted }}>days offset</span>
                                 </div>
-
-                                {/* Add milestone form */}
-                                {showAddMilestone === s.id && (
-                                  <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', padding: 10, marginLeft: 34, marginTop: 4, background: '#fff', borderRadius: 6, border: `1px dashed ${T.borderLight}` }}>
-                                    <div style={{ flex: 1 }}><label style={labelStyle}>Milestone *</label><input style={inputStyle} value={newMilestone.milestone_name}
-                                      onChange={e => setNewMilestone(p => ({ ...p, milestone_name: e.target.value }))} autoFocus
-                                      onKeyDown={e => e.key === 'Enter' && addTemplateMilestone(s.id)} /></div>
-                                    <div style={{ width: 100 }}><label style={labelStyle}>Day offset</label><input type="number" style={inputStyle} value={newMilestone.default_days_offset}
-                                      onChange={e => setNewMilestone(p => ({ ...p, default_days_offset: e.target.value }))} /></div>
-                                    <Button primary onClick={() => addTemplateMilestone(s.id)} style={{ padding: '6px 12px', fontSize: 11 }}>Add</Button>
-                                    <Button onClick={() => setShowAddMilestone(null)} style={{ padding: '6px 12px', fontSize: 11 }}>Cancel</Button>
-                                  </div>
-                                )}
-
-                                {/* Milestones */}
-                                {stageMilestones.length > 0 && (
-                                  <div style={{ marginLeft: 34, marginTop: 4 }}>
-                                    {stageMilestones.map(ms => (
-                                      <div key={ms.id} style={{
-                                        display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px',
-                                        borderLeft: `2px solid ${T.borderLight}`, marginBottom: 2,
-                                      }}>
-                                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: T.textMuted, flexShrink: 0 }} />
-                                        <input style={{ ...inputStyle, flex: 1, padding: '3px 6px', fontSize: 12 }}
-                                          defaultValue={ms.milestone_name} onBlur={e => updateTemplateMilestone(ms.id, 'milestone_name', e.target.value)} />
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                                          <input type="number" style={{ ...inputStyle, width: 50, padding: '3px 4px', fontSize: 11, textAlign: 'center' }}
-                                            defaultValue={ms.default_days_offset} onBlur={e => updateTemplateMilestone(ms.id, 'default_days_offset', Number(e.target.value) || 0)} />
-                                          <span style={{ fontSize: 10, color: T.textMuted }}>d</span>
-                                        </div>
-                                        <button onClick={() => deleteTemplateMilestone(ms.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, fontSize: 12 }}
-                                          onMouseEnter={e => e.currentTarget.style.color = T.error} onMouseLeave={e => e.currentTarget.style.color = T.textMuted}>&#10005;</button>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
+                                <button onClick={() => deleteTemplateStage(s.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, fontSize: 14 }}
+                                  onMouseEnter={e => e.currentTarget.style.color = T.error} onMouseLeave={e => e.currentTarget.style.color = T.textMuted}>&#10005;</button>
                               </div>
-                            )
-                          })}
+                            ))}
                         </div>
                       )}
                     </div>

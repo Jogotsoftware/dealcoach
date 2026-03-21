@@ -60,9 +60,8 @@ function clean(value) {
  * 8. conversations (previous) — all prior call summaries + coaching notes
  * 9. tasks (open) — so AI doesn't create duplicates
  * 10. proposal_insights — existing insights to avoid duplication
- * 11. msp_stages — deal timeline status
- * 12. msp_milestones — milestone progress
- * 13. deal_scores — current scoring
+ * 11. msp_stages — deal timeline steps (flat list)
+ * 12. deal_scores — current scoring
  */
 export async function loadFullDealContext(dealId, excludeConversationId = null) {
   const queries = [
@@ -80,11 +79,8 @@ export async function loadFullDealContext(dealId, excludeConversationId = null) 
       .select('insight_type, primary_text, impact_text, speaker_name')
       .eq('deal_id', dealId),
     supabase.from('msp_stages')
-      .select('stage_name, stage_order, is_completed')
+      .select('stage_name, stage_order, is_completed, status, due_date, notes')
       .eq('deal_id', dealId).order('stage_order'),
-    supabase.from('msp_milestones')
-      .select('milestone_name, status, due_date, msp_stage_id')
-      .eq('deal_id', dealId).order('milestone_order'),
     supabase.from('deal_scores')
       .select('score_type, score, max_score, notes')
       .eq('deal_id', dealId),
@@ -104,7 +100,7 @@ export async function loadFullDealContext(dealId, excludeConversationId = null) 
   const [
     dealRes, analysisRes, companyRes, contactsRes, competitorsRes,
     eventsRes, catalystsRes, tasksRes, insightsRes,
-    stagesRes, milestonesRes, scoresRes, convosRes,
+    stagesRes, scoresRes, convosRes,
   ] = await Promise.all(queries)
 
   return {
@@ -118,7 +114,6 @@ export async function loadFullDealContext(dealId, excludeConversationId = null) 
     openTasks: tasksRes.data || [],
     insights: insightsRes.data || [],
     mspStages: stagesRes.data || [],
-    milestones: milestonesRes.data || [],
     scores: scoresRes.data || [],
     previousConversations: convosRes.data || [],
   }
@@ -159,7 +154,7 @@ export async function loadCoachContext(coachId, callType) {
  */
 export function buildWebhookPayload({ conversation, dealContext, coachContext, repProfile }) {
   const { deal, analysis, company, contacts, competitors, events, catalysts,
-    openTasks, insights, mspStages, milestones, scores, previousConversations } = dealContext
+    openTasks, insights, mspStages, scores, previousConversations } = dealContext
 
   return {
     // === Identifiers ===
@@ -317,12 +312,6 @@ export function buildWebhookPayload({ conversation, dealContext, coachContext, r
       order: s.stage_order,
       completed: s.is_completed,
     })),
-    msp_milestones: milestones.map(m => ({
-      name: m.milestone_name,
-      status: m.status,
-      due_date: m.due_date,
-    })),
-
     // === Scores ===
     scores: scores.map(s => ({
       type: s.score_type,

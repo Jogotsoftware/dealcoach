@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { theme as T, formatCurrency, formatDate, formatDateLong, daysUntil, STAGES, FORECAST_CATEGORIES, CALL_TYPES, TASK_CATEGORIES } from '../lib/theme'
-import { Card, Badge, ForecastBadge, StageBadge, ScoreBar, Field, StatusDot, MilestoneStatus, TabBar, Button, EmptyState, Spinner, inputStyle, labelStyle } from '../components/Shared'
+import { Card, Badge, ForecastBadge, StageBadge, ScoreBar, Field, StatusDot, TabBar, Button, EmptyState, Spinner, inputStyle, labelStyle } from '../components/Shared'
 import TranscriptUpload from '../components/TranscriptUpload'
 
 // === EDITABLE FIELD COMPONENT ===
@@ -181,7 +181,6 @@ export default function DealDetail() {
   const [contacts, setContacts] = useState([])
   const [conversations, setConversations] = useState([])
   const [mspStages, setMspStages] = useState([])
-  const [milestones, setMilestones] = useState([])
   const [proposalDoc, setProposalDoc] = useState(null)
   const [proposalInsights, setProposalInsights] = useState([])
   const [tasks, setTasks] = useState([])
@@ -225,14 +224,13 @@ export default function DealDetail() {
   async function loadDeal() {
     setLoading(true)
     try {
-      const [dealRes, analysisRes, profileRes, contactsRes, convosRes, mspRes, msRes, propDocRes, propInsRes, tasksRes, quotesRes, compRes, risksRes, eventsRes, catalystsRes, painsRes] = await Promise.all([
+      const [dealRes, analysisRes, profileRes, contactsRes, convosRes, mspRes, propDocRes, propInsRes, tasksRes, quotesRes, compRes, risksRes, eventsRes, catalystsRes, painsRes] = await Promise.all([
         supabase.from('deals').select('*').eq('id', id).single(),
         supabase.from('deal_analysis').select('*').eq('deal_id', id).single(),
         supabase.from('company_profile').select('*').eq('deal_id', id).single(),
         supabase.from('contacts').select('*').eq('deal_id', id).order('created_at'),
         supabase.from('conversations').select('*').eq('deal_id', id).order('call_date', { ascending: false }),
         supabase.from('msp_stages').select('*').eq('deal_id', id).order('stage_order'),
-        supabase.from('msp_milestones').select('*').eq('deal_id', id).order('milestone_order'),
         supabase.from('proposal_documents').select('*').eq('deal_id', id).eq('is_current', true).limit(1),
         supabase.from('proposal_insights').select('*').eq('deal_id', id).eq('include_in_proposal', true).order('created_at'),
         supabase.from('tasks').select('*').eq('deal_id', id).order('created_at', { ascending: false }),
@@ -250,7 +248,6 @@ export default function DealDetail() {
       setContacts(contactsRes.data || [])
       setConversations(convosRes.data || [])
       setMspStages(mspRes.data || [])
-      setMilestones(msRes.data || [])
       setProposalDoc(propDocRes.data?.[0] || null)
       setProposalInsights(propInsRes.data || [])
       setTasks(tasksRes.data || [])
@@ -320,11 +317,6 @@ export default function DealDetail() {
       .update({ completed: !task.completed, completed_at: !task.completed ? new Date().toISOString() : null })
       .eq('id', taskId)
     if (!error) setTasks(prev => prev.map(t => t.id === taskId ? { ...t, completed: !t.completed } : t))
-  }
-
-  async function updateMilestoneDate(milestoneId, newDate) {
-    const { error } = await supabase.from('msp_milestones').update({ due_date: newDate }).eq('id', milestoneId)
-    if (!error) setMilestones(prev => prev.map(m => m.id === milestoneId ? { ...m, due_date: newDate } : m))
   }
 
   async function addRisk() {
@@ -409,9 +401,6 @@ export default function DealDetail() {
   const openTasks = tasks.filter(t => !t.completed)
   const doneTasks = tasks.filter(t => t.completed)
 
-  const stagesWithMilestones = mspStages.map(s => ({
-    ...s, milestones: milestones.filter(m => m.msp_stage_id === s.id),
-  }))
 
   const allStageOptions = [...STAGES, { key: 'closed_won', label: 'Closed Won' }, { key: 'closed_lost', label: 'Closed Lost' }, { key: 'disqualified', label: 'Disqualified' }]
   const totalPainCost = painPoints.reduce((s, p) => s + (p.annual_cost || 0), 0)
@@ -1050,50 +1039,34 @@ export default function DealDetail() {
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
               <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: T.text }}>Mutual Success Plan</h3>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <Button primary onClick={() => navigate(`/deal/${id}/msp`)}>Open Full MSP</Button>
-                <Button>+ Add Stage</Button>
-              </div>
+              <Button primary onClick={() => navigate(`/deal/${id}/msp`)}>Open Full MSP</Button>
             </div>
-            {stagesWithMilestones.length === 0
-              ? <EmptyState message="No MSP stages yet. Create stages and milestones to track your deal timeline." action={<Button primary style={{ marginTop: 8 }}>Create MSP</Button>} />
-              : stagesWithMilestones.map((s, si) => (
-                <Card key={s.id}
-                  title={<span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{
-                      width: 24, height: 24, borderRadius: '50%', background: s.is_completed ? T.success : T.primary,
-                      color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700,
-                    }}>{si + 1}</span>
-                    {s.stage_name}
-                    {s.is_completed && <Badge color={T.success}>Done</Badge>}
-                  </span>}
-                  action={<span style={{ fontSize: 11, color: T.textSecondary }}>{s.start_date && `Start: ${formatDate(s.start_date)}`}</span>}
-                >
-                  {s.milestones.length === 0
-                    ? <div style={{ color: T.textMuted, fontSize: 13 }}>No milestones</div>
-                    : s.milestones.map(ms => (
-                      <div key={ms.id} style={{
-                        display: 'flex', alignItems: 'center', gap: 12,
-                        padding: '10px 14px', background: T.surfaceAlt, borderRadius: 6,
-                        border: `1px solid ${T.borderLight}`, marginBottom: 8,
-                      }}>
-                        <div style={{
-                          width: 20, height: 20, borderRadius: 4,
-                          border: `1.5px solid ${ms.status === 'completed' ? T.success : T.border}`,
-                          background: ms.status === 'completed' ? T.success : 'transparent',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                        }}>
-                          {ms.status === 'completed' && <span style={{ color: '#fff', fontSize: 11 }}>&#10003;</span>}
-                        </div>
-                        <div style={{ flex: 1, fontSize: 13, fontWeight: 600, color: T.text }}>{ms.milestone_name}</div>
-                        <MilestoneStatus status={ms.status} />
-                        <input type="date" value={ms.due_date?.split('T')[0] || ''}
-                          onChange={e => updateMilestoneDate(ms.id, e.target.value)}
-                          style={{ ...inputStyle, width: 'auto', padding: '5px 8px', fontSize: 11 }} />
-                      </div>
-                    ))}
-                </Card>
-              ))}
+            {mspStages.length === 0
+              ? <EmptyState message="No MSP steps yet. Open the full MSP to create steps or apply a template." action={<Button primary onClick={() => navigate(`/deal/${id}/msp`)} style={{ marginTop: 8 }}>Open MSP</Button>} />
+              : mspStages.map((step, si) => {
+                const statusColor = step.is_completed ? T.success : step.status === 'in_progress' ? T.primary : step.status === 'blocked' ? T.error : T.border
+                return (
+                  <div key={step.id} style={{
+                    display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px',
+                    background: T.surfaceAlt, borderRadius: 6, border: `1px solid ${T.borderLight}`, marginBottom: 6,
+                  }}>
+                    <div style={{
+                      width: 24, height: 24, borderRadius: '50%', background: statusColor,
+                      color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: 11, fontWeight: 700, flexShrink: 0,
+                    }}>
+                      {step.is_completed ? '\u2713' : step.status === 'blocked' ? '!' : si + 1}
+                    </div>
+                    <div style={{
+                      flex: 1, fontSize: 13, fontWeight: 600, color: T.text,
+                      textDecoration: step.is_completed ? 'line-through' : 'none',
+                      opacity: step.is_completed ? 0.6 : 1,
+                    }}>{step.stage_name}</div>
+                    <Badge color={statusColor}>{step.status || 'pending'}</Badge>
+                    {step.due_date && <span style={{ fontSize: 11, color: T.textSecondary }}>{formatDate(step.due_date)}</span>}
+                  </div>
+                )
+              })}
           </div>
         )}
 

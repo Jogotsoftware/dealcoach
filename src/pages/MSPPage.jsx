@@ -3,7 +3,9 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { theme as T, formatDate, formatDateLong, daysUntil } from '../lib/theme'
-import { Card, Badge, Button, MilestoneStatus, EmptyState, Spinner, TabBar, inputStyle, labelStyle } from '../components/Shared'
+import { Card, Badge, Button, EmptyState, Spinner, TabBar, inputStyle, labelStyle } from '../components/Shared'
+
+const STATUS_COLORS = { pending: T.border, in_progress: T.primary, completed: T.success, blocked: T.error }
 
 export default function MSPPage() {
   const { dealId } = useParams()
@@ -11,37 +13,27 @@ export default function MSPPage() {
   const { profile } = useAuth()
   const [loading, setLoading] = useState(true)
   const [deal, setDeal] = useState(null)
-  const [stages, setStages] = useState([])
-  const [milestones, setMilestones] = useState([])
+  const [steps, setSteps] = useState([])
   const [resources, setResources] = useState([])
   const [sharedLinks, setSharedLinks] = useState([])
   const [tab, setTab] = useState('timeline')
 
-  // Add stage form
-  const [showAddStage, setShowAddStage] = useState(false)
-  const [newStage, setNewStage] = useState({ stage_name: '', notes: '' })
-
-  // Add milestone form (keyed by stage id)
-  const [showAddMilestone, setShowAddMilestone] = useState(null)
-  const [newMilestone, setNewMilestone] = useState({ milestone_name: '', due_date: '' })
+  // Add step
+  const [showAddStep, setShowAddStep] = useState(false)
+  const [newStepName, setNewStepName] = useState('')
 
   // Inline editing
-  const [editingStage, setEditingStage] = useState(null)
-  const [editingStageName, setEditingStageName] = useState('')
-  const [editingMilestone, setEditingMilestone] = useState(null)
-  const [editingMilestoneName, setEditingMilestoneName] = useState('')
+  const [editingStep, setEditingStep] = useState(null)
+  const [editingName, setEditingName] = useState('')
 
-  // Expand/collapse
-  const [collapsed, setCollapsed] = useState({})
-
-  // Milestone notes
+  // Notes
   const [showNotes, setShowNotes] = useState({})
 
-  // Add resource form
+  // Resources
   const [showAddResource, setShowAddResource] = useState(false)
   const [newResource, setNewResource] = useState({ resource_name: '', resource_type: 'document', resource_url: '', description: '' })
 
-  // MSP Templates
+  // Templates
   const [templates, setTemplates] = useState([])
   const [selectedTemplate, setSelectedTemplate] = useState('')
   const [applyingTemplate, setApplyingTemplate] = useState(false)
@@ -51,30 +43,23 @@ export default function MSPPage() {
   async function loadData() {
     setLoading(true)
     try {
-      const [dealRes, stagesRes, msRes, resRes, linksRes] = await Promise.all([
+      const [dealRes, stepsRes, resRes, linksRes] = await Promise.all([
         supabase.from('deals').select('id, company_name, website, stage, target_close_date').eq('id', dealId).single(),
         supabase.from('msp_stages').select('*').eq('deal_id', dealId).order('stage_order'),
-        supabase.from('msp_milestones').select('*').eq('deal_id', dealId).order('milestone_order'),
         supabase.from('msp_resources').select('*').eq('deal_id', dealId).order('created_at'),
         supabase.from('msp_shared_links').select('*').eq('deal_id', dealId).order('created_at', { ascending: false }),
       ])
       setDeal(dealRes.data)
-      setStages(stagesRes.data || [])
-      setMilestones(msRes.data || [])
+      setSteps(stepsRes.data || [])
       setResources(resRes.data || [])
       setSharedLinks(linksRes.data || [])
 
-      // Load MSP templates if no stages yet - filter by active coach
-      if (!stagesRes.data?.length) {
+      if (!stepsRes.data?.length) {
         let tplQuery = supabase.from('msp_templates').select('*')
-        if (profile?.active_coach_id) {
-          tplQuery = tplQuery.eq('coach_id', profile.active_coach_id)
-        }
+        if (profile?.active_coach_id) tplQuery = tplQuery.eq('coach_id', profile.active_coach_id)
         const { data: tpls } = await tplQuery.order('is_default', { ascending: false })
         setTemplates(tpls || [])
-        const defaultTpl = (tpls || []).find(t => t.is_default)
-        if (defaultTpl) setSelectedTemplate(defaultTpl.id)
-        else if (tpls?.length) setSelectedTemplate(tpls[0].id)
+        if (tpls?.length) setSelectedTemplate(tpls[0].id)
       }
     } catch (err) {
       console.error('Error loading MSP:', err)
@@ -84,49 +69,22 @@ export default function MSPPage() {
   }
 
   async function applyTemplate() {
-    if (!selectedTemplate || !deal?.target_close_date) return
+    if (!selectedTemplate) return
     setApplyingTemplate(true)
     try {
-      const [tplStagesRes, tplMilestonesRes] = await Promise.all([
-        supabase.from('msp_template_stages').select('*').eq('template_id', selectedTemplate).order('stage_order'),
-        supabase.from('msp_template_milestones').select('*').eq('template_id', selectedTemplate).order('milestone_order'),
-      ])
-      const tplStages = tplStagesRes.data || []
-      const tplMilestones = tplMilestonesRes.data || []
+      const { data: tplSteps } = await supabase.from('msp_template_stages').select('*').eq('template_id', selectedTemplate).order('stage_order')
+      if (!tplSteps?.length) { setApplyingTemplate(false); return }
 
-      const closeDate = new Date(deal.target_close_date + 'T00:00:00')
-
-      // Calculate stage dates working backwards from close date
-      let totalDays = tplStages.reduce((s, st) => s + (st.default_duration_days || 14), 0)
-      let currentDate = new Date(closeDate)
-      currentDate.setDate(currentDate.getDate() - totalDays)
-
-      for (const tplStage of tplStages) {
-        const startDate = new Date(currentDate)
-        const duration = tplStage.default_duration_days || 14
-        const endDate = new Date(startDate)
-        endDate.setDate(endDate.getDate() + duration)
-
-        const { data: insertedStage } = await supabase.from('msp_stages').insert({
-          deal_id: dealId, stage_name: tplStage.stage_name, stage_order: tplStage.stage_order,
-          start_date: startDate.toISOString().split('T')[0], notes: tplStage.notes || null,
-        }).select().single()
-
-        if (insertedStage) {
-          const stageMilestones = tplMilestones.filter(m => m.template_stage_id === tplStage.id)
-          for (const tplMs of stageMilestones) {
-            const dueDate = new Date(startDate)
-            dueDate.setDate(dueDate.getDate() + (tplMs.default_days_offset || 0))
-            await supabase.from('msp_milestones').insert({
-              deal_id: dealId, msp_stage_id: insertedStage.id, milestone_name: tplMs.milestone_name,
-              milestone_order: tplMs.milestone_order, due_date: dueDate.toISOString().split('T')[0],
-              status: 'pending',
-            })
-          }
-        }
-        currentDate = endDate
+      const today = new Date()
+      for (const ts of tplSteps) {
+        const dueDate = new Date(today)
+        dueDate.setDate(dueDate.getDate() + (ts.due_date_offset || ts.default_duration_days || 0))
+        await supabase.from('msp_stages').insert({
+          deal_id: dealId, stage_name: ts.stage_name, stage_order: ts.stage_order,
+          due_date: dueDate.toISOString().split('T')[0],
+          notes: ts.notes || null, status: 'pending', is_completed: false,
+        })
       }
-
       loadData()
     } catch (err) {
       console.error('Error applying template:', err)
@@ -135,84 +93,75 @@ export default function MSPPage() {
     }
   }
 
-  async function addStage() {
-    if (!newStage.stage_name.trim()) return
-    const nextOrder = stages.length > 0 ? Math.max(...stages.map(s => s.stage_order)) + 1 : 1
-    const { error } = await supabase.from('msp_stages').insert({
-      deal_id: dealId, stage_name: newStage.stage_name, stage_order: nextOrder,
-      notes: newStage.notes || null,
+  async function addStep() {
+    if (!newStepName.trim()) return
+    const nextOrder = steps.length > 0 ? Math.max(...steps.map(s => s.stage_order)) + 1 : 1
+    await supabase.from('msp_stages').insert({
+      deal_id: dealId, stage_name: newStepName.trim(), stage_order: nextOrder,
+      status: 'pending', is_completed: false, is_custom: true,
     })
-    if (!error) { setShowAddStage(false); setNewStage({ stage_name: '', notes: '' }); loadData() }
+    setNewStepName('')
+    setShowAddStep(false)
+    loadData()
   }
 
-  async function addTweener(aboveStage, belowStage) {
-    const order = belowStage
-      ? (aboveStage.stage_order + belowStage.stage_order) / 2
-      : aboveStage.stage_order + 0.5
-    const { error } = await supabase.from('msp_stages').insert({
+  async function addTweener(aboveStep, belowStep) {
+    const order = (aboveStep.stage_order + belowStep.stage_order) / 2
+    await supabase.from('msp_stages').insert({
       deal_id: dealId, stage_name: 'New Step', stage_order: order,
-      is_tweener: true, parent_stage_id: aboveStage.id,
+      status: 'pending', is_completed: false, is_tweener: true, is_custom: true,
     })
-    if (!error) loadData()
+    loadData()
   }
 
-  async function saveStageNameInline(stageId) {
-    if (!editingStageName.trim()) { setEditingStage(null); return }
-    await supabase.from('msp_stages').update({ stage_name: editingStageName }).eq('id', stageId)
-    setStages(prev => prev.map(s => s.id === stageId ? { ...s, stage_name: editingStageName } : s))
-    setEditingStage(null)
+  async function cycleStatus(step) {
+    const cycle = { pending: 'in_progress', in_progress: 'completed', completed: 'blocked', blocked: 'pending' }
+    const next = cycle[step.status] || 'pending'
+    const isCompleted = next === 'completed'
+    const updates = { status: next, is_completed: isCompleted }
+    if (isCompleted) updates.completion_date = new Date().toISOString()
+    else { updates.completion_date = null }
+    await supabase.from('msp_stages').update(updates).eq('id', step.id)
+    setSteps(prev => prev.map(s => s.id === step.id ? { ...s, ...updates } : s))
   }
 
-  async function updateStageDate(stageId, date) {
-    await supabase.from('msp_stages').update({ start_date: date }).eq('id', stageId)
-    setStages(prev => prev.map(s => s.id === stageId ? { ...s, start_date: date } : s))
+  async function saveNameInline(stepId) {
+    if (!editingName.trim()) { setEditingStep(null); return }
+    await supabase.from('msp_stages').update({ stage_name: editingName }).eq('id', stepId)
+    setSteps(prev => prev.map(s => s.id === stepId ? { ...s, stage_name: editingName } : s))
+    setEditingStep(null)
   }
 
-  async function toggleStageComplete(stage) {
-    const val = !stage.is_completed
-    await supabase.from('msp_stages').update({ is_completed: val }).eq('id', stage.id)
-    setStages(prev => prev.map(s => s.id === stage.id ? { ...s, is_completed: val } : s))
+  async function updateDueDate(stepId, date) {
+    await supabase.from('msp_stages').update({ due_date: date }).eq('id', stepId)
+    setSteps(prev => prev.map(s => s.id === stepId ? { ...s, due_date: date } : s))
   }
 
-  async function addMilestone(stageId) {
-    if (!newMilestone.milestone_name.trim()) return
-    const stageMilestones = milestones.filter(m => m.msp_stage_id === stageId)
-    const nextOrder = stageMilestones.length > 0 ? Math.max(...stageMilestones.map(m => m.milestone_order)) + 1 : 1
-    const { error } = await supabase.from('msp_milestones').insert({
-      deal_id: dealId, msp_stage_id: stageId, milestone_name: newMilestone.milestone_name,
-      milestone_order: nextOrder, due_date: newMilestone.due_date || null, status: 'pending',
-    })
-    if (!error) { setShowAddMilestone(null); setNewMilestone({ milestone_name: '', due_date: '' }); loadData() }
+  async function updateNotes(stepId, notes) {
+    await supabase.from('msp_stages').update({ notes }).eq('id', stepId)
+    setSteps(prev => prev.map(s => s.id === stepId ? { ...s, notes } : s))
   }
 
-  async function toggleMilestoneStatus(ms) {
-    const cycle = { pending: 'in_progress', in_progress: 'completed', completed: 'pending' }
-    const next = cycle[ms.status] || 'pending'
-    await supabase.from('msp_milestones').update({ status: next }).eq('id', ms.id)
-    setMilestones(prev => prev.map(m => m.id === ms.id ? { ...m, status: next } : m))
+  async function deleteStep(stepId) {
+    if (!window.confirm('Delete this step?')) return
+    await supabase.from('msp_stages').delete().eq('id', stepId)
+    setSteps(prev => prev.filter(s => s.id !== stepId))
   }
 
-  async function saveMilestoneNameInline(msId) {
-    if (!editingMilestoneName.trim()) { setEditingMilestone(null); return }
-    await supabase.from('msp_milestones').update({ milestone_name: editingMilestoneName }).eq('id', msId)
-    setMilestones(prev => prev.map(m => m.id === msId ? { ...m, milestone_name: editingMilestoneName } : m))
-    setEditingMilestone(null)
+  async function moveStep(idx, dir) {
+    const newIdx = idx + dir
+    if (newIdx < 0 || newIdx >= steps.length) return
+    const a = steps[idx], b = steps[newIdx]
+    await Promise.all([
+      supabase.from('msp_stages').update({ stage_order: b.stage_order }).eq('id', a.id),
+      supabase.from('msp_stages').update({ stage_order: a.stage_order }).eq('id', b.id),
+    ])
+    loadData()
   }
 
-  async function updateMilestoneDate(id, date) {
-    await supabase.from('msp_milestones').update({ due_date: date }).eq('id', id)
-    setMilestones(prev => prev.map(m => m.id === id ? { ...m, due_date: date } : m))
-  }
-
-  async function updateMilestoneNotes(id, notes) {
-    await supabase.from('msp_milestones').update({ notes }).eq('id', id)
-    setMilestones(prev => prev.map(m => m.id === id ? { ...m, notes } : m))
-  }
-
-  async function deleteMilestone(id) {
-    if (!window.confirm('Delete this milestone?')) return
-    await supabase.from('msp_milestones').delete().eq('id', id)
-    setMilestones(prev => prev.filter(m => m.id !== id))
+  async function deleteResource(resId) {
+    await supabase.from('msp_resources').delete().eq('id', resId)
+    setResources(prev => prev.filter(r => r.id !== resId))
   }
 
   async function addResource() {
@@ -231,10 +180,8 @@ export default function MSPPage() {
   async function createShareLink() {
     const token = crypto.randomUUID()
     const { data: { user } } = await supabase.auth.getUser()
-    const { error } = await supabase.from('msp_shared_links').insert({
-      deal_id: dealId, share_token: token, created_by: user.id,
-    })
-    if (!error) loadData()
+    await supabase.from('msp_shared_links').insert({ deal_id: dealId, share_token: token, created_by: user.id })
+    loadData()
   }
 
   async function toggleLinkActive(link) {
@@ -245,15 +192,8 @@ export default function MSPPage() {
   if (loading) return <Spinner />
   if (!deal) return <div style={{ padding: 40, textAlign: 'center', color: T.textMuted }}>Deal not found</div>
 
-  const stagesWithMs = stages.map(s => ({
-    ...s,
-    milestones: milestones.filter(m => m.msp_stage_id === s.id),
-  }))
-
-  const totalMs = milestones.length
-  const completedMs = milestones.filter(m => m.status === 'completed').length
-  const progressPct = totalMs > 0 ? Math.round((completedMs / totalMs) * 100) : 0
-  const firstActiveIdx = stagesWithMs.findIndex(s => !s.is_completed)
+  const completedSteps = steps.filter(s => s.is_completed).length
+  const progressPct = steps.length > 0 ? Math.round((completedSteps / steps.length) * 100) : 0
 
   const tabs = [
     { key: 'timeline', label: 'Timeline' },
@@ -282,7 +222,7 @@ export default function MSPPage() {
             <div style={{ width: 120, height: 6, background: T.borderLight, borderRadius: 3, overflow: 'hidden', marginTop: 4 }}>
               <div style={{ height: '100%', width: `${progressPct}%`, background: T.primary, borderRadius: 3, transition: 'width 0.5s' }} />
             </div>
-            <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>{completedMs}/{totalMs} milestones</div>
+            <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>{completedSteps}/{steps.length} steps</div>
           </div>
         </div>
         <TabBar tabs={tabs} active={tab} onChange={setTab} />
@@ -293,36 +233,10 @@ export default function MSPPage() {
         {/* TIMELINE TAB */}
         {tab === 'timeline' && (
           <div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16, gap: 8 }}>
-              <Button onClick={() => setShowAddStage(true)}>+ Add Stage</Button>
-            </div>
-
-            {showAddStage && (
-              <Card title="New Stage" style={{ marginBottom: 16 }}>
-                <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
-                  <div style={{ flex: 1 }}>
-                    <label style={labelStyle}>Stage Name *</label>
-                    <input style={inputStyle} value={newStage.stage_name}
-                      onChange={e => setNewStage(p => ({ ...p, stage_name: e.target.value }))}
-                      placeholder="e.g. Discovery, Solution Validation" autoFocus
-                      onKeyDown={e => e.key === 'Enter' && addStage()}
-                    />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <label style={labelStyle}>Notes</label>
-                    <input style={inputStyle} value={newStage.notes}
-                      onChange={e => setNewStage(p => ({ ...p, notes: e.target.value }))} placeholder="Optional" />
-                  </div>
-                  <Button primary onClick={addStage}>Add</Button>
-                  <Button onClick={() => setShowAddStage(false)}>Cancel</Button>
-                </div>
-              </Card>
-            )}
-
-            {stagesWithMs.length === 0 ? (
+            {steps.length === 0 ? (
               <Card>
                 <div style={{ textAlign: 'center', padding: 32 }}>
-                  <div style={{ fontSize: 14, color: T.textMuted, marginBottom: 16 }}>No MSP stages yet. Apply a template or create stages manually.</div>
+                  <div style={{ fontSize: 14, color: T.textMuted, marginBottom: 16 }}>No MSP steps yet. Apply a template or add steps manually.</div>
                   {templates.length > 0 && (
                     <div style={{ display: 'flex', justifyContent: 'center', gap: 8, alignItems: 'center', marginBottom: 12 }}>
                       {templates.length > 1 ? (
@@ -330,236 +244,129 @@ export default function MSPPage() {
                           value={selectedTemplate} onChange={e => setSelectedTemplate(e.target.value)}>
                           {templates.map(t => <option key={t.id} value={t.id}>{t.name}{t.is_default ? ' (Default)' : ''}</option>)}
                         </select>
-                      ) : templates.length === 1 && (
+                      ) : (
                         <span style={{ fontSize: 13, color: T.text, fontWeight: 600 }}>Template: {templates[0].name}</span>
                       )}
-                      <Button primary onClick={applyTemplate} disabled={applyingTemplate || !deal?.target_close_date}>
+                      <Button primary onClick={applyTemplate} disabled={applyingTemplate}>
                         {applyingTemplate ? 'Applying...' : 'Apply Template'}
                       </Button>
                     </div>
                   )}
-                  {!deal?.target_close_date && templates.length > 0 && (
-                    <div style={{ fontSize: 11, color: T.warning, marginBottom: 8 }}>Set a target close date on the deal to use templates (dates are calculated from close date).</div>
-                  )}
-                  <Button onClick={() => setShowAddStage(true)}>Create Stage Manually</Button>
+                  <Button onClick={() => setShowAddStep(true)}>Add Step Manually</Button>
                 </div>
               </Card>
             ) : (
               <div style={{ position: 'relative', paddingLeft: 40 }}>
                 {/* Vertical line */}
-                <div style={{
-                  position: 'absolute', left: 15, top: 16, bottom: 16,
-                  width: 2, background: T.border,
-                }} />
+                <div style={{ position: 'absolute', left: 15, top: 16, bottom: 16, width: 2, background: T.border }} />
 
-                {stagesWithMs.map((stage, si) => {
-                  const isActive = si === firstActiveIdx
-                  const isExpanded = !collapsed[stage.id]
-                  const circleColor = stage.is_completed ? T.success : isActive ? T.primary : T.border
+                {steps.map((step, si) => {
+                  const days = daysUntil(step.due_date)
+                  const overdue = !step.is_completed && step.status !== 'blocked' && days != null && days < 0
+                  const statusColor = STATUS_COLORS[step.status] || T.border
 
                   return (
-                    <div key={stage.id}>
-                      {/* Stage card */}
-                      <div style={{ position: 'relative', marginBottom: 8 }}>
-                        {/* Circle on the line */}
-                        <div style={{
-                          position: 'absolute', left: -40 + 15 - 16, top: 16,
-                          width: 32, height: 32, borderRadius: '50%',
-                          background: circleColor, color: '#fff',
+                    <div key={step.id}>
+                      <div style={{ position: 'relative', marginBottom: 4 }}>
+                        {/* Status circle */}
+                        <button onClick={() => cycleStatus(step)} title={`Status: ${step.status}. Click to change.`} style={{
+                          position: 'absolute', left: -40 + 15 - 14, top: 14, width: 28, height: 28, borderRadius: '50%',
+                          background: statusColor, color: '#fff', border: `2px solid ${statusColor}`,
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          fontSize: 13, fontWeight: 700, zIndex: 1,
-                          border: `2px solid ${stage.is_completed ? T.success : isActive ? T.primary : T.borderLight}`,
+                          fontSize: 12, fontWeight: 700, zIndex: 1, cursor: 'pointer', padding: 0,
+                          animation: step.status === 'in_progress' ? 'pulse 2s ease-in-out infinite' : 'none',
                         }}>
-                          {stage.is_completed ? '\u2713' : si + 1}
-                        </div>
+                          {step.status === 'completed' ? '\u2713' : step.status === 'blocked' ? '!' : si + 1}
+                        </button>
 
-                        <Card
-                          title={
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
-                              {/* Expand/collapse */}
-                              <button onClick={() => setCollapsed(p => ({ ...p, [stage.id]: !p[stage.id] }))} style={{
-                                background: 'none', border: 'none', cursor: 'pointer', fontSize: 12,
-                                color: T.textMuted, padding: 0, transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
-                                transition: 'transform 0.15s',
-                              }}>{'\u25B6'}</button>
+                        <div style={{
+                          background: T.surface, border: `1px solid ${overdue ? T.error + '40' : T.border}`,
+                          borderRadius: T.radius, boxShadow: T.shadow, padding: '12px 16px',
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            {/* Reorder */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                              <button onClick={() => moveStep(si, -1)} disabled={si === 0}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, fontSize: 10, opacity: si === 0 ? 0.3 : 1, padding: 0 }}>{'\u25B2'}</button>
+                              <button onClick={() => moveStep(si, 1)} disabled={si === steps.length - 1}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, fontSize: 10, opacity: si === steps.length - 1 ? 0.3 : 1, padding: 0 }}>{'\u25BC'}</button>
+                            </div>
 
-                              {/* Stage name inline edit */}
-                              {editingStage === stage.id ? (
-                                <input style={{ ...inputStyle, width: 200, padding: '4px 8px', fontSize: 13, fontWeight: 600 }}
-                                  value={editingStageName}
-                                  onChange={e => setEditingStageName(e.target.value)}
-                                  onBlur={() => saveStageNameInline(stage.id)}
-                                  onKeyDown={e => e.key === 'Enter' && saveStageNameInline(stage.id)}
-                                  autoFocus
-                                />
+                            {/* Name */}
+                            <div style={{ flex: 1 }}>
+                              {editingStep === step.id ? (
+                                <input style={{ ...inputStyle, padding: '4px 8px', fontSize: 13, fontWeight: 600 }}
+                                  value={editingName} onChange={e => setEditingName(e.target.value)}
+                                  onBlur={() => saveNameInline(step.id)}
+                                  onKeyDown={e => { if (e.key === 'Enter') saveNameInline(step.id); if (e.key === 'Escape') setEditingStep(null) }}
+                                  autoFocus />
                               ) : (
-                                <span
-                                  onClick={() => { setEditingStage(stage.id); setEditingStageName(stage.stage_name) }}
-                                  style={{ cursor: 'pointer', fontSize: 13, fontWeight: 700, color: T.text, position: 'relative' }}
-                                  onMouseEnter={e => { const p = e.currentTarget.querySelector('.pencil'); if (p) p.style.opacity = 1 }}
-                                  onMouseLeave={e => { const p = e.currentTarget.querySelector('.pencil'); if (p) p.style.opacity = 0 }}
-                                >
-                                  {stage.stage_name}
-                                  <span className="pencil" style={{ marginLeft: 6, opacity: 0, transition: 'opacity 0.15s', fontSize: 11, color: T.textMuted }}>{'\u270E'}</span>
-                                </span>
-                              )}
-
-                              {stage.is_completed && <Badge color={T.success}>Complete</Badge>}
-                              {stage.is_tweener && <Badge color={T.textMuted}>Tweener</Badge>}
-                            </div>
-                          }
-                          action={
-                            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                              <input type="date" value={stage.start_date?.split('T')[0] || ''}
-                                onChange={e => updateStageDate(stage.id, e.target.value)}
-                                style={{ ...inputStyle, width: 'auto', padding: '4px 8px', fontSize: 11 }} />
-                              <Button style={{ padding: '4px 10px', fontSize: 11 }}
-                                onClick={() => toggleStageComplete(stage)}>
-                                {stage.is_completed ? 'Reopen' : 'Complete'}
-                              </Button>
-                              <Button style={{ padding: '4px 10px', fontSize: 11 }}
-                                onClick={() => { setShowAddMilestone(stage.id); setNewMilestone({ milestone_name: '', due_date: '' }) }}>
-                                + Milestone
-                              </Button>
-                            </div>
-                          }
-                        >
-                          {/* Add Milestone Form */}
-                          {showAddMilestone === stage.id && (
-                            <div style={{
-                              display: 'flex', gap: 10, alignItems: 'flex-end', marginBottom: 12,
-                              padding: 12, background: T.surfaceAlt, borderRadius: 6, border: `1px solid ${T.borderLight}`,
-                            }}>
-                              <div style={{ flex: 1 }}>
-                                <label style={labelStyle}>Milestone Name *</label>
-                                <input style={inputStyle} value={newMilestone.milestone_name}
-                                  onChange={e => setNewMilestone(p => ({ ...p, milestone_name: e.target.value }))}
-                                  placeholder="e.g. Demo Complete, SOW Review" autoFocus
-                                  onKeyDown={e => e.key === 'Enter' && addMilestone(stage.id)} />
-                              </div>
-                              <div>
-                                <label style={labelStyle}>Due Date</label>
-                                <input type="date" style={{ ...inputStyle, width: 160 }} value={newMilestone.due_date}
-                                  onChange={e => setNewMilestone(p => ({ ...p, due_date: e.target.value }))} />
-                              </div>
-                              <Button primary onClick={() => addMilestone(stage.id)}>Add</Button>
-                              <Button onClick={() => setShowAddMilestone(null)}>Cancel</Button>
-                            </div>
-                          )}
-
-                          {/* Milestones */}
-                          {isExpanded && (
-                            stage.milestones.length === 0 ? (
-                              <div style={{ color: T.textMuted, fontSize: 13, padding: '8px 0' }}>No milestones yet.</div>
-                            ) : stage.milestones.map(ms => {
-                              const days = daysUntil(ms.due_date)
-                              const overdue = ms.status !== 'completed' && days != null && days < 0
-                              return (
-                                <div key={ms.id} style={{ marginBottom: 8 }}>
-                                  <div style={{
-                                    display: 'flex', alignItems: 'center', gap: 12,
-                                    padding: '12px 14px', background: T.surfaceAlt, borderRadius: 6,
-                                    border: `1px solid ${overdue ? T.error + '30' : T.borderLight}`,
+                                <div onClick={() => { setEditingStep(step.id); setEditingName(step.stage_name) }}
+                                  style={{
+                                    fontSize: 13, fontWeight: 600, color: T.text, cursor: 'pointer',
+                                    textDecoration: step.is_completed ? 'line-through' : 'none',
+                                    opacity: step.is_completed ? 0.6 : 1,
                                   }}>
-                                    {/* Status checkbox */}
-                                    <button onClick={() => toggleMilestoneStatus(ms)} style={{
-                                      width: 22, height: 22, borderRadius: 5, flexShrink: 0,
-                                      border: `1.5px solid ${ms.status === 'completed' ? T.success : ms.status === 'in_progress' ? T.primary : T.border}`,
-                                      background: ms.status === 'completed' ? T.success : ms.status === 'in_progress' ? T.primary + '20' : 'transparent',
-                                      cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
-                                    }}>
-                                      {ms.status === 'completed' && <span style={{ color: '#fff', fontSize: 13 }}>&#10003;</span>}
-                                      {ms.status === 'in_progress' && <span style={{ width: 8, height: 8, borderRadius: '50%', background: T.primary }} />}
-                                    </button>
-
-                                    {/* Name (inline editable) */}
-                                    <div style={{ flex: 1 }}>
-                                      {editingMilestone === ms.id ? (
-                                        <input style={{ ...inputStyle, padding: '4px 8px', fontSize: 13, fontWeight: 600 }}
-                                          value={editingMilestoneName}
-                                          onChange={e => setEditingMilestoneName(e.target.value)}
-                                          onBlur={() => saveMilestoneNameInline(ms.id)}
-                                          onKeyDown={e => e.key === 'Enter' && saveMilestoneNameInline(ms.id)}
-                                          autoFocus />
-                                      ) : (
-                                        <div
-                                          onClick={() => { setEditingMilestone(ms.id); setEditingMilestoneName(ms.milestone_name) }}
-                                          style={{
-                                            fontSize: 13, fontWeight: 600, color: T.text, cursor: 'pointer',
-                                            textDecoration: ms.status === 'completed' ? 'line-through' : 'none',
-                                            opacity: ms.status === 'completed' ? 0.6 : 1,
-                                          }}>
-                                          {ms.milestone_name}
-                                        </div>
-                                      )}
-                                    </div>
-
-                                    <MilestoneStatus status={ms.status} />
-
-                                    <input type="date" value={ms.due_date?.split('T')[0] || ''}
-                                      onChange={e => updateMilestoneDate(ms.id, e.target.value)}
-                                      style={{ ...inputStyle, width: 'auto', padding: '5px 8px', fontSize: 11 }} />
-
-                                    {days != null && ms.status !== 'completed' && (
-                                      <span style={{
-                                        fontSize: 11, fontWeight: 600, fontFeatureSettings: '"tnum"',
-                                        color: overdue ? T.error : days <= 7 ? T.warning : T.textMuted,
-                                        whiteSpace: 'nowrap',
-                                      }}>
-                                        {overdue ? `${Math.abs(days)}d late` : `${days}d`}
-                                      </span>
-                                    )}
-
-                                    <button onClick={() => setShowNotes(p => ({ ...p, [ms.id]: !p[ms.id] }))}
-                                      style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: T.textMuted, padding: '2px 6px' }}>
-                                      Notes
-                                    </button>
-
-                                    <button onClick={() => deleteMilestone(ms.id)} style={{
-                                      background: 'none', border: 'none', cursor: 'pointer',
-                                      color: T.textMuted, fontSize: 14, padding: '2px 4px', lineHeight: 1,
-                                    }}
-                                      onMouseEnter={e => e.currentTarget.style.color = T.error}
-                                      onMouseLeave={e => e.currentTarget.style.color = T.textMuted}
-                                    >&#10005;</button>
-                                  </div>
-
-                                  {/* Notes expandable */}
-                                  {showNotes[ms.id] && (
-                                    <div style={{ padding: '8px 14px' }}>
-                                      <textarea
-                                        style={{ ...inputStyle, minHeight: 60, resize: 'vertical', fontSize: 12 }}
-                                        value={ms.notes || ''}
-                                        onChange={e => setMilestones(prev => prev.map(m => m.id === ms.id ? { ...m, notes: e.target.value } : m))}
-                                        onBlur={e => updateMilestoneNotes(ms.id, e.target.value)}
-                                        placeholder="Add notes..."
-                                      />
-                                    </div>
-                                  )}
+                                  {step.stage_name}
+                                  {step.is_tweener && <Badge color={T.textMuted} style={{ marginLeft: 6 }}>custom</Badge>}
                                 </div>
-                              )
-                            })
-                          )}
+                              )}
+                            </div>
 
-                          {stage.notes && !stage.milestones?.length && (
-                            <div style={{ fontSize: 12, color: T.textSecondary, marginTop: 8, fontStyle: 'italic' }}>{stage.notes}</div>
+                            {/* Status badge */}
+                            <Badge color={statusColor}>{step.status}</Badge>
+
+                            {/* Due date */}
+                            <input type="date" value={step.due_date?.split('T')[0] || ''}
+                              onChange={e => updateDueDate(step.id, e.target.value)}
+                              style={{ ...inputStyle, width: 'auto', padding: '4px 8px', fontSize: 11 }} />
+
+                            {days != null && !step.is_completed && (
+                              <span style={{ fontSize: 11, fontWeight: 600, color: overdue ? T.error : days <= 7 ? T.warning : T.textMuted, whiteSpace: 'nowrap', fontFeatureSettings: '"tnum"' }}>
+                                {overdue ? `${Math.abs(days)}d late` : `${days}d`}
+                              </span>
+                            )}
+
+                            {/* Notes toggle */}
+                            <button onClick={() => setShowNotes(p => ({ ...p, [step.id]: !p[step.id] }))}
+                              style={{
+                                background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, padding: '2px 6px',
+                                color: step.notes ? T.primary : T.textMuted, fontWeight: step.notes ? 600 : 400,
+                              }}>
+                              Notes{step.notes ? ' *' : ''}
+                            </button>
+
+                            {/* Delete */}
+                            <button onClick={() => deleteStep(step.id)} style={{
+                              background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, fontSize: 14, padding: '2px 4px', lineHeight: 1,
+                            }}
+                              onMouseEnter={e => e.currentTarget.style.color = T.error}
+                              onMouseLeave={e => e.currentTarget.style.color = T.textMuted}
+                            >&times;</button>
+                          </div>
+
+                          {/* Notes */}
+                          {showNotes[step.id] && (
+                            <div style={{ marginTop: 8 }}>
+                              <textarea style={{ ...inputStyle, minHeight: 60, resize: 'vertical', fontSize: 12 }}
+                                value={step.notes || ''}
+                                onChange={e => setSteps(prev => prev.map(s => s.id === step.id ? { ...s, notes: e.target.value } : s))}
+                                onBlur={e => updateNotes(step.id, e.target.value)}
+                                placeholder="Add notes..." />
+                            </div>
                           )}
-                        </Card>
+                        </div>
                       </div>
 
-                      {/* Add Tweener button between stages */}
-                      {si < stagesWithMs.length - 1 && (
-                        <div style={{ position: 'relative', height: 24, display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
-                          <button
-                            onClick={() => addTweener(stage, stagesWithMs[si + 1])}
-                            style={{
-                              position: 'absolute', left: -40 + 15 - 10, top: 2,
-                              width: 20, height: 20, borderRadius: '50%',
-                              background: T.surface, border: `1.5px solid ${T.border}`,
-                              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                              fontSize: 14, color: T.textMuted, padding: 0, zIndex: 1,
-                              transition: 'all 0.15s',
-                            }}
+                      {/* + button between steps */}
+                      {si < steps.length - 1 && (
+                        <div style={{ position: 'relative', height: 20, display: 'flex', alignItems: 'center' }}>
+                          <button onClick={() => addTweener(step, steps[si + 1])} style={{
+                            position: 'absolute', left: -40 + 15 - 8, top: 2, width: 16, height: 16, borderRadius: '50%',
+                            background: T.surface, border: `1.5px solid ${T.border}`, cursor: 'pointer',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: 12, color: T.textMuted, padding: 0, zIndex: 1, transition: 'all 0.15s',
+                          }}
                             onMouseEnter={e => { e.currentTarget.style.borderColor = T.primary; e.currentTarget.style.color = T.primary }}
                             onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.color = T.textMuted }}
                             title="Add step between"
@@ -571,6 +378,22 @@ export default function MSPPage() {
                 })}
               </div>
             )}
+
+            {/* Add Step */}
+            <div style={{ marginTop: 16 }}>
+              {showAddStep ? (
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <input style={{ ...inputStyle, flex: 1 }} value={newStepName}
+                    onChange={e => setNewStepName(e.target.value)} placeholder="Step name..."
+                    onKeyDown={e => e.key === 'Enter' && addStep()} autoFocus />
+                  <Button primary onClick={addStep}>Add</Button>
+                  <Button onClick={() => { setShowAddStep(false); setNewStepName('') }}>Cancel</Button>
+                </div>
+              ) : (
+                <Button onClick={() => setShowAddStep(true)}>+ Add Step</Button>
+              )}
+            </div>
+            <style>{`@keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.6 } }`}</style>
           </div>
         )}
 
@@ -580,64 +403,30 @@ export default function MSPPage() {
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
               <Button primary onClick={() => setShowAddResource(true)}>+ Add Resource</Button>
             </div>
-
             {showAddResource && (
               <Card title="New Resource" style={{ marginBottom: 16 }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
-                  <div>
-                    <label style={labelStyle}>Resource Name *</label>
-                    <input style={inputStyle} value={newResource.resource_name}
-                      onChange={e => setNewResource(p => ({ ...p, resource_name: e.target.value }))}
-                      placeholder="e.g. Implementation Guide" />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>Type</label>
-                    <select style={{ ...inputStyle, cursor: 'pointer' }} value={newResource.resource_type}
-                      onChange={e => setNewResource(p => ({ ...p, resource_type: e.target.value }))}>
-                      <option value="document">Document</option>
-                      <option value="link">Link</option>
-                      <option value="template">Template</option>
-                      <option value="video">Video</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label style={labelStyle}>URL</label>
-                    <input style={inputStyle} value={newResource.resource_url}
-                      onChange={e => setNewResource(p => ({ ...p, resource_url: e.target.value }))}
-                      placeholder="https://..." />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>Description</label>
-                    <input style={inputStyle} value={newResource.description}
-                      onChange={e => setNewResource(p => ({ ...p, description: e.target.value }))}
-                      placeholder="Brief description" />
-                  </div>
+                  <div><label style={labelStyle}>Resource Name *</label><input style={inputStyle} value={newResource.resource_name} onChange={e => setNewResource(p => ({ ...p, resource_name: e.target.value }))} placeholder="e.g. Implementation Guide" /></div>
+                  <div><label style={labelStyle}>Type</label><select style={{ ...inputStyle, cursor: 'pointer' }} value={newResource.resource_type} onChange={e => setNewResource(p => ({ ...p, resource_type: e.target.value }))}><option value="document">Document</option><option value="link">Link</option><option value="template">Template</option><option value="video">Video</option></select></div>
+                  <div><label style={labelStyle}>URL</label><input style={inputStyle} value={newResource.resource_url} onChange={e => setNewResource(p => ({ ...p, resource_url: e.target.value }))} placeholder="https://..." /></div>
+                  <div><label style={labelStyle}>Description</label><input style={inputStyle} value={newResource.description} onChange={e => setNewResource(p => ({ ...p, description: e.target.value }))} placeholder="Brief description" /></div>
                 </div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <Button primary onClick={addResource}>Add</Button>
-                  <Button onClick={() => setShowAddResource(false)}>Cancel</Button>
-                </div>
+                <div style={{ display: 'flex', gap: 8 }}><Button primary onClick={addResource}>Add</Button><Button onClick={() => setShowAddResource(false)}>Cancel</Button></div>
               </Card>
             )}
-
-            {resources.length === 0 ? (
-              <EmptyState message="No resources attached to this MSP yet." />
-            ) : resources.map(r => (
+            {resources.length === 0 ? <EmptyState message="No resources attached to this MSP yet." /> : resources.map(r => (
               <Card key={r.id}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
                     <div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>{r.resource_name}</div>
-                    <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-                      {r.resource_type && <Badge color={T.primary}>{r.resource_type}</Badge>}
-                    </div>
+                    <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>{r.resource_type && <Badge color={T.primary}>{r.resource_type}</Badge>}</div>
                     {r.description && <div style={{ fontSize: 12, color: T.textSecondary, marginTop: 4 }}>{r.description}</div>}
                   </div>
-                  {r.resource_url && (
-                    <a href={r.resource_url} target="_blank" rel="noopener noreferrer"
-                      style={{ fontSize: 12, color: T.primary, fontWeight: 600, textDecoration: 'none' }}>
-                      Open &rarr;
-                    </a>
-                  )}
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    {r.resource_url && <a href={r.resource_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: T.primary, fontWeight: 600, textDecoration: 'none' }}>Open &rarr;</a>}
+                    <button onClick={() => deleteResource(r.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, fontSize: 14 }}
+                      onMouseEnter={e => e.currentTarget.style.color = T.error} onMouseLeave={e => e.currentTarget.style.color = T.textMuted}>&times;</button>
+                  </div>
                 </div>
               </Card>
             ))}
@@ -650,29 +439,21 @@ export default function MSPPage() {
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
               <Button primary onClick={createShareLink}>Create Share Link</Button>
             </div>
-            {sharedLinks.length === 0 ? (
-              <EmptyState message="No shared links. Create one to share the MSP timeline with your client." />
-            ) : sharedLinks.map(link => (
+            {sharedLinks.length === 0 ? <EmptyState message="No shared links. Create one to share the MSP with your client." /> : sharedLinks.map(link => (
               <Card key={link.id}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
-                    <div style={{ fontSize: 13, fontFamily: T.mono, color: T.text, marginBottom: 4 }}>
-                      {window.location.origin}/msp/shared/{link.share_token}
-                    </div>
+                    <div style={{ fontSize: 13, fontFamily: T.mono, color: T.text, marginBottom: 4 }}>{window.location.origin}/msp/shared/{link.share_token}</div>
                     <div style={{ display: 'flex', gap: 8, fontSize: 11, color: T.textSecondary, alignItems: 'center' }}>
                       <span>Views: {link.access_count || 0}</span>
-                      <span>Expires: {formatDateLong(link.expires_at)}</span>
+                      {link.expires_at && <span>Expires: {formatDateLong(link.expires_at)}</span>}
                       <span onClick={() => toggleLinkActive(link)} style={{ cursor: 'pointer' }}>
-                        {link.is_active
-                          ? <Badge color={T.success}>Active</Badge>
-                          : <Badge color={T.error}>Inactive</Badge>}
+                        {link.is_active ? <Badge color={T.success}>Active</Badge> : <Badge color={T.error}>Inactive</Badge>}
                       </span>
                     </div>
                   </div>
                   <Button style={{ padding: '6px 14px', fontSize: 12 }}
-                    onClick={() => navigator.clipboard.writeText(`${window.location.origin}/msp/shared/${link.share_token}`)}>
-                    Copy Link
-                  </Button>
+                    onClick={() => navigator.clipboard.writeText(`${window.location.origin}/msp/shared/${link.share_token}`)}>Copy Link</Button>
                 </div>
               </Card>
             ))}
