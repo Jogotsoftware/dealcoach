@@ -720,7 +720,6 @@ export default function DealDetail() {
             {/* ROW 3 — 1fr 1fr: Deal Analysis | Qualification */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
               <Card title="DEAL ANALYSIS">
-                <EditableField label="Pain Points" value={analysis?.pain_points} field="pain_points" table="deal_analysis" recordId={analysis?.id} type="textarea" displayAs="list" onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
                 <EditableField label="Quantified Pain" value={analysis?.quantified_pain} field="quantified_pain" table="deal_analysis" recordId={analysis?.id} type="textarea" displayAs="list" onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
                 <EditableField label="Business Impact" value={analysis?.business_impact} field="business_impact" table="deal_analysis" recordId={analysis?.id} type="textarea" displayAs="list" onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
                 <EditableField label="Driving Factors" value={analysis?.driving_factors} field="driving_factors" table="deal_analysis" recordId={analysis?.id} type="textarea" displayAs="list" onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
@@ -780,6 +779,18 @@ export default function DealDetail() {
 
             {/* ROW 5 — Full width: Pain Points */}
             <Card title={`PAIN POINTS (${painPoints.length})`} action={<Button style={{ padding: '4px 10px', fontSize: 10 }} onClick={() => setShowAddPain(true)}>+ Add Pain Point</Button>}>
+              {/* Running Problem Cost */}
+              <div style={{ display: 'flex', gap: 24, marginBottom: 16, padding: 14, background: T.surfaceAlt, borderRadius: 6, border: `1px solid ${T.borderLight}`, alignItems: 'flex-end' }}>
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 800, color: '#1a2a3a', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>Running Problem Cost</div>
+                  <div style={{ fontSize: 28, fontWeight: 800, color: '#e74c3c', fontFeatureSettings: '"tnum"' }}>{totalPainCost > 0 ? formatCurrency(totalPainCost) : '$0'}</div>
+                </div>
+                <EditableField label="Hard Dollars" value={analysis?.running_problem_cost_dollars} field="running_problem_cost_dollars" table="deal_analysis" recordId={analysis?.id} type="number" onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
+                <EditableField label="Hours" value={analysis?.running_problem_cost_hours} field="running_problem_cost_hours" table="deal_analysis" recordId={analysis?.id} type="number" onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
+                <EditableField label="Notes" value={analysis?.running_problem_cost_notes} field="running_problem_cost_notes" table="deal_analysis" recordId={analysis?.id} onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
+              </div>
+              {/* AI Pain Points from deal_analysis */}
+              <EditableField label="AI Pain Points" value={analysis?.pain_points} field="pain_points" table="deal_analysis" recordId={analysis?.id} type="textarea" displayAs="list" onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
               {showAddPain && (
                 <div style={{ padding: 10, background: T.surfaceAlt, borderRadius: 6, marginBottom: 8, border: `1px solid ${T.borderLight}` }}>
                   <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
