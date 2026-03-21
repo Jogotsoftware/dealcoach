@@ -26,6 +26,10 @@ export default function Settings() {
   const [coaches, setCoaches] = useState([])
   const [activeCoachId, setActiveCoachId] = useState(null)
 
+  // Profile editing
+  const [profileData, setProfileData] = useState({ full_name: '', title: '', phone: '', team: '' })
+  const [profileSaved, setProfileSaved] = useState(false)
+
   // Month-by-month quota data
   const [months, setMonths] = useState(() =>
     Array.from({ length: 12 }, (_, i) => ({
@@ -42,6 +46,12 @@ export default function Settings() {
     if (profile) {
       setFyEndMonth(profile.fiscal_year_end_month || 9)
       setActiveCoachId(profile.active_coach_id || null)
+      setProfileData({
+        full_name: profile.full_name || '',
+        title: profile.title || '',
+        phone: profile.phone || '',
+        team: profile.team || '',
+      })
       loadData()
     }
   }, [profile])
@@ -124,6 +134,12 @@ export default function Settings() {
     await supabase.from('profiles').update({ active_coach_id: coachId || null }).eq('id', profile.id)
   }
 
+  async function saveProfileField(field, value) {
+    await supabase.from('profiles').update({ [field]: value }).eq('id', profile.id)
+    setProfileSaved(true)
+    setTimeout(() => setProfileSaved(false), 2000)
+  }
+
   async function addTeamMember() {
     if (!newMember.name.trim()) return
     const { data, error } = await supabase.from('user_team_members').insert({
@@ -154,6 +170,8 @@ export default function Settings() {
     return T.error
   }
 
+  const selectedCoach = coaches.find(c => c.id === activeCoachId)
+
   return (
     <div>
       <div style={{ padding: '14px 24px', borderBottom: `1px solid ${T.border}`, background: T.surface }}>
@@ -170,13 +188,16 @@ export default function Settings() {
               onChange={e => selectCoach(e.target.value || null)}>
               <option value="">-- Select a Coach --</option>
               {coaches.map(c => (
-                <option key={c.id} value={c.id}>{c.name}</option>
+                <option key={c.id} value={c.id}>{c.name}{c.description ? ` - ${c.description.substring(0, 60)}` : ''}</option>
               ))}
             </select>
           </div>
-          {activeCoachId && coaches.find(c => c.id === activeCoachId)?.description && (
-            <div style={{ fontSize: 12, color: T.textSecondary, marginBottom: 8 }}>
-              {coaches.find(c => c.id === activeCoachId).description}
+          {selectedCoach && (
+            <div style={{ padding: 12, background: T.surfaceAlt, borderRadius: 6, border: `1px solid ${T.borderLight}`, marginBottom: 8 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: T.text, marginBottom: 2 }}>{selectedCoach.name}</div>
+              {selectedCoach.description && (
+                <div style={{ fontSize: 12, color: T.textSecondary, lineHeight: 1.5 }}>{selectedCoach.description}</div>
+              )}
             </div>
           )}
           <div style={{ fontSize: 11, color: T.textMuted, fontStyle: 'italic' }}>
@@ -185,19 +206,38 @@ export default function Settings() {
         </Card>
 
         {/* Profile */}
-        <Card title="Profile">
+        <Card title="Profile" action={profileSaved ? <span style={{ fontSize: 12, color: T.success, fontWeight: 600 }}>Saved</span> : null}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <div>
               <label style={labelStyle}>Full Name</label>
-              <input style={inputStyle} value={profile?.full_name || ''} readOnly />
+              <input style={inputStyle} value={profileData.full_name}
+                onChange={e => setProfileData(p => ({ ...p, full_name: e.target.value }))}
+                onBlur={e => saveProfileField('full_name', e.target.value)} />
             </div>
             <div>
               <label style={labelStyle}>Email</label>
-              <input style={inputStyle} value={profile?.email || ''} readOnly />
+              <input style={{ ...inputStyle, background: T.surfaceAlt }} value={profile?.email || ''} readOnly />
             </div>
             <div>
-              <label style={labelStyle}>Initials</label>
-              <input style={inputStyle} value={profile?.initials || ''} readOnly />
+              <label style={labelStyle}>Title</label>
+              <input style={inputStyle} value={profileData.title}
+                onChange={e => setProfileData(p => ({ ...p, title: e.target.value }))}
+                onBlur={e => saveProfileField('title', e.target.value)}
+                placeholder="e.g. Account Executive" />
+            </div>
+            <div>
+              <label style={labelStyle}>Phone</label>
+              <input style={inputStyle} value={profileData.phone}
+                onChange={e => setProfileData(p => ({ ...p, phone: e.target.value }))}
+                onBlur={e => saveProfileField('phone', e.target.value)}
+                placeholder="(555) 123-4567" />
+            </div>
+            <div>
+              <label style={labelStyle}>Team</label>
+              <input style={inputStyle} value={profileData.team}
+                onChange={e => setProfileData(p => ({ ...p, team: e.target.value }))}
+                onBlur={e => saveProfileField('team', e.target.value)}
+                placeholder="e.g. Enterprise East" />
             </div>
             <div>
               <label style={labelStyle}>Fiscal Year End Month</label>
@@ -324,7 +364,7 @@ export default function Settings() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr style={{ borderBottom: `1px solid ${T.border}` }}>
-                  {['Name', 'Title', 'Company', 'Email', 'Type', 'Default', 'Active', 'Uses', ''].map(h => (
+                  {['Name', 'Title', 'Company', 'Email', 'Phone', 'Type', 'Default', 'Active', 'Uses', ''].map(h => (
                     <th key={h} style={{ textAlign: 'left', padding: '6px 8px', fontSize: 10, fontWeight: 600, color: T.textMuted, textTransform: 'uppercase' }}>{h}</th>
                   ))}
                 </tr>
@@ -347,6 +387,10 @@ export default function Settings() {
                     <td style={{ padding: '8px' }}>
                       <input style={{ ...inputStyle, padding: '4px 6px', fontSize: 12 }} defaultValue={m.email || ''}
                         onBlur={e => updateTeamMember(m.id, 'email', e.target.value)} />
+                    </td>
+                    <td style={{ padding: '8px' }}>
+                      <input style={{ ...inputStyle, padding: '4px 6px', fontSize: 12 }} defaultValue={m.phone || ''}
+                        onBlur={e => updateTeamMember(m.id, 'phone', e.target.value)} />
                     </td>
                     <td style={{ padding: '8px' }}>
                       <select style={{ ...inputStyle, padding: '4px 6px', fontSize: 11, cursor: 'pointer' }}

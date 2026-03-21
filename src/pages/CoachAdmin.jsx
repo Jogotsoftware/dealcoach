@@ -4,6 +4,14 @@ import { useAuth } from '../hooks/useAuth'
 import { theme as T } from '../lib/theme'
 import { Card, Badge, TabBar, Field, Button, Spinner, inputStyle, labelStyle } from '../components/Shared'
 
+const AI_MODELS = [
+  { key: 'claude-opus-4-6', label: 'Claude Opus 4.6' },
+  { key: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
+  { key: 'claude-haiku-4-5', label: 'Claude Haiku 4.5' },
+]
+
+const CATEGORIES = ['discovery', 'methodology', 'communication', 'qualification', 'closing', 'general', 'custom']
+
 export default function CoachAdmin() {
   const { profile } = useAuth()
   const [tab, setTab] = useState('overview')
@@ -24,12 +32,19 @@ export default function CoachAdmin() {
   const [editPromptData, setEditPromptData] = useState({})
   const [editingSystemPrompt, setEditingSystemPrompt] = useState(false)
   const [systemPromptVal, setSystemPromptVal] = useState('')
+  const [editingResearchPrompt, setEditingResearchPrompt] = useState(false)
+  const [researchPromptVal, setResearchPromptVal] = useState('')
+  const [editingExtraction, setEditingExtraction] = useState(false)
+  const [extractionVal, setExtractionVal] = useState('')
 
   // Template form
   const [showAddTemplate, setShowAddTemplate] = useState(false)
   const [newTemplate, setNewTemplate] = useState({ name: '', description: '' })
   const [showAddTemplateStage, setShowAddTemplateStage] = useState(null)
   const [newTemplateStage, setNewTemplateStage] = useState({ stage_name: '', default_duration_days: 14 })
+  const [expandedTemplate, setExpandedTemplate] = useState(null)
+  const [showAddMilestone, setShowAddMilestone] = useState(null)
+  const [newMilestone, setNewMilestone] = useState({ milestone_name: '', default_days_offset: 0 })
 
   useEffect(() => { loadCoach() }, [profile])
 
@@ -76,6 +91,7 @@ export default function CoachAdmin() {
     }
   }
 
+  // ── Coach overview saves ──
   async function saveCoach() {
     await supabase.from('coaches').update(editCoachData).eq('id', coach.id)
     setCoach(prev => ({ ...prev, ...editCoachData }))
@@ -88,12 +104,26 @@ export default function CoachAdmin() {
     setEditingSystemPrompt(false)
   }
 
+  async function saveResearchPrompt() {
+    await supabase.from('coaches').update({ research_prompt: researchPromptVal }).eq('id', coach.id)
+    setCoach(prev => ({ ...prev, research_prompt: researchPromptVal }))
+    setEditingResearchPrompt(false)
+  }
+
+  async function saveExtraction() {
+    await supabase.from('coaches').update({ extraction_rules: extractionVal }).eq('id', coach.id)
+    setCoach(prev => ({ ...prev, extraction_rules: extractionVal }))
+    setEditingExtraction(false)
+  }
+
+  // ── Prompt saves ──
   async function savePrompt(promptId) {
     await supabase.from('call_type_prompts').update(editPromptData).eq('id', promptId)
     setPrompts(prev => prev.map(p => p.id === promptId ? { ...p, ...editPromptData } : p))
     setEditingPrompt(null)
   }
 
+  // ── Rep scoring ──
   async function updateRepScoring(id, field, value) {
     await supabase.from('rep_scoring_configs').update({ [field]: value }).eq('id', id)
     setRepScoringConfigs(prev => prev.map(c => c.id === id ? { ...c, [field]: value } : c))
@@ -114,6 +144,7 @@ export default function CoachAdmin() {
     setRepScoringConfigs(prev => prev.filter(c => c.id !== id))
   }
 
+  // ── MSP Templates ──
   async function addTemplate() {
     if (!newTemplate.name.trim() || !coach) return
     const { data, error } = await supabase.from('msp_templates').insert({
@@ -121,6 +152,11 @@ export default function CoachAdmin() {
       is_default: mspTemplates.length === 0,
     }).select().single()
     if (!error && data) { setMspTemplates(prev => [...prev, data]); setShowAddTemplate(false); setNewTemplate({ name: '', description: '' }) }
+  }
+
+  async function updateTemplate(id, field, value) {
+    await supabase.from('msp_templates').update({ [field]: value }).eq('id', id)
+    setMspTemplates(prev => prev.map(t => t.id === id ? { ...t, [field]: value } : t))
   }
 
   async function addTemplateStage(templateId) {
@@ -134,18 +170,52 @@ export default function CoachAdmin() {
     if (!error && data) { setTemplateStages(prev => [...prev, data]); setShowAddTemplateStage(null); setNewTemplateStage({ stage_name: '', default_duration_days: 14 }) }
   }
 
+  async function updateTemplateStage(id, field, value) {
+    await supabase.from('msp_template_stages').update({ [field]: value }).eq('id', id)
+    setTemplateStages(prev => prev.map(s => s.id === id ? { ...s, [field]: value } : s))
+  }
+
+  async function deleteTemplateStage(id) {
+    if (!window.confirm('Delete this stage and its milestones?')) return
+    await supabase.from('msp_template_milestones').delete().eq('template_stage_id', id)
+    await supabase.from('msp_template_stages').delete().eq('id', id)
+    setTemplateStages(prev => prev.filter(s => s.id !== id))
+    setTemplateMilestones(prev => prev.filter(m => m.template_stage_id !== id))
+  }
+
+  async function addTemplateMilestone(stageId) {
+    if (!newMilestone.milestone_name.trim()) return
+    const existing = templateMilestones.filter(m => m.template_stage_id === stageId)
+    const nextOrder = existing.length > 0 ? Math.max(...existing.map(m => m.milestone_order)) + 1 : 1
+    const { data, error } = await supabase.from('msp_template_milestones').insert({
+      template_stage_id: stageId, milestone_name: newMilestone.milestone_name,
+      milestone_order: nextOrder, default_days_offset: Number(newMilestone.default_days_offset) || 0,
+    }).select().single()
+    if (!error && data) { setTemplateMilestones(prev => [...prev, data]); setShowAddMilestone(null); setNewMilestone({ milestone_name: '', default_days_offset: 0 }) }
+  }
+
+  async function updateTemplateMilestone(id, field, value) {
+    await supabase.from('msp_template_milestones').update({ [field]: value }).eq('id', id)
+    setTemplateMilestones(prev => prev.map(m => m.id === id ? { ...m, [field]: value } : m))
+  }
+
+  async function deleteTemplateMilestone(id) {
+    await supabase.from('msp_template_milestones').delete().eq('id', id)
+    setTemplateMilestones(prev => prev.filter(m => m.id !== id))
+  }
+
   async function deleteTemplate(id) {
     if (!window.confirm('Delete this template and all its stages?')) return
-    await supabase.from('msp_template_milestones').delete().in('template_stage_id', templateStages.filter(s => s.template_id === id).map(s => s.id))
+    const stageIds = templateStages.filter(s => s.template_id === id).map(s => s.id)
+    if (stageIds.length) await supabase.from('msp_template_milestones').delete().in('template_stage_id', stageIds)
     await supabase.from('msp_template_stages').delete().eq('template_id', id)
     await supabase.from('msp_templates').delete().eq('id', id)
     setMspTemplates(prev => prev.filter(t => t.id !== id))
     setTemplateStages(prev => prev.filter(s => s.template_id !== id))
+    setTemplateMilestones(prev => prev.filter(m => !stageIds.includes(m.template_stage_id)))
   }
 
   if (loading) return <Spinner />
-
-  const CATEGORIES = ['discovery', 'methodology', 'communication', 'qualification', 'closing', 'general', 'custom']
 
   const tabs = [
     { key: 'overview', label: 'Overview' },
@@ -168,27 +238,65 @@ export default function CoachAdmin() {
           <Card><div style={{ textAlign: 'center', padding: 32, color: T.textMuted }}>No active coach configured.</div></Card>
         ) : (
           <>
-            {/* OVERVIEW */}
+            {/* ══════════ OVERVIEW ══════════ */}
             {tab === 'overview' && (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                <Card title="Active Coach" action={<Button style={{ padding: '4px 12px', fontSize: 11 }}
-                  onClick={() => { setEditingCoach(true); setEditCoachData({ name: coach.name, description: coach.description, model: coach.model, temperature: coach.temperature }) }}>
-                  {editingCoach ? 'Cancel' : 'Edit'}</Button>}>
+                {/* Active Coach */}
+                <Card title="Active Coach" action={
+                  <Button style={{ padding: '4px 12px', fontSize: 11 }}
+                    onClick={() => {
+                      if (editingCoach) { setEditingCoach(false) }
+                      else { setEditingCoach(true); setEditCoachData({ name: coach.name, description: coach.description, model: coach.model, temperature: coach.temperature }) }
+                    }}>
+                    {editingCoach ? 'Cancel' : 'Edit'}
+                  </Button>
+                }>
                   {editingCoach ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                       <div><label style={labelStyle}>Name</label><input style={inputStyle} value={editCoachData.name || ''} onChange={e => setEditCoachData(p => ({ ...p, name: e.target.value }))} /></div>
                       <div><label style={labelStyle}>Description</label><textarea style={{ ...inputStyle, minHeight: 60, resize: 'vertical' }} value={editCoachData.description || ''} onChange={e => setEditCoachData(p => ({ ...p, description: e.target.value }))} /></div>
-                      <div><label style={labelStyle}>Model</label><input style={inputStyle} value={editCoachData.model || ''} onChange={e => setEditCoachData(p => ({ ...p, model: e.target.value }))} /></div>
-                      <div><label style={labelStyle}>Temperature</label><input type="number" step="0.1" style={inputStyle} value={editCoachData.temperature || ''} onChange={e => setEditCoachData(p => ({ ...p, temperature: Number(e.target.value) }))} /></div>
+                      <div>
+                        <label style={labelStyle}>AI Model</label>
+                        <select style={{ ...inputStyle, cursor: 'pointer' }} value={editCoachData.model || ''} onChange={e => setEditCoachData(p => ({ ...p, model: e.target.value }))}>
+                          <option value="">Select model...</option>
+                          {AI_MODELS.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Temperature: {editCoachData.temperature ?? 0.7}</label>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                          <span style={{ fontSize: 11, color: T.textMuted }}>0</span>
+                          <input type="range" min="0" max="1" step="0.05" value={editCoachData.temperature ?? 0.7}
+                            onChange={e => setEditCoachData(p => ({ ...p, temperature: Number(e.target.value) }))}
+                            style={{ flex: 1, cursor: 'pointer', accentColor: T.primary }} />
+                          <span style={{ fontSize: 11, color: T.textMuted }}>1</span>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: T.primary, minWidth: 30, textAlign: 'right' }}>
+                            {(editCoachData.temperature ?? 0.7).toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
                       <Button primary onClick={saveCoach}>Save</Button>
                     </div>
                   ) : (
-                    <><Field label="Name" value={coach.name} /><Field label="Description" value={coach.description} /><Field label="Model" value={coach.model} /><Field label="Temperature" value={String(coach.temperature)} /></>
+                    <>
+                      <Field label="Name" value={coach.name} />
+                      <Field label="Description" value={coach.description} />
+                      <Field label="Model" value={AI_MODELS.find(m => m.key === coach.model)?.label || coach.model} />
+                      <Field label="Temperature" value={String(coach.temperature ?? '0.7')} />
+                    </>
                   )}
                 </Card>
-                <Card title="System Prompt" action={<Button style={{ padding: '4px 12px', fontSize: 11 }}
-                  onClick={() => { if (editingSystemPrompt) { setEditingSystemPrompt(false) } else { setEditingSystemPrompt(true); setSystemPromptVal(coach.system_prompt || '') } }}>
-                  {editingSystemPrompt ? 'Cancel' : 'Edit'}</Button>}>
+
+                {/* System Prompt */}
+                <Card title="System Prompt" action={
+                  <Button style={{ padding: '4px 12px', fontSize: 11 }}
+                    onClick={() => {
+                      if (editingSystemPrompt) { setEditingSystemPrompt(false) }
+                      else { setEditingSystemPrompt(true); setSystemPromptVal(coach.system_prompt || '') }
+                    }}>
+                    {editingSystemPrompt ? 'Cancel' : 'Edit'}
+                  </Button>
+                }>
                   {editingSystemPrompt ? (
                     <div>
                       <textarea style={{ ...inputStyle, fontFamily: T.mono, fontSize: 12, minHeight: 250, resize: 'vertical' }}
@@ -196,20 +304,62 @@ export default function CoachAdmin() {
                       <Button primary onClick={saveSystemPrompt} style={{ marginTop: 8 }}>Save</Button>
                     </div>
                   ) : (
-                    <div style={{ fontFamily: T.mono, fontSize: 12, lineHeight: 1.6, color: T.text, background: T.surfaceAlt, padding: 14, borderRadius: 6, maxHeight: 300, overflow: 'auto' }}>
+                    <div style={{ fontFamily: T.mono, fontSize: 12, lineHeight: 1.6, color: T.text, background: T.surfaceAlt, padding: 14, borderRadius: 6, maxHeight: 300, overflow: 'auto', whiteSpace: 'pre-wrap' }}>
                       {coach.system_prompt || 'No system prompt configured'}
                     </div>
                   )}
                 </Card>
-                <Card title="Extraction Rules" style={{ gridColumn: '1 / -1' }}>
-                  <div style={{ fontFamily: T.mono, fontSize: 12, lineHeight: 1.6, color: T.text, background: T.surfaceAlt, padding: 14, borderRadius: 6, maxHeight: 200, overflow: 'auto' }}>
-                    {coach.extraction_rules || 'No extraction rules configured'}
-                  </div>
+
+                {/* Research Prompt */}
+                <Card title="Research Prompt" action={
+                  <Button style={{ padding: '4px 12px', fontSize: 11 }}
+                    onClick={() => {
+                      if (editingResearchPrompt) { setEditingResearchPrompt(false) }
+                      else { setEditingResearchPrompt(true); setResearchPromptVal(coach.research_prompt || '') }
+                    }}>
+                    {editingResearchPrompt ? 'Cancel' : 'Edit'}
+                  </Button>
+                }>
+                  {editingResearchPrompt ? (
+                    <div>
+                      <textarea style={{ ...inputStyle, fontFamily: T.mono, fontSize: 12, minHeight: 180, resize: 'vertical' }}
+                        value={researchPromptVal} onChange={e => setResearchPromptVal(e.target.value)}
+                        placeholder="Enter the research prompt for this coach..." />
+                      <Button primary onClick={saveResearchPrompt} style={{ marginTop: 8 }}>Save</Button>
+                    </div>
+                  ) : (
+                    <div style={{ fontFamily: T.mono, fontSize: 12, lineHeight: 1.6, color: T.text, background: T.surfaceAlt, padding: 14, borderRadius: 6, maxHeight: 200, overflow: 'auto', whiteSpace: 'pre-wrap' }}>
+                      {coach.research_prompt || 'No research prompt configured'}
+                    </div>
+                  )}
+                </Card>
+
+                {/* Extraction Rules */}
+                <Card title="Extraction Rules" action={
+                  <Button style={{ padding: '4px 12px', fontSize: 11 }}
+                    onClick={() => {
+                      if (editingExtraction) { setEditingExtraction(false) }
+                      else { setEditingExtraction(true); setExtractionVal(coach.extraction_rules || '') }
+                    }}>
+                    {editingExtraction ? 'Cancel' : 'Edit'}
+                  </Button>
+                }>
+                  {editingExtraction ? (
+                    <div>
+                      <textarea style={{ ...inputStyle, fontFamily: T.mono, fontSize: 12, minHeight: 180, resize: 'vertical' }}
+                        value={extractionVal} onChange={e => setExtractionVal(e.target.value)} />
+                      <Button primary onClick={saveExtraction} style={{ marginTop: 8 }}>Save</Button>
+                    </div>
+                  ) : (
+                    <div style={{ fontFamily: T.mono, fontSize: 12, lineHeight: 1.6, color: T.text, background: T.surfaceAlt, padding: 14, borderRadius: 6, maxHeight: 200, overflow: 'auto', whiteSpace: 'pre-wrap' }}>
+                      {coach.extraction_rules || 'No extraction rules configured'}
+                    </div>
+                  )}
                 </Card>
               </div>
             )}
 
-            {/* CALL PROMPTS */}
+            {/* ══════════ CALL PROMPTS ══════════ */}
             {tab === 'prompts' && (
               <div>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}><Button primary>+ Add Prompt</Button></div>
@@ -237,7 +387,7 @@ export default function CoachAdmin() {
                           </div>
                         </div>
                         {p.prompt && (
-                          <div style={{ marginTop: 10, fontFamily: T.mono, fontSize: 11, lineHeight: 1.5, color: T.textSecondary, background: T.surfaceAlt, padding: 10, borderRadius: 4, maxHeight: 80, overflow: 'hidden' }}>
+                          <div style={{ marginTop: 10, fontFamily: T.mono, fontSize: 11, lineHeight: 1.5, color: T.textSecondary, background: T.surfaceAlt, padding: 10, borderRadius: 4, maxHeight: 80, overflow: 'hidden', whiteSpace: 'pre-wrap' }}>
                             {p.prompt.substring(0, 200)}{p.prompt.length > 200 ? '...' : ''}
                           </div>
                         )}
@@ -248,7 +398,7 @@ export default function CoachAdmin() {
               </div>
             )}
 
-            {/* DOCUMENTS */}
+            {/* ══════════ DOCUMENTS ══════════ */}
             {tab === 'docs' && (
               <div>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}><Button primary>+ Upload Document</Button></div>
@@ -270,7 +420,7 @@ export default function CoachAdmin() {
               </div>
             )}
 
-            {/* SCORING */}
+            {/* ══════════ SCORING ══════════ */}
             {tab === 'scoring' && (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                 {scoringConfigs.map(s => (
@@ -288,7 +438,7 @@ export default function CoachAdmin() {
               </div>
             )}
 
-            {/* REP SCORING */}
+            {/* ══════════ REP SCORING ══════════ */}
             {tab === 'rep_scoring' && (
               <div>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
@@ -321,11 +471,11 @@ export default function CoachAdmin() {
               </div>
             )}
 
-            {/* MSP TEMPLATES */}
+            {/* ══════════ MSP TEMPLATES ══════════ */}
             {tab === 'templates' && (
               <div>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
-                  <Button primary onClick={() => setShowAddTemplate(true)}>+ Add Template</Button>
+                  <Button primary onClick={() => setShowAddTemplate(true)}>+ Create Template</Button>
                 </div>
 
                 {showAddTemplate && (
@@ -333,7 +483,7 @@ export default function CoachAdmin() {
                     <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
                       <div style={{ flex: 1 }}><label style={labelStyle}>Name *</label><input style={inputStyle} value={newTemplate.name} onChange={e => setNewTemplate(p => ({ ...p, name: e.target.value }))} autoFocus /></div>
                       <div style={{ flex: 1 }}><label style={labelStyle}>Description</label><input style={inputStyle} value={newTemplate.description} onChange={e => setNewTemplate(p => ({ ...p, description: e.target.value }))} /></div>
-                      <Button primary onClick={addTemplate}>Add</Button>
+                      <Button primary onClick={addTemplate}>Create</Button>
                       <Button onClick={() => setShowAddTemplate(false)}>Cancel</Button>
                     </div>
                   </Card>
@@ -343,43 +493,116 @@ export default function CoachAdmin() {
                   <Card><div style={{ textAlign: 'center', padding: 32, color: T.textMuted }}>No MSP templates. Create one to allow reps to quickly populate deal timelines.</div></Card>
                 ) : mspTemplates.map(tpl => {
                   const tplStages = templateStages.filter(s => s.template_id === tpl.id)
+                  const isExpanded = expandedTemplate === tpl.id
+
                   return (
-                    <Card key={tpl.id} title={<span>{tpl.name} {tpl.is_default && <Badge color={T.success}>Default</Badge>}</span>}
-                      action={
-                        <div style={{ display: 'flex', gap: 6 }}>
-                          <Button style={{ padding: '4px 10px', fontSize: 11 }}
+                    <div key={tpl.id} style={{
+                      background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.radius,
+                      boxShadow: T.shadow, marginBottom: 16, overflow: 'hidden',
+                    }}>
+                      {/* Template header */}
+                      <div style={{
+                        padding: '12px 18px', background: T.surfaceAlt, borderBottom: isExpanded ? `1px solid ${T.border}` : 'none',
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer',
+                      }} onClick={() => setExpandedTemplate(isExpanded ? null : tpl.id)}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <span style={{ fontSize: 12, color: T.textMuted, transition: 'transform 0.15s', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>{'\u25B6'}</span>
+                          <span style={{ fontSize: 14, fontWeight: 700, color: T.text }}>{tpl.name}</span>
+                          {tpl.is_default && <Badge color={T.success}>Default</Badge>}
+                          <span style={{ fontSize: 12, color: T.textSecondary }}>{tplStages.length} stage{tplStages.length !== 1 ? 's' : ''}</span>
+                        </div>
+                        <div style={{ display: 'flex', gap: 6 }} onClick={e => e.stopPropagation()}>
+                          {!tpl.is_default && (
+                            <Button style={{ padding: '3px 8px', fontSize: 10 }} onClick={() => updateTemplate(tpl.id, 'is_default', true)}>Set Default</Button>
+                          )}
+                          <Button style={{ padding: '3px 8px', fontSize: 10 }}
                             onClick={() => { setShowAddTemplateStage(tpl.id); setNewTemplateStage({ stage_name: '', default_duration_days: 14 }) }}>+ Stage</Button>
                           <button onClick={() => deleteTemplate(tpl.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, fontSize: 14 }}
                             onMouseEnter={e => e.currentTarget.style.color = T.error} onMouseLeave={e => e.currentTarget.style.color = T.textMuted}>&#10005;</button>
                         </div>
-                      }>
-                      {tpl.description && <div style={{ fontSize: 12, color: T.textSecondary, marginBottom: 8 }}>{tpl.description}</div>}
+                      </div>
 
-                      {showAddTemplateStage === tpl.id && (
-                        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', padding: 10, background: T.surfaceAlt, borderRadius: 6, marginBottom: 8 }}>
-                          <div style={{ flex: 1 }}><label style={labelStyle}>Stage Name *</label><input style={inputStyle} value={newTemplateStage.stage_name} onChange={e => setNewTemplateStage(p => ({ ...p, stage_name: e.target.value }))} autoFocus /></div>
-                          <div style={{ width: 120 }}><label style={labelStyle}>Duration (days)</label><input type="number" style={inputStyle} value={newTemplateStage.default_duration_days} onChange={e => setNewTemplateStage(p => ({ ...p, default_duration_days: e.target.value }))} /></div>
-                          <Button primary onClick={() => addTemplateStage(tpl.id)}>Add</Button>
-                          <Button onClick={() => setShowAddTemplateStage(null)}>Cancel</Button>
+                      {/* Expanded content */}
+                      {isExpanded && (
+                        <div style={{ padding: 18 }}>
+                          {tpl.description && <div style={{ fontSize: 12, color: T.textSecondary, marginBottom: 12 }}>{tpl.description}</div>}
+
+                          {/* Add stage form */}
+                          {showAddTemplateStage === tpl.id && (
+                            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', padding: 12, background: T.surfaceAlt, borderRadius: 6, marginBottom: 12, border: `1px solid ${T.borderLight}` }}>
+                              <div style={{ flex: 1 }}><label style={labelStyle}>Stage Name *</label><input style={inputStyle} value={newTemplateStage.stage_name} onChange={e => setNewTemplateStage(p => ({ ...p, stage_name: e.target.value }))} autoFocus /></div>
+                              <div style={{ width: 120 }}><label style={labelStyle}>Duration (days)</label><input type="number" style={inputStyle} value={newTemplateStage.default_duration_days} onChange={e => setNewTemplateStage(p => ({ ...p, default_duration_days: e.target.value }))} /></div>
+                              <Button primary onClick={() => addTemplateStage(tpl.id)}>Add</Button>
+                              <Button onClick={() => setShowAddTemplateStage(null)}>Cancel</Button>
+                            </div>
+                          )}
+
+                          {tplStages.length === 0 ? (
+                            <div style={{ color: T.textMuted, fontSize: 13, textAlign: 'center', padding: 16 }}>No stages. Click "+ Stage" to add one.</div>
+                          ) : tplStages.map((s, si) => {
+                            const stageMilestones = templateMilestones.filter(m => m.template_stage_id === s.id)
+                            return (
+                              <div key={s.id} style={{ marginBottom: 12 }}>
+                                {/* Stage row */}
+                                <div style={{
+                                  display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
+                                  background: T.surfaceAlt, borderRadius: 6, border: `1px solid ${T.borderLight}`,
+                                }}>
+                                  <span style={{ width: 24, height: 24, borderRadius: '50%', background: T.primary, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{si + 1}</span>
+                                  <input style={{ ...inputStyle, flex: 1, padding: '4px 8px', fontSize: 13, fontWeight: 600 }}
+                                    defaultValue={s.stage_name} onBlur={e => updateTemplateStage(s.id, 'stage_name', e.target.value)} />
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                    <input type="number" style={{ ...inputStyle, width: 60, padding: '4px 6px', fontSize: 12, textAlign: 'center' }}
+                                      defaultValue={s.default_duration_days} onBlur={e => updateTemplateStage(s.id, 'default_duration_days', Number(e.target.value) || 14)} />
+                                    <span style={{ fontSize: 11, color: T.textMuted }}>days</span>
+                                  </div>
+                                  <Button style={{ padding: '3px 8px', fontSize: 10 }}
+                                    onClick={() => { setShowAddMilestone(s.id); setNewMilestone({ milestone_name: '', default_days_offset: 0 }) }}>+ Milestone</Button>
+                                  <button onClick={() => deleteTemplateStage(s.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, fontSize: 14 }}
+                                    onMouseEnter={e => e.currentTarget.style.color = T.error} onMouseLeave={e => e.currentTarget.style.color = T.textMuted}>&#10005;</button>
+                                </div>
+
+                                {/* Add milestone form */}
+                                {showAddMilestone === s.id && (
+                                  <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', padding: 10, marginLeft: 34, marginTop: 4, background: '#fff', borderRadius: 6, border: `1px dashed ${T.borderLight}` }}>
+                                    <div style={{ flex: 1 }}><label style={labelStyle}>Milestone *</label><input style={inputStyle} value={newMilestone.milestone_name}
+                                      onChange={e => setNewMilestone(p => ({ ...p, milestone_name: e.target.value }))} autoFocus
+                                      onKeyDown={e => e.key === 'Enter' && addTemplateMilestone(s.id)} /></div>
+                                    <div style={{ width: 100 }}><label style={labelStyle}>Day offset</label><input type="number" style={inputStyle} value={newMilestone.default_days_offset}
+                                      onChange={e => setNewMilestone(p => ({ ...p, default_days_offset: e.target.value }))} /></div>
+                                    <Button primary onClick={() => addTemplateMilestone(s.id)} style={{ padding: '6px 12px', fontSize: 11 }}>Add</Button>
+                                    <Button onClick={() => setShowAddMilestone(null)} style={{ padding: '6px 12px', fontSize: 11 }}>Cancel</Button>
+                                  </div>
+                                )}
+
+                                {/* Milestones */}
+                                {stageMilestones.length > 0 && (
+                                  <div style={{ marginLeft: 34, marginTop: 4 }}>
+                                    {stageMilestones.map(ms => (
+                                      <div key={ms.id} style={{
+                                        display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px',
+                                        borderLeft: `2px solid ${T.borderLight}`, marginBottom: 2,
+                                      }}>
+                                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: T.textMuted, flexShrink: 0 }} />
+                                        <input style={{ ...inputStyle, flex: 1, padding: '3px 6px', fontSize: 12 }}
+                                          defaultValue={ms.milestone_name} onBlur={e => updateTemplateMilestone(ms.id, 'milestone_name', e.target.value)} />
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                          <input type="number" style={{ ...inputStyle, width: 50, padding: '3px 4px', fontSize: 11, textAlign: 'center' }}
+                                            defaultValue={ms.default_days_offset} onBlur={e => updateTemplateMilestone(ms.id, 'default_days_offset', Number(e.target.value) || 0)} />
+                                          <span style={{ fontSize: 10, color: T.textMuted }}>d</span>
+                                        </div>
+                                        <button onClick={() => deleteTemplateMilestone(ms.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, fontSize: 12 }}
+                                          onMouseEnter={e => e.currentTarget.style.color = T.error} onMouseLeave={e => e.currentTarget.style.color = T.textMuted}>&#10005;</button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })}
                         </div>
                       )}
-
-                      {tplStages.length === 0 ? (
-                        <div style={{ color: T.textMuted, fontSize: 13 }}>No stages in this template yet.</div>
-                      ) : tplStages.map((s, si) => (
-                        <div key={s.id} style={{
-                          display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px',
-                          background: T.surfaceAlt, borderRadius: 6, marginBottom: 4, border: `1px solid ${T.borderLight}`,
-                        }}>
-                          <span style={{ width: 22, height: 22, borderRadius: '50%', background: T.primary, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{si + 1}</span>
-                          <div style={{ flex: 1, fontSize: 13, fontWeight: 600, color: T.text }}>{s.stage_name}</div>
-                          <span style={{ fontSize: 11, color: T.textSecondary }}>{s.default_duration_days}d</span>
-                          {templateMilestones.filter(m => m.template_stage_id === s.id).length > 0 && (
-                            <Badge color={T.textMuted}>{templateMilestones.filter(m => m.template_stage_id === s.id).length} milestones</Badge>
-                          )}
-                        </div>
-                      ))}
-                    </Card>
+                    </div>
                   )
                 })}
               </div>

@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { useAuth } from '../hooks/useAuth'
 import { theme as T, formatDate, formatDateLong, daysUntil } from '../lib/theme'
 import { Card, Badge, Button, MilestoneStatus, EmptyState, Spinner, TabBar, inputStyle, labelStyle } from '../components/Shared'
 
 export default function MSPPage() {
   const { dealId } = useParams()
   const navigate = useNavigate()
+  const { profile } = useAuth()
   const [loading, setLoading] = useState(true)
   const [deal, setDeal] = useState(null)
   const [stages, setStages] = useState([])
@@ -62,12 +64,17 @@ export default function MSPPage() {
       setResources(resRes.data || [])
       setSharedLinks(linksRes.data || [])
 
-      // Load MSP templates if no stages yet
+      // Load MSP templates if no stages yet - filter by active coach
       if (!stagesRes.data?.length) {
-        const { data: tpls } = await supabase.from('msp_templates').select('*').order('is_default', { ascending: false })
+        let tplQuery = supabase.from('msp_templates').select('*')
+        if (profile?.active_coach_id) {
+          tplQuery = tplQuery.eq('coach_id', profile.active_coach_id)
+        }
+        const { data: tpls } = await tplQuery.order('is_default', { ascending: false })
         setTemplates(tpls || [])
         const defaultTpl = (tpls || []).find(t => t.is_default)
         if (defaultTpl) setSelectedTemplate(defaultTpl.id)
+        else if (tpls?.length) setSelectedTemplate(tpls[0].id)
       }
     } catch (err) {
       console.error('Error loading MSP:', err)
@@ -318,11 +325,13 @@ export default function MSPPage() {
                   <div style={{ fontSize: 14, color: T.textMuted, marginBottom: 16 }}>No MSP stages yet. Apply a template or create stages manually.</div>
                   {templates.length > 0 && (
                     <div style={{ display: 'flex', justifyContent: 'center', gap: 8, alignItems: 'center', marginBottom: 12 }}>
-                      {templates.length > 1 && (
+                      {templates.length > 1 ? (
                         <select style={{ ...inputStyle, width: 'auto', padding: '8px 12px', cursor: 'pointer' }}
                           value={selectedTemplate} onChange={e => setSelectedTemplate(e.target.value)}>
                           {templates.map(t => <option key={t.id} value={t.id}>{t.name}{t.is_default ? ' (Default)' : ''}</option>)}
                         </select>
+                      ) : templates.length === 1 && (
+                        <span style={{ fontSize: 13, color: T.text, fontWeight: 600 }}>Template: {templates[0].name}</span>
                       )}
                       <Button primary onClick={applyTemplate} disabled={applyingTemplate || !deal?.target_close_date}>
                         {applyingTemplate ? 'Applying...' : 'Apply Template'}
