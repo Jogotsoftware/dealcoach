@@ -426,6 +426,7 @@ export async function processTranscript(conversationId) {
  * Used after deal creation to auto-populate company_profile.
  */
 export async function callResearchFunction(dealId) {
+  console.log('Calling research-company for deal:', dealId)
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) return { error: 'Not authenticated' }
 
@@ -437,11 +438,14 @@ export async function callResearchFunction(dealId) {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session.access_token}`,
+          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
         },
         body: JSON.stringify({ deal_id: dealId }),
       }
     )
-    return await response.json()
+    const res = await response.json()
+    console.log('Edge function response:', res)
+    return res
   } catch (err) {
     return { error: err.message }
   }
@@ -452,6 +456,7 @@ export async function callResearchFunction(dealId) {
  * Replaces the Make.com webhook flow with a direct Edge Function call.
  */
 export async function callProcessTranscript(conversationId) {
+  console.log('Calling process-transcript for conversation:', conversationId)
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) return { error: 'Not authenticated' }
 
@@ -463,11 +468,14 @@ export async function callProcessTranscript(conversationId) {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session.access_token}`,
+          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
         },
         body: JSON.stringify({ conversation_id: conversationId }),
       }
     )
-    return await response.json()
+    const res = await response.json()
+    console.log('Edge function response:', res)
+    return res
   } catch (err) {
     return { error: err.message }
   }

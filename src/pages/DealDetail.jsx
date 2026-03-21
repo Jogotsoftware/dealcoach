@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { theme as T, formatCurrency, formatDate, formatDateLong, daysUntil, STAGES, FORECAST_CATEGORIES, CALL_TYPES, TASK_CATEGORIES } from '../lib/theme'
 import { Card, Badge, ForecastBadge, StageBadge, ScoreBar, Field, StatusDot, MilestoneStatus, TabBar, Button, EmptyState, Spinner, inputStyle, labelStyle } from '../components/Shared'
+import TranscriptUpload from '../components/TranscriptUpload'
 
 // === EDITABLE FIELD COMPONENT ===
 function EditableField({ label, value, field, table, recordId, onSaved, type = 'text', options }) {
@@ -130,6 +131,9 @@ export default function DealDetail() {
   // Competitor editing
   const [editingCompetitor, setEditingCompetitor] = useState(null)
   const [editCompData, setEditCompData] = useState({})
+
+  // Transcript upload modal
+  const [showTranscriptUpload, setShowTranscriptUpload] = useState(false)
 
   // Research polling
   const [researchStatus, setResearchStatus] = useState(null) // null | 'in_progress' | 'complete'
@@ -880,7 +884,7 @@ export default function DealDetail() {
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
               <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: T.text }}>Transcripts</h3>
-              <Button primary>Upload Transcript</Button>
+              <Button primary onClick={() => setShowTranscriptUpload(true)}>Upload Transcript</Button>
             </div>
             {conversations.length === 0
               ? <EmptyState message="No transcripts yet. Upload a call transcript for AI analysis and auto-extracted tasks." />
@@ -910,6 +914,15 @@ export default function DealDetail() {
                 </div>
               ))}
           </div>
+        )}
+
+        {/* Transcript Upload Modal */}
+        {showTranscriptUpload && (
+          <TranscriptUpload
+            deals={[deal]}
+            onClose={() => setShowTranscriptUpload(false)}
+            onUploaded={() => { setShowTranscriptUpload(false); loadDeal() }}
+          />
         )}
 
         {/* ===== MSP TAB ===== */}

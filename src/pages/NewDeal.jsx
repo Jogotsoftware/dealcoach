@@ -56,7 +56,7 @@ export default function NewDeal() {
       if (form.contact_name.trim()) {
         await supabase.from('contacts').insert({
           deal_id: data.id,
-          contact_name: form.contact_name.trim(),
+          name: form.contact_name.trim(),
           title: form.contact_title.trim() || null,
           email: form.contact_email.trim() || null,
           role_in_deal: 'Primary Contact',
