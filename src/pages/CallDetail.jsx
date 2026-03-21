@@ -11,6 +11,7 @@ export default function CallDetail() {
   const [conversation, setConversation] = useState(null)
   const [analysis, setAnalysis] = useState(null)
   const [companyName, setCompanyName] = useState('')
+  const [showTranscript, setShowTranscript] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -57,9 +58,9 @@ export default function CallDetail() {
   const scoreColor = (s) => s >= 80 ? T.success : s >= 60 ? T.primary : s >= 40 ? T.warning : T.error
 
   const qualityColor = (q) => {
-    if (q === 'good') return 'rgba(40, 167, 69, 0.08)'
-    if (q === 'adequate') return 'rgba(245, 158, 11, 0.08)'
-    if (q === 'missed_opportunity') return 'rgba(220, 53, 69, 0.08)'
+    if (q === 'good') return T.successLight
+    if (q === 'adequate') return T.warningLight
+    if (q === 'missed_opportunity') return T.errorLight
     return T.surfaceAlt
   }
 
@@ -87,9 +88,14 @@ export default function CallDetail() {
     { key: 'next_steps_quality_score', label: 'Next Steps' },
   ]
 
+  const sectionStyle = {
+    fontSize: 11, fontWeight: 700, color: T.textSecondary, textTransform: 'uppercase',
+    letterSpacing: '0.06em', marginBottom: 12, marginTop: 8,
+  }
+
   return (
     <div style={{ fontFamily: T.font }}>
-      {/* Header */}
+      {/* TOP: Header bar */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 16, padding: '16px 24px',
         background: T.surface, borderBottom: `1px solid ${T.border}`,
@@ -99,106 +105,104 @@ export default function CallDetail() {
           Back to {companyName || 'Deal'}
         </Button>
         <div style={{ flex: 1, minWidth: 200 }}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: T.text }}>{conversation.title || 'Untitled Call'}</div>
-          <div style={{ fontSize: 12, color: T.textSecondary, marginTop: 2 }}>
-            {conversation.call_date ? formatDateLong(conversation.call_date) : 'No date'}
+          <div style={{ fontSize: 18, fontWeight: 700, color: T.text }}>{conversation.title || 'Untitled Call'}</div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>
+            <span style={{ fontSize: 12, color: T.textSecondary }}>
+              {conversation.call_date ? formatDateLong(conversation.call_date) : 'No date'}
+            </span>
+            {conversation.call_type && <Badge color={T.primary}>{conversation.call_type}</Badge>}
+            {conversation.processed && <Badge color={T.success}>Processed</Badge>}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {conversation.call_type && <Badge color={T.primary}>{conversation.call_type}</Badge>}
-          {conversation.processed && <Badge color={T.success}>Processed</Badge>}
-        </div>
+        {/* Large overall score on the right */}
+        {analysis && analysis.overall_score != null && (
+          <div style={{ textAlign: 'center', minWidth: 80 }}>
+            <div style={{
+              fontSize: 48, fontWeight: 700, color: scoreColor(analysis.overall_score),
+              lineHeight: 1, fontFeatureSettings: '"tnum"',
+            }}>
+              {analysis.overall_score}
+            </div>
+            <div style={{ fontSize: 10, color: T.textMuted, marginTop: 4, textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
+              Overall{analysis.scored_by ? ` / ${analysis.scored_by}` : ''}
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Two-column layout */}
-      <div style={{ display: 'flex', gap: 24, padding: 24, alignItems: 'flex-start' }}>
-        {/* LEFT column */}
-        <div style={{ flex: 6, minWidth: 0 }}>
-          <Card title="Transcript">
-            {conversation.transcript ? (
-              <div style={{
-                maxHeight: 600, overflowY: 'auto', background: T.surfaceAlt,
-                border: `1px solid ${T.border}`, padding: 16, fontSize: 12,
-                lineHeight: 1.6, whiteSpace: 'pre-wrap', fontFamily: T.mono,
-                borderRadius: 6,
-              }}>
-                {conversation.transcript}
-              </div>
+      {/* Content area - single column full width */}
+      <div style={{ padding: 24, maxWidth: 1200, margin: '0 auto' }}>
+
+        {/* SECTION 1: AI Summary */}
+        <div style={sectionStyle}>AI Summary</div>
+        <Card>
+          {summaryText ? (
+            <div style={{ fontSize: 13, lineHeight: 1.7, color: T.text }}>{summaryText}</div>
+          ) : (
+            <div style={{ color: T.textMuted, fontSize: 13 }}>No summary available</div>
+          )}
+        </Card>
+
+        {/* SECTION 2: Coaching - three cards side by side */}
+        <div style={sectionStyle}>Coaching</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 16 }}>
+          {/* Strengths */}
+          <Card style={{ borderLeft: `4px solid ${T.success}`, marginBottom: 0 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.success, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 8 }}>Strengths</div>
+            {analysis?.strengths ? (
+              <div style={{ fontSize: 13, lineHeight: 1.6, color: T.text }}>{analysis.strengths}</div>
             ) : (
-              <div style={{ color: T.textMuted, fontSize: 13 }}>No transcript available</div>
+              <div style={{ color: T.textMuted, fontSize: 13 }}>No data</div>
+            )}
+          </Card>
+
+          {/* Areas to Improve */}
+          <Card style={{ borderLeft: `4px solid ${T.error}`, marginBottom: 0 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.error, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 8 }}>Areas to Improve</div>
+            {analysis?.improvements ? (
+              <div style={{ fontSize: 13, lineHeight: 1.6, color: T.text }}>{analysis.improvements}</div>
+            ) : conversation?.ai_coaching_notes ? (
+              <div style={{ fontSize: 13, lineHeight: 1.6, color: T.text }}>{conversation.ai_coaching_notes}</div>
+            ) : (
+              <div style={{ color: T.textMuted, fontSize: 13 }}>No data</div>
+            )}
+          </Card>
+
+          {/* Methodology Gaps */}
+          <Card style={{ borderLeft: `4px solid ${T.warning}`, marginBottom: 0 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.warning, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 8 }}>Methodology Gaps</div>
+            {analysis?.methodology_gaps ? (
+              <div style={{ fontSize: 13, lineHeight: 1.6, color: T.text }}>{analysis.methodology_gaps}</div>
+            ) : (
+              <div style={{ color: T.textMuted, fontSize: 13 }}>No data</div>
             )}
           </Card>
         </div>
 
-        {/* RIGHT column */}
-        <div style={{ flex: 4, minWidth: 0 }}>
-          {/* AI Summary */}
-          <Card title="AI Summary">
-            {summaryText ? (
-              <div style={{ fontSize: 13, lineHeight: 1.6, color: T.text }}>{summaryText}</div>
-            ) : (
-              <div style={{ color: T.textMuted, fontSize: 13 }}>No summary available</div>
-            )}
-          </Card>
+        {/* SECTION 3: Scores */}
+        {analysis && (analysis.overall_score != null || analysis.score_breakdown || individualScores.some(s => analysis[s.key] != null)) && (
+          <>
+            <div style={sectionStyle}>Scores</div>
+            <Card>
+              {/* Individual named scores as horizontal ScoreBars */}
+              {individualScores
+                .filter(s => analysis[s.key] != null)
+                .map(s => (
+                  <ScoreBar key={s.key} label={s.label} score={analysis[s.key]} max={10} />
+                ))
+              }
 
-          {/* Coaching Notes */}
-          <Card title="Coaching Notes">
-            {analysis ? (
-              <>
-                {analysis.strengths && (
-                  <div style={{ borderLeft: `3px solid ${T.success}`, paddingLeft: 12, marginBottom: 12 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: T.success, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>Strengths</div>
-                    <div style={{ fontSize: 13, lineHeight: 1.6, color: T.text }}>{analysis.strengths}</div>
-                  </div>
-                )}
-                {analysis.improvements && (
-                  <div style={{ borderLeft: `3px solid ${T.error}`, paddingLeft: 12, marginBottom: 12 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: T.error, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>Areas to Improve</div>
-                    <div style={{ fontSize: 13, lineHeight: 1.6, color: T.text }}>{analysis.improvements}</div>
-                  </div>
-                )}
-                {analysis.methodology_gaps && (
-                  <div style={{ borderLeft: `3px solid ${T.warning}`, paddingLeft: 12, marginBottom: 12 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: T.warning, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>Methodology Gaps</div>
-                    <div style={{ fontSize: 13, lineHeight: 1.6, color: T.text }}>{analysis.methodology_gaps}</div>
-                  </div>
-                )}
-                {!analysis.strengths && !analysis.improvements && !analysis.methodology_gaps && (
-                  <div style={{ color: T.textMuted, fontSize: 13 }}>No coaching data available</div>
-                )}
-              </>
-            ) : (
-              conversation.ai_coaching_notes ? (
-                <div style={{ fontSize: 13, lineHeight: 1.6, color: T.text }}>{conversation.ai_coaching_notes}</div>
-              ) : (
-                <div style={{ color: T.textMuted, fontSize: 13 }}>No coaching notes available</div>
-              )
-            )}
-          </Card>
-
-          {/* Call Score */}
-          {analysis && analysis.overall_score != null && (
-            <Card title="Call Score">
-              <div style={{ textAlign: 'center', marginBottom: 16 }}>
-                <div style={{
-                  fontSize: 48, fontWeight: 700, color: scoreColor(analysis.overall_score),
-                  lineHeight: 1,
-                }}>
-                  {analysis.overall_score}
-                </div>
-                {analysis.scored_by && (
-                  <div style={{ fontSize: 11, color: T.textMuted, marginTop: 4 }}>Scored by {analysis.scored_by}</div>
-                )}
-              </div>
-
-              {/* score_breakdown JSONB — supports array (from AI) or object format */}
+              {/* score_breakdown JSONB - supports array or object */}
               {analysis.score_breakdown && (
-                <div style={{ marginBottom: 12 }}>
+                <div style={{ marginTop: individualScores.some(s => analysis[s.key] != null) ? 16 : 0 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: T.textSecondary, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 8 }}>Score Breakdown</div>
                   {Array.isArray(analysis.score_breakdown) ? (
                     analysis.score_breakdown.map((item, i) => (
                       <div key={i}>
                         <ScoreBar label={item.criteria} score={item.score} max={item.max || 10} />
-                        {item.notes && <div style={{ fontSize: 11, color: T.textSecondary, marginLeft: 63, marginTop: -2, marginBottom: 8 }}>{item.notes}</div>}
+                        {item.notes && (
+                          <div style={{ fontSize: 11, color: T.textSecondary, marginLeft: 63, marginTop: -2, marginBottom: 8 }}>{item.notes}</div>
+                        )}
                       </div>
                     ))
                   ) : typeof analysis.score_breakdown === 'object' ? (
@@ -208,23 +212,37 @@ export default function CallDetail() {
                   ) : null}
                 </div>
               )}
-
-              {/* Individual scores */}
-              {individualScores
-                .filter(s => analysis[s.key] != null)
-                .map(s => (
-                  <ScoreBar key={s.key} label={s.label} score={analysis[s.key]} max={10} />
-                ))
-              }
             </Card>
-          )}
+          </>
+        )}
 
-          {/* Questions That Should Have Been Asked */}
-          <Card title="Questions That Should Have Been Asked">
+        {/* SECTION 4: Questions - three cards side by side */}
+        <div style={sectionStyle}>Questions</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 16 }}>
+          {/* Questions Asked */}
+          <Card style={{ marginBottom: 0 }} title="Questions Asked">
+            {analysis?.questions_asked && Array.isArray(analysis.questions_asked) && analysis.questions_asked.length > 0 ? (
+              analysis.questions_asked.map((item, i) => (
+                <div key={i} style={{
+                  marginBottom: 10, padding: 10, background: qualityColor(item.quality), borderRadius: 6,
+                }}>
+                  <div style={{ fontSize: 13, color: T.text }}>{item.question}</div>
+                  {item.quality && (
+                    <div style={{ marginTop: 6 }}><Badge color={qualityBadgeColor(item.quality)}>{item.quality.replace('_', ' ')}</Badge></div>
+                  )}
+                </div>
+              ))
+            ) : (
+              <div style={{ color: T.textMuted, fontSize: 13 }}>No data</div>
+            )}
+          </Card>
+
+          {/* Should Have Asked */}
+          <Card style={{ marginBottom: 0 }} title="Should Have Asked">
             {analysis?.questions_should_have_asked && Array.isArray(analysis.questions_should_have_asked) && analysis.questions_should_have_asked.length > 0 ? (
               analysis.questions_should_have_asked.map((item, i) => (
                 <div key={i} style={{
-                  marginBottom: 12, padding: 10, background: T.surfaceAlt, borderRadius: 6,
+                  marginBottom: 10, padding: 10, background: T.surfaceAlt, borderRadius: 6,
                 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{item.question}</div>
                   {item.reason && (
@@ -240,12 +258,12 @@ export default function CallDetail() {
             )}
           </Card>
 
-          {/* Questions for Next Call */}
-          <Card title="Questions for Next Call">
+          {/* For Next Call */}
+          <Card style={{ marginBottom: 0 }} title="For Next Call">
             {analysis?.questions_for_next_call && Array.isArray(analysis.questions_for_next_call) && analysis.questions_for_next_call.length > 0 ? (
               analysis.questions_for_next_call.map((item, i) => (
                 <div key={i} style={{
-                  marginBottom: 12, padding: 10, background: T.surfaceAlt, borderRadius: 6,
+                  marginBottom: 10, padding: 10, background: T.surfaceAlt, borderRadius: 6,
                 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{item.question}</div>
                   {item.context && (
@@ -260,25 +278,35 @@ export default function CallDetail() {
               <div style={{ color: T.textMuted, fontSize: 13 }}>No data</div>
             )}
           </Card>
-
-          {/* Questions Asked */}
-          <Card title="Questions Asked">
-            {analysis?.questions_asked && Array.isArray(analysis.questions_asked) && analysis.questions_asked.length > 0 ? (
-              analysis.questions_asked.map((item, i) => (
-                <div key={i} style={{
-                  marginBottom: 12, padding: 10, background: qualityColor(item.quality), borderRadius: 6,
-                }}>
-                  <div style={{ fontSize: 13, color: T.text }}>{item.question}</div>
-                  {item.quality && (
-                    <div style={{ marginTop: 6 }}><Badge color={qualityBadgeColor(item.quality)}>{item.quality.replace('_', ' ')}</Badge></div>
-                  )}
-                </div>
-              ))
-            ) : (
-              <div style={{ color: T.textMuted, fontSize: 13 }}>No data</div>
-            )}
-          </Card>
         </div>
+
+        {/* SECTION 5: Transcript - collapsed by default */}
+        <div style={sectionStyle}>Transcript</div>
+        <div style={{ marginBottom: 16 }}>
+          <Button
+            onClick={() => setShowTranscript(!showTranscript)}
+            style={{ marginBottom: showTranscript ? 12 : 0 }}
+          >
+            {showTranscript ? 'Hide Transcript' : 'Show Transcript'}
+          </Button>
+          {showTranscript && (
+            <Card style={{ marginTop: 12 }}>
+              {conversation.transcript ? (
+                <div style={{
+                  maxHeight: 600, overflowY: 'auto', background: T.surfaceAlt,
+                  border: `1px solid ${T.border}`, padding: 16, fontSize: 12,
+                  lineHeight: 1.7, whiteSpace: 'pre-wrap', fontFamily: T.mono,
+                  borderRadius: 6,
+                }}>
+                  {conversation.transcript}
+                </div>
+              ) : (
+                <div style={{ color: T.textMuted, fontSize: 13 }}>No transcript available</div>
+              )}
+            </Card>
+          )}
+        </div>
+
       </div>
     </div>
   )

@@ -453,6 +453,8 @@ export default function MSPPage() {
                     </div>
                   </div>
                   <Button style={{ padding: '6px 14px', fontSize: 12 }}
+                    onClick={() => window.open(`${window.location.origin}/msp/shared/${link.share_token}`, '_blank')}>Open</Button>
+                  <Button style={{ padding: '6px 14px', fontSize: 12 }}
                     onClick={() => navigator.clipboard.writeText(`${window.location.origin}/msp/shared/${link.share_token}`)}>Copy Link</Button>
                 </div>
               </Card>

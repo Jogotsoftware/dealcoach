@@ -43,6 +43,14 @@ export default function CoachAdmin() {
   const [newTemplateStage, setNewTemplateStage] = useState({ stage_name: '', due_date_offset: 0 })
   const [expandedTemplate, setExpandedTemplate] = useState(null)
 
+  // Document upload
+  const [showAddDoc, setShowAddDoc] = useState(false)
+  const [newDoc, setNewDoc] = useState({ name: '', doc_type: 'battle_card', content: '' })
+
+  // Prompt add
+  const [showAddPrompt, setShowAddPrompt] = useState(false)
+  const [newPrompt, setNewPrompt] = useState({ call_type: 'qdc', label: '', prompt: '' })
+
   useEffect(() => { loadCoach() }, [profile])
 
   async function loadCoach() {
@@ -141,7 +149,7 @@ export default function CoachAdmin() {
   async function addTemplate() {
     if (!newTemplate.name.trim() || !coach) return
     const { data, error } = await supabase.from('msp_templates').insert({
-      coach_id: coach.id, name: newTemplate.name, description: newTemplate.description || null,
+      coach_id: coach.id, template_name: newTemplate.name, description: newTemplate.description || null,
       is_default: mspTemplates.length === 0,
     }).select().single()
     if (!error && data) { setMspTemplates(prev => [...prev, data]); setShowAddTemplate(false); setNewTemplate({ name: '', description: '' }) }
@@ -183,7 +191,28 @@ export default function CoachAdmin() {
     setTemplateStages(prev => prev.filter(s => s.template_id !== id))
   }
 
+  async function addDocument() {
+    if (!newDoc.name.trim() || !coach) return
+    const { data, error } = await supabase.from('coach_documents').insert({
+      coach_id: coach.id, name: newDoc.name.trim(), doc_type: newDoc.doc_type,
+      content: newDoc.content || null, active: true,
+    }).select().single()
+    if (!error && data) { setDocs(prev => [...prev, data]); setShowAddDoc(false); setNewDoc({ name: '', doc_type: 'battle_card', content: '' }) }
+  }
+
+  async function addPrompt() {
+    if (!newPrompt.label.trim() || !coach) return
+    const { data, error } = await supabase.from('call_type_prompts').insert({
+      coach_id: coach.id, call_type: newPrompt.call_type, label: newPrompt.label.trim(),
+      prompt: newPrompt.prompt || null, active: true,
+    }).select().single()
+    if (!error && data) { setPrompts(prev => [...prev, data]); setShowAddPrompt(false); setNewPrompt({ call_type: 'qdc', label: '', prompt: '' }) }
+  }
+
   if (loading) return <Spinner />
+
+  const DOC_TYPES = ['battle_card', 'roi_model', 'discovery_guide', 'objection_handling', 'pricing', 'methodology', 'qualifying_framework', 'custom']
+  const CALL_TYPE_KEYS = ['qdc', 'functional_discovery', 'demo', 'scoping', 'proposal', 'negotiation', 'sync', 'custom']
 
   const tabs = [
     { key: 'overview', label: 'Overview' },
@@ -330,7 +359,18 @@ export default function CoachAdmin() {
             {/* ══════════ CALL PROMPTS ══════════ */}
             {tab === 'prompts' && (
               <div>
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}><Button primary>+ Add Prompt</Button></div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}><Button primary onClick={() => setShowAddPrompt(true)}>+ Add Prompt</Button></div>
+                {showAddPrompt && (
+                  <Card title="New Prompt" style={{ marginBottom: 16 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+                      <div><label style={labelStyle}>Call Type</label><select style={{ ...inputStyle, cursor: 'pointer' }} value={newPrompt.call_type} onChange={e => setNewPrompt(p => ({ ...p, call_type: e.target.value }))}>
+                        {CALL_TYPE_KEYS.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
+                      <div><label style={labelStyle}>Label *</label><input style={inputStyle} value={newPrompt.label} onChange={e => setNewPrompt(p => ({ ...p, label: e.target.value }))} autoFocus /></div>
+                    </div>
+                    <div style={{ marginBottom: 10 }}><label style={labelStyle}>Prompt</label><textarea style={{ ...inputStyle, fontFamily: T.mono, fontSize: 12, minHeight: 120, resize: 'vertical' }} value={newPrompt.prompt} onChange={e => setNewPrompt(p => ({ ...p, prompt: e.target.value }))} /></div>
+                    <div style={{ display: 'flex', gap: 6 }}><Button primary onClick={addPrompt}>Add Prompt</Button><Button onClick={() => setShowAddPrompt(false)}>Cancel</Button></div>
+                  </Card>
+                )}
                 {prompts.map(p => (
                   <Card key={p.id}>
                     {editingPrompt === p.id ? (
@@ -369,7 +409,18 @@ export default function CoachAdmin() {
             {/* ══════════ DOCUMENTS ══════════ */}
             {tab === 'docs' && (
               <div>
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}><Button primary>+ Upload Document</Button></div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}><Button primary onClick={() => setShowAddDoc(true)}>+ Add Document</Button></div>
+                {showAddDoc && (
+                  <Card title="New Document" style={{ marginBottom: 16 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+                      <div><label style={labelStyle}>Name *</label><input style={inputStyle} value={newDoc.name} onChange={e => setNewDoc(p => ({ ...p, name: e.target.value }))} autoFocus /></div>
+                      <div><label style={labelStyle}>Type</label><select style={{ ...inputStyle, cursor: 'pointer' }} value={newDoc.doc_type} onChange={e => setNewDoc(p => ({ ...p, doc_type: e.target.value }))}>
+                        {DOC_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}</select></div>
+                    </div>
+                    <div style={{ marginBottom: 10 }}><label style={labelStyle}>Content (paste document text)</label><textarea style={{ ...inputStyle, fontFamily: T.mono, fontSize: 12, minHeight: 200, resize: 'vertical' }} value={newDoc.content} onChange={e => setNewDoc(p => ({ ...p, content: e.target.value }))} placeholder="Paste document content..." /></div>
+                    <div style={{ display: 'flex', gap: 6 }}><Button primary onClick={addDocument}>Add Document</Button><Button onClick={() => setShowAddDoc(false)}>Cancel</Button></div>
+                  </Card>
+                )}
                 {docs.length === 0
                   ? <Card><div style={{ textAlign: 'center', padding: 24, color: T.textMuted }}>No documents uploaded yet.</div></Card>
                   : docs.map(d => (
@@ -475,7 +526,7 @@ export default function CoachAdmin() {
                       }} onClick={() => setExpandedTemplate(isExpanded ? null : tpl.id)}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                           <span style={{ fontSize: 12, color: T.textMuted, transition: 'transform 0.15s', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>{'\u25B6'}</span>
-                          <span style={{ fontSize: 14, fontWeight: 700, color: T.text }}>{tpl.name}</span>
+                          <span style={{ fontSize: 14, fontWeight: 700, color: T.text }}>{tpl.template_name || tpl.name}</span>
                           {tpl.is_default && <Badge color={T.success}>Default</Badge>}
                           <span style={{ fontSize: 12, color: T.textSecondary }}>{tplStages.length} stage{tplStages.length !== 1 ? 's' : ''}</span>
                         </div>

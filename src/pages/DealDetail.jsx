@@ -77,7 +77,7 @@ function EditableField({ label, value, field, table, recordId, onSaved, type = '
 
   // List display for semicolon-separated fields
   if (displayAs === 'list' && value && value !== 'Unknown') {
-    const items = value.split(';').map(s => s.trim()).filter(Boolean)
+    const items = value.split(/[;|\n]/).map(s => s.trim()).filter(s => s.length > 3)
     if (items.length > 0 && !(items.length === 1 && items[0] === 'Unknown')) {
       return (
         <div style={{ marginBottom: 12, cursor: 'pointer', position: 'relative' }}
@@ -117,7 +117,7 @@ function EditableField({ label, value, field, table, recordId, onSaved, type = '
 
 // === LIST FIELD (renders semicolon-separated text as bullet list) ===
 function ListField({ label, value }) {
-  const items = (value || '').split(';').map(s => s.trim()).filter(Boolean)
+  const items = (value || '').split(/[;|\n]/).map(s => s.trim()).filter(s => s.length > 3)
   if (!items.length || (items.length === 1 && items[0] === 'Unknown')) return <Field label={label} value="Unknown" />
   return (
     <div style={{ marginBottom: 12 }}>
@@ -135,7 +135,7 @@ function ListField({ label, value }) {
 // === PARAGRAPH FIELD (renders long text with line breaks on periods/semicolons) ===
 function ParagraphField({ label, value }) {
   if (!value || value === 'Unknown') return <Field label={label} value="Unknown" />
-  const lines = value.split(/[;\n]/).map(s => s.trim()).filter(Boolean)
+  const lines = value.split(/[;|\n]/).map(s => s.trim()).filter(s => s.length > 3)
   return (
     <div style={{ marginBottom: 12 }}>
       <div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>{label}</div>
@@ -218,6 +218,10 @@ export default function DealDetail() {
   const [newEvent, setNewEvent] = useState({ event_description: '', event_date: '', strength: 'medium', impact: '' })
   const [newCatalyst, setNewCatalyst] = useState({ catalyst: '', category: 'internal', urgency: 'medium', impact: '' })
   const [newPain, setNewPain] = useState({ pain_description: '', category: 'operational', annual_cost: '', affected_team: '', notes: '' })
+  const [showAddTask, setShowAddTask] = useState(false)
+  const [newTask, setNewTask] = useState({ title: '', priority: 'medium', due_date: '', notes: '' })
+  const [showAddContact, setShowAddContact] = useState(false)
+  const [newContact, setNewContact] = useState({ name: '', title: '', email: '', role_in_deal: '' })
 
   useEffect(() => { if (id && id !== 'new') loadDeal() }, [id])
 
@@ -391,6 +395,32 @@ export default function DealDetail() {
   async function updateRiskField(riskId, field, value) {
     await supabase.from('deal_risks').update({ [field]: value }).eq('id', riskId)
     setRisks(prev => prev.map(r => r.id === riskId ? { ...r, [field]: value } : r))
+  }
+
+  async function addTask() {
+    if (!newTask.title.trim()) return
+    const { data, error } = await supabase.from('tasks').insert({
+      deal_id: id, title: newTask.title.trim(), priority: newTask.priority,
+      due_date: newTask.due_date || null, notes: newTask.notes || null,
+      auto_generated: false, completed: false,
+    }).select().single()
+    if (!error && data) { setTasks(prev => [data, ...prev]); setShowAddTask(false); setNewTask({ title: '', priority: 'medium', due_date: '', notes: '' }) }
+  }
+
+  async function deleteTask(taskId) {
+    if (!window.confirm('Delete this task?')) return
+    await supabase.from('tasks').delete().eq('id', taskId)
+    setTasks(prev => prev.filter(t => t.id !== taskId))
+  }
+
+  async function addNewContact() {
+    if (!newContact.name.trim()) return
+    const { data, error } = await supabase.from('contacts').insert({
+      deal_id: id, name: newContact.name.trim(), title: newContact.title || null,
+      email: newContact.email || null, role_in_deal: newContact.role_in_deal || null,
+      influence_level: 'Unknown',
+    }).select().single()
+    if (!error && data) { setContacts(prev => [...prev, data]); setShowAddContact(false); setNewContact({ name: '', title: '', email: '', role_in_deal: '' }) }
   }
 
   if (loading) return <Spinner />
@@ -921,8 +951,22 @@ export default function DealDetail() {
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
               <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: T.text }}>Contacts</h3>
-              <Button primary>+ Add Contact</Button>
+              <Button primary onClick={() => setShowAddContact(true)}>+ Add Contact</Button>
             </div>
+            {showAddContact && (
+              <div style={{ padding: 12, background: T.surfaceAlt, borderRadius: 6, marginBottom: 12, border: `1px solid ${T.borderLight}` }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+                  <div><label style={labelStyle}>Name *</label><input style={inputStyle} value={newContact.name} onChange={e => setNewContact(p => ({ ...p, name: e.target.value }))} autoFocus /></div>
+                  <div><label style={labelStyle}>Title</label><input style={inputStyle} value={newContact.title} onChange={e => setNewContact(p => ({ ...p, title: e.target.value }))} /></div>
+                  <div><label style={labelStyle}>Email</label><input style={inputStyle} value={newContact.email} onChange={e => setNewContact(p => ({ ...p, email: e.target.value }))} /></div>
+                  <div><label style={labelStyle}>Role in Deal</label><input style={inputStyle} value={newContact.role_in_deal} onChange={e => setNewContact(p => ({ ...p, role_in_deal: e.target.value }))} /></div>
+                </div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <Button primary onClick={addNewContact}>Add Contact</Button>
+                  <Button onClick={() => setShowAddContact(false)}>Cancel</Button>
+                </div>
+              </div>
+            )}
             {contacts.length === 0
               ? <EmptyState message="No contacts yet. Add manually or upload a transcript to auto-extract." />
               : (
@@ -1131,8 +1175,23 @@ export default function DealDetail() {
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
               <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: T.text }}>Action Items ({openTasks.length} open)</h3>
-              <Button primary>+ Add Task</Button>
+              <Button primary onClick={() => setShowAddTask(true)}>+ Add Task</Button>
             </div>
+            {showAddTask && (
+              <div style={{ padding: 12, background: T.surfaceAlt, borderRadius: 6, marginBottom: 12, border: `1px solid ${T.borderLight}` }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
+                  <div><label style={labelStyle}>Title *</label><input style={inputStyle} value={newTask.title} onChange={e => setNewTask(p => ({ ...p, title: e.target.value }))} autoFocus onKeyDown={e => e.key === 'Enter' && addTask()} /></div>
+                  <div><label style={labelStyle}>Priority</label><select style={{ ...inputStyle, cursor: 'pointer' }} value={newTask.priority} onChange={e => setNewTask(p => ({ ...p, priority: e.target.value }))}>
+                    {['high', 'medium', 'low'].map(p => <option key={p} value={p}>{p}</option>)}</select></div>
+                  <div><label style={labelStyle}>Due Date</label><input type="date" style={inputStyle} value={newTask.due_date} onChange={e => setNewTask(p => ({ ...p, due_date: e.target.value }))} /></div>
+                </div>
+                <div><label style={labelStyle}>Notes</label><textarea style={{ ...inputStyle, minHeight: 50, resize: 'vertical', marginBottom: 8 }} value={newTask.notes} onChange={e => setNewTask(p => ({ ...p, notes: e.target.value }))} /></div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <Button primary onClick={addTask}>Add Task</Button>
+                  <Button onClick={() => setShowAddTask(false)}>Cancel</Button>
+                </div>
+              </div>
+            )}
             {openTasks.length > 0 && (
               <Card title="Open">
                 {openTasks.map(t => {
@@ -1156,6 +1215,7 @@ export default function DealDetail() {
                       <span style={{ fontSize: 11, fontWeight: 500, color: overdue ? T.error : T.textMuted, fontFeatureSettings: '"tnum"' }}>
                         {t.due_date ? formatDate(t.due_date) : ''}
                       </span>
+                      <DeleteBtn onClick={() => deleteTask(t.id)} />
                     </div>
                   )
                 })}
