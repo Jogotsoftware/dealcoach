@@ -325,6 +325,11 @@ export default function DealDetail() {
               )}
             </div>
           </div>
+          <Button danger onClick={async () => {
+            if (!window.confirm('Delete this deal? This cannot be undone.')) return
+            await supabase.from('deals').delete().eq('id', deal.id)
+            navigate('/')
+          }} style={{ padding: '6px 12px', fontSize: 11 }}>Delete Deal</Button>
         </div>
         <TabBar tabs={tabs} active={tab} onChange={setTab} />
       </div>

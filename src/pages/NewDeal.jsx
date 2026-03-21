@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
+import { callResearchFunction } from '../lib/webhooks'
 import { theme as T, STAGES, FORECAST_CATEGORIES } from '../lib/theme'
 import { Button, Card, inputStyle, labelStyle } from '../components/Shared'
 
@@ -10,9 +11,17 @@ export default function NewDeal() {
   const navigate = useNavigate()
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
+  // Default close date 3 months out
+  const [defaultCloseDate] = useState(() => {
+    const d = new Date()
+    d.setMonth(d.getMonth() + 3)
+    return d.toISOString().split('T')[0]
+  })
+
   const [form, setForm] = useState({
     company_name: '', website: '', stage: 'qualify', forecast_category: 'pipeline',
-    cmrr: '', deal_value: '', target_close_date: '', notes: '',
+    cmrr: '', deal_value: '', target_close_date: defaultCloseDate, notes: '',
+    contact_name: '', contact_title: '', contact_email: '',
   })
 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }))
@@ -42,7 +51,24 @@ export default function NewDeal() {
 
       if (insertErr) throw insertErr
 
+      // Create contact if name provided
+      if (form.contact_name.trim()) {
+        await supabase.from('contacts').insert({
+          deal_id: data.id,
+          contact_name: form.contact_name.trim(),
+          title: form.contact_title.trim() || null,
+          email: form.contact_email.trim() || null,
+          role_in_deal: 'Primary Contact',
+          influence_level: 'Unknown',
+        })
+      }
+
       // The DB trigger auto-creates company_profile and deal_analysis
+      // Kick off research Edge Function (non-blocking, fire-and-forget)
+      callResearchFunction(data.id).catch(err =>
+        console.warn('Research failed:', err)
+      )
+
       // Navigate to the new deal
       navigate(`/deal/${data.id}`)
     } catch (err) {
@@ -153,6 +179,31 @@ export default function NewDeal() {
                   onChange={e => set('notes', e.target.value)}
                   placeholder="Initial deal notes, context from SDR, etc."
                 />
+              </div>
+            </div>
+          </Card>
+
+          <Card title="Primary Contact (Optional)">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div style={{ display: 'flex', gap: 12 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={labelStyle}>Contact Name</label>
+                  <input style={inputStyle} value={form.contact_name}
+                    onChange={e => set('contact_name', e.target.value)}
+                    placeholder="e.g. Jane Smith" />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={labelStyle}>Title</label>
+                  <input style={inputStyle} value={form.contact_title}
+                    onChange={e => set('contact_title', e.target.value)}
+                    placeholder="e.g. CFO" />
+                </div>
+              </div>
+              <div>
+                <label style={labelStyle}>Email</label>
+                <input type="email" style={inputStyle} value={form.contact_email}
+                  onChange={e => set('contact_email', e.target.value)}
+                  placeholder="jane@company.com" />
               </div>
             </div>
           </Card>

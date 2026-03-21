@@ -191,12 +191,21 @@ export default function CallDetail() {
                 )}
               </div>
 
-              {/* score_breakdown JSONB */}
-              {analysis.score_breakdown && typeof analysis.score_breakdown === 'object' && (
+              {/* score_breakdown JSONB — supports array (from AI) or object format */}
+              {analysis.score_breakdown && (
                 <div style={{ marginBottom: 12 }}>
-                  {Object.entries(analysis.score_breakdown).map(([key, value]) => (
-                    <ScoreBar key={key} label={key} score={value} />
-                  ))}
+                  {Array.isArray(analysis.score_breakdown) ? (
+                    analysis.score_breakdown.map((item, i) => (
+                      <div key={i}>
+                        <ScoreBar label={item.criteria} score={item.score} max={item.max || 10} />
+                        {item.notes && <div style={{ fontSize: 11, color: T.textSecondary, marginLeft: 63, marginTop: -2, marginBottom: 8 }}>{item.notes}</div>}
+                      </div>
+                    ))
+                  ) : typeof analysis.score_breakdown === 'object' ? (
+                    Object.entries(analysis.score_breakdown).map(([key, value]) => (
+                      <ScoreBar key={key} label={key} score={value} />
+                    ))
+                  ) : null}
                 </div>
               )}
 

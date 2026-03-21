@@ -420,3 +420,55 @@ export async function processTranscript(conversationId) {
     return { error: err.message }
   }
 }
+
+/**
+ * Call the Supabase Edge Function to research a company.
+ * Used after deal creation to auto-populate company_profile.
+ */
+export async function callResearchFunction(dealId) {
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) return { error: 'Not authenticated' }
+
+  try {
+    const response = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/research-company`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ deal_id: dealId }),
+      }
+    )
+    return await response.json()
+  } catch (err) {
+    return { error: err.message }
+  }
+}
+
+/**
+ * Call the Supabase Edge Function to process a transcript.
+ * Replaces the Make.com webhook flow with a direct Edge Function call.
+ */
+export async function callProcessTranscript(conversationId) {
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) return { error: 'Not authenticated' }
+
+  try {
+    const response = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/process-transcript`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ conversation_id: conversationId }),
+      }
+    )
+    return await response.json()
+  } catch (err) {
+    return { error: err.message }
+  }
+}

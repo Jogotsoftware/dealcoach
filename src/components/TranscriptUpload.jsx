@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { processTranscript, isWebhookConfigured } from '../lib/webhooks'
+import { callProcessTranscript } from '../lib/webhooks'
 import { theme as T, CALL_TYPES } from '../lib/theme'
 import { Button, Badge, inputStyle, labelStyle } from './Shared'
 
@@ -19,8 +19,6 @@ export default function TranscriptUpload({ deals, onClose, onUploaded }) {
   )
 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }))
-
-  const webhookReady = isWebhookConfigured(form.call_type)
 
   const handleFile = (e) => {
     const f = e.target.files?.[0]
@@ -58,31 +56,26 @@ export default function TranscriptUpload({ deals, onClose, onUploaded }) {
 
       if (convErr) throw convErr
 
-      // 2. Send to Make.com webhook with full deal context
-      if (webhookReady) {
-        const res = await processTranscript(conv.id)
-        if (res.error) {
-          console.warn('Webhook warning:', res.error)
-          setResult({ saved: true, processing: false, message: res.error })
-        } else {
-          setResult({
-            saved: true,
-            processing: true,
-            message: `Transcript saved and sent for AI processing (${res.callType}). Context loaded: ${res.contextLoaded.previousCalls} previous calls, ${res.contextLoaded.contacts} contacts, ${res.contextLoaded.openTasks} open tasks.`,
-          })
-        }
-      } else {
+      // 2. Send to Supabase Edge Function for AI processing
+      const res = await callProcessTranscript(conv.id)
+      if (res.error) {
         setResult({
           saved: true,
           processing: false,
-          message: `Transcript saved. No webhook configured for "${form.call_type}" — configure VITE_WEBHOOK_${form.call_type.toUpperCase()} in .env to enable AI processing.`,
+          message: `Transcript saved. Processing error: ${res.error}`,
+        })
+      } else {
+        setResult({
+          saved: true,
+          processing: true,
+          message: `Transcript saved and processed.${res.tasks_created ? ` ${res.tasks_created} tasks created.` : ''}${res.contacts_found ? ` ${res.contacts_found} contacts found.` : ''}`,
         })
       }
 
       if (onUploaded) onUploaded(conv)
 
-      // Auto-close after 2 seconds if processing was sent
-      if (webhookReady) {
+      // Auto-close after 2 seconds on success
+      if (!res.error) {
         setTimeout(() => onClose(), 2000)
       }
     } catch (err) {
@@ -146,11 +139,6 @@ export default function TranscriptUpload({ deals, onClose, onUploaded }) {
                   <option key={c.key} value={c.key}>{c.label}</option>
                 ))}
               </select>
-              {!webhookReady && (
-                <div style={{ fontSize: 11, color: T.warning, marginTop: 4 }}>
-                  No webhook configured for this call type
-                </div>
-              )}
             </div>
           </div>
 
@@ -241,7 +229,7 @@ export default function TranscriptUpload({ deals, onClose, onUploaded }) {
         }}>
           <Button onClick={onClose}>Cancel</Button>
           <Button primary onClick={handleSubmit} disabled={!canSubmit}>
-            {saving ? 'Uploading...' : webhookReady ? 'Upload & Process' : 'Save Transcript'}
+            {saving ? 'Uploading...' : 'Upload & Process'}
           </Button>
         </div>
       </div>
