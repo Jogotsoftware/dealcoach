@@ -584,9 +584,11 @@ export default function DealDetail() {
 
             {/* TOP — Call History with Next Steps in header */}
             <Card title={`Call History (${conversations.length})`} action={
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, maxWidth: 500 }}>
-                <span style={{ fontSize: 10, fontWeight: 700, color: '#2c3e50', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Next Steps:</span>
-                <EditableField label="" value={deal.next_steps} field="next_steps" table="deals" recordId={deal.id} type="textarea" onSaved={(f, v) => setDeal(p => ({ ...p, [f]: v }))} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 300, maxWidth: 600 }}>
+                <span style={{ fontSize: 10, fontWeight: 700, color: '#2c3e50', textTransform: 'uppercase', whiteSpace: 'nowrap', letterSpacing: '0.05em' }}>Next Steps:</span>
+                <div style={{ flex: 1 }}>
+                  <EditableField label="" value={deal.next_steps} field="next_steps" table="deals" recordId={deal.id} type="textarea" onSaved={(f, v) => setDeal(p => ({ ...p, [f]: v }))} />
+                </div>
               </div>
             }>
               {companyProfile && (
