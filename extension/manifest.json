@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "DealCoach — Quick Deal Creator",
+  "version": "1.0.0",
+  "description": "Create deals in DealCoach from any webpage, Salesforce, or LinkedIn",
+  "permissions": ["activeTab", "storage"],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
