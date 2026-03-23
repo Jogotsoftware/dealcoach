@@ -4,18 +4,18 @@ import { supabase } from '../lib/supabase'
 import { theme as T, formatCurrency, formatDate, formatDateLong, daysUntil, STAGES, FORECAST_CATEGORIES, CALL_TYPES, TASK_CATEGORIES } from '../lib/theme'
 import { Card, Badge, ForecastBadge, StageBadge, ScoreBar, Field, StatusDot, TabBar, Button, EmptyState, Spinner, inputStyle, labelStyle } from '../components/Shared'
 import TranscriptUpload from '../components/TranscriptUpload'
-import { callGenerateEmail } from '../lib/webhooks'
+import { callGenerateEmail, callResearchFunction } from '../lib/webhooks'
 import { useAuth } from '../hooks/useAuth'
 
 // === LOCAL LABEL STYLE ===
-const ddLabelStyle = { fontSize: 11, fontWeight: 800, color: '#1a2a3a', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6, borderBottom: '1px solid #e0e4e8', paddingBottom: 4, display: 'block' }
+const ddLabelStyle = { fontSize: 11, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4, display: 'block' }
 const unknownStyle = { color: '#e8a0a0', fontStyle: 'italic', fontWeight: 400 }
 
 // === BULLET ITEM with bold colon prefix ===
 function BulletText({ text }) {
   if (text.includes(':')) {
     const colonIdx = text.indexOf(':')
-    return <><span style={{ fontWeight: 700, color: '#2c3e50' }}>{text.substring(0, colonIdx)}:</span>{text.substring(colonIdx + 1)}</>
+    return <><span style={{ fontWeight: 700, color: T.text }}>{text.substring(0, colonIdx)}:</span>{text.substring(colonIdx + 1)}</>
   }
   return text
 }
@@ -229,8 +229,9 @@ export default function DealDetail() {
   // Transcript upload modal
   const [showTranscriptUpload, setShowTranscriptUpload] = useState(false)
 
-  // Research polling
+  // Research
   const [researchStatus, setResearchStatus] = useState(null) // null | 'in_progress' | 'complete'
+  const [researchRunning, setResearchRunning] = useState(false)
 
   // Form toggles
   const [showAddRisk, setShowAddRisk] = useState(false)
@@ -469,6 +470,16 @@ export default function DealDetail() {
     if (!error && data) { setContacts(prev => [...prev, data]); setShowAddContact(false); setNewContact({ name: '', title: '', email: '', role_in_deal: '' }) }
   }
 
+  async function rerunResearch() {
+    setResearchRunning(true)
+    try {
+      const res = await callResearchFunction(id)
+      if (res.error) alert('Research failed: ' + res.error)
+      else setResearchStatus('in_progress')
+    } catch (err) { alert('Research failed') }
+    finally { setResearchRunning(false) }
+  }
+
   async function generateEmail() {
     if (!selectedEmailTpl) return
     setGeneratingEmail(true)
@@ -545,13 +556,18 @@ export default function DealDetail() {
               )}
             </div>
           </div>
-          <Button onClick={() => setShowEmailGenerator(true)} style={{ padding: '6px 12px', fontSize: 11 }}>Generate Email</Button>
-          <Button primary onClick={() => setShowTranscriptUpload(true)} style={{ padding: '6px 12px', fontSize: 11 }}>Upload Transcript</Button>
-          <Button danger onClick={async () => {
-            if (!window.confirm('Delete this deal? This cannot be undone.')) return
-            await supabase.from('deals').delete().eq('id', deal.id)
-            navigate('/')
-          }} style={{ padding: '6px 12px', fontSize: 11 }}>Delete Deal</Button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Button primary onClick={() => setShowTranscriptUpload(true)} style={{ padding: '6px 12px', fontSize: 11 }}>Upload Transcript</Button>
+            <Button primary onClick={() => setShowEmailGenerator(true)} style={{ padding: '6px 12px', fontSize: 11 }}>Generate Email</Button>
+            <Button onClick={rerunResearch} disabled={researchRunning} style={{ padding: '6px 12px', fontSize: 11 }}>
+              {researchRunning ? 'Researching...' : 'Re-run Research'}
+            </Button>
+            <Button danger onClick={async () => {
+              if (!window.confirm('Delete this deal? This cannot be undone.')) return
+              await supabase.from('deals').delete().eq('id', deal.id)
+              navigate('/')
+            }} style={{ padding: '6px 12px', fontSize: 11 }}>Delete Deal</Button>
+          </div>
         </div>
         <TabBar tabs={tabs} active={tab} onChange={setTab} />
       </div>
@@ -594,7 +610,7 @@ export default function DealDetail() {
             {/* TOP — Call History with Next Steps in header */}
             <Card title={`Call History (${conversations.length})`} action={
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 300, maxWidth: 600 }}>
-                <span style={{ fontSize: 10, fontWeight: 700, color: '#2c3e50', textTransform: 'uppercase', whiteSpace: 'nowrap', letterSpacing: '0.05em' }}>Next Steps:</span>
+                <span style={{ fontSize: 10, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase', whiteSpace: 'nowrap', letterSpacing: '0.05em' }}>Next Steps:</span>
                 <div style={{ flex: 1 }}>
                   <EditableField label="" value={deal.next_steps} field="next_steps" table="deals" recordId={deal.id} type="textarea" onSaved={(f, v) => setDeal(p => ({ ...p, [f]: v }))} />
                 </div>
@@ -660,7 +676,7 @@ export default function DealDetail() {
                 </div>
                 {/* Running Problem Cost */}
                 <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${T.borderLight}` }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: '#2c3e50', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Running Problem Cost</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Running Problem Cost</div>
                   <div style={{ fontSize: 28, fontWeight: 800, color: '#e74c3c', fontFeatureSettings: '"tnum"' }}>
                     {totalPainCost > 0 ? formatCurrency(totalPainCost) : '$0'}
                   </div>
@@ -708,7 +724,7 @@ export default function DealDetail() {
                           <EditableField label={lbl} value={val} field={fld} table="deal_analysis" recordId={analysis?.id} onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
                         ) : (
                           <div style={{ marginBottom: 12 }}>
-                            <div style={{ fontSize: 11, fontWeight: 700, color: '#2c3e50', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 3 }}>{lbl}</div>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 3 }}>{lbl}</div>
                             <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{val ? formatDateLong(val) : <span style={{ color: '#e8a0a0', fontStyle: 'italic', fontWeight: 400 }}>Not set</span>}</div>
                           </div>
                         )}
@@ -1149,9 +1165,9 @@ export default function DealDetail() {
                 </div>
                 {expandedEmail === em.id && (
                   <div style={{ marginTop: 12 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: '#2c3e50', textTransform: 'uppercase', marginBottom: 4 }}>Subject</div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase', marginBottom: 4 }}>Subject</div>
                     <div style={{ fontSize: 14, fontWeight: 600, color: T.text, marginBottom: 12 }}>{em.subject}</div>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: '#2c3e50', textTransform: 'uppercase', marginBottom: 4 }}>Body</div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase', marginBottom: 4 }}>Body</div>
                     <div style={{ fontSize: 13, color: T.text, lineHeight: 1.7, whiteSpace: 'pre-wrap', background: T.surfaceAlt, padding: 14, borderRadius: 6, border: `1px solid ${T.borderLight}`, marginBottom: 12 }}>{em.body}</div>
                     <div style={{ display: 'flex', gap: 8 }}>
                       <Button onClick={() => navigator.clipboard.writeText(`Subject: ${em.subject}\n\n${em.body}`)} style={{ fontSize: 11, padding: '4px 12px' }}>Copy to Clipboard</Button>

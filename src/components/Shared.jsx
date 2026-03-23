@@ -36,7 +36,7 @@ export function Card({ children, title, action, style: s, className }) {
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           background: T.surfaceAlt,
         }}>
-          <span style={{ fontSize: 14, fontWeight: 800, color: '#1a1a2e', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+          <span style={{ fontSize: 15, fontWeight: 800, color: '#1a1a2e', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
             {title}
           </span>
           {action}
@@ -99,8 +99,8 @@ export function Field({ label, value, mono }) {
   return (
     <div style={{ marginBottom: 12 }}>
       <div style={{
-        fontSize: 11, fontWeight: 800, color: '#1a2a3a', textTransform: 'uppercase',
-        letterSpacing: '0.08em', marginBottom: 6, borderBottom: '1px solid #e0e4e8', paddingBottom: 4,
+        fontSize: 11, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase',
+        letterSpacing: '0.05em', marginBottom: 4,
       }}>
         {label}
       </div>
@@ -180,9 +180,8 @@ export const inputStyle = {
 }
 
 export const labelStyle = {
-  fontSize: 11, fontWeight: 800, color: '#1a2a3a', textTransform: 'uppercase',
-  letterSpacing: '0.08em', marginBottom: 6, borderBottom: '1px solid #e0e4e8',
-  paddingBottom: 4, display: 'block',
+  fontSize: 11, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase',
+  letterSpacing: '0.05em', marginBottom: 4, display: 'block',
 }
 
 // === EMPTY STATE ===
