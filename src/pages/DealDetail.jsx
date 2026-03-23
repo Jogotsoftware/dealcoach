@@ -5,6 +5,7 @@ import { theme as T, formatCurrency, formatDate, formatDateLong, daysUntil, STAG
 import { Card, Badge, ForecastBadge, StageBadge, ScoreBar, Field, StatusDot, TabBar, Button, EmptyState, Spinner, inputStyle, labelStyle } from '../components/Shared'
 import TranscriptUpload from '../components/TranscriptUpload'
 import { callGenerateEmail, callResearchFunction } from '../lib/webhooks'
+import DealChat from '../components/DealChat'
 import { useAuth } from '../hooks/useAuth'
 
 // === LOCAL LABEL STYLE ===
@@ -259,6 +260,7 @@ export default function DealDetail() {
   const [emailResult, setEmailResult] = useState(null)
   const [generatedEmails, setGeneratedEmails] = useState([])
   const [expandedEmail, setExpandedEmail] = useState(null)
+  const [showChat, setShowChat] = useState(false)
 
   useEffect(() => { if (id && id !== 'new') loadDeal() }, [id])
 
@@ -557,6 +559,7 @@ export default function DealDetail() {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
+            <Button primary onClick={() => setShowChat(true)} style={{ padding: '6px 12px', fontSize: 11 }}>Ask Coach</Button>
             <Button primary onClick={() => setShowTranscriptUpload(true)} style={{ padding: '6px 12px', fontSize: 11 }}>Upload Transcript</Button>
             <Button primary onClick={() => setShowEmailGenerator(true)} style={{ padding: '6px 12px', fontSize: 11 }}>Generate Email</Button>
             <Button onClick={rerunResearch} disabled={researchRunning} style={{ padding: '6px 12px', fontSize: 11 }}>
@@ -1253,6 +1256,9 @@ export default function DealDetail() {
           </div>
         )}
       </div>
+
+      {/* Deal Chat Drawer */}
+      <DealChat dealId={id} userId={profile?.id} isOpen={showChat} onClose={() => setShowChat(false)} onAction={() => loadDeal()} />
     </div>
   )
 }

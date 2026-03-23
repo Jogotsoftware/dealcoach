@@ -5,6 +5,7 @@ import { theme as T, formatDateLong } from '../lib/theme'
 import { Card, Badge, ScoreBar, Button, Spinner, inputStyle, labelStyle } from '../components/Shared'
 import { callGenerateEmail } from '../lib/webhooks'
 import { useAuth } from '../hooks/useAuth'
+import DealChat from '../components/DealChat'
 
 export default function CallDetail() {
   const { dealId, conversationId } = useParams()
@@ -20,6 +21,7 @@ export default function CallDetail() {
   const [selTpl, setSelTpl] = useState('')
   const [genLoading, setGenLoading] = useState(false)
   const [genResult, setGenResult] = useState(null)
+  const [showChat, setShowChat] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -126,6 +128,7 @@ export default function CallDetail() {
             {conversation.processed ? <Badge color={T.success}>Processed</Badge> : (
               <Button primary style={{ padding: '3px 10px', fontSize: 11 }} onClick={async () => { const { callProcessTranscript } = await import('../lib/webhooks'); const res = await callProcessTranscript(conversationId); if (res.error) alert('Processing failed: ' + res.error); else { alert('Processing complete!'); loadData() } }}>Reprocess</Button>
             )}
+            <Button onClick={() => setShowChat(true)} style={{ padding: '4px 10px', fontSize: 11 }}>Ask Coach</Button>
             <Button onClick={() => setShowEmailGen(true)} style={{ padding: '4px 10px', fontSize: 11 }}>Generate Email</Button>
           </div>
         </div>
@@ -374,6 +377,9 @@ export default function CallDetail() {
           </div>
         </div>
       )}
+
+      {/* Deal Chat Drawer */}
+      <DealChat dealId={dealId} userId={profile?.id} isOpen={showChat} onClose={() => setShowChat(false)} onAction={() => loadData()} />
     </div>
   )
 }

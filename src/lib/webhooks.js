@@ -498,3 +498,28 @@ export async function callGenerateEmail(dealId, templateId, conversationId = nul
     return { error: err.message }
   }
 }
+
+/**
+ * Call the Supabase Edge Function for deal chat (AI coaching).
+ */
+export async function callDealChat(dealId, sessionId, message, userId) {
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) return { error: 'Not authenticated' }
+  try {
+    const response = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/deal-chat`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ deal_id: dealId, session_id: sessionId, message, user_id: userId }),
+      }
+    )
+    return await response.json()
+  } catch (err) {
+    return { error: err.message }
+  }
+}
