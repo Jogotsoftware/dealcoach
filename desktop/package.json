@@ -1,0 +1,21 @@
+{
+  "name": "dealcoach-desktop",
+  "version": "1.0.0",
+  "description": "DealCoach Desktop — Tasks, Chat, Deals, Emails",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build-mac": "electron-builder --mac",
+    "build-win": "electron-builder --win"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "com.dealcoach.desktop",
+    "productName": "DealCoach",
+    "files": ["main.js", "preload.js", "index.html"]
+  }
+}

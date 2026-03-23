@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DealCoach</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+:root {
+  --bg: #0f1419; --surface: #1a1f2e; --surface-alt: #232838; --border: #2a3040;
+  --text: #e8eaed; --text-muted: #8899aa; --primary: #5DADE2; --primary-light: rgba(93,173,226,0.1);
+  --success: #2ecc71; --error: #e74c3c; --warning: #f39c12;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); height: 100vh; overflow: hidden; display: flex; flex-direction: column; font-size: 13px; }
+::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: transparent; } ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+input, select, textarea, button { font-family: inherit; font-size: 13px; }
+input, select, textarea { background: var(--surface-alt); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; color: var(--text); outline: none; width: 100%; }
+input:focus, textarea:focus { border-color: var(--primary); }
+button { cursor: pointer; }
+
+/* Title bar */
+.titlebar { height: 32px; background: #0b0e13; display: flex; align-items: center; padding: 0 10px; -webkit-app-region: drag; flex-shrink: 0; }
+.titlebar .logo { font-size: 13px; font-weight: 800; color: var(--primary); flex: 1; display: flex; align-items: center; gap: 6px; }
+.titlebar .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); }
+.titlebar .user { font-size: 11px; color: var(--text-muted); margin-right: 8px; }
+.titlebar button { -webkit-app-region: no-drag; background: none; border: none; color: var(--text-muted); font-size: 16px; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 4px; }
+.titlebar button:hover { background: rgba(255,255,255,0.08); color: var(--text); }
+
+/* Tabs */
+.tabs { display: flex; background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.tab { flex: 1; padding: 10px 0; text-align: center; font-size: 11px; font-weight: 600; color: var(--text-muted); cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.15s; text-transform: uppercase; letter-spacing: 0.06em; }
+.tab:hover { color: var(--text); background: var(--surface-alt); }
+.tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+
+/* Views */
+.view { flex: 1; overflow-y: auto; display: none; flex-direction: column; }
+.view.active { display: flex; }
+.view-content { flex: 1; overflow-y: auto; padding: 12px; }
+
+/* Cards & rows */
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 8px; }
+.row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 6px; cursor: pointer; transition: border-color 0.15s; }
+.row:hover { border-color: var(--primary); }
+.badge { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; padding: 2px 7px; border-radius: 4px; white-space: nowrap; }
+.dot-priority { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.btn { padding: 8px 14px; border-radius: 6px; border: none; font-weight: 600; font-size: 12px; transition: all 0.15s; }
+.btn-primary { background: var(--primary); color: #fff; }
+.btn-primary:hover { opacity: 0.9; }
+.btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text-muted); }
+.btn-ghost:hover { border-color: var(--primary); color: var(--primary); }
+.btn-danger { background: var(--error); color: #fff; }
+.label { font-size: 10px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
+.muted { color: var(--text-muted); }
+.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Chat */
+.msg { max-width: 85%; padding: 10px 14px; margin-bottom: 10px; font-size: 13px; line-height: 1.6; }
+.msg-user { background: var(--primary); color: #fff; border-radius: 12px 12px 2px 12px; margin-left: auto; }
+.msg-ai { background: var(--surface-alt); border: 1px solid var(--border); border-radius: 12px 12px 12px 2px; }
+.msg-time { font-size: 10px; margin-top: 4px; opacity: 0.5; }
+.chip { border: 1px solid var(--border); border-radius: 20px; padding: 6px 14px; font-size: 12px; cursor: pointer; background: var(--surface); color: var(--text); transition: all 0.15s; }
+.chip:hover { background: var(--primary-light); border-color: var(--primary); }
+.action-badge { font-size: 10px; font-weight: 600; color: var(--success); background: rgba(46,204,113,0.1); padding: 2px 8px; border-radius: 10px; }
+.typing-dots { display: flex; gap: 4px; padding: 12px 18px; }
+.typing-dots span { width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); animation: dotPulse 1.2s ease-in-out infinite; }
+.typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes dotPulse { 0%,80%,100% { opacity: 0.3; transform: scale(0.8); } 40% { opacity: 1; transform: scale(1); } }
+
+/* Chat input */
+.chat-input-bar { display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--border); background: var(--surface); flex-shrink: 0; }
+.chat-input-bar input { flex: 1; border-radius: 20px; padding: 10px 16px; }
+.send-btn { width: 36px; height: 36px; border-radius: 50%; border: none; background: var(--primary); color: #fff; font-size: 16px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.send-btn:disabled { background: var(--border); cursor: default; }
+
+/* Login */
+.login-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1; padding: 40px 30px; gap: 14px; }
+.login-screen h2 { color: var(--primary); font-size: 20px; margin-bottom: 8px; }
+.login-screen .error { color: var(--error); font-size: 12px; }
+
+/* Spinner */
+.spinner { width: 20px; height: 20px; border: 2px solid var(--border); border-top: 2px solid var(--primary); border-radius: 50%; animation: spin 0.8s linear infinite; margin: 20px auto; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Toast */
+.toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); padding: 10px 20px; border-radius: 8px; font-size: 12px; font-weight: 600; z-index: 9999; animation: fadeIn 0.3s; }
+.toast-success { background: var(--success); color: #fff; }
+.toast-error { background: var(--error); color: #fff; }
+@keyframes fadeIn { from { opacity: 0; transform: translateX(-50%) translateY(10px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+
+/* Stage colors */
+.stage-qualify { background: rgba(245,158,11,0.15); color: #f59e0b; }
+.stage-discovery { background: rgba(249,115,22,0.15); color: #f97316; }
+.stage-solution_validation { background: rgba(139,92,246,0.15); color: #8b5cf6; }
+.stage-confirming_value { background: rgba(14,165,233,0.15); color: #0ea5e9; }
+.stage-selection { background: rgba(16,185,129,0.15); color: #10b981; }
+.stage-closed_won { background: rgba(46,204,113,0.15); color: #2ecc71; }
+.stage-closed_lost { background: rgba(231,76,60,0.15); color: #e74c3c; }
+
+.expand-content { max-height: 0; overflow: hidden; transition: max-height 0.3s ease; }
+.expand-content.open { max-height: 500px; }
+
+.fab { position: absolute; bottom: 16px; right: 16px; width: 44px; height: 44px; border-radius: 50%; background: var(--primary); color: #fff; border: none; font-size: 22px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 10; }
+.fab:hover { opacity: 0.9; }
+</style>
+</head>
+<body>
+
+<!-- Title Bar -->
+<div class="titlebar">
+  <div class="logo"><span class="dot" id="connDot"></span> DealCoach</div>
+  <span class="user" id="userName"></span>
+  <button onclick="window.electron?.minimize()" title="Minimize">&mdash;</button>
+  <button onclick="window.electron?.close()" title="Close">&times;</button>
+</div>
+
+<!-- Login -->
+<div id="loginScreen" class="login-screen" style="display:none">
+  <h2>DealCoach</h2>
+  <input id="loginEmail" type="email" placeholder="Email" style="max-width:280px">
+  <input id="loginPassword" type="password" placeholder="Password" style="max-width:280px">
+  <button class="btn btn-primary" onclick="doLogin()" style="width:280px">Sign In</button>
+  <div class="error" id="loginError"></div>
+</div>
+
+<!-- Main App -->
+<div id="mainApp" style="display:none;flex:1;display:flex;flex-direction:column;overflow:hidden">
+  <div class="tabs">
+    <div class="tab active" data-view="tasks" onclick="switchView('tasks')">Tasks</div>
+    <div class="tab" data-view="chat" onclick="switchView('chat')">Chat</div>
+    <div class="tab" data-view="deals" onclick="switchView('deals')">Deals</div>
+    <div class="tab" data-view="emails" onclick="switchView('emails')">Emails</div>
+  </div>
+
+  <!-- TASKS VIEW -->
+  <div id="view-tasks" class="view active" style="position:relative">
+    <div style="padding:10px 12px;display:flex;gap:6px;border-bottom:1px solid var(--border);flex-shrink:0">
+      <button class="chip" onclick="setTaskFilter('mine')" id="tf-mine" style="border-color:var(--primary);color:var(--primary)">My Tasks</button>
+      <button class="chip" onclick="setTaskFilter('high')" id="tf-high">High Priority</button>
+      <button class="chip" onclick="setTaskFilter('deal')" id="tf-deal">By Deal</button>
+    </div>
+    <div class="view-content" id="taskList"></div>
+    <div id="taskForm" style="display:none;padding:12px;border-bottom:1px solid var(--border);background:var(--surface)"></div>
+    <button class="fab" onclick="toggleTaskForm()">+</button>
+  </div>
+
+  <!-- CHAT VIEW -->
+  <div id="view-chat" class="view">
+    <div style="padding:10px 12px;display:flex;gap:8px;align-items:center;border-bottom:1px solid var(--border);flex-shrink:0">
+      <select id="chatDealPicker" onchange="onChatDealChange()" style="flex:1"><option value="">Select a deal...</option></select>
+      <button class="btn btn-ghost" onclick="newChatSession()" style="padding:6px 10px;font-size:11px">New</button>
+    </div>
+    <div class="view-content" id="chatMessages" style="padding:12px"></div>
+    <div class="chat-input-bar">
+      <input id="chatInput" placeholder="Ask about this deal..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat()}">
+      <button class="send-btn" onclick="sendChat()">&uarr;</button>
+    </div>
+  </div>
+
+  <!-- DEALS VIEW -->
+  <div id="view-deals" class="view">
+    <div style="padding:10px 12px;display:flex;gap:8px;border-bottom:1px solid var(--border);flex-shrink:0">
+      <input id="dealSearch" placeholder="Search deals..." oninput="filterDeals()" style="flex:1">
+      <button class="btn btn-primary" onclick="toggleNewDealForm()" style="padding:6px 12px;font-size:11px">+ New</button>
+    </div>
+    <div id="newDealForm" style="display:none;padding:12px;border-bottom:1px solid var(--border);background:var(--surface)"></div>
+    <div class="view-content" id="dealList"></div>
+  </div>
+
+  <!-- EMAILS VIEW -->
+  <div id="view-emails" class="view">
+    <div style="padding:10px 12px;display:flex;gap:8px;align-items:center;border-bottom:1px solid var(--border);flex-shrink:0">
+      <select id="emailDealPicker" onchange="onEmailDealChange()" style="flex:1"><option value="">Select a deal...</option></select>
+    </div>
+    <div class="view-content" id="emailContent"></div>
+  </div>
+</div>
+
+<div id="toastContainer"></div>
+
+<script>
+const SUPABASE_URL = 'https://npfnsyufqqhhjmtvmold.supabase.co'
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5wZm5zeXVmcXFoaGptdHZtb2xkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM4Nzc1NzgsImV4cCI6MjA4OTQ1MzU3OH0.2KpF_ATKJiJP7wEfD74GIOXALhitu7GHavj8CL9OtGU'
+const WEB_APP_URL = 'https://dealcoach.netlify.app'
+const EDGE_URL = SUPABASE_URL + '/functions/v1'
+
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+let user = null, profile = null, deals = [], tasks = [], taskFilter = 'mine'
+let chatDealId = null, chatSessionId = null, chatMessages = [], chatSending = false
+let emailDealId = null, emailTemplates = [], generatedEmails = []
+
+// ── INIT ──
+async function init() {
+  const { data: { session } } = await sb.auth.getSession()
+  if (session) { await onAuth(session); return }
+  document.getElementById('loginScreen').style.display = 'flex'
+}
+
+async function doLogin() {
+  const email = document.getElementById('loginEmail').value
+  const pw = document.getElementById('loginPassword').value
+  const { data, error } = await sb.auth.signInWithPassword({ email, password: pw })
+  if (error) { document.getElementById('loginError').textContent = error.message; return }
+  await onAuth(data.session)
+}
+
+async function onAuth(session) {
+  user = session.user
+  const { data } = await sb.from('profiles').select('*').eq('id', user.id).single()
+  profile = data || {}
+  document.getElementById('userName').textContent = profile.full_name || user.email
+  document.getElementById('loginScreen').style.display = 'none'
+  document.getElementById('mainApp').style.display = 'flex'
+  const saved = localStorage.getItem('dc_view')
+  if (saved) switchView(saved)
+  loadTasks(); loadDeals()
+  // Real-time tasks
+  sb.channel('tasks').on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => loadTasks()).subscribe()
+}
+
+// ── TOAST ──
+function toast(msg, type = 'success') {
+  const el = document.createElement('div')
+  el.className = 'toast toast-' + type
+  el.textContent = msg
+  document.getElementById('toastContainer').appendChild(el)
+  setTimeout(() => el.remove(), 3000)
+}
+
+// ── EDGE CALL ──
+async function edgeCall(fn, body) {
+  const { data: { session } } = await sb.auth.getSession()
+  if (!session) return { error: 'Not authenticated' }
+  const r = await fetch(EDGE_URL + '/' + fn, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + session.access_token, 'apikey': SUPABASE_ANON_KEY },
+    body: JSON.stringify(body),
+  })
+  return r.json()
+}
+
+// ── VIEW SWITCHING ──
+function switchView(v) {
+  document.querySelectorAll('.view').forEach(el => el.classList.remove('active'))
+  document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'))
+  document.getElementById('view-' + v).classList.add('active')
+  document.querySelector(`.tab[data-view="${v}"]`).classList.add('active')
+  localStorage.setItem('dc_view', v)
+  if (v === 'chat') populateDealPicker('chatDealPicker')
+  if (v === 'emails') populateDealPicker('emailDealPicker')
+}
+
+function populateDealPicker(id) {
+  const el = document.getElementById(id)
+  const cur = el.value
+  el.innerHTML = '<option value="">Select a deal...</option>' + deals.filter(d => !['closed_won','closed_lost','disqualified'].includes(d.stage)).map(d => `<option value="${d.id}">${d.company_name}</option>`).join('')
+  if (cur) el.value = cur
+}
+
+// ── HELPERS ──
+function relTime(d) { if (!d) return ''; const ms = Date.now() - new Date(d); const m = Math.floor(ms/60000); if (m<1) return 'now'; if (m<60) return m+'m'; const h = Math.floor(m/60); if (h<24) return h+'h'; return Math.floor(h/24)+'d' }
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML }
+function parseMd(t) { return (t||'').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>') }
+function stageClass(s) { return 'badge stage-' + (s||'qualify') }
+function priorityColor(p) { return p==='high'?'var(--error)':p==='medium'?'var(--warning)':'var(--text-muted)' }
+function daysUntil(d) { if (!d) return null; return Math.ceil((new Date(d)-new Date())/86400000) }
+function fmtDate(d) { if (!d) return ''; return new Date(d+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}) }
+function fmtCurrency(n) { if (!n) return '--'; if (n>=1e6) return '$'+(n/1e6).toFixed(1)+'M'; if (n>=1e3) return '$'+Math.round(n/1e3)+'K'; return '$'+n }
+
+// ── TASKS ──
+async function loadTasks() {
+  const { data } = await sb.from('tasks').select('*, deals(company_name)').or(`rep_id.eq.${user.id},owner.eq.${profile.full_name}`).order('completed').order('due_date')
+  tasks = data || []
+  renderTasks()
+}
+
+function setTaskFilter(f) { taskFilter = f; document.querySelectorAll('#view-tasks .chip').forEach(c => { c.style.borderColor = ''; c.style.color = '' }); const el = document.getElementById('tf-'+f); el.style.borderColor = 'var(--primary)'; el.style.color = 'var(--primary)'; renderTasks() }
+
+function renderTasks() {
+  const el = document.getElementById('taskList')
+  let filtered = tasks
+  if (taskFilter === 'high') filtered = tasks.filter(t => t.priority === 'high' && !t.completed)
+  else if (taskFilter === 'mine') filtered = tasks.filter(t => !t.completed)
+  const open = filtered.filter(t => !t.completed), done = filtered.filter(t => t.completed)
+  let html = ''
+  if (taskFilter === 'deal') {
+    const grouped = {}; tasks.filter(t=>!t.completed).forEach(t => { const dn = t.deals?.company_name||'No Deal'; (grouped[dn]=grouped[dn]||[]).push(t) })
+    for (const [deal, items] of Object.entries(grouped)) {
+      html += `<div style="padding:6px 0"><div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:6px">${esc(deal)} (${items.length})</div>`
+      items.forEach(t => { html += taskRow(t) })
+      html += '</div>'
+    }
+  } else {
+    open.forEach(t => { html += taskRow(t) })
+    if (done.length) { html += '<div style="margin-top:12px;font-size:11px;color:var(--text-muted);font-weight:600;text-transform:uppercase;margin-bottom:6px">Completed</div>'; done.forEach(t => { html += taskRow(t) }) }
+  }
+  if (!html) html = '<div style="text-align:center;padding:40px;color:var(--text-muted)">No tasks</div>'
+  el.innerHTML = html
+}
+
+function taskRow(t) {
+  const du = daysUntil(t.due_date), overdue = du !== null && du < 0 && !t.completed
+  const duColor = overdue ? 'var(--error)' : du !== null && du <= 1 ? 'var(--warning)' : 'var(--text-muted)'
+  return `<div class="row" onclick="expandTask('${t.id}')" style="${t.completed?'opacity:0.4':''}">
+    <div onclick="event.stopPropagation();toggleTask('${t.id}')" style="width:18px;height:18px;border-radius:4px;border:1.5px solid ${t.completed?'var(--success)':'var(--border)'};background:${t.completed?'var(--success)':'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;cursor:pointer">${t.completed?'<span style="color:#fff;font-size:11px">&#10003;</span>':''}</div>
+    <div class="dot-priority" style="background:${priorityColor(t.priority)}"></div>
+    <div style="flex:1;min-width:0"><div style="font-weight:${t.priority==='high'?700:500};${t.completed?'text-decoration:line-through':''};" class="truncate">${esc(t.title)}</div>
+    <div style="font-size:11px;color:var(--text-muted)" class="truncate">${esc(t.deals?.company_name||'')}</div></div>
+    ${t.due_date?`<span style="font-size:11px;color:${duColor};white-space:nowrap">${fmtDate(t.due_date)}</span>`:''}
+    ${t.auto_generated?'<span class="badge" style="background:var(--primary-light);color:var(--primary)">AI</span>':''}
+  </div>`
+}
+
+async function toggleTask(id) {
+  const t = tasks.find(x=>x.id===id); if (!t) return
+  await sb.from('tasks').update({ completed: !t.completed, completed_at: !t.completed ? new Date().toISOString() : null }).eq('id', id)
+  loadTasks()
+}
+
+function expandTask(id) { /* TODO: expand inline */ }
+
+function toggleTaskForm() {
+  const el = document.getElementById('taskForm')
+  if (el.style.display === 'none') {
+    el.style.display = 'block'
+    el.innerHTML = `<div class="label">NEW TASK</div>
+      <input id="ntTitle" placeholder="Task title..." style="margin-bottom:6px">
+      <div style="display:flex;gap:6px;margin-bottom:6px">
+        <select id="ntDeal" style="flex:1"><option value="">No deal</option>${deals.map(d=>`<option value="${d.id}">${esc(d.company_name)}</option>`).join('')}</select>
+        <select id="ntPriority" style="width:80px"><option value="medium">Medium</option><option value="high">High</option><option value="low">Low</option></select>
+      </div>
+      <input id="ntDue" type="date" style="margin-bottom:6px">
+      <div style="display:flex;gap:6px"><button class="btn btn-primary" onclick="saveTask()">Save</button><button class="btn btn-ghost" onclick="toggleTaskForm()">Cancel</button></div>`
+  } else { el.style.display = 'none' }
+}
+
+async function saveTask() {
+  const title = document.getElementById('ntTitle').value.trim()
+  if (!title) return
+  await sb.from('tasks').insert({ deal_id: document.getElementById('ntDeal').value || null, title, priority: document.getElementById('ntPriority').value, due_date: document.getElementById('ntDue').value || null, auto_generated: false, completed: false, rep_id: user.id, owner: profile.full_name })
+  document.getElementById('taskForm').style.display = 'none'
+  toast('Task created'); loadTasks()
+}
+
+// ── DEALS ──
+async function loadDeals() {
+  const { data } = await sb.from('deals').select('*').eq('rep_id', user.id).order('updated_at', { ascending: false })
+  deals = data || []
+  renderDeals()
+}
+
+function renderDeals() {
+  const q = (document.getElementById('dealSearch')?.value||'').toLowerCase()
+  const filtered = q ? deals.filter(d => d.company_name.toLowerCase().includes(q)) : deals
+  document.getElementById('dealList').innerHTML = filtered.map(d => {
+    const du = daysUntil(d.target_close_date)
+    return `<div class="row" onclick="dealActions('${d.id}')">
+      <div style="flex:1;min-width:0"><div style="font-weight:700" class="truncate">${esc(d.company_name)}</div>
+      <div style="display:flex;gap:4px;margin-top:3px"><span class="${stageClass(d.stage)}">${d.stage||'qualify'}</span></div></div>
+      <div style="text-align:right"><div style="font-weight:700;color:var(--success)">${fmtCurrency(d.deal_value)}</div>
+      ${du!==null?`<div style="font-size:11px;color:${du<0?'var(--error)':du<=14?'var(--warning)':'var(--text-muted)'}">${du<0?Math.abs(du)+'d late':du+'d'}</div>`:''}</div>
+    </div>`
+  }).join('') || '<div style="text-align:center;padding:40px;color:var(--text-muted)">No deals</div>'
+}
+
+function filterDeals() { renderDeals() }
+
+function dealActions(id) {
+  const d = deals.find(x=>x.id===id); if (!d) return
+  if (window.electron) window.electron.openWeb(WEB_APP_URL+'/deal/'+id)
+}
+
+function toggleNewDealForm() {
+  const el = document.getElementById('newDealForm')
+  if (el.style.display==='none') {
+    el.style.display='block'
+    el.innerHTML = `<div class="label">NEW DEAL</div>
+      <input id="ndName" placeholder="Company Name *" style="margin-bottom:6px">
+      <input id="ndWeb" placeholder="Website" style="margin-bottom:6px">
+      <div style="display:flex;gap:6px;margin-bottom:6px">
+        <select id="ndStage" style="flex:1"><option value="qualify">Qualify</option><option value="discovery">Discovery</option><option value="solution_validation">Solution Validation</option><option value="confirming_value">Confirming Value</option><option value="selection">Selection</option></select>
+        <input id="ndValue" type="number" placeholder="Deal Value" style="flex:1">
+      </div>
+      <input id="ndClose" type="date" style="margin-bottom:6px">
+      <div style="display:flex;gap:6px"><button class="btn btn-primary" onclick="saveDeal()">Create</button><button class="btn btn-ghost" onclick="toggleNewDealForm()">Cancel</button></div>`
+  } else { el.style.display='none' }
+}
+
+async function saveDeal() {
+  const name = document.getElementById('ndName').value.trim()
+  if (!name) return
+  const { data, error } = await sb.from('deals').insert({ rep_id: user.id, company_name: name, website: document.getElementById('ndWeb').value.trim()||null, stage: document.getElementById('ndStage').value, deal_value: Number(document.getElementById('ndValue').value)||null, target_close_date: document.getElementById('ndClose').value||null }).select().single()
+  if (error) { toast(error.message, 'error'); return }
+  document.getElementById('newDealForm').style.display = 'none'
+  toast('Deal created — AI researching...')
+  edgeCall('research-company', { deal_id: data.id })
+  loadDeals()
+}
+
+// ── CHAT ──
+function onChatDealChange() {
+  chatDealId = document.getElementById('chatDealPicker').value
+  localStorage.setItem('dc_chatDeal', chatDealId)
+  chatSessionId = null; chatMessages = []
+  if (chatDealId) loadChatSession()
+  else renderChat()
+}
+
+async function loadChatSession() {
+  const { data: sess } = await sb.from('deal_chat_sessions').select('*').eq('deal_id', chatDealId).eq('user_id', user.id).order('updated_at', { ascending: false }).limit(1)
+  if (sess?.length) {
+    chatSessionId = sess[0].id
+    const { data: msgs } = await sb.from('deal_chat_messages').select('*').eq('session_id', chatSessionId).order('created_at')
+    chatMessages = msgs || []
+  }
+  renderChat()
+}
+
+function newChatSession() { chatSessionId = null; chatMessages = []; renderChat() }
+
+function renderChat() {
+  const el = document.getElementById('chatMessages')
+  if (!chatDealId) { el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted)">Select a deal to start chatting</div>'; return }
+  if (!chatMessages.length && !chatSending) {
+    el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:13px">Ask your AI coach anything</div><div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;padding:0 8px">' +
+      ['What are the biggest risks?','Questions for next call?','Create a follow-up task','Summarize for my manager','Competitive strategy?'].map(s => `<button class="chip" onclick="sendChat('${s}')">${s}</button>`).join('') + '</div>'
+    return
+  }
+  let html = ''
+  chatMessages.forEach(m => {
+    const isUser = m.role === 'user'
+    html += `<div style="display:flex;justify-content:${isUser?'flex-end':'flex-start'}"><div class="msg ${isUser?'msg-user':'msg-ai'}">${isUser?esc(m.content):parseMd(esc(m.content))}${m.actions_taken?.length?'<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">'+m.actions_taken.map(a=>`<span class="action-badge">&#10003; ${esc(a.action||a.type||'Action')}</span>`).join('')+'</div>':''}<div class="msg-time">${relTime(m.created_at)}</div></div></div>`
+  })
+  if (chatSending) html += '<div style="display:flex"><div class="msg msg-ai"><div class="typing-dots"><span></span><span></span><span></span></div></div></div>'
+  el.innerHTML = html
+  el.scrollTop = el.scrollHeight
+}
+
+async function sendChat(preset) {
+  const msg = preset || document.getElementById('chatInput').value.trim()
+  if (!msg || chatSending || !chatDealId) return
+  document.getElementById('chatInput').value = ''
+  chatSending = true
+  chatMessages.push({ role: 'user', content: msg, created_at: new Date().toISOString() })
+  renderChat()
+
+  const res = await edgeCall('deal-chat', { deal_id: chatDealId, session_id: chatSessionId, message: msg, user_id: user.id })
+  chatSending = false
+  if (res.error) { chatMessages.push({ role: 'assistant', content: 'Error: ' + res.error, created_at: new Date().toISOString() }); renderChat(); return }
+  if (!chatSessionId && res.session_id) chatSessionId = res.session_id
+  chatMessages.push({ role: 'assistant', content: res.message, actions_taken: res.actions_taken || [], created_at: new Date().toISOString() })
+  renderChat()
+  if (res.actions_taken?.length) { toast('AI took ' + res.actions_taken.length + ' action(s)'); loadTasks() }
+}
+
+// ── EMAILS ──
+function onEmailDealChange() {
+  emailDealId = document.getElementById('emailDealPicker').value
+  localStorage.setItem('dc_emailDeal', emailDealId)
+  if (emailDealId) loadEmailData()
+  else document.getElementById('emailContent').innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted)">Select a deal</div>'
+}
+
+async function loadEmailData() {
+  const [tplRes, histRes] = await Promise.all([
+    sb.from('email_templates').select('*').eq('coach_id', profile.active_coach_id).eq('active', true).order('sort_order'),
+    sb.from('generated_emails').select('*').eq('deal_id', emailDealId).order('created_at', { ascending: false }).limit(20),
+  ])
+  emailTemplates = tplRes.data || []; generatedEmails = histRes.data || []
+  renderEmails()
+}
+
+function renderEmails() {
+  const el = document.getElementById('emailContent')
+  let html = '<div class="label" style="margin-bottom:8px">TEMPLATES</div>'
+  emailTemplates.forEach(t => {
+    html += `<div class="card" style="cursor:pointer" onclick="generateEmail('${t.id}')">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div><div style="font-weight:700">${esc(t.name)}</div><div style="font-size:11px;color:var(--text-muted);margin-top:2px">${esc(t.description||'')}</div></div>
+        <span class="badge" style="background:var(--primary-light);color:var(--primary)">${(t.email_type||'').replace(/_/g,' ')}</span>
+      </div>
+    </div>`
+  })
+  if (generatedEmails.length) {
+    html += '<div class="label" style="margin:16px 0 8px">RECENT EMAILS</div>'
+    generatedEmails.forEach(e => {
+      html += `<div class="card"><div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:11px;color:var(--text-muted)">${fmtDate(e.created_at?.split('T')[0])}</span>
+        <span class="badge" style="background:var(--primary-light);color:var(--primary)">${(e.email_type||'').replace(/_/g,' ')}</span>
+        <div style="flex:1;font-weight:600" class="truncate">${esc(e.subject||'No subject')}</div>
+        <button class="btn btn-ghost" style="padding:3px 8px;font-size:10px" onclick="copyEmail('${e.id}')">Copy</button>
+      </div></div>`
+    })
+  }
+  el.innerHTML = html
+}
+
+async function generateEmail(tplId) {
+  const el = document.getElementById('emailContent')
+  el.innerHTML = '<div style="text-align:center;padding:40px"><div class="spinner"></div><div style="margin-top:12px;color:var(--text-muted)">Generating email...</div></div>'
+  const res = await edgeCall('generate-email', { deal_id: emailDealId, template_id: tplId })
+  if (res.error) { toast(res.error, 'error'); loadEmailData(); return }
+  const subj = res.subject || res.email?.subject || ''
+  const body = res.body || res.email?.body || ''
+  el.innerHTML = `<div style="padding:4px">
+    <div class="label">SUBJECT</div><input id="genSubj" value="${esc(subj)}" style="margin-bottom:10px;font-weight:600">
+    <div class="label">BODY</div><textarea id="genBody" style="min-height:250px;line-height:1.6;margin-bottom:10px">${esc(body)}</textarea>
+    <div style="display:flex;gap:6px">
+      <button class="btn btn-primary" onclick="copyGenerated()">Copy</button>
+      <button class="btn btn-ghost" onclick="openMailGenerated()">Open in Mail</button>
+      <button class="btn btn-ghost" onclick="generateEmail('${tplId}')">Regenerate</button>
+      <button class="btn btn-ghost" onclick="loadEmailData()">Done</button>
+    </div>
+  </div>`
+}
+
+function copyGenerated() {
+  const s = document.getElementById('genSubj').value, b = document.getElementById('genBody').value
+  navigator.clipboard.writeText('Subject: '+s+'\n\n'+b); toast('Copied!')
+}
+function openMailGenerated() {
+  const s = document.getElementById('genSubj').value, b = document.getElementById('genBody').value
+  const url = 'mailto:?subject='+encodeURIComponent(s)+'&body='+encodeURIComponent(b)
+  if (window.electron) window.electron.openWeb(url); else window.open(url)
+}
+function copyEmail(id) {
+  const e = generatedEmails.find(x=>x.id===id); if (!e) return
+  navigator.clipboard.writeText('Subject: '+e.subject+'\n\n'+e.body); toast('Copied!')
+}
+
+// ── BOOT ──
+init()
+</script>
+</body>
+</html>
