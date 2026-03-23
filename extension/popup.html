@@ -60,7 +60,7 @@ body {
   <span class="badge badge-gray" id="statusBadge">...</span>
 </div>
 
-<div id="loginView" class="login" style="display:none;">
+<div id="loginView" class="login" style="display:block;">
   <h2>Sign In</h2>
   <p>Connect to DealCoach</p>
   <div id="loginError" class="error" style="display:none;"></div>
@@ -162,7 +162,7 @@ body {
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="supabase.min.js"></script>
 <script>
 const SUPABASE_URL = 'https://npfnsyufqqhhjmtvmold.supabase.co'
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5wZm5zeXVmcXFoaGptdHZtb2xkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM4Nzc1NzgsImV4cCI6MjA4OTQ1MzU3OH0.2KpF_ATKJiJP7wEfD74GIOXALhitu7GHavj8CL9OtGU'
@@ -328,7 +328,11 @@ document.getElementById('createBtn').addEventListener('click', async () => {
   }
 })
 
-init()
+init().catch(err => {
+  console.error('Init error:', err)
+  document.getElementById('statusBadge').textContent = 'Error'
+  document.getElementById('statusBadge').className = 'badge badge-red'
+})
 </script>
 </body>
 </html>
