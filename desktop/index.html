@@ -189,6 +189,7 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 let user = null, profile = null, deals = [], tasks = [], taskFilter = 'mine'
 let chatDealId = null, chatSessionId = null, chatMessages = [], chatSending = false
 let emailDealId = null, emailTemplates = [], generatedEmails = []
+let expandedDealId = null, transcriptDealId = null, transcriptProcessing = false
 
 // ── INIT ──
 async function init() {
@@ -344,8 +345,8 @@ async function saveTask() {
 
 // ── DEALS ──
 async function loadDeals() {
-  const { data } = await sb.from('deals').select('*').eq('rep_id', user.id).order('updated_at', { ascending: false })
-  deals = data || []
+  const { data } = await sb.from('deals').select('*, conversations(count)').eq('rep_id', user.id).order('updated_at', { ascending: false })
+  deals = (data || []).map(d => ({ ...d, call_count: d.conversations?.[0]?.count || 0 }))
   renderDeals()
 }
 
@@ -354,21 +355,31 @@ function renderDeals() {
   const filtered = q ? deals.filter(d => d.company_name.toLowerCase().includes(q)) : deals
   document.getElementById('dealList').innerHTML = filtered.map(d => {
     const du = daysUntil(d.target_close_date)
-    return `<div class="row" onclick="dealActions('${d.id}')">
-      <div style="flex:1;min-width:0"><div style="font-weight:700" class="truncate">${esc(d.company_name)}</div>
-      <div style="display:flex;gap:4px;margin-top:3px"><span class="${stageClass(d.stage)}">${d.stage||'qualify'}</span></div></div>
-      <div style="text-align:right"><div style="font-weight:700;color:var(--success)">${fmtCurrency(d.deal_value)}</div>
-      ${du!==null?`<div style="font-size:11px;color:${du<0?'var(--error)':du<=14?'var(--warning)':'var(--text-muted)'}">${du<0?Math.abs(du)+'d late':du+'d'}</div>`:''}</div>
+    const expanded = expandedDealId === d.id
+    return `<div style="margin-bottom:6px">
+      <div class="row" onclick="toggleDealExpand('${d.id}')" style="margin-bottom:0;${expanded?'border-bottom-left-radius:0;border-bottom-right-radius:0;border-color:var(--primary)':''}">
+        <div style="flex:1;min-width:0"><div style="font-weight:700;display:flex;align-items:center;gap:6px" class="truncate">${esc(d.company_name)}
+          ${d.call_count?`<span class="badge" style="background:var(--primary-light);color:var(--primary)">${d.call_count} calls</span>`:''}</div>
+        <div style="display:flex;gap:4px;margin-top:3px"><span class="${stageClass(d.stage)}">${d.stage||'qualify'}</span></div></div>
+        <div style="text-align:right"><div style="font-weight:700;color:var(--success)">${fmtCurrency(d.deal_value)}</div>
+        ${du!==null?`<div style="font-size:11px;color:${du<0?'var(--error)':du<=14?'var(--warning)':'var(--text-muted)'}">${du<0?Math.abs(du)+'d late':du+'d'}</div>`:''}</div>
+      </div>
+      ${expanded?`<div style="padding:8px 12px;background:var(--surface);border:1px solid var(--primary);border-top:none;border-radius:0 0 8px 8px;display:flex;gap:6px">
+        <button class="btn btn-ghost" style="flex:1;padding:6px;font-size:11px" onclick="event.stopPropagation();openDealWeb('${d.id}')">Open in App</button>
+        <button class="btn btn-ghost" style="flex:1;padding:6px;font-size:11px" onclick="event.stopPropagation();chatWithDeal('${d.id}')">Ask Coach</button>
+        <button class="btn btn-primary" style="flex:1;padding:6px;font-size:11px" onclick="event.stopPropagation();showTranscriptUpload('${d.id}')">Upload Transcript</button>
+      </div>`:''}
     </div>`
   }).join('') || '<div style="text-align:center;padding:40px;color:var(--text-muted)">No deals</div>'
 }
 
 function filterDeals() { renderDeals() }
 
-function dealActions(id) {
-  const d = deals.find(x=>x.id===id); if (!d) return
-  if (window.electron) window.electron.openWeb(WEB_APP_URL+'/deal/'+id)
-}
+function toggleDealExpand(id) { expandedDealId = expandedDealId === id ? null : id; renderDeals() }
+
+function openDealWeb(id) { if (window.electron) window.electron.openWeb(WEB_APP_URL+'/deal/'+id); else window.open(WEB_APP_URL+'/deal/'+id) }
+
+function chatWithDeal(id) { switchView('chat'); document.getElementById('chatDealPicker').value = id; onChatDealChange() }
 
 function toggleNewDealForm() {
   const el = document.getElementById('newDealForm')
@@ -526,6 +537,114 @@ function openMailGenerated() {
 function copyEmail(id) {
   const e = generatedEmails.find(x=>x.id===id); if (!e) return
   navigator.clipboard.writeText('Subject: '+e.subject+'\n\n'+e.body); toast('Copied!')
+}
+
+// ── TRANSCRIPT UPLOAD ──
+const CALL_TYPES = ['qdc','functional_discovery','demo','scoping','proposal','negotiation','sync','custom']
+
+function showTranscriptUpload(dealId) {
+  transcriptDealId = dealId
+  transcriptProcessing = false
+  const d = deals.find(x => x.id === dealId)
+  const today = new Date().toISOString().split('T')[0]
+  const el = document.getElementById('dealList')
+  el.innerHTML = `<div style="padding:4px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div><div style="font-weight:700;font-size:15px">${esc(d?.company_name||'')}</div><div style="font-size:11px;color:var(--text-muted)">Upload Transcript</div></div>
+      <button class="btn btn-ghost" onclick="cancelTranscript()" style="padding:4px 10px;font-size:11px">Cancel</button>
+    </div>
+    <div id="tuFormArea">
+      <div style="display:flex;gap:6px;margin-bottom:8px">
+        <div style="flex:1"><div class="label">Call Type</div><select id="tuType">${CALL_TYPES.map(c=>`<option value="${c}">${c.replace(/_/g,' ')}</option>`).join('')}</select></div>
+        <div style="flex:1"><div class="label">Date</div><input id="tuDate" type="date" value="${today}"></div>
+      </div>
+      <div class="label">Title (optional)</div>
+      <input id="tuTitle" placeholder="e.g. QDC with CFO" style="margin-bottom:8px">
+      <div class="label">Transcript *</div>
+      <textarea id="tuText" placeholder="Paste your transcript here..." style="min-height:250px;font-family:SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;line-height:1.6;margin-bottom:8px"></textarea>
+      <div style="margin-bottom:10px">
+        <label style="display:flex;align-items:center;justify-content:center;padding:14px;border:2px dashed var(--border);border-radius:8px;cursor:pointer;color:var(--text-muted);font-size:12px;transition:border-color 0.15s" id="tuFileLabel">
+          <input type="file" accept=".txt,.vtt,.srt" style="display:none" id="tuFile" onchange="handleTranscriptFile(this)">
+          <span id="tuFileName">Click to upload .txt, .vtt, or .srt</span>
+        </label>
+      </div>
+      <button class="btn btn-primary" onclick="uploadTranscript()" style="width:100%" id="tuSubmitBtn">Upload & Process</button>
+    </div>
+    <div id="tuStatus" style="display:none"></div>
+  </div>`
+}
+
+let tuFileUploaded = false, tuFileName = ''
+function handleTranscriptFile(input) {
+  const file = input.files[0]; if (!file) return
+  tuFileUploaded = true; tuFileName = file.name
+  const titleEl = document.getElementById('tuTitle')
+  if (!titleEl.value) titleEl.value = file.name.replace(/\.[^/.]+$/, '')
+  document.getElementById('tuFileName').textContent = file.name + ' (' + (file.size/1024).toFixed(1) + 'KB)'
+  document.getElementById('tuFileLabel').style.borderColor = 'var(--success)'
+  const reader = new FileReader()
+  reader.onload = (ev) => { document.getElementById('tuText').value = ev.target.result }
+  reader.readAsText(file)
+}
+
+async function uploadTranscript() {
+  const text = document.getElementById('tuText').value.trim()
+  if (!text || !transcriptDealId) return
+  const callType = document.getElementById('tuType').value
+  const callDate = document.getElementById('tuDate').value
+  const title = document.getElementById('tuTitle').value.trim() || callType.toUpperCase() + ' - ' + callDate
+
+  // Disable button, show processing
+  document.getElementById('tuSubmitBtn').disabled = true
+  document.getElementById('tuSubmitBtn').textContent = 'Saving...'
+
+  // 1. Save conversation
+  const { data: conv, error } = await sb.from('conversations').insert({
+    deal_id: transcriptDealId, call_type: callType, call_date: callDate, title,
+    transcript: text, source: tuFileUploaded ? 'upload' : 'paste',
+    filename: tuFileName || null, processed: false, tasks_extracted: false,
+  }).select().single()
+
+  if (error) { toast('Save failed: ' + error.message, 'error'); document.getElementById('tuSubmitBtn').disabled = false; document.getElementById('tuSubmitBtn').textContent = 'Upload & Process'; return }
+
+  // 2. Show processing state
+  transcriptProcessing = true
+  document.getElementById('tuFormArea').style.display = 'none'
+  document.getElementById('tuStatus').style.display = 'block'
+  document.getElementById('tuStatus').innerHTML = `
+    <div style="text-align:center;padding:30px">
+      <div class="spinner"></div>
+      <div style="margin-top:12px;color:var(--primary);font-weight:600">AI is analyzing transcript...</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:6px">This may take 30-60 seconds</div>
+    </div>`
+
+  // 3. Call process-transcript
+  const res = await edgeCall('process-transcript', { conversation_id: conv.id })
+  transcriptProcessing = false
+
+  if (res.error) {
+    document.getElementById('tuStatus').innerHTML = `
+      <div style="padding:16px;background:rgba(231,76,60,0.1);border:1px solid var(--error);border-radius:8px;margin-bottom:12px">
+        <div style="color:var(--error);font-weight:600;margin-bottom:4px">Transcript saved but processing failed</div>
+        <div style="font-size:12px;color:var(--text-muted)">${esc(res.error)}</div>
+      </div>
+      <button class="btn btn-ghost" onclick="cancelTranscript()" style="width:100%">Done</button>`
+  } else {
+    const taskCount = res.tasks_created || 0, contactCount = res.contacts_found || 0
+    document.getElementById('tuStatus').innerHTML = `
+      <div style="padding:16px;background:rgba(46,204,113,0.1);border:1px solid var(--success);border-radius:8px;margin-bottom:12px">
+        <div style="color:var(--success);font-weight:700;font-size:14px;margin-bottom:4px">Analysis Complete</div>
+        <div style="font-size:12px;color:var(--text)">${taskCount} tasks created. ${contactCount} contacts found.</div>
+      </div>
+      <button class="btn btn-primary" onclick="cancelTranscript()" style="width:100%">Done</button>`
+    loadTasks()
+  }
+  loadDeals()
+}
+
+function cancelTranscript() {
+  transcriptDealId = null; tuFileUploaded = false; tuFileName = ''
+  renderDeals()
 }
 
 // ── BOOT ──
