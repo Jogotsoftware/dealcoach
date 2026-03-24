@@ -7,50 +7,29 @@ let mainWindow = null
 function createWindow() {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize
   mainWindow = new BrowserWindow({
-    width: 440,
-    height: 740,
-    x: width - 460,
-    y: height - 760,
+    width: 420,
+    height: 700,
+    x: width - 440,
+    y: height - 720,
     frame: false,
     resizable: true,
     alwaysOnTop: true,
     skipTaskbar: false,
     show: true,
-    icon: createAppIcon(),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
     },
   })
-  mainWindow.loadFile(path.join(__dirname, 'index.html'))
+  mainWindow.loadFile('index.html')
   mainWindow.on('close', (e) => { e.preventDefault(); mainWindow.hide() })
 }
 
-function createAppIcon() {
-  // Create a 16x16 blue square icon programmatically
-  const size = 16
-  const buf = Buffer.alloc(size * size * 4)
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const i = (y * size + x) * 4
-      // Carolina blue circle on dark bg
-      const cx = size / 2, cy = size / 2, r = 6
-      const dist = Math.sqrt((x - cx) ** 2 + (y - cy) ** 2)
-      if (dist <= r) {
-        buf[i] = 93; buf[i + 1] = 173; buf[i + 2] = 226; buf[i + 3] = 255 // #5DADE2
-      } else {
-        buf[i] = 0; buf[i + 1] = 0; buf[i + 2] = 0; buf[i + 3] = 0
-      }
-    }
-  }
-  return nativeImage.createFromBuffer(buf, { width: size, height: size })
-}
-
 function createTray() {
-  const icon = createAppIcon()
+  const icon = nativeImage.createEmpty()
   tray = new Tray(icon)
-  tray.setToolTip('DealCoach')
+  tray.setToolTip('DealCoach Coach')
   tray.on('click', () => {
     if (mainWindow.isVisible()) mainWindow.hide()
     else { mainWindow.show(); mainWindow.focus() }
