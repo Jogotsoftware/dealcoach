@@ -16,7 +16,7 @@ function createWindow() {
     alwaysOnTop: true,
     skipTaskbar: false,
     show: true,
-    icon: createAppIcon(),
+    icon: path.join(__dirname, 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -27,28 +27,8 @@ function createWindow() {
   mainWindow.on('close', (e) => { e.preventDefault(); mainWindow.hide() })
 }
 
-function createAppIcon() {
-  // Create a 16x16 blue square icon programmatically
-  const size = 16
-  const buf = Buffer.alloc(size * size * 4)
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const i = (y * size + x) * 4
-      // Carolina blue circle on dark bg
-      const cx = size / 2, cy = size / 2, r = 6
-      const dist = Math.sqrt((x - cx) ** 2 + (y - cy) ** 2)
-      if (dist <= r) {
-        buf[i] = 93; buf[i + 1] = 173; buf[i + 2] = 226; buf[i + 3] = 255 // #5DADE2
-      } else {
-        buf[i] = 0; buf[i + 1] = 0; buf[i + 2] = 0; buf[i + 3] = 0
-      }
-    }
-  }
-  return nativeImage.createFromBuffer(buf, { width: size, height: size })
-}
-
 function createTray() {
-  const icon = createAppIcon()
+  const icon = nativeImage.createFromPath(path.join(__dirname, 'icon-tray.png'))
   tray = new Tray(icon)
   tray.setToolTip('DealCoach')
   tray.on('click', () => {
