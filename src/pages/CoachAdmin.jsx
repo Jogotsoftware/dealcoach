@@ -16,7 +16,11 @@ export default function CoachAdmin() {
   const { profile } = useAuth()
   const [tab, setTab] = useState('overview')
   const [loading, setLoading] = useState(true)
+  const [allCoaches, setAllCoaches] = useState([])
+  const [selectedCoachId, setSelectedCoachId] = useState(null)
   const [coach, setCoach] = useState(null)
+  const [showCreateCoach, setShowCreateCoach] = useState(false)
+  const [newCoach, setNewCoach] = useState({ name: '', description: '', model: 'claude-sonnet-4-6', temperature: 0.7 })
   const [prompts, setPrompts] = useState([])
   const [docs, setDocs] = useState([])
   const [scoringConfigs, setScoringConfigs] = useState([])
@@ -55,17 +59,32 @@ export default function CoachAdmin() {
   const [showAddPrompt, setShowAddPrompt] = useState(false)
   const [newPrompt, setNewPrompt] = useState({ call_type: 'qdc', label: '', prompt: '' })
 
-  useEffect(() => { loadCoach() }, [profile])
+  useEffect(() => { if (profile) loadAllCoaches() }, [profile])
+  useEffect(() => { if (selectedCoachId) loadCoachData(selectedCoachId) }, [selectedCoachId])
 
-  async function loadCoach() {
+  async function loadAllCoaches() {
     setLoading(true)
     try {
-      const coachId = profile?.active_coach_id
-      let coachQuery = supabase.from('coaches').select('*').eq('active', true).limit(1)
-      if (coachId) coachQuery = supabase.from('coaches').select('*').eq('id', coachId).single()
-      const { data: coachData } = coachId ? await coachQuery : await coachQuery
+      const isSystemAdmin = profile?.role === 'system_admin'
+      let query = supabase.from('coaches').select('*').order('name')
+      if (!isSystemAdmin) query = query.eq('created_by', profile.id)
+      const { data } = await query
+      const coaches = data || []
+      setAllCoaches(coaches)
+      // Auto-select: active coach first, then first owned, then first available
+      const pick = coaches.find(c => c.id === profile.active_coach_id) || coaches[0]
+      if (pick) { setSelectedCoachId(pick.id) } else { setLoading(false) }
+    } catch (err) {
+      console.error('Error loading coaches:', err)
+      setLoading(false)
+    }
+  }
 
-      const activeCoach = coachId ? coachData : coachData?.[0]
+  async function loadCoachData(coachId) {
+    setLoading(true)
+    try {
+      const { data: coachData } = await supabase.from('coaches').select('*').eq('id', coachId).single()
+      const activeCoach = coachData
       setCoach(activeCoach)
 
       if (activeCoach) {
@@ -198,6 +217,21 @@ export default function CoachAdmin() {
     setTemplateStages(prev => prev.filter(s => s.template_id !== id))
   }
 
+  async function createNewCoach() {
+    if (!newCoach.name.trim()) return
+    const { data, error } = await supabase.from('coaches').insert({
+      name: newCoach.name.trim(), description: newCoach.description || null,
+      model: newCoach.model, temperature: newCoach.temperature,
+      created_by: profile.id, active: true,
+    }).select().single()
+    if (!error && data) {
+      setAllCoaches(prev => [...prev, data])
+      setSelectedCoachId(data.id)
+      setShowCreateCoach(false)
+      setNewCoach({ name: '', description: '', model: 'claude-sonnet-4-6', temperature: 0.7 })
+    }
+  }
+
   async function addEmailTemplate() {
     if (!newEmailTpl.name.trim() || !coach) return
     const { data, error } = await supabase.from('email_templates').insert({
@@ -258,13 +292,44 @@ export default function CoachAdmin() {
   return (
     <div>
       <div style={{ padding: '14px 24px', borderBottom: `1px solid ${T.border}`, background: T.surface }}>
-        <h2 style={{ fontSize: 18, fontWeight: 700, color: T.text, margin: '0 0 12px 0' }}>Coach Admin</h2>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+          <h2 style={{ fontSize: 18, fontWeight: 700, color: T.text, margin: 0 }}>Coach Admin</h2>
+          <select style={{ ...inputStyle, width: 'auto', padding: '6px 12px', cursor: 'pointer', fontWeight: 600, maxWidth: 250 }}
+            value={selectedCoachId || ''} onChange={e => setSelectedCoachId(e.target.value)}>
+            {allCoaches.map(c => <option key={c.id} value={c.id}>{c.name}{c.created_by === profile?.id ? '' : ' (shared)'}</option>)}
+          </select>
+          {coach && coach.created_by !== profile?.id && (
+            <span style={{ fontSize: 11, color: T.textMuted, fontStyle: 'italic' }}>Owner: {coach.owner_name || 'Another admin'}</span>
+          )}
+          <div style={{ flex: 1 }} />
+          <Button primary onClick={() => setShowCreateCoach(true)} style={{ padding: '6px 14px', fontSize: 12 }}>+ New Coach</Button>
+        </div>
         <TabBar tabs={tabs} active={tab} onChange={setTab} />
       </div>
 
       <div style={{ padding: '16px 24px' }}>
+        {/* Create Coach Form */}
+        {showCreateCoach && (
+          <Card title="Create New Coach" style={{ marginBottom: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+              <div><label style={labelStyle}>Name *</label><input style={inputStyle} value={newCoach.name} onChange={e => setNewCoach(p => ({ ...p, name: e.target.value }))} placeholder="Coach name" autoFocus /></div>
+              <div><label style={labelStyle}>AI Model</label><select style={{ ...inputStyle, cursor: 'pointer' }} value={newCoach.model} onChange={e => setNewCoach(p => ({ ...p, model: e.target.value }))}>
+                {AI_MODELS.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}</select></div>
+            </div>
+            <div style={{ marginBottom: 10 }}><label style={labelStyle}>Description</label><textarea style={{ ...inputStyle, minHeight: 60, resize: 'vertical' }} value={newCoach.description} onChange={e => setNewCoach(p => ({ ...p, description: e.target.value }))} placeholder="What this coach specializes in..." /></div>
+            <div style={{ marginBottom: 10 }}>
+              <label style={labelStyle}>Temperature: {newCoach.temperature}</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 11, color: T.textMuted }}>0</span>
+                <input type="range" min="0" max="1" step="0.05" value={newCoach.temperature} onChange={e => setNewCoach(p => ({ ...p, temperature: Number(e.target.value) }))} style={{ flex: 1, accentColor: T.primary }} />
+                <span style={{ fontSize: 11, color: T.textMuted }}>1</span>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}><Button primary onClick={createNewCoach}>Create Coach</Button><Button onClick={() => setShowCreateCoach(false)}>Cancel</Button></div>
+          </Card>
+        )}
         {!coach ? (
-          <Card><div style={{ textAlign: 'center', padding: 32, color: T.textMuted }}>No active coach configured.</div></Card>
+          <Card><div style={{ textAlign: 'center', padding: 32, color: T.textMuted }}>No coach selected. Create one with "+ New Coach" above.</div></Card>
         ) : (
           <>
             {/* ══════════ OVERVIEW ══════════ */}
