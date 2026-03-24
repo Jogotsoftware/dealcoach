@@ -1,6 +1,6 @@
 const SUPABASE_URL = 'https://npfnsyufqqhhjmtvmold.supabase.co'
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5wZm5zeXVmcXFoaGptdHZtb2xkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM4Nzc1NzgsImV4cCI6MjA4OTQ1MzU3OH0.2KpF_ATKJiJP7wEfD74GIOXALhitu7GHavj8CL9OtGU'
-const WEB_APP_URL = 'https://dealcoach.netlify.app'
+const WEB_APP_URL = 'https://aidealcoach.netlify.app'
 const EDGE_URL = SUPABASE_URL + '/functions/v1'
 
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
