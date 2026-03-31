@@ -10,6 +10,28 @@
 
 import { supabase } from './supabase'
 
+/**
+ * Check if an org has enough credits for an action.
+ * Returns { allowed: true } or { allowed: false, reason: '...' }
+ */
+export async function checkCredits(orgId, actionType) {
+  if (!orgId) return { allowed: true }
+  const { data: cost } = await supabase.from('credit_costs').select('credits_cost').eq('action_type', actionType).single()
+  if (!cost) return { allowed: true }
+  const { data } = await supabase.rpc('check_credits', { p_org_id: orgId, p_required: cost.credits_cost })
+  return data || { allowed: false, reason: 'Credit check failed' }
+}
+
+/**
+ * Get the org_id for the current authenticated user.
+ */
+async function getOrgIdFromSession() {
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session?.user?.id) return null
+  const { data: profile } = await supabase.from('profiles').select('org_id').eq('id', session.user.id).single()
+  return profile?.org_id || null
+}
+
 // Map call types to their webhook env vars
 const WEBHOOK_MAP = {
   qdc: import.meta.env.VITE_WEBHOOK_QDC,
@@ -419,6 +441,10 @@ export async function callResearchFunction(dealId) {
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) return { error: 'Not authenticated' }
 
+  const orgId = await getOrgIdFromSession()
+  const creditCheck = await checkCredits(orgId, 'research')
+  if (!creditCheck.allowed) return { error: creditCheck.reason || 'Insufficient credits for research' }
+
   try {
     const response = await fetch(
       `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/research-company`,
@@ -449,6 +475,10 @@ export async function callProcessTranscript(conversationId) {
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) return { error: 'Not authenticated' }
 
+  const orgId = await getOrgIdFromSession()
+  const creditCheck = await checkCredits(orgId, 'transcript_analysis')
+  if (!creditCheck.allowed) return { error: creditCheck.reason || 'Insufficient credits for transcript analysis' }
+
   try {
     const response = await fetch(
       `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/process-transcript`,
@@ -478,6 +508,10 @@ export async function callGenerateEmail(dealId, templateId, conversationId = nul
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) return { error: 'Not authenticated' }
 
+  const orgId = await getOrgIdFromSession()
+  const creditCheck = await checkCredits(orgId, 'email')
+  if (!creditCheck.allowed) return { error: creditCheck.reason || 'Insufficient credits for email generation' }
+
   try {
     const response = await fetch(
       `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-email`,
@@ -505,6 +539,11 @@ export async function callGenerateEmail(dealId, templateId, conversationId = nul
 export async function callDealChat(dealId, sessionId, message, userId) {
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) return { error: 'Not authenticated' }
+
+  const orgId = await getOrgIdFromSession()
+  const creditCheck = await checkCredits(orgId, 'chat')
+  if (!creditCheck.allowed) return { error: creditCheck.reason || 'Insufficient credits for coach chat' }
+
   try {
     const response = await fetch(
       `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/deal-chat`,

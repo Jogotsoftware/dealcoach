@@ -7,6 +7,7 @@ import TranscriptUpload from '../components/TranscriptUpload'
 import { callGenerateEmail, callResearchFunction } from '../lib/webhooks'
 import DealChat from '../components/DealChat'
 import { useAuth } from '../hooks/useAuth'
+import { useModules } from '../hooks/useModules'
 
 // === LOCAL LABEL STYLE ===
 const ddLabelStyle = { fontSize: 11, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4, display: 'block' }
@@ -200,6 +201,7 @@ export default function DealDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
   const { profile } = useAuth()
+  const { hasModule } = useModules()
   const [tab, setTab] = useState('overview')
   const [loading, setLoading] = useState(true)
   const [deal, setDeal] = useState(null)
@@ -523,11 +525,11 @@ export default function DealDetail() {
     { key: 'overview', label: 'Overview' },
     { key: 'contacts', label: `Contacts (${contacts.length})` },
     { key: 'transcripts', label: `Transcripts (${conversations.length})` },
-    { key: 'msp', label: 'MSP' },
-    { key: 'proposal', label: 'Proposal' },
+    hasModule('msp') && { key: 'msp', label: 'MSP' },
+    hasModule('proposal') && { key: 'proposal', label: 'Proposal' },
     { key: 'tasks', label: `Tasks (${openTasks.length})` },
     { key: 'emails', label: `Emails (${generatedEmails.length})` },
-  ]
+  ].filter(Boolean)
 
   return (
     <div>
@@ -560,8 +562,16 @@ export default function DealDetail() {
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <Button primary onClick={() => setShowChat(true)} style={{ padding: '6px 12px', fontSize: 11 }}>Ask Coach</Button>
-            <Button primary onClick={() => setShowTranscriptUpload(true)} style={{ padding: '6px 12px', fontSize: 11 }}>Upload Transcript</Button>
-            <Button primary onClick={() => setShowEmailGenerator(true)} style={{ padding: '6px 12px', fontSize: 11 }}>Generate Email</Button>
+            {hasModule('transcript_analysis') ? (
+              <Button primary onClick={() => setShowTranscriptUpload(true)} style={{ padding: '6px 12px', fontSize: 11 }}>Upload Transcript</Button>
+            ) : (
+              <Button disabled style={{ padding: '6px 12px', fontSize: 11 }} title="Upgrade your plan">Upload Transcript</Button>
+            )}
+            {hasModule('coaching') ? (
+              <Button primary onClick={() => setShowEmailGenerator(true)} style={{ padding: '6px 12px', fontSize: 11 }}>Generate Email</Button>
+            ) : (
+              <Button disabled style={{ padding: '6px 12px', fontSize: 11 }} title="Upgrade your plan">Generate Email</Button>
+            )}
             <Button onClick={rerunResearch} disabled={researchRunning} style={{ padding: '6px 12px', fontSize: 11 }}>
               {researchRunning ? 'Researching...' : 'Re-run Research'}
             </Button>
@@ -939,7 +949,11 @@ export default function DealDetail() {
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
               <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: T.text }}>Transcripts</h3>
-              <Button primary onClick={() => setShowTranscriptUpload(true)}>Upload Transcript</Button>
+              {hasModule('transcript_analysis') ? (
+                <Button primary onClick={() => setShowTranscriptUpload(true)}>Upload Transcript</Button>
+              ) : (
+                <Button disabled title="Upgrade your plan">Upload Transcript</Button>
+              )}
             </div>
             {conversations.length === 0
               ? <EmptyState message="No transcripts yet. Upload a call transcript for AI analysis and auto-extracted tasks." />

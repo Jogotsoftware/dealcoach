@@ -19,18 +19,25 @@ export default function Pipeline() {
   const [sort, setSort] = useState('deal_value')
   const [dir, setDir] = useState('desc')
   const [showTranscript, setShowTranscript] = useState(false)
+  const [dealView, setDealView] = useState('my') // 'my' or 'all'
 
   // Load data from Supabase
   useEffect(() => {
     loadData()
-  }, [profile])
+  }, [profile, dealView])
 
   async function loadData() {
     if (!profile) return
     setLoading(true)
     try {
+      let dealsQuery = supabase.from('deals').select('*')
+      if (dealView === 'all' && profile.org_id) {
+        dealsQuery = dealsQuery.eq('org_id', profile.org_id)
+      } else {
+        dealsQuery = dealsQuery.eq('rep_id', profile.id)
+      }
       const [dealsRes, tasksRes, quotaRes] = await Promise.all([
-        supabase.from('deals').select('*').eq('rep_id', profile.id),
+        dealsQuery,
         supabase.from('tasks').select('*'),
         supabase.from('rep_quotas').select('*').eq('rep_id', profile.id).limit(1),
       ])
@@ -89,7 +96,21 @@ export default function Pipeline() {
         padding: '14px 24px', borderBottom: `1px solid ${T.border}`,
         display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: T.surface,
       }}>
-        <h2 style={{ fontSize: 18, fontWeight: 700, color: T.text, margin: 0 }}>Pipeline</h2>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <h2 style={{ fontSize: 18, fontWeight: 700, color: T.text, margin: 0 }}>Pipeline</h2>
+          {profile?.org_id && (
+            <div style={{ display: 'flex', borderRadius: 5, overflow: 'hidden', border: `1px solid ${T.border}` }}>
+              {[['my', 'My Deals'], ['all', 'All Deals']].map(([key, label]) => (
+                <button key={key} onClick={() => setDealView(key)} style={{
+                  padding: '5px 12px', fontSize: 11, fontWeight: 600, fontFamily: T.font,
+                  border: 'none', cursor: 'pointer',
+                  background: dealView === key ? T.primary : T.surfaceAlt,
+                  color: dealView === key ? '#fff' : T.textSecondary,
+                }}>{label}</button>
+              ))}
+            </div>
+          )}
+        </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <select
             value={sort}

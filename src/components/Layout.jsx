@@ -1,16 +1,22 @@
+import { useState, useEffect } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
+import { useModules } from '../hooks/useModules'
+import { supabase } from '../lib/supabase'
 import { theme as T } from '../lib/theme'
-
-const NAV_ITEMS = [
-  { to: '/', icon: '\u25A6', label: 'Pipeline' },
-  { to: '/coach', icon: '\u2605', label: 'Coach Admin' },
-  { to: '/settings', icon: '\u2699', label: 'Settings' },
-]
 
 export default function Layout() {
   const { profile, signOut } = useAuth()
+  const { hasModule } = useModules()
   const navigate = useNavigate()
+  const [isPlatformAdmin, setIsPlatformAdmin] = useState(false)
+
+  useEffect(() => {
+    if (profile?.id) {
+      supabase.from('platform_admins').select('id').eq('user_id', profile.id).single()
+        .then(({ data }) => setIsPlatformAdmin(!!data))
+    }
+  }, [profile])
 
   const handleSignOut = async () => {
     await signOut()
@@ -47,7 +53,12 @@ export default function Layout() {
 
         {/* Nav items */}
         <div style={{ flex: 1, padding: '12px 10px' }}>
-          {NAV_ITEMS.map(item => (
+          {[
+            { to: '/', icon: '\u25A6', label: 'Pipeline', show: true },
+            { to: '/coach', icon: '\u2605', label: 'Coach Admin', show: hasModule('coach_customization') && ['admin', 'system_admin'].includes(profile?.role) },
+            { to: '/settings', icon: '\u2699', label: 'Settings', show: true },
+            { to: '/admin', icon: '\u2630', label: 'Platform Admin', show: isPlatformAdmin },
+          ].filter(item => item.show).map(item => (
             <NavLink
               key={item.to}
               to={item.to}

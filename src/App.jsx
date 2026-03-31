@@ -12,6 +12,8 @@ import ProposalBuilder from './pages/ProposalBuilder'
 import CallDetail from './pages/CallDetail'
 import CoachAdmin from './pages/CoachAdmin'
 import Settings from './pages/Settings'
+import AdminConsole from './pages/AdminConsole'
+import AcceptInvite from './pages/AcceptInvite'
 import { Spinner } from './components/Shared'
 
 function ProtectedRoute({ children }) {
@@ -36,6 +38,7 @@ export default function App() {
           {/* Public routes */}
           <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
           <Route path="/msp/shared/:token" element={<MSPClientPortal />} />
+          <Route path="/invite/:token" element={<AcceptInvite />} />
 
           {/* Protected routes inside Layout (sidebar) */}
           <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
@@ -49,6 +52,7 @@ export default function App() {
             <Route path="/deal/:dealId/proposal" element={<ProposalBuilder />} />
             <Route path="/coach" element={<CoachAdmin />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/admin" element={<AdminConsole />} />
           </Route>
 
           {/* Fallback */}

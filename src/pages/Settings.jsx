@@ -37,6 +37,14 @@ export default function Settings() {
     }))
   )
 
+  // Organization data
+  const [orgData, setOrgData] = useState(null)
+  const [orgCredits, setOrgCredits] = useState(null)
+  const [orgPlan, setOrgPlan] = useState(null)
+  const [orgTeam, setOrgTeam] = useState([])
+  const [showOrgInvite, setShowOrgInvite] = useState(false)
+  const [orgInvite, setOrgInvite] = useState({ email: '', role: 'rep' })
+
   // Team members
   const [teamMembers, setTeamMembers] = useState([])
   const [showAddMember, setShowAddMember] = useState(false)
@@ -57,11 +65,29 @@ export default function Settings() {
   }, [profile])
 
   async function loadData() {
-    const [quotaRes, coachesRes, teamRes] = await Promise.all([
+    const queries = [
       supabase.from('rep_quota_months').select('*').eq('rep_id', profile.id).eq('fiscal_year', fp.fy),
       supabase.from('coaches').select('id, name, description').eq('active', true).order('name'),
       supabase.from('user_team_members').select('*').eq('user_id', profile.id).order('name'),
-    ])
+    ]
+    if (profile.org_id) {
+      queries.push(
+        supabase.from('organizations').select('*').eq('id', profile.org_id).single(),
+        supabase.from('org_credits').select('*').eq('org_id', profile.org_id).single(),
+        supabase.from('profiles').select('*').eq('org_id', profile.org_id),
+      )
+    }
+    const [quotaRes, coachesRes, teamRes, orgRes, orgCredRes, orgTeamRes] = await Promise.all(queries)
+
+    if (profile.org_id) {
+      setOrgData(orgRes?.data || null)
+      setOrgCredits(orgCredRes?.data || null)
+      setOrgTeam(orgTeamRes?.data || [])
+      if (orgRes?.data?.plan_id) {
+        const { data: plan } = await supabase.from('plans').select('name').eq('id', orgRes.data.plan_id).single()
+        setOrgPlan(plan)
+      }
+    }
 
     if (quotaRes.data?.length > 0) {
       setMonths(prev => prev.map(m => {
@@ -170,6 +196,19 @@ export default function Settings() {
     return T.error
   }
 
+  async function sendOrgInvite() {
+    if (!orgInvite.email || !profile.org_id) return
+    const token = crypto.randomUUID()
+    const expires = new Date(Date.now() + 7 * 86400000).toISOString()
+    await supabase.from('invitations').insert({
+      email: orgInvite.email, org_id: profile.org_id, role: orgInvite.role,
+      token, status: 'pending', expires_at: expires,
+    })
+    setShowOrgInvite(false)
+    setOrgInvite({ email: '', role: 'rep' })
+    alert(`Invitation created. Share this link:\n${window.location.origin}/invite/${token}`)
+  }
+
   const selectedCoach = coaches.find(c => c.id === activeCoachId)
 
   return (
@@ -250,6 +289,81 @@ export default function Settings() {
             </div>
           </div>
         </Card>
+
+        {/* Organization */}
+        {orgData && (
+          <Card title="Organization" action={
+            ['admin', 'system_admin'].includes(profile?.role) ? (
+              <Button style={{ padding: '4px 12px', fontSize: 11 }} onClick={() => setShowOrgInvite(!showOrgInvite)}>Invite User</Button>
+            ) : null
+          }>
+            <div style={{ display: 'flex', gap: 24, marginBottom: 16, flexWrap: 'wrap' }}>
+              <div>
+                <div style={labelStyle}>Organization</div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: T.text }}>{orgData.name}</div>
+              </div>
+              <div>
+                <div style={labelStyle}>Plan</div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: T.primary }}>{orgPlan?.name || '--'}</div>
+              </div>
+              <div>
+                <div style={labelStyle}>Status</div>
+                <Badge color={orgData.status === 'active' ? '#28a745' : orgData.status === 'trial' ? '#f59e0b' : '#dc3545'}>{orgData.status}</Badge>
+              </div>
+            </div>
+
+            {orgCredits && (
+              <div style={{ display: 'flex', gap: 20, marginBottom: 16 }}>
+                <div style={{ textAlign: 'center', padding: 14, background: T.surfaceAlt, borderRadius: 6, flex: 1 }}>
+                  <div style={{ fontSize: 24, fontWeight: 800, color: T.primary }}>{orgCredits.balance?.toLocaleString()}</div>
+                  <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 600, textTransform: 'uppercase' }}>Credit Balance</div>
+                </div>
+                <div style={{ textAlign: 'center', padding: 14, background: T.surfaceAlt, borderRadius: 6, flex: 1 }}>
+                  <div style={{ fontSize: 24, fontWeight: 800, color: T.error }}>{orgCredits.total_used?.toLocaleString()}</div>
+                  <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 600, textTransform: 'uppercase' }}>Total Used</div>
+                </div>
+                <div style={{ textAlign: 'center', padding: 14, background: T.surfaceAlt, borderRadius: 6, flex: 1 }}>
+                  <div style={{ fontSize: 24, fontWeight: 800, color: T.success }}>{orgCredits.total_granted?.toLocaleString()}</div>
+                  <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 600, textTransform: 'uppercase' }}>Total Granted</div>
+                </div>
+              </div>
+            )}
+
+            {showOrgInvite && (
+              <div style={{ padding: 12, background: T.surfaceAlt, borderRadius: 6, marginBottom: 12, border: `1px solid ${T.borderLight}` }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+                  <div><label style={labelStyle}>Email</label><input style={inputStyle} value={orgInvite.email} onChange={e => setOrgInvite({ ...orgInvite, email: e.target.value })} /></div>
+                  <div><label style={labelStyle}>Role</label><select style={{ ...inputStyle, cursor: 'pointer' }} value={orgInvite.role} onChange={e => setOrgInvite({ ...orgInvite, role: e.target.value })}>
+                    {['rep', 'manager', 'admin'].map(r => <option key={r} value={r}>{r}</option>)}
+                  </select></div>
+                </div>
+                <Button primary onClick={sendOrgInvite} disabled={!orgInvite.email}>Send Invite</Button>
+                <Button style={{ marginLeft: 8 }} onClick={() => setShowOrgInvite(false)}>Cancel</Button>
+              </div>
+            )}
+
+            <div style={{ fontSize: 12, fontWeight: 700, color: T.textSecondary, marginBottom: 8 }}>Team Members</div>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead>
+                <tr style={{ borderBottom: `1px solid ${T.border}` }}>
+                  {['Name', 'Email', 'Role', 'Active Coach'].map(h => (
+                    <th key={h} style={{ textAlign: 'left', padding: '6px 8px', fontSize: 10, fontWeight: 600, color: T.textMuted, textTransform: 'uppercase' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {orgTeam.map(m => (
+                  <tr key={m.id} style={{ borderBottom: `1px solid ${T.borderLight}` }}>
+                    <td style={{ padding: '8px', fontWeight: 600 }}>{m.full_name}</td>
+                    <td style={{ padding: '8px', color: T.textMuted }}>{m.email}</td>
+                    <td style={{ padding: '8px' }}><Badge color={m.role === 'admin' ? '#f59e0b' : T.primary}>{m.role || 'rep'}</Badge></td>
+                    <td style={{ padding: '8px', color: T.textMuted }}>{m.active_coach_id ? 'Yes' : '--'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Card>
+        )}
 
         {/* Quota */}
         <Card title={`Quota -- FY${fp.fy} (Oct ${fp.fy - 1} - Sep ${fp.fy})`}>
