@@ -8,7 +8,7 @@ import { callGenerateEmail, callResearchFunction } from '../lib/webhooks'
 import DealChat from '../components/DealChat'
 import { useAuth } from '../hooks/useAuth'
 import { useModules } from '../hooks/useModules'
-import { ResponsiveGridLayout } from 'react-grid-layout'
+import { ResponsiveGridLayout, useContainerWidth } from 'react-grid-layout'
 import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
 
@@ -281,6 +281,7 @@ export default function DealDetail() {
   const { profile } = useAuth()
   const { hasModule } = useModules()
   const fileInputRef = useRef(null)
+  const { width: gridWidth, containerRef: gridContainerRef } = useContainerWidth({ initialWidth: 1200 })
   const docsFileInputRef = useRef(null)
   const [tab, setTab] = useState('overview')
   const [loading, setLoading] = useState(true)
@@ -1062,9 +1063,12 @@ export default function DealDetail() {
       <style>{`
         .react-grid-layout { position: relative; }
         .react-grid-item { transition: all 200ms ease; }
-        .react-grid-item.react-grid-placeholder { background: rgba(93, 173, 226, 0.15); border: 2px dashed rgba(93, 173, 226, 0.5); border-radius: 8px; }
-        .react-resizable-handle { background: none; width: 16px; height: 16px; }
-        .react-resizable-handle::after { border-color: rgba(136, 153, 170, 0.4) !important; }
+        .react-grid-item.cssTransforms { transition-property: transform; }
+        .react-grid-item.react-draggable-dragging { transition: none !important; z-index: 100; opacity: 0.9; box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
+        .react-grid-item.resizing { transition: none !important; z-index: 100; }
+        .react-grid-item > .react-resizable-handle { position: absolute; width: 20px; height: 20px; }
+        .react-grid-item > .react-resizable-handle::after { content: ""; position: absolute; right: 3px; bottom: 3px; width: 8px; height: 8px; border-right: 2px solid rgba(136,153,170,0.4); border-bottom: 2px solid rgba(136,153,170,0.4); }
+        .react-grid-item.react-grid-placeholder { background: rgba(93,173,226,0.1) !important; border: 2px dashed rgba(93,173,226,0.4) !important; border-radius: 10px; }
         @keyframes spin { to { transform: rotate(360deg) } }
         @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.7 } }
       `}</style>
@@ -1194,30 +1198,57 @@ export default function DealDetail() {
               </div>
             </div>
 
-            <ResponsiveGridLayout
-              className="layout"
-              layouts={{ lg: layout }}
-              breakpoints={{ lg: 1200, md: 996, sm: 768 }}
-              cols={{ lg: 12, md: 12, sm: 6 }}
-              rowHeight={60}
-              isDraggable={editMode}
-              isResizable={editMode}
-              onLayoutChange={(newLayout) => { if (editMode) setLayout(newLayout) }}
-              draggableHandle=".widget-drag-handle"
-            >
-              {widgets.filter(w => w.visible).map(w => (
-                <div key={w.id} style={{ background: T.surface, border: editMode ? `1px dashed ${T.primaryBorder}` : `1px solid ${T.border}`, borderRadius: 8, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                  <div style={{ padding: '8px 14px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', gap: 8, background: T.surfaceAlt, flexShrink: 0 }}>
-                    {editMode && <span className="widget-drag-handle" style={{ cursor: 'grab', color: T.textMuted, fontSize: 14, userSelect: 'none' }}>{'\u2801\u2801\u2801'}</span>}
-                    <span style={{ fontSize: 13, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: T.text, flex: 1 }}>{w.title}</span>
-                    {editMode && <span style={{ cursor: 'pointer', color: T.textMuted, fontSize: 16, lineHeight: 1 }} onClick={() => toggleWidget(w.id)}>&times;</span>}
+            {editMode && (
+              <style>{`
+                .react-grid-layout {
+                  background-image:
+                    linear-gradient(to right, rgba(93,173,226,0.05) 1px, transparent 1px),
+                    linear-gradient(to bottom, rgba(93,173,226,0.05) 1px, transparent 1px);
+                  background-size: calc(100% / 12) 60px;
+                  min-height: 200px;
+                }
+              `}</style>
+            )}
+            <div ref={gridContainerRef} style={{ width: '100%' }}>
+              <ResponsiveGridLayout
+                className="layout"
+                width={gridWidth}
+                layouts={{ lg: layout.filter(l => widgets.find(w => w.id === l.i && w.visible)) }}
+                breakpoints={{ lg: 1200, md: 996, sm: 768 }}
+                cols={{ lg: 12, md: 12, sm: 6 }}
+                rowHeight={60}
+                margin={[12, 12]}
+                containerPadding={[0, 0]}
+                isDraggable={editMode}
+                isResizable={editMode}
+                compactType="vertical"
+                useCSSTransforms={true}
+                preventCollision={false}
+                transformScale={1}
+                draggableHandle=".widget-drag-handle"
+                onLayoutChange={(newLayout) => {
+                  if (!editMode) return
+                  const merged = newLayout.map(item => {
+                    const orig = layout.find(l => l.i === item.i)
+                    return { ...item, minW: orig?.minW || 4, minH: orig?.minH || 2 }
+                  })
+                  setLayout(merged)
+                }}
+              >
+                {widgets.filter(w => w.visible).map(w => (
+                  <div key={w.id} style={{ background: T.surface, border: editMode ? '1px dashed rgba(93,173,226,0.3)' : `1px solid ${T.border}`, borderRadius: 10, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                    <div style={{ padding: '8px 14px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', gap: 8, background: T.surfaceAlt, flexShrink: 0 }}>
+                      {editMode && <span className="widget-drag-handle" style={{ cursor: 'grab', color: T.textMuted, fontSize: 14, userSelect: 'none' }}>{'\u2807'}</span>}
+                      <span style={{ fontSize: 13, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: T.text, flex: 1 }}>{w.title}</span>
+                      {editMode && <span style={{ cursor: 'pointer', color: T.textMuted, fontSize: 16, lineHeight: 1 }} onClick={() => toggleWidget(w.id)}>&times;</span>}
+                    </div>
+                    <div style={{ padding: 14, overflow: 'auto', flex: 1 }}>
+                      {renderWidget(w.id)}
+                    </div>
                   </div>
-                  <div style={{ padding: 14, overflow: 'auto', flex: 1 }}>
-                    {renderWidget(w.id)}
-                  </div>
-                </div>
-              ))}
-            </ResponsiveGridLayout>
+                ))}
+              </ResponsiveGridLayout>
+            </div>
 
           </div>
         )}
