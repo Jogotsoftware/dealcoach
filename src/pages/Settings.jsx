@@ -217,7 +217,7 @@ export default function Settings() {
         <h2 style={{ fontSize: 18, fontWeight: 700, color: T.text, margin: 0 }}>Settings</h2>
       </div>
 
-      <div style={{ padding: '16px 24px', maxWidth: 1400 }}>
+      <div style={{ padding: '16px 24px' }}>
 
         {/* My Coach */}
         <Card title="My Coach">

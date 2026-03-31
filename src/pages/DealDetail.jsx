@@ -189,6 +189,24 @@ function DeleteBtn({ onClick, title = 'Delete' }) {
   )
 }
 
+// === MORE MENU ITEM ===
+function MoreMenuItem({ label, onClick, danger, disabled }) {
+  const [hover, setHover] = useState(false)
+  return (
+    <button
+      onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+      onClick={disabled ? undefined : onClick}
+      style={{
+        display: 'block', width: '100%', padding: '9px 16px', textAlign: 'left',
+        background: hover && !disabled ? T.surfaceAlt : 'transparent', border: 'none',
+        cursor: disabled ? 'not-allowed' : 'pointer', fontSize: 13,
+        color: disabled ? T.textMuted : danger ? '#e74c3c' : T.text,
+        fontFamily: 'inherit', opacity: disabled ? 0.5 : 1,
+      }}
+    >{label}</button>
+  )
+}
+
 // === SEVERITY COLORS ===
 const SEVERITY_COLORS = { critical: T.error, high: '#f97316', medium: T.warning, low: T.textMuted }
 const STATUS_COLORS = { open: T.error, mitigating: T.warning, mitigated: T.success, accepted: T.textMuted, closed: T.textMuted }
@@ -288,6 +306,9 @@ export default function DealDetail() {
   const [layout, setLayout] = useState(DEFAULT_LAYOUT)
   const [widgets, setWidgets] = useState(DEFAULT_WIDGETS)
   const [editMode, setEditMode] = useState(false)
+  const [orgLayoutId, setOrgLayoutId] = useState(null)
+  const [hasUserOverride, setHasUserOverride] = useState(false)
+  const [registeredWidgets, setRegisteredWidgets] = useState([])
 
   // Contact editing
   const [editingContact, setEditingContact] = useState(null)
@@ -335,14 +356,49 @@ export default function DealDetail() {
 
   useEffect(() => { if (id && id !== 'new') loadDeal() }, [id])
 
-  // Load widget layout
+  // Load widget layout (org default + optional user override)
   useEffect(() => {
     async function loadLayout() {
-      const { data } = await supabase.from('user_widget_layouts')
-        .select('*').eq('user_id', profile.id).eq('page', 'deal_overview').single()
-      if (data) {
-        setLayout(data.layout || DEFAULT_LAYOUT)
-        setWidgets(data.widgets || DEFAULT_WIDGETS)
+      // Load widget registry
+      const { data: registry } = await supabase.from('widget_registry')
+        .select('*').eq('active', true).order('sort_order')
+      if (registry?.length) setRegisteredWidgets(registry)
+
+      // Build registry-based defaults
+      const regLayout = registry?.length ? registry.filter(w => w.default_visible).map((w, i) => ({
+        i: w.id, x: 0, y: i * (w.default_h || 3), w: w.default_w || 12, h: w.default_h || 3,
+        minW: w.min_w || 4, minH: w.min_h || 2,
+      })) : null
+      const regWidgets = registry?.length ? registry.map(w => ({
+        id: w.id, title: w.title, visible: w.default_visible,
+      })) : null
+
+      // 1. Load org default
+      if (profile.org_id) {
+        const { data: orgLayout } = await supabase.from('org_widget_layouts')
+          .select('*').eq('org_id', profile.org_id).eq('page', 'deal_overview').eq('is_default', true).single()
+        if (orgLayout) {
+          setOrgLayoutId(orgLayout.id)
+          setLayout(orgLayout.layout || regLayout || DEFAULT_LAYOUT)
+          setWidgets(orgLayout.widgets || regWidgets || DEFAULT_WIDGETS)
+        } else if (regLayout) {
+          setLayout(regLayout)
+          setWidgets(regWidgets)
+        }
+
+        // 2. Check for user override (non-admins)
+        if (profile.role !== 'admin' && profile.role !== 'system_admin') {
+          const { data: override } = await supabase.from('user_widget_overrides')
+            .select('*').eq('user_id', profile.id).eq('page', 'deal_overview').single()
+          if (override) {
+            setLayout(override.layout)
+            setWidgets(override.widgets)
+            setHasUserOverride(true)
+          }
+        }
+      } else if (regLayout) {
+        setLayout(regLayout)
+        setWidgets(regWidgets)
       }
     }
     if (profile?.id) loadLayout()
@@ -429,16 +485,34 @@ export default function DealDetail() {
   // === LAYOUT FUNCTIONS ===
   async function saveLayout(newLayout) {
     setLayout(newLayout)
-    await supabase.from('user_widget_layouts').upsert({
-      user_id: profile.id, page: 'deal_overview', layout: newLayout, widgets,
-    }, { onConflict: 'user_id,page' })
+    const isAdmin = profile.role === 'admin' || profile.role === 'system_admin'
+
+    if (isAdmin && orgLayoutId) {
+      // Admin saves to org default — affects everyone
+      await supabase.from('org_widget_layouts').update({ layout: newLayout, widgets }).eq('id', orgLayoutId)
+    } else if (orgLayoutId) {
+      // Rep saves personal override
+      await supabase.from('user_widget_overrides').upsert({
+        user_id: profile.id, org_layout_id: orgLayoutId,
+        page: 'deal_overview', layout: newLayout, widgets,
+      }, { onConflict: 'user_id,page' })
+      setHasUserOverride(true)
+    }
   }
 
   async function saveWidgets(newWidgets) {
     setWidgets(newWidgets)
-    await supabase.from('user_widget_layouts').upsert({
-      user_id: profile.id, page: 'deal_overview', layout, widgets: newWidgets,
-    }, { onConflict: 'user_id,page' })
+    const isAdmin = profile.role === 'admin' || profile.role === 'system_admin'
+
+    if (isAdmin && orgLayoutId) {
+      await supabase.from('org_widget_layouts').update({ widgets: newWidgets }).eq('id', orgLayoutId)
+    } else if (orgLayoutId) {
+      await supabase.from('user_widget_overrides').upsert({
+        user_id: profile.id, org_layout_id: orgLayoutId,
+        page: 'deal_overview', layout, widgets: newWidgets,
+      }, { onConflict: 'user_id,page' })
+      setHasUserOverride(true)
+    }
   }
 
   function toggleWidget(widgetId) {
@@ -451,20 +525,43 @@ export default function DealDetail() {
     if (!widgetId) return
     const updated = widgets.map(w => w.id === widgetId ? { ...w, visible: true } : w)
     setWidgets(updated)
-    // Add layout entry if missing
     if (!layout.find(l => l.i === widgetId)) {
-      const newItem = { i: widgetId, x: 0, y: 999, w: 12, h: 3, minW: 4, minH: 2 }
+      const reg = registeredWidgets.find(r => r.id === widgetId)
+      const newItem = { i: widgetId, x: 0, y: 999, w: reg?.default_w || 12, h: reg?.default_h || 3, minW: reg?.min_w || 4, minH: reg?.min_h || 2 }
       setLayout([...layout, newItem])
     }
     saveWidgets(updated)
   }
 
-  function resetLayout() {
-    setLayout(DEFAULT_LAYOUT)
-    setWidgets(DEFAULT_WIDGETS)
-    supabase.from('user_widget_layouts').upsert({
-      user_id: profile.id, page: 'deal_overview', layout: DEFAULT_LAYOUT, widgets: DEFAULT_WIDGETS,
-    }, { onConflict: 'user_id,page' })
+  async function resetLayout() {
+    const isAdmin = profile.role === 'admin' || profile.role === 'system_admin'
+
+    if (isAdmin && orgLayoutId) {
+      setLayout(DEFAULT_LAYOUT)
+      setWidgets(DEFAULT_WIDGETS)
+      await supabase.from('org_widget_layouts').update({
+        layout: DEFAULT_LAYOUT, widgets: DEFAULT_WIDGETS,
+      }).eq('id', orgLayoutId)
+    } else {
+      // Delete personal override, fall back to org default
+      await supabase.from('user_widget_overrides').delete()
+        .eq('user_id', profile.id).eq('page', 'deal_overview')
+      setHasUserOverride(false)
+      if (orgLayoutId) {
+        const { data: orgLayout } = await supabase.from('org_widget_layouts')
+          .select('*').eq('id', orgLayoutId).single()
+        if (orgLayout) {
+          setLayout(orgLayout.layout || DEFAULT_LAYOUT)
+          setWidgets(orgLayout.widgets || DEFAULT_WIDGETS)
+        } else {
+          setLayout(DEFAULT_LAYOUT)
+          setWidgets(DEFAULT_WIDGETS)
+        }
+      } else {
+        setLayout(DEFAULT_LAYOUT)
+        setWidgets(DEFAULT_WIDGETS)
+      }
+    }
   }
 
   // === DOCUMENT FUNCTIONS ===
@@ -1015,33 +1112,21 @@ export default function DealDetail() {
             <div style={{ position: 'relative' }}>
               <button onClick={() => setShowMoreMenu(!showMoreMenu)} style={{
                 background: 'none', border: `1px solid ${T.border}`, borderRadius: 6,
-                padding: '6px 10px', cursor: 'pointer', color: T.textMuted, fontSize: 18,
+                padding: '6px 12px', cursor: 'pointer', color: T.textMuted, fontSize: 18,
                 fontFamily: T.font, lineHeight: 1,
-              }}>{'\u22EF'}</button>
+              }}>{'\u2026'}</button>
               {showMoreMenu && (
                 <>
                   <div style={{ position: 'fixed', inset: 0, zIndex: 999 }} onClick={() => setShowMoreMenu(false)} />
                   <div style={{
                     position: 'absolute', right: 0, top: '100%', marginTop: 4, zIndex: 1000,
                     background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8,
-                    boxShadow: '0 8px 24px rgba(0,0,0,0.15)', minWidth: 200, overflow: 'hidden',
+                    boxShadow: '0 8px 24px rgba(0,0,0,0.3)', minWidth: 200, padding: '4px 0',
                   }}>
-                    <button style={{ display: 'block', width: '100%', padding: '10px 16px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: T.text, fontFamily: T.font }}
-                      onMouseEnter={e => e.currentTarget.style.background = T.surfaceHover} onMouseLeave={e => e.currentTarget.style.background = 'none'}
-                      onClick={() => { rerunResearch(); setShowMoreMenu(false) }}>
-                      {researchRunning ? 'Researching...' : 'Re-run Research'}
-                    </button>
+                    <MoreMenuItem label={researchRunning ? 'Researching...' : 'Re-run Research'} disabled={researchRunning} onClick={() => { rerunResearch(); setShowMoreMenu(false) }} />
+                    <MoreMenuItem label={editMode ? 'Lock Dashboard' : 'Edit Dashboard'} onClick={() => { setEditMode(!editMode); setShowMoreMenu(false) }} />
                     <div style={{ borderTop: `1px solid ${T.border}`, margin: '4px 0' }} />
-                    <button style={{ display: 'block', width: '100%', padding: '10px 16px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: T.error, fontFamily: T.font }}
-                      onMouseEnter={e => e.currentTarget.style.background = T.surfaceHover} onMouseLeave={e => e.currentTarget.style.background = 'none'}
-                      onClick={async () => {
-                        setShowMoreMenu(false)
-                        if (!window.confirm('Delete this deal? This cannot be undone.')) return
-                        await supabase.from('deals').delete().eq('id', deal.id)
-                        navigate('/')
-                      }}>
-                      Delete Deal
-                    </button>
+                    <MoreMenuItem label="Delete Deal" danger onClick={() => { setShowMoreMenu(false); if (window.confirm('Delete this deal and all its data?')) { supabase.from('deals').delete().eq('id', deal.id).then(() => navigate('/')) } }} />
                   </div>
                 </>
               )}
@@ -1078,6 +1163,29 @@ export default function DealDetail() {
               </div>
             )}
 
+            {/* Inline edit bar */}
+            {editMode && (
+              <div style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '8px 16px', marginBottom: 12,
+                background: 'rgba(93,173,226,0.08)', border: '1px solid rgba(93,173,226,0.2)',
+                borderRadius: 8,
+              }}>
+                <span style={{ fontSize: 12, color: '#5DADE2', fontWeight: 600 }}>
+                  Editing layout {(profile?.role === 'admin' || profile?.role === 'system_admin') ? '(org default \u2014 changes apply to all users)' : '(your personal view)'}
+                </span>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <select style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, borderRadius: 6, padding: '4px 8px', color: T.text, fontSize: 11, cursor: 'pointer', fontFamily: T.font }}
+                    value="" onChange={e => { if (e.target.value) addWidget(e.target.value); e.target.value = '' }}>
+                    <option value="">+ Add Widget</option>
+                    {widgets.filter(w => !w.visible).map(w => <option key={w.id} value={w.id}>{w.title}</option>)}
+                  </select>
+                  <button onClick={resetLayout} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '4px 10px', color: T.textMuted, fontSize: 11, cursor: 'pointer', fontFamily: T.font }}>Reset</button>
+                  <button onClick={() => { setEditMode(false); saveLayout(layout) }} style={{ background: '#5DADE2', border: 'none', borderRadius: 6, padding: '4px 14px', color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: T.font }}>Done</button>
+                </div>
+              </div>
+            )}
+
             {/* Next Steps (always visible above grid) */}
             <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 14px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
               <span style={{ fontSize: 10, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase', whiteSpace: 'nowrap', letterSpacing: '0.05em' }}>Next Steps:</span>
@@ -1111,35 +1219,6 @@ export default function DealDetail() {
               ))}
             </ResponsiveGridLayout>
 
-            {/* Edit mode controls */}
-            {!editMode && (
-              <button onClick={() => setEditMode(true)} style={{
-                position: 'fixed', bottom: 24, right: 24, zIndex: 1000,
-                width: 48, height: 48, borderRadius: '50%', background: T.primary, color: '#fff',
-                border: 'none', boxShadow: '0 4px 12px rgba(93,173,226,0.4)', cursor: 'pointer',
-                fontSize: 20, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                transition: 'transform 0.15s, box-shadow 0.15s',
-              }}
-                onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.1)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(93,173,226,0.5)' }}
-                onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(93,173,226,0.4)' }}
-                title="Customize Layout">{'\u2699'}</button>
-            )}
-            {editMode && (
-              <div style={{
-                position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 1000,
-                background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: '10px 20px',
-                display: 'flex', gap: 12, alignItems: 'center', boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
-              }}>
-                <span style={{ fontSize: 12, color: T.textMuted, fontWeight: 600, letterSpacing: '0.06em' }}>EDITING LAYOUT</span>
-                <select style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', color: T.text, fontSize: 12, cursor: 'pointer', fontFamily: T.font }}
-                  value="" onChange={e => { addWidget(e.target.value); e.target.value = '' }}>
-                  <option value="">+ Add Widget</option>
-                  {widgets.filter(w => !w.visible).map(w => <option key={w.id} value={w.id}>{w.title}</option>)}
-                </select>
-                <button onClick={resetLayout} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 12px', color: T.textMuted, fontSize: 12, cursor: 'pointer', fontFamily: T.font }}>Reset</button>
-                <button onClick={() => { setEditMode(false); saveLayout(layout) }} style={{ background: T.primary, border: 'none', borderRadius: 6, padding: '6px 16px', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: T.font }}>Done</button>
-              </div>
-            )}
           </div>
         )}
 
