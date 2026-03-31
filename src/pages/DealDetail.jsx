@@ -331,6 +331,7 @@ export default function DealDetail() {
   const [generatedEmails, setGeneratedEmails] = useState([])
   const [expandedEmail, setExpandedEmail] = useState(null)
   const [showChat, setShowChat] = useState(false)
+  const [showMoreMenu, setShowMoreMenu] = useState(false)
 
   useEffect(() => { if (id && id !== 'new') loadDeal() }, [id])
 
@@ -998,7 +999,7 @@ export default function DealDetail() {
               )}
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <Button primary onClick={() => setShowChat(true)} style={{ padding: '6px 12px', fontSize: 11 }}>Ask Coach</Button>
             {hasModule('transcript_analysis') ? (
               <Button primary onClick={() => setShowTranscriptUpload(true)} style={{ padding: '6px 12px', fontSize: 11 }}>Upload Transcript</Button>
@@ -1010,14 +1011,41 @@ export default function DealDetail() {
             ) : (
               <Button disabled style={{ padding: '6px 12px', fontSize: 11 }} title="Upgrade your plan">Generate Email</Button>
             )}
-            <Button onClick={rerunResearch} disabled={researchRunning} style={{ padding: '6px 12px', fontSize: 11 }}>
-              {researchRunning ? 'Researching...' : 'Re-run Research'}
-            </Button>
-            <Button danger onClick={async () => {
-              if (!window.confirm('Delete this deal? This cannot be undone.')) return
-              await supabase.from('deals').delete().eq('id', deal.id)
-              navigate('/')
-            }} style={{ padding: '6px 12px', fontSize: 11 }}>Delete Deal</Button>
+            {/* More menu */}
+            <div style={{ position: 'relative' }}>
+              <button onClick={() => setShowMoreMenu(!showMoreMenu)} style={{
+                background: 'none', border: `1px solid ${T.border}`, borderRadius: 6,
+                padding: '6px 10px', cursor: 'pointer', color: T.textMuted, fontSize: 18,
+                fontFamily: T.font, lineHeight: 1,
+              }}>{'\u22EF'}</button>
+              {showMoreMenu && (
+                <>
+                  <div style={{ position: 'fixed', inset: 0, zIndex: 999 }} onClick={() => setShowMoreMenu(false)} />
+                  <div style={{
+                    position: 'absolute', right: 0, top: '100%', marginTop: 4, zIndex: 1000,
+                    background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8,
+                    boxShadow: '0 8px 24px rgba(0,0,0,0.15)', minWidth: 200, overflow: 'hidden',
+                  }}>
+                    <button style={{ display: 'block', width: '100%', padding: '10px 16px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: T.text, fontFamily: T.font }}
+                      onMouseEnter={e => e.currentTarget.style.background = T.surfaceHover} onMouseLeave={e => e.currentTarget.style.background = 'none'}
+                      onClick={() => { rerunResearch(); setShowMoreMenu(false) }}>
+                      {researchRunning ? 'Researching...' : 'Re-run Research'}
+                    </button>
+                    <div style={{ borderTop: `1px solid ${T.border}`, margin: '4px 0' }} />
+                    <button style={{ display: 'block', width: '100%', padding: '10px 16px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: T.error, fontFamily: T.font }}
+                      onMouseEnter={e => e.currentTarget.style.background = T.surfaceHover} onMouseLeave={e => e.currentTarget.style.background = 'none'}
+                      onClick={async () => {
+                        setShowMoreMenu(false)
+                        if (!window.confirm('Delete this deal? This cannot be undone.')) return
+                        await supabase.from('deals').delete().eq('id', deal.id)
+                        navigate('/')
+                      }}>
+                      Delete Deal
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
         <TabBar tabs={tabs} active={tab} onChange={setTab} />
@@ -1087,18 +1115,22 @@ export default function DealDetail() {
             {!editMode && (
               <button onClick={() => setEditMode(true)} style={{
                 position: 'fixed', bottom: 24, right: 24, zIndex: 1000,
-                width: 44, height: 44, borderRadius: '50%', background: T.primary, color: '#fff',
+                width: 48, height: 48, borderRadius: '50%', background: T.primary, color: '#fff',
                 border: 'none', boxShadow: '0 4px 12px rgba(93,173,226,0.4)', cursor: 'pointer',
-                fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }} title="Customize Layout">{'\u2699'}</button>
+                fontSize: 20, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                transition: 'transform 0.15s, box-shadow 0.15s',
+              }}
+                onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.1)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(93,173,226,0.5)' }}
+                onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(93,173,226,0.4)' }}
+                title="Customize Layout">{'\u2699'}</button>
             )}
             {editMode && (
               <div style={{
                 position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 1000,
                 background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: '10px 20px',
-                display: 'flex', gap: 12, alignItems: 'center', boxShadow: '0 8px 32px rgba(0,0,0,0.15)',
+                display: 'flex', gap: 12, alignItems: 'center', boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
               }}>
-                <span style={{ fontSize: 12, color: T.textMuted, fontWeight: 600 }}>EDITING LAYOUT</span>
+                <span style={{ fontSize: 12, color: T.textMuted, fontWeight: 600, letterSpacing: '0.06em' }}>EDITING LAYOUT</span>
                 <select style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', color: T.text, fontSize: 12, cursor: 'pointer', fontFamily: T.font }}
                   value="" onChange={e => { addWidget(e.target.value); e.target.value = '' }}>
                   <option value="">+ Add Widget</option>
