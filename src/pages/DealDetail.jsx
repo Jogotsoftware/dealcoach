@@ -302,6 +302,7 @@ export default function DealDetail() {
   const [painPoints, setPainPoints] = useState([])
   const [callScores, setCallScores] = useState({})
   const [documents, setDocuments] = useState([])
+  const [systems, setSystems] = useState([])
 
   // Widget layout
   const [layout, setLayout] = useState(DEFAULT_LAYOUT)
@@ -408,7 +409,7 @@ export default function DealDetail() {
   async function loadDeal() {
     setLoading(true)
     try {
-      const [dealRes, analysisRes, profileRes, contactsRes, convosRes, mspRes, propDocRes, propInsRes, tasksRes, quotesRes, compRes, risksRes, eventsRes, catalystsRes, painsRes, docsRes] = await Promise.all([
+      const [dealRes, analysisRes, profileRes, contactsRes, convosRes, mspRes, propDocRes, propInsRes, tasksRes, quotesRes, compRes, risksRes, eventsRes, catalystsRes, painsRes, docsRes, sysRes] = await Promise.all([
         supabase.from('deals').select('*').eq('id', id).single(),
         supabase.from('deal_analysis').select('*').eq('deal_id', id).single(),
         supabase.from('company_profile').select('*').eq('deal_id', id).single(),
@@ -425,6 +426,7 @@ export default function DealDetail() {
         supabase.from('business_catalysts').select('*').eq('deal_id', id).order('created_at'),
         supabase.from('deal_pain_points').select('*').eq('deal_id', id).order('annual_cost', { ascending: false }),
         supabase.from('deal_documents').select('*').eq('deal_id', id).order('created_at', { ascending: false }),
+        supabase.from('company_systems').select('*').eq('deal_id', id),
       ])
 
       setDeal(dealRes.data)
@@ -443,6 +445,7 @@ export default function DealDetail() {
       setCatalysts(catalystsRes.data || [])
       setPainPoints(painsRes.data || [])
       setDocuments(docsRes.data || [])
+      setSystems(sysRes.data || [])
 
       const { data: genEmails } = await supabase.from('generated_emails').select('*').eq('deal_id', id).order('created_at', { ascending: false })
       setGeneratedEmails(genEmails || [])
@@ -707,19 +710,71 @@ export default function DealDetail() {
   }
 
   function CompanyProfileWidget() {
+    const cp = companyProfile
+    const cpSave = (f, v) => setCompanyProfile(p => ({ ...p, [f]: v }))
+    const systemsByCategory = {}
+    systems.forEach(s => {
+      const cat = s.system_category || 'other'
+      if (!systemsByCategory[cat]) systemsByCategory[cat] = []
+      systemsByCategory[cat].push(s)
+    })
     return (
       <>
-        <EditableField label="Overview" value={companyProfile?.overview} field="overview" table="company_profile" recordId={companyProfile?.id} type="textarea" onSaved={(f, v) => setCompanyProfile(p => ({ ...p, [f]: v }))} />
+        <EditableField label="Overview" value={cp?.overview} field="overview" table="company_profile" recordId={cp?.id} type="textarea" onSaved={cpSave} />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 12 }}>
-          <EditableField label="Industry" value={companyProfile?.industry} field="industry" table="company_profile" recordId={companyProfile?.id} onSaved={(f, v) => setCompanyProfile(p => ({ ...p, [f]: v }))} />
-          <EditableField label="Revenue" value={companyProfile?.revenue} field="revenue" table="company_profile" recordId={companyProfile?.id} onSaved={(f, v) => setCompanyProfile(p => ({ ...p, [f]: v }))} />
-          <EditableField label="Employees" value={companyProfile?.employee_count} field="employee_count" table="company_profile" recordId={companyProfile?.id} onSaved={(f, v) => setCompanyProfile(p => ({ ...p, [f]: v }))} />
-          <EditableField label="Headquarters" value={companyProfile?.headquarters} field="headquarters" table="company_profile" recordId={companyProfile?.id} onSaved={(f, v) => setCompanyProfile(p => ({ ...p, [f]: v }))} />
-          <EditableField label="Tech Stack" value={companyProfile?.tech_stack} field="tech_stack" table="company_profile" recordId={companyProfile?.id} type="textarea" displayAs="list" onSaved={(f, v) => setCompanyProfile(p => ({ ...p, [f]: v }))} />
+          <EditableField label="Industry" value={cp?.industry} field="industry" table="company_profile" recordId={cp?.id} onSaved={cpSave} />
+          <EditableField label="Revenue" value={cp?.revenue} field="revenue" table="company_profile" recordId={cp?.id} onSaved={cpSave} />
+          <EditableField label="Employees" value={cp?.employee_count} field="employee_count" table="company_profile" recordId={cp?.id} onSaved={cpSave} />
+          <EditableField label="Headquarters" value={cp?.headquarters} field="headquarters" table="company_profile" recordId={cp?.id} onSaved={cpSave} />
+          <EditableField label="Founded" value={cp?.founded} field="founded" table="company_profile" recordId={cp?.id} onSaved={cpSave} />
+          <EditableField label="Tech Stack" value={cp?.tech_stack} field="tech_stack" table="company_profile" recordId={cp?.id} type="textarea" displayAs="list" onSaved={cpSave} />
         </div>
-        <EditableField label="Business Goals" value={companyProfile?.business_goals} field="business_goals" table="company_profile" recordId={companyProfile?.id} type="textarea" displayAs="list" onSaved={(f, v) => setCompanyProfile(p => ({ ...p, [f]: v }))} />
-        <EditableField label="Growth Plans" value={companyProfile?.growth_plans} field="growth_plans" table="company_profile" recordId={companyProfile?.id} type="textarea" displayAs="list" onSaved={(f, v) => setCompanyProfile(p => ({ ...p, [f]: v }))} />
-        <EditableField label="Recent News" value={companyProfile?.recent_news} field="recent_news" table="company_profile" recordId={companyProfile?.id} type="textarea" displayAs="list" onSaved={(f, v) => setCompanyProfile(p => ({ ...p, [f]: v }))} />
+        {/* Identified Systems from company_systems */}
+        {Object.keys(systemsByCategory).length > 0 && (
+          <div style={{ marginBottom: 12 }}>
+            <div style={ddLabelStyle}>Identified Systems</div>
+            {Object.entries(systemsByCategory).map(([cat, items]) => (
+              <div key={cat} style={{ marginBottom: 8 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase', marginBottom: 2 }}>{cat.replace(/_/g, ' ')}</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                  {items.map(s => (
+                    <span key={s.id}
+                      onClick={() => s.source_url && window.open(s.source_url, '_blank')}
+                      title={s.notes || ''}
+                      style={{
+                        fontSize: 11, padding: '3px 8px', borderRadius: 4, fontWeight: 600,
+                        cursor: s.source_url ? 'pointer' : 'default',
+                        background: s.confidence === 'high' ? 'rgba(46,204,113,0.12)' : s.confidence === 'medium' ? 'rgba(241,196,15,0.12)' : 'rgba(136,153,170,0.08)',
+                        border: '1px solid ' + (s.confidence === 'high' ? 'rgba(46,204,113,0.25)' : s.confidence === 'medium' ? 'rgba(241,196,15,0.25)' : T.border),
+                        color: T.text,
+                      }}>
+                      {s.system_name}
+                      {s.source_url && <span style={{ marginLeft: 4, fontSize: 9, color: T.primary }}>{'\u2197'}</span>}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        <EditableField label="Revenue Streams" value={cp?.revenue_streams} field="revenue_streams" table="company_profile" recordId={cp?.id} type="textarea" displayAs="list" onSaved={cpSave} />
+        <EditableField label="Business Goals" value={cp?.business_goals} field="business_goals" table="company_profile" recordId={cp?.id} type="textarea" displayAs="list" onSaved={cpSave} />
+        <EditableField label="Business Priorities" value={cp?.business_priorities} field="business_priorities" table="company_profile" recordId={cp?.id} type="textarea" displayAs="list" onSaved={cpSave} />
+        <EditableField label="Growth Plans" value={cp?.growth_plans} field="growth_plans" table="company_profile" recordId={cp?.id} type="textarea" displayAs="list" onSaved={cpSave} />
+        <EditableField label="International Operations" value={cp?.international_operations} field="international_operations" table="company_profile" recordId={cp?.id} type="textarea" displayAs="list" onSaved={cpSave} />
+        <EditableField label="Other Initiatives" value={cp?.other_initiatives} field="other_initiatives" table="company_profile" recordId={cp?.id} type="textarea" displayAs="list" onSaved={cpSave} />
+        <EditableField label="Tax IDs / Locations" value={cp?.tax_ids_locations} field="tax_ids_locations" table="company_profile" recordId={cp?.id} type="textarea" onSaved={cpSave} />
+        {/* Recent News — individual items */}
+        {cp?.recent_news && cp.recent_news !== 'Unknown' && (
+          <div style={{ marginTop: 8 }}>
+            <div style={ddLabelStyle}>Recent News</div>
+            {cp.recent_news.split(/[;|\n]/).map(s => s.trim()).filter(s => s.length > 3).map((item, i) => (
+              <div key={i} style={{ fontSize: 12, padding: '4px 0', borderBottom: '1px solid ' + T.borderLight, lineHeight: 1.5 }}>
+                <BulletText text={item} />
+              </div>
+            ))}
+          </div>
+        )}
       </>
     )
   }
@@ -754,16 +809,27 @@ export default function DealDetail() {
     return contacts.length === 0 ? <div style={{ color: '#bbb', fontSize: 13, fontStyle: 'italic' }}>No contacts yet</div> : (
       <>
         {contacts.slice(0, 5).map(c => (
-          <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: `1px solid ${T.borderLight}` }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{c.name || c.contact_name}</div>
-              <div style={{ fontSize: 11, color: T.textSecondary }}>{c.title}{c.role_in_deal ? ` - ${c.role_in_deal}` : ''}</div>
+          <div key={c.id} style={{ padding: '8px 0', borderBottom: `1px solid ${T.borderLight}` }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: T.text }}>{c.name || c.contact_name}</span>
+                  <span style={{ fontSize: 12, color: T.textMuted }}>{c.title}</span>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 3, flexShrink: 0 }}>
+                {c.is_champion && <Badge color="#27ae60">Champion</Badge>}
+                {c.is_economic_buyer && <Badge color={T.primary}>EB</Badge>}
+                {c.is_signer && <Badge color="#f59e0b">Signer</Badge>}
+                {c.linkedin && <span onClick={() => window.open(c.linkedin, '_blank')} style={{ background: '#0a66c2', color: '#fff', fontSize: 10, fontWeight: 700, borderRadius: 4, padding: '2px 8px', cursor: 'pointer' }}>LinkedIn</span>}
+              </div>
             </div>
-            <div style={{ display: 'flex', gap: 3 }}>
-              {c.is_champion && <Badge color="#27ae60">Champion</Badge>}
-              {c.is_economic_buyer && <Badge color={T.primary}>EB</Badge>}
-              {c.is_signer && <Badge color="#f59e0b">Signer</Badge>}
-            </div>
+            {c.background && c.background !== 'Unknown' && (
+              <div style={{ fontSize: 11, color: T.textMuted, fontStyle: 'italic', marginTop: 2 }}>{c.background}</div>
+            )}
+            {c.previous_erp_experience && c.previous_erp_experience !== 'Unknown' && c.previous_erp_experience.trim() && (
+              <span style={{ display: 'inline-block', background: '#fff3cd', color: '#856404', fontSize: 10, fontWeight: 700, borderRadius: 4, padding: '2px 8px', marginTop: 3 }}>Prior ERP: {c.previous_erp_experience}</span>
+            )}
           </div>
         ))}
         <Button style={{ padding: '3px 8px', fontSize: 10, marginTop: 8 }} onClick={() => setTab('contacts')}>View All</Button>
@@ -953,10 +1019,17 @@ export default function DealDetail() {
   function CompetitorsWidget() {
     return competitors.length === 0 ? <div style={{ color: '#bbb', fontSize: 13, fontStyle: 'italic' }}>No competitors identified.</div> : competitors.map(c => (
       <div key={c.id} style={{ padding: '8px 12px', background: T.surfaceAlt, borderRadius: 6, marginBottom: 4, border: `1px solid ${T.borderLight}` }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 4 }}>{c.competitor_name}</div>
+        <div style={{ marginBottom: 4 }}>
+          {c.website ? (
+            <a href={c.website} target="_blank" rel="noopener noreferrer" style={{ fontSize: 13, fontWeight: 700, color: T.primary, textDecoration: 'none' }}>{c.competitor_name} {'\u2197'}</a>
+          ) : (
+            <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{c.competitor_name}</span>
+          )}
+        </div>
         {c.strengths && <div style={{ fontSize: 11, color: T.textSecondary }}><strong>Strengths:</strong> {c.strengths}</div>}
         {c.weaknesses && <div style={{ fontSize: 11, color: T.textSecondary }}><strong>Weaknesses:</strong> {c.weaknesses}</div>}
         {c.strategy && <div style={{ fontSize: 11, color: T.textSecondary }}><strong>Strategy:</strong> {c.strategy}</div>}
+        {c.where_in_process && <div style={{ fontSize: 11, color: T.textSecondary }}><strong>Status:</strong> {c.where_in_process}</div>}
       </div>
     ))
   }
@@ -1086,7 +1159,11 @@ export default function DealDetail() {
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>
               <StageBadge stage={deal.stage} />
               <ForecastBadge category={deal.forecast_category} />
-              {deal.website && <span style={{ fontSize: 13, color: T.textSecondary }}>{deal.website}</span>}
+              {deal.website && (
+                <a href={deal.website} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: T.primary, textDecoration: 'none', fontWeight: 500 }}>
+                  {deal.website.replace(/^https?:\/\//, '').replace(/\/$/, '')} {'\u2197'}
+                </a>
+              )}
             </div>
           </div>
           <div style={{ textAlign: 'right' }}>
@@ -1300,10 +1377,22 @@ export default function DealDetail() {
                       <>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
                           <div>
-                            <div style={{ fontSize: 15, fontWeight: 700, color: T.text }}>{c.name}</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ fontSize: 15, fontWeight: 700, color: T.text }}>{c.name}</span>
+                              {c.linkedin && <span onClick={() => window.open(c.linkedin, '_blank')} style={{ background: '#0a66c2', color: '#fff', fontSize: 10, fontWeight: 700, borderRadius: 4, padding: '2px 8px', cursor: 'pointer' }}>LinkedIn</span>}
+                            </div>
                             <div style={{ fontSize: 12, color: T.textSecondary }}>{c.title}{c.department ? ` - ${c.department}` : ''}</div>
+                            {c.background && c.background !== 'Unknown' && (
+                              <div style={{ fontSize: 11, color: T.textMuted, fontStyle: 'italic', marginTop: 3 }}>{c.background}</div>
+                            )}
+                            {c.previous_erp_experience && c.previous_erp_experience !== 'Unknown' && c.previous_erp_experience.trim() && (
+                              <span style={{ display: 'inline-block', background: '#fff3cd', color: '#856404', fontSize: 10, fontWeight: 700, borderRadius: 4, padding: '2px 8px', marginTop: 4 }}>Prior ERP: {c.previous_erp_experience}</span>
+                            )}
+                            {c.personality_notes && !c.personality_notes.startsWith('Source:') && (
+                              <div style={{ fontSize: 11, color: T.textMuted, marginTop: 3 }}>{c.personality_notes}</div>
+                            )}
                           </div>
-                          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                          <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexShrink: 0 }}>
                             {c.is_champion && <Badge color={T.success}>Champion</Badge>}
                             {c.is_economic_buyer && <Badge color={T.primary}>EB</Badge>}
                             {c.is_signer && <Badge color={T.warning}>Signer</Badge>}
@@ -1316,6 +1405,7 @@ export default function DealDetail() {
                         <Field label="Priorities" value={c.priorities} />
                         <Field label="Communication Style" value={c.communication_style} />
                         {c.email && <div style={{ fontSize: 12, color: T.primary }}>{c.email}</div>}
+                        {c.source_url && <a href={c.source_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, color: T.primary, textDecoration: 'none' }}>Source {'\u2197'}</a>}
                       </>
                     )}
                   </Card>
