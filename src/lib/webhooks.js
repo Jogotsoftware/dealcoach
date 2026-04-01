@@ -587,3 +587,54 @@ export async function callUpdateCoachingSummary(userId) {
     return { error: err.message }
   }
 }
+
+/**
+ * Reprocess a deal: research, reprocess all transcripts, consolidate, update coaching.
+ * Calls onStatus callback with progress messages.
+ */
+export async function reprocessDeal(dealId, onStatus) {
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) return { error: 'Not authenticated' }
+  const headers = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${session.access_token}`,
+    'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+  }
+  const base = import.meta.env.VITE_SUPABASE_URL + '/functions/v1'
+  const results = { steps: [] }
+
+  onStatus?.('Running company research...')
+  try {
+    const res = await fetch(base + '/research-company', { method: 'POST', headers, body: JSON.stringify({ deal_id: dealId }) })
+    results.steps.push({ step: 'research', ...(await res.json()) })
+  } catch (e) { results.steps.push({ step: 'research', error: e.message }) }
+
+  onStatus?.('Reprocessing transcripts...')
+  try {
+    const { data: convs } = await supabase.from('conversations').select('id').eq('deal_id', dealId).not('transcript', 'is', null)
+    if (convs?.length) {
+      for (let i = 0; i < convs.length; i++) {
+        onStatus?.(`Reprocessing transcript ${i + 1} of ${convs.length}...`)
+        try {
+          const res = await fetch(base + '/process-transcript', { method: 'POST', headers, body: JSON.stringify({ conversation_id: convs[i].id }) })
+          results.steps.push({ step: `transcript_${i + 1}`, ...(await res.json()) })
+        } catch (e) { results.steps.push({ step: `transcript_${i + 1}`, error: e.message }) }
+      }
+    }
+  } catch (e) { results.steps.push({ step: 'transcripts', error: e.message }) }
+
+  onStatus?.('Consolidating and deduplicating...')
+  try {
+    const res = await fetch(base + '/consolidate-deal-data', { method: 'POST', headers, body: JSON.stringify({ deal_id: dealId }) })
+    results.steps.push({ step: 'consolidate', ...(await res.json()) })
+  } catch (e) { results.steps.push({ step: 'consolidate', error: e.message }) }
+
+  onStatus?.('Updating coaching summary...')
+  try {
+    const res = await fetch(base + '/update-coaching-summary', { method: 'POST', headers, body: JSON.stringify({ user_id: session.user.id }) })
+    results.steps.push({ step: 'coaching', ...(await res.json()) })
+  } catch (e) { results.steps.push({ step: 'coaching', error: e.message }) }
+
+  results.success = true
+  return results
+}

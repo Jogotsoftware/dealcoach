@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { theme as T, formatCurrency, formatDate, formatDateLong, daysUntil, STAGES, FORECAST_CATEGORIES, CALL_TYPES, TASK_CATEGORIES } from '../lib/theme'
 import { Card, Badge, ForecastBadge, StageBadge, ScoreBar, Field, StatusDot, TabBar, Button, EmptyState, Spinner, inputStyle, labelStyle } from '../components/Shared'
 import TranscriptUpload from '../components/TranscriptUpload'
-import { callGenerateEmail, callResearchFunction } from '../lib/webhooks'
+import { callGenerateEmail, callResearchFunction, reprocessDeal } from '../lib/webhooks'
 import DealChat from '../components/DealChat'
 import { useAuth } from '../hooks/useAuth'
 import { useModules } from '../hooks/useModules'
@@ -351,6 +351,8 @@ export default function DealDetail() {
   // Research
   const [researchStatus, setResearchStatus] = useState(null)
   const [researchRunning, setResearchRunning] = useState(false)
+  const [reprocessing, setReprocessing] = useState(false)
+  const [reprocessStatus, setReprocessStatus] = useState(null)
 
   // Form toggles
   const [showAddRisk, setShowAddRisk] = useState(false)
@@ -685,6 +687,18 @@ export default function DealDetail() {
     try { const res = await callResearchFunction(id); if (res.error) alert('Research failed: ' + res.error); else setResearchStatus('in_progress') }
     catch { alert('Research failed') }
     finally { setResearchRunning(false) }
+  }
+  async function handleReprocess() {
+    setReprocessing(true)
+    try {
+      await reprocessDeal(id, (status) => setReprocessStatus(status))
+      setReprocessStatus('Complete! Refreshing...')
+      await loadDeal()
+      setTimeout(() => { setReprocessStatus(null); setReprocessing(false) }, 3000)
+    } catch (err) {
+      setReprocessStatus('Failed: ' + err.message)
+      setReprocessing(false)
+    }
   }
   async function generateEmail() {
     if (!selectedEmailTpl) return
@@ -1383,6 +1397,7 @@ export default function DealDetail() {
                     background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8,
                     boxShadow: '0 8px 24px rgba(0,0,0,0.3)', minWidth: 200, padding: '4px 0',
                   }}>
+                    <MoreMenuItem label={reprocessing ? (reprocessStatus || 'Reprocessing...') : 'Reprocess Deal'} disabled={reprocessing} onClick={() => { handleReprocess(); setShowMoreMenu(false) }} />
                     <MoreMenuItem label={researchRunning ? 'Researching...' : 'Re-run Research'} disabled={researchRunning} onClick={() => { rerunResearch(); setShowMoreMenu(false) }} />
                     <MoreMenuItem label={editMode ? 'Lock Dashboard' : 'Edit Dashboard'} onClick={() => { setEditMode(!editMode); setShowMoreMenu(false) }} />
                     <div style={{ borderTop: `1px solid ${T.border}`, margin: '4px 0' }} />

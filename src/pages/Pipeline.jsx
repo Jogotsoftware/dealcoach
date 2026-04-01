@@ -71,7 +71,7 @@ export default function Pipeline() {
 
   // Filters
   const [dealFilter, setDealFilter] = useState('my')
-  const [forecastPeriod, setForecastPeriod] = useState('quarter')
+  const [forecastPeriod, setForecastPeriod] = useState('full')
   const [pipelineView, setPipelineView] = useState('kanban')
   const [selectedForecast, setSelectedForecast] = useState(null)
   const [taskFilter, setTaskFilter] = useState('all')
@@ -214,8 +214,7 @@ export default function Pipeline() {
   }
 
   function PipelineViewWidget() {
-    const periodDeals = filterDealsByPeriod(deals)
-    const filteredDeals = selectedForecast ? periodDeals.filter(d => d.forecast_category === selectedForecast) : periodDeals
+    const filteredDeals = selectedForecast ? active.filter(d => d.forecast_category === selectedForecast) : active
     return (
       <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', gap: 4, marginBottom: 8, alignItems: 'center' }}>
