@@ -1,0 +1,198 @@
+// Widget Schema — maps all DealCoach tables, fields, types, and join paths
+
+export const TABLES = {
+  deals: {
+    label: 'Deals', join: null, multi: false,
+    fields: {
+      company_name: { type: 'text', label: 'Company Name' },
+      website: { type: 'text', label: 'Website' },
+      stage: { type: 'badge', label: 'Stage', options: ['qualify','discovery','solution_validation','confirming_value','selection','closed_won','closed_lost','disqualified'] },
+      forecast_category: { type: 'badge', label: 'Forecast', options: ['pipeline','upside','forecast','commit'] },
+      cmrr: { type: 'currency', label: 'CMRR' },
+      deal_value: { type: 'currency', label: 'Deal Value' },
+      target_close_date: { type: 'date', label: 'Target Close' },
+      next_steps: { type: 'text', label: 'Next Steps' },
+      fit_score: { type: 'score', label: 'Fit Score' },
+      deal_health_score: { type: 'score', label: 'Health Score' },
+      icp_fit_score: { type: 'number', label: 'ICP Fit' },
+      notes: { type: 'text', label: 'Notes' },
+      rep_id: { type: 'text', label: 'Rep ID' },
+      org_id: { type: 'text', label: 'Org ID' },
+    },
+  },
+  deal_analysis: {
+    label: 'Deal Analysis', join: 'deal_id', multi: false,
+    fields: {
+      budget: { type: 'text', label: 'Budget' },
+      champion: { type: 'text', label: 'Champion' },
+      economic_buyer: { type: 'text', label: 'Economic Buyer' },
+      quantified_pain: { type: 'text', label: 'Quantified Pain' },
+      decision_date: { type: 'date', label: 'Decision Date' },
+      signature_date: { type: 'date', label: 'Signature Date' },
+      kickoff_date: { type: 'date', label: 'Kickoff Date' },
+      go_live_date: { type: 'date', label: 'Go-Live Date' },
+      decision_criteria: { type: 'text', label: 'Decision Criteria' },
+      decision_process: { type: 'text', label: 'Decision Process' },
+      red_flags: { type: 'text', label: 'Red Flags' },
+      green_flags: { type: 'text', label: 'Green Flags' },
+      pain_points: { type: 'text', label: 'Pain Points (text)' },
+      business_impact: { type: 'text', label: 'Business Impact' },
+      driving_factors: { type: 'text', label: 'Driving Factors' },
+      exec_alignment: { type: 'text', label: 'Exec Alignment' },
+      integrations_needed: { type: 'text', label: 'Integrations Needed' },
+      current_spend: { type: 'text', label: 'Current Spend' },
+      running_problem_cost_dollars: { type: 'currency', label: 'Problem Cost $' },
+      running_problem_cost_hours: { type: 'number', label: 'Problem Cost Hours' },
+      busy_season: { type: 'text', label: 'Busy Season' },
+      timeline_drivers: { type: 'text', label: 'Timeline Drivers' },
+      has_rfp: { type: 'boolean', label: 'Has RFP' },
+      has_consultant: { type: 'boolean', label: 'Has Consultant' },
+      consultant_name: { type: 'text', label: 'Consultant Name' },
+    },
+  },
+  company_profile: {
+    label: 'Company Profile', join: 'deal_id', multi: false,
+    fields: {
+      overview: { type: 'text', label: 'Overview' },
+      revenue: { type: 'text', label: 'Revenue' },
+      employee_count: { type: 'text', label: 'Employees' },
+      industry: { type: 'text', label: 'Industry' },
+      headquarters: { type: 'text', label: 'Headquarters' },
+      founded: { type: 'text', label: 'Founded' },
+      tech_stack: { type: 'text', label: 'Tech Stack' },
+      business_goals: { type: 'text', label: 'Business Goals' },
+      business_priorities: { type: 'text', label: 'Business Priorities' },
+      growth_plans: { type: 'text', label: 'Growth Plans' },
+      recent_news: { type: 'text', label: 'Recent News' },
+      logo_url: { type: 'text', label: 'Logo URL' },
+    },
+  },
+  deal_sizing: {
+    label: 'Deal Sizing', join: 'deal_id', multi: false,
+    fields: {
+      full_users: { type: 'number', label: 'Full Users' },
+      view_only_users: { type: 'number', label: 'View-Only Users' },
+      entity_count: { type: 'number', label: 'Entities' },
+      ap_invoices_monthly: { type: 'number', label: 'AP Invoices/mo' },
+      ar_invoices_monthly: { type: 'number', label: 'AR Invoices/mo' },
+      fixed_assets: { type: 'number', label: 'Fixed Assets' },
+      employee_count_payroll: { type: 'number', label: 'Payroll Employees' },
+    },
+  },
+  contacts: {
+    label: 'Contacts', join: 'deal_id', multi: true,
+    fields: {
+      name: { type: 'text', label: 'Name' },
+      title: { type: 'text', label: 'Title' },
+      email: { type: 'text', label: 'Email' },
+      linkedin: { type: 'text', label: 'LinkedIn' },
+      role_in_deal: { type: 'text', label: 'Role in Deal' },
+      influence_level: { type: 'badge', label: 'Influence', options: ['high','medium','low'] },
+      is_champion: { type: 'boolean', label: 'Champion' },
+      is_signer: { type: 'boolean', label: 'Signer' },
+      is_economic_buyer: { type: 'boolean', label: 'Economic Buyer' },
+      department: { type: 'text', label: 'Department' },
+      background: { type: 'text', label: 'Background' },
+    },
+  },
+  tasks: {
+    label: 'Tasks', join: 'deal_id', multi: true,
+    fields: {
+      title: { type: 'text', label: 'Title' },
+      priority: { type: 'badge', label: 'Priority', options: ['high','medium','low'] },
+      due_date: { type: 'date', label: 'Due Date' },
+      completed: { type: 'boolean', label: 'Completed' },
+      owner: { type: 'text', label: 'Owner' },
+      is_blocking: { type: 'boolean', label: 'Blocking' },
+      auto_generated: { type: 'boolean', label: 'AI Generated' },
+    },
+  },
+  compelling_events: {
+    label: 'Compelling Events', join: 'deal_id', multi: true,
+    fields: {
+      event_description: { type: 'text', label: 'Description' },
+      event_date: { type: 'date', label: 'Date' },
+      impact: { type: 'text', label: 'Impact' },
+      strength: { type: 'badge', label: 'Strength', options: ['strong','medium','weak'] },
+      verified: { type: 'boolean', label: 'Verified' },
+    },
+  },
+  business_catalysts: {
+    label: 'Business Catalysts', join: 'deal_id', multi: true,
+    fields: {
+      catalyst: { type: 'text', label: 'Catalyst' },
+      category: { type: 'text', label: 'Category' },
+      impact: { type: 'text', label: 'Impact' },
+      urgency: { type: 'badge', label: 'Urgency', options: ['high','medium','low'] },
+    },
+  },
+  deal_competitors: {
+    label: 'Competitors', join: 'deal_id', multi: true,
+    fields: {
+      competitor_name: { type: 'text', label: 'Name' },
+      strengths: { type: 'text', label: 'Strengths' },
+      weaknesses: { type: 'text', label: 'Weaknesses' },
+      where_in_process: { type: 'text', label: 'Status' },
+      received_pricing: { type: 'boolean', label: 'Has Pricing' },
+      strategy: { type: 'text', label: 'Strategy' },
+    },
+  },
+  deal_flags: {
+    label: 'Deal Flags', join: 'deal_id', multi: true,
+    fields: {
+      flag_type: { type: 'badge', label: 'Type', options: ['red','green'] },
+      description: { type: 'text', label: 'Description' },
+      category: { type: 'text', label: 'Category' },
+      severity: { type: 'badge', label: 'Severity', options: ['critical','high','medium','low'] },
+      source: { type: 'text', label: 'Source' },
+      resolved: { type: 'boolean', label: 'Resolved' },
+    },
+  },
+  deal_risks: {
+    label: 'Deal Risks', join: 'deal_id', multi: true,
+    fields: {
+      risk_description: { type: 'text', label: 'Description' },
+      category: { type: 'text', label: 'Category' },
+      severity: { type: 'badge', label: 'Severity', options: ['critical','high','medium','low'] },
+      status: { type: 'badge', label: 'Status', options: ['open','mitigating','mitigated','accepted','closed'] },
+      mitigation_plan: { type: 'text', label: 'Mitigation' },
+    },
+  },
+  deal_pain_points: {
+    label: 'Pain Points', join: 'deal_id', multi: true,
+    fields: {
+      pain_description: { type: 'text', label: 'Description' },
+      category: { type: 'text', label: 'Category' },
+      annual_cost: { type: 'currency', label: 'Annual Cost' },
+      annual_hours: { type: 'number', label: 'Annual Hours' },
+      affected_team: { type: 'text', label: 'Affected Team' },
+      verified: { type: 'boolean', label: 'Verified' },
+    },
+  },
+  conversations: {
+    label: 'Conversations', join: 'deal_id', multi: true,
+    fields: {
+      title: { type: 'text', label: 'Title' },
+      call_type: { type: 'badge', label: 'Call Type', options: ['qdc','functional_discovery','demo','scoping','proposal','negotiation','sync','custom'] },
+      call_date: { type: 'date', label: 'Call Date' },
+      ai_summary: { type: 'text', label: 'AI Summary' },
+      processed: { type: 'boolean', label: 'Processed' },
+      task_count: { type: 'number', label: 'Task Count' },
+    },
+  },
+  company_systems: {
+    label: 'Company Systems', join: 'deal_id', multi: true,
+    fields: {
+      system_category: { type: 'text', label: 'Category' },
+      system_name: { type: 'text', label: 'System Name' },
+      confirmed: { type: 'boolean', label: 'Confirmed' },
+      is_current: { type: 'boolean', label: 'Current' },
+    },
+  },
+}
+
+export const FORMAT_TYPES = ['text', 'number', 'currency', 'percentage', 'date', 'badge', 'boolean', 'score']
+export const SECTION_TYPES = ['metric', 'table', 'card', 'grid', 'list']
+export const OPERATORS = ['equals', 'not_equals', 'less_than', 'greater_than', 'contains', 'is_empty', 'is_not_empty', 'is_unknown', 'in_list']
+export const CLICK_ACTIONS = ['none', 'navigate_deal', 'open_url', 'copy']
+export const AGGREGATES = ['none', 'count', 'sum', 'avg', 'min', 'max']

@@ -10,6 +10,7 @@ import {
 import { Badge, ForecastBadge, StageBadge, ScoreBar, StatusDot, Spinner, Button } from '../components/Shared'
 import TranscriptUpload from '../components/TranscriptUpload'
 import CompanyLogo from '../components/CompanyLogo'
+import WidgetRenderer from '../components/WidgetRenderer'
 import { Responsive, WidthProvider } from 'react-grid-layout'
 import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
@@ -85,6 +86,7 @@ export default function Pipeline() {
   const [pOrgLayoutId, setPOrgLayoutId] = useState(null)
   const [editMode, setEditMode] = useState(false)
   const [showMoreMenu, setShowMoreMenu] = useState(false)
+  const [customWidgetDefs, setCustomWidgetDefs] = useState([])
 
   // Force WidthProvider remeasure after sidebar animation
   useEffect(() => {
@@ -118,6 +120,10 @@ export default function Pipeline() {
       else setQuota(profile.annual_quota || 0)
       setCoachingSummary(csRes.data || null)
       setActivity(actRes.data || [])
+      if (profile?.org_id) {
+        const { data: cwds } = await supabase.from('custom_widget_definitions').select('*').eq('org_id', profile.org_id).eq('widget_type', 'pipeline').eq('active', true)
+        setCustomWidgetDefs(cwds || [])
+      }
     } catch (err) { console.error('Error loading pipeline:', err) }
     finally { setLoading(false) }
   }
@@ -555,6 +561,8 @@ export default function Pipeline() {
   }
 
   function FallbackWidget({ id }) {
+    const custom = customWidgetDefs.find(w => w.id === id || w.name === id)
+    if (custom?.config) return <WidgetRenderer config={custom.config} context={{ user_id: profile?.id }} />
     return <div style={{ color: T.textMuted, fontSize: 12, padding: 8 }}>Unknown widget: {id}</div>
   }
 

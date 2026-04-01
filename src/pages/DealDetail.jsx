@@ -8,6 +8,7 @@ import { callGenerateEmail, callResearchFunction, reprocessDeal } from '../lib/w
 import DealChat from '../components/DealChat'
 import CompanyLogo from '../components/CompanyLogo'
 import SlideGenerator from '../components/SlideGenerator'
+import WidgetRenderer from '../components/WidgetRenderer'
 import { useAuth } from '../hooks/useAuth'
 import { useModules } from '../hooks/useModules'
 import { Responsive, WidthProvider } from 'react-grid-layout'
@@ -356,6 +357,7 @@ export default function DealDetail() {
   const [systems, setSystems] = useState([])
   const [dealFlags, setDealFlags] = useState([])
   const [sizing, setSizing] = useState(null)
+  const [customWidgetDefs, setCustomWidgetDefs] = useState([])
 
   // Widget layout
   const [layout, setLayout] = useState(DEFAULT_LAYOUT)
@@ -506,6 +508,12 @@ export default function DealDetail() {
       setSystems(sysRes.data || [])
       setDealFlags(flagsRes.data || [])
       setSizing(sizingRes.data || null)
+
+      // Load custom widget definitions for this org
+      if (profile?.org_id) {
+        const { data: cwds } = await supabase.from('custom_widget_definitions').select('*').eq('org_id', profile.org_id).eq('widget_type', 'deal').eq('active', true)
+        setCustomWidgetDefs(cwds || [])
+      }
 
       const { data: genEmails } = await supabase.from('generated_emails').select('*').eq('deal_id', id).order('created_at', { ascending: false })
       setGeneratedEmails(genEmails || [])
@@ -1340,7 +1348,11 @@ export default function DealDetail() {
       case 'recent_news': return <RecentNewsWidget />
       case 'tech_systems': return <TechSystemsWidget />
       case 'quote_sizing': return <QuoteSizingWidget />
-      default: return <div style={{ color: T.textMuted, fontSize: 12 }}>Widget: {widgetId}</div>
+      default: {
+        const custom = customWidgetDefs.find(w => w.id === widgetId || w.name === widgetId)
+        if (custom?.config) return <WidgetRenderer config={custom.config} context={{ deal_id: id, user_id: profile?.id }} />
+        return <div style={{ color: T.textMuted, fontSize: 12 }}>Widget: {widgetId}</div>
+      }
     }
   }
 

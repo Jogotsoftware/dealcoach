@@ -33,6 +33,7 @@ export default function Layout() {
     { to: '/settings', icon: '\u2699', label: 'Settings', show: true },
     { to: '/settings/team', icon: '\u2630', label: 'Team', show: isAdmin },
     { to: '/settings/organization', icon: '\u2302', label: 'Organization', show: isAdmin },
+    { to: '/admin/widgets', icon: '\u2637', label: 'Widgets', show: isAdmin },
     { to: '/admin', icon: '\u2691', label: 'Platform Admin', show: isPlatformAdmin },
   ].filter(item => item.show)
 
