@@ -6,6 +6,7 @@ import { Card, Badge, ForecastBadge, StageBadge, ScoreBar, Field, StatusDot, Tab
 import TranscriptUpload from '../components/TranscriptUpload'
 import { callGenerateEmail, callResearchFunction, reprocessDeal } from '../lib/webhooks'
 import DealChat from '../components/DealChat'
+import CompanyLogo from '../components/CompanyLogo'
 import { useAuth } from '../hooks/useAuth'
 import { useModules } from '../hooks/useModules'
 import { Responsive, WidthProvider } from 'react-grid-layout'
@@ -1347,6 +1348,7 @@ export default function DealDetail() {
             padding: '6px 12px', cursor: 'pointer', fontSize: 12, color: T.primary,
             fontWeight: 600, fontFamily: T.font,
           }}>&larr; Pipeline</button>
+          <CompanyLogo logoUrl={companyProfile?.logo_url} companyName={deal.company_name} size="lg" />
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 20, fontWeight: 700, color: T.text }}>{deal.company_name}</div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>

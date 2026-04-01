@@ -9,6 +9,7 @@ import {
 } from '../lib/theme'
 import { Badge, ForecastBadge, StageBadge, ScoreBar, StatusDot, Spinner, Button } from '../components/Shared'
 import TranscriptUpload from '../components/TranscriptUpload'
+import CompanyLogo from '../components/CompanyLogo'
 import { Responsive, WidthProvider } from 'react-grid-layout'
 import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
@@ -100,7 +101,7 @@ export default function Pipeline() {
   async function loadData() {
     setLoading(true)
     try {
-      let dq = supabase.from('deals').select('*')
+      let dq = supabase.from('deals').select('*, company_profile(logo_url)')
       if (dealFilter === 'all' && profile.org_id) dq = dq.eq('org_id', profile.org_id)
       else dq = dq.eq('rep_id', profile.id)
 
@@ -261,8 +262,9 @@ export default function Pipeline() {
                     padding: '12px 14px', cursor: 'pointer', borderLeft: `3px solid ${stage.color}`,
                     marginBottom: 8, boxShadow: T.shadow, transition: 'box-shadow 0.15s',
                   }} onMouseEnter={e => e.currentTarget.style.boxShadow = T.shadowMd} onMouseLeave={e => e.currentTarget.style.boxShadow = T.shadow}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                      <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{deal.company_name}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                      <CompanyLogo logoUrl={deal.company_profile?.logo_url} companyName={deal.company_name} size="sm" />
+                      <span style={{ fontSize: 13, fontWeight: 600, color: T.text, flex: 1 }}>{deal.company_name}</span>
                       <ForecastBadge category={deal.forecast_category} />
                     </div>
                     <div style={{ fontSize: 16, fontWeight: 700, color: T.text, fontFeatureSettings: '"tnum"', marginBottom: 6 }}>{formatCurrency(getARR(deal))}</div>
@@ -305,7 +307,7 @@ export default function Pipeline() {
             return (
               <tr key={d.id} onClick={() => navigate(`/deal/${d.id}`)} style={{ cursor: 'pointer', borderBottom: `1px solid ${T.borderLight}` }}
                 onMouseEnter={e => e.currentTarget.style.background = T.surfaceHover} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                <td style={{ padding: '8px', fontWeight: 600 }}>{d.company_name}</td>
+                <td style={{ padding: '8px', fontWeight: 600 }}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><CompanyLogo logoUrl={d.company_profile?.logo_url} companyName={d.company_name} size="sm" />{d.company_name}</div></td>
                 <td style={{ padding: '8px' }}><StageBadge stage={d.stage} /></td>
                 <td style={{ padding: '8px' }}><ForecastBadge category={d.forecast_category} /></td>
                 <td style={{ padding: '8px', fontWeight: 700, fontFeatureSettings: '"tnum"' }}>{formatCurrency(getARR(d))}</td>
@@ -541,6 +543,7 @@ export default function Pipeline() {
       <>
         {atRisk.map(d => (
           <div key={d.id} onClick={() => navigate('/deal/' + d.id)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid ' + T.borderLight, cursor: 'pointer' }}>
+            <CompanyLogo logoUrl={d.company_profile?.logo_url} companyName={d.company_name} size="sm" />
             <span style={{ fontSize: 13, fontWeight: 700, color: T.text, flex: 1 }}>{d.company_name}</span>
             <StageBadge stage={d.stage} />
             {d.deal_health_score != null && <span style={{ fontSize: 12, fontWeight: 700, color: d.deal_health_score < 5 ? T.error : T.warning }}>{d.deal_health_score}/10</span>}
