@@ -532,16 +532,57 @@ export default function Pipeline() {
     )
   }
 
+  function PipelineAtRiskWidget() {
+    const atRisk = deals.filter(d =>
+      !TERMINAL_STAGES.includes(d.stage) &&
+      ((d.deal_health_score != null && d.deal_health_score < 5) ||
+       (d.target_close_date && daysUntil(d.target_close_date) < 0))
+    )
+    return atRisk.length === 0 ? <div style={{ color: T.textMuted, fontSize: 12, fontStyle: 'italic', padding: 8 }}>No at-risk deals</div> : (
+      <>
+        {atRisk.map(d => (
+          <div key={d.id} onClick={() => navigate('/deal/' + d.id)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid ' + T.borderLight, cursor: 'pointer' }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: T.text, flex: 1 }}>{d.company_name}</span>
+            <StageBadge stage={d.stage} />
+            {d.deal_health_score != null && <span style={{ fontSize: 12, fontWeight: 700, color: d.deal_health_score < 5 ? T.error : T.warning }}>{d.deal_health_score}/10</span>}
+            {d.target_close_date && daysUntil(d.target_close_date) < 0 && <Badge color={T.error}>Overdue</Badge>}
+          </div>
+        ))}
+      </>
+    )
+  }
+
+  function FallbackWidget({ id }) {
+    return <div style={{ color: T.textMuted, fontSize: 12, padding: 8 }}>Unknown widget: {id}</div>
+  }
+
   function renderWidget(id) {
     switch (id) {
       case 'forecast_summary': return <ForecastSummaryWidget />
-      case 'pipeline_view': return <PipelineViewWidget />
-      case 'quota_tracker': return <QuotaTrackerWidget />
+      case 'pipeline_view':
+      case 'pipeline_kanban':
+      case 'kanban':
+      case 'deal_table':
+        return <PipelineViewWidget />
+      case 'quota_tracker':
+      case 'pipeline_attainment':
+      case 'monthly_pipeline':
+      case '3_month_pipeline':
+      case 'pipeline_3month':
+        return <QuotaTrackerWidget />
       case 'coaching_feedback': return <CoachingFeedbackWidget />
-      case 'scoreboard': return <ScoreboardWidget />
-      case 'task_list': return <TaskListWidget />
-      case 'recent_activity': return <RecentActivityWidget />
-      default: return <div style={{ color: T.textMuted, fontSize: 12 }}>Widget not found: {id}</div>
+      case 'scoreboard':
+      case 'pipeline_forecast':
+        return <ScoreboardWidget />
+      case 'task_list':
+      case 'pipeline_tasks':
+        return <TaskListWidget />
+      case 'recent_activity':
+      case 'pipeline_upcoming':
+        return <RecentActivityWidget />
+      case 'pipeline_at_risk':
+        return <PipelineAtRiskWidget />
+      default: return <FallbackWidget id={id} />
     }
   }
 
