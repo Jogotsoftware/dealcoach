@@ -8,9 +8,10 @@ import { callGenerateEmail, callResearchFunction } from '../lib/webhooks'
 import DealChat from '../components/DealChat'
 import { useAuth } from '../hooks/useAuth'
 import { useModules } from '../hooks/useModules'
-import { ResponsiveGridLayout, useContainerWidth, getCompactor } from 'react-grid-layout'
+import { Responsive, WidthProvider } from 'react-grid-layout'
 import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
+const ResponsiveGridLayout = WidthProvider(Responsive)
 
 // === LOCAL LABEL STYLE ===
 const ddLabelStyle = { fontSize: 11, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4, display: 'block' }
@@ -281,7 +282,15 @@ export default function DealDetail() {
   const { profile } = useAuth()
   const { hasModule } = useModules()
   const fileInputRef = useRef(null)
-  const { width: gridWidth, containerRef: gridContainerRef } = useContainerWidth({ initialWidth: 1200 })
+  // Force WidthProvider to remeasure after sidebar animation
+  useEffect(() => {
+    const timers = [
+      setTimeout(() => window.dispatchEvent(new Event('resize')), 100),
+      setTimeout(() => window.dispatchEvent(new Event('resize')), 300),
+      setTimeout(() => window.dispatchEvent(new Event('resize')), 600),
+    ]
+    return () => timers.forEach(clearTimeout)
+  }, [])
   const docsFileInputRef = useRef(null)
   const [tab, setTab] = useState('overview')
   const [loading, setLoading] = useState(true)
@@ -1134,14 +1143,12 @@ export default function DealDetail() {
     <div>
       {/* CSS overrides for react-grid-layout */}
       <style>{`
-        .react-grid-layout { position: relative; }
+        .react-grid-layout { position: relative !important; width: 100% !important; }
         .react-grid-item { transition: all 200ms ease; }
-        .react-grid-item.cssTransforms { transition-property: transform; }
-        .react-grid-item.react-draggable-dragging { transition: none !important; z-index: 100; opacity: 0.9; box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
-        .react-grid-item.resizing { transition: none !important; z-index: 100; }
-        .react-grid-item > .react-resizable-handle { position: absolute; width: 20px; height: 20px; }
-        .react-grid-item > .react-resizable-handle::after { content: ""; position: absolute; right: 3px; bottom: 3px; width: 8px; height: 8px; border-right: 2px solid rgba(136,153,170,0.4); border-bottom: 2px solid rgba(136,153,170,0.4); }
-        .react-grid-item.react-grid-placeholder { background: rgba(93,173,226,0.1) !important; border: 2px dashed rgba(93,173,226,0.4) !important; border-radius: 10px; }
+        .react-grid-item.react-draggable-dragging { transition: none; z-index: 100; opacity: 0.9; box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
+        .react-grid-item.react-grid-placeholder { background: rgba(93,173,226,0.1); border: 2px dashed rgba(93,173,226,0.4); border-radius: 10px; }
+        .react-resizable-handle { position: absolute; width: 20px; height: 20px; }
+        .react-resizable-handle::after { content: ""; position: absolute; right: 3px; bottom: 3px; width: 8px; height: 8px; border-right: 2px solid rgba(136,153,170,0.4); border-bottom: 2px solid rgba(136,153,170,0.4); }
         @keyframes spin { to { transform: rotate(360deg) } }
         @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.7 } }
       `}</style>
@@ -1286,19 +1293,22 @@ export default function DealDetail() {
                 }
               `}</style>
             )}
-            <div ref={gridContainerRef} style={{ width: '100%' }}>
+            <div style={{ width: '100%', minWidth: 0 }}>
               <ResponsiveGridLayout
                 className="layout"
-                width={gridWidth}
                 layouts={{ lg: layout.filter(l => widgets.find(w => w.id === l.i && w.visible)) }}
                 breakpoints={{ lg: 1200, md: 996, sm: 768 }}
                 cols={{ lg: 12, md: 12, sm: 6 }}
                 rowHeight={60}
                 margin={[12, 12]}
                 containerPadding={[0, 0]}
-                compactor={getCompactor("vertical")}
-                dragConfig={{ enabled: editMode, handle: '.widget-drag-handle' }}
-                resizeConfig={{ enabled: editMode }}
+                isDraggable={editMode}
+                isResizable={editMode}
+                compactType="vertical"
+                useCSSTransforms={true}
+                preventCollision={false}
+                draggableHandle=".widget-drag-handle"
+                measureBeforeMount={false}
                 onLayoutChange={(newLayout) => {
                   if (!editMode) return
                   const merged = newLayout.map(item => {
