@@ -213,6 +213,32 @@ function MoreMenuItem({ label, onClick, danger, disabled }) {
   )
 }
 
+// === SOURCE / LINK HELPERS ===
+function SourceLink({ url, label }) {
+  if (!url) return null
+  const href = url.startsWith('http') ? url : 'https://' + url
+  return <a href={href} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, color: '#5DADE2', textDecoration: 'none', fontWeight: 600, whiteSpace: 'nowrap' }}>{label || 'Source'} {'\u2197'}</a>
+}
+
+function LinkedInBadge({ url }) {
+  if (!url) return null
+  return <a href={url} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-block', background: '#0a66c2', color: '#fff', fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 3, textDecoration: 'none' }}>LinkedIn {'\u2197'}</a>
+}
+
+function SourceBadge({ source, sourceUrl, conversationId, dealId, navigate: nav }) {
+  const label = source === 'ai_research' ? 'Research' : source === 'ai_transcript' ? 'Call' : source === 'manual' ? 'Manual' : source === 'chat' ? 'Chat' : source || 'AI'
+  const color = source === 'ai_research' ? '#3498db' : source === 'ai_transcript' ? '#9b59b6' : source === 'manual' ? '#6c757d' : '#8899aa'
+  if (sourceUrl) return <a href={sourceUrl.startsWith('http') ? sourceUrl : 'https://' + sourceUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 3, background: color + '20', color, textDecoration: 'none' }}>{label} {'\u2197'}</a>
+  if (conversationId && dealId && nav) return <span onClick={() => nav(`/deal/${dealId}/call/${conversationId}`)} style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 3, background: color + '20', color, cursor: 'pointer' }}>{label} {'\u2197'}</span>
+  return <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 3, background: color + '20', color }}>{label}</span>
+}
+
+function parseNewsItem(item) {
+  const urlMatch = item.match(/\((https?:\/\/[^\s)]+)\)\s*$/)
+  if (urlMatch) return { text: item.replace(urlMatch[0], '').trim(), url: urlMatch[1] }
+  return { text: item, url: null }
+}
+
 // === SEVERITY COLORS ===
 const SEVERITY_COLORS = { critical: T.error, high: '#f97316', medium: T.warning, low: T.textMuted }
 const STATUS_COLORS = { open: T.error, mitigating: T.warning, mitigated: T.success, accepted: T.textMuted, closed: T.textMuted }
@@ -835,7 +861,7 @@ export default function DealDetail() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 13, fontWeight: 700 }}>{c.name}</span>
               {c.title && <span style={{ fontSize: 11, color: T.textMuted }}>{'\u2014'} {c.title}</span>}
-              {c.linkedin && <a href={c.linkedin} target="_blank" rel="noopener noreferrer" style={{ background: '#0a66c2', color: '#fff', fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 3, textDecoration: 'none', display: 'inline-block' }}>LinkedIn {'\u2197'}</a>}
+              <LinkedInBadge url={c.linkedin} />
               {c.is_champion && <span style={{ background: '#d4edda', color: '#155724', fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 3 }}>Champion</span>}
               {c.is_economic_buyer && <span style={{ background: '#cce5ff', color: '#004085', fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 3 }}>EB</span>}
               {c.is_signer && <span style={{ background: '#fff3cd', color: '#856404', fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 3 }}>Signer</span>}
@@ -844,7 +870,7 @@ export default function DealDetail() {
             {c.previous_erp_experience && c.previous_erp_experience !== 'Unknown' && c.previous_erp_experience !== 'null' && c.previous_erp_experience.trim() && (
               <span style={{ display: 'inline-block', marginTop: 2, background: '#fff3cd', color: '#856404', fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 3 }}>Prior ERP: {c.previous_erp_experience}</span>
             )}
-            {c.source_url && <a href={c.source_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, color: T.primary, marginTop: 2, display: 'inline-block', marginLeft: 4 }}>Source {'\u2197'}</a>}
+            <SourceLink url={c.source_url} />
           </div>
         ))}
         {prospectContacts.length > 5 && <button onClick={() => setTab('contacts')} style={{ background: 'none', border: 'none', color: T.primary, fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: '8px 0' }}>View All ({prospectContacts.length})</button>}
@@ -971,7 +997,7 @@ export default function DealDetail() {
               value={r.status} onChange={e => updateRiskField(r.id, 'status', e.target.value)}>
               {RISK_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
-            {r.source === 'ai_extracted' && <Badge color={T.primary}>AI</Badge>}
+            <SourceBadge source={r.source} sourceUrl={r.source_url} conversationId={r.source_conversation_id} dealId={id} navigate={navigate} />
             <DeleteBtn onClick={() => deleteRisk(r.id)} />
           </div>
         ))}
@@ -1002,7 +1028,7 @@ export default function DealDetail() {
             <Badge color={T.primary}>{p.category}</Badge>
             <div style={{ fontSize: 13, fontWeight: 700, color: '#2ecc71', fontFeatureSettings: '"tnum"', whiteSpace: 'nowrap', minWidth: 60 }}>{p.annual_cost ? formatCurrency(p.annual_cost) : '--'}</div>
             {p.affected_team && <span style={{ fontSize: 11, color: T.textSecondary }}>{p.affected_team}</span>}
-            {p.source === 'ai_extracted' ? <Badge color={T.primary}>AI</Badge> : <Badge color={T.textMuted}>Manual</Badge>}
+            <SourceBadge source={p.source} sourceUrl={p.source_url} />
             <span onClick={() => updatePainField(p.id, 'verified', !p.verified)} style={{ cursor: 'pointer', fontSize: 10, fontWeight: 600, color: p.verified ? '#27ae60' : '#bbb', padding: '1px 6px', borderRadius: 3, background: p.verified ? 'rgba(39,174,96,0.08)' : 'transparent', border: `1px solid ${p.verified ? 'rgba(39,174,96,0.3)' : T.borderLight}` }}>
               {p.verified ? 'VERIFIED' : 'UNVERIFIED'}
             </span>
@@ -1083,10 +1109,11 @@ export default function DealDetail() {
           </div>
         )}
         {events.length === 0 ? <div style={{ color: T.textMuted, fontSize: 11, fontStyle: 'italic' }}>What bad thing happens if they don't act? Consequence of inaction.</div> : events.map(e => (
-          <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: T.surfaceAlt, borderRadius: 6, marginBottom: 4, border: `1px solid ${T.borderLight}` }}>
-            <div style={{ flex: 1, fontSize: 13, fontWeight: 600, color: T.text }}>{e.event_description}</div>
-            {e.event_date && <span style={{ fontSize: 11, color: T.textSecondary }}>{formatDate(e.event_date)}</span>}
+          <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: T.surfaceAlt, borderRadius: 6, marginBottom: 4, border: `1px solid ${T.borderLight}` }}>
+            <div style={{ flex: 1, fontSize: 12, fontWeight: 600, color: T.text }}>{e.event_description}</div>
+            {e.event_date && <span style={{ fontSize: 10, color: T.textSecondary }}>{formatDate(e.event_date)}</span>}
             <Badge color={STRENGTH_COLORS[e.strength] || T.textMuted}>{e.strength}</Badge>
+            <SourceBadge source={e.source} sourceUrl={e.source_url} conversationId={e.source_conversation_id} dealId={id} navigate={navigate} />
             <DeleteBtn onClick={() => deleteEvent(e.id)} />
           </div>
         ))}
@@ -1112,10 +1139,11 @@ export default function DealDetail() {
           </div>
         )}
         {catalysts.length === 0 ? <div style={{ color: T.textMuted, fontSize: 11, fontStyle: 'italic' }}>What's driving the need to change? Triggers and forces.</div> : catalysts.map(c => (
-          <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: T.surfaceAlt, borderRadius: 6, marginBottom: 4, border: `1px solid ${T.borderLight}` }}>
-            <div style={{ flex: 1, fontSize: 13, fontWeight: 600, color: T.text }}>{c.catalyst}</div>
+          <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: T.surfaceAlt, borderRadius: 6, marginBottom: 4, border: `1px solid ${T.borderLight}` }}>
+            <div style={{ flex: 1, fontSize: 12, fontWeight: 600, color: T.text }}>{c.catalyst}</div>
             <Badge color={T.primary}>{c.category}</Badge>
             <Badge color={URGENCY_COLORS[c.urgency] || T.textMuted}>{c.urgency}</Badge>
+            <SourceBadge source={c.source} sourceUrl={c.source_url} conversationId={c.source_conversation_id} dealId={id} navigate={navigate} />
             <DeleteBtn onClick={() => deleteCatalyst(c.id)} />
           </div>
         ))}
@@ -1149,6 +1177,7 @@ export default function DealDetail() {
             {f.severity && <span style={{ width: 8, height: 8, borderRadius: '50%', background: sevColors[f.severity] || '#95a5a6', flexShrink: 0 }} />}
             <span style={{ fontSize: 12, fontWeight: 600, flex: 1, textDecoration: f.resolved ? 'line-through' : 'none', color: f.resolved ? T.textMuted : '#e74c3c' }}>{f.description}</span>
             {f.category && f.category !== 'custom' && <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 3, background: T.surfaceAlt, color: T.textMuted }}>{f.category}</span>}
+            <SourceBadge source={f.source} sourceUrl={f.source_url} />
             <span style={{ cursor: 'pointer', color: T.textMuted, fontSize: 14 }} onClick={() => deleteFlag(f.id)}>&times;</span>
           </div>
         ))}
@@ -1184,7 +1213,7 @@ export default function DealDetail() {
           <div key={f.id} style={{ padding: '6px 0', borderBottom: '1px solid ' + T.borderLight, display: 'flex', alignItems: 'center', gap: 6 }}>
             <span style={{ fontSize: 12, fontWeight: 600, flex: 1, color: '#27ae60' }}>{f.description}</span>
             {f.category && f.category !== 'custom' && <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 3, background: T.surfaceAlt, color: T.textMuted }}>{f.category}</span>}
-            <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 3, background: f.source === 'manual' ? '#f0f0f0' : '#e8f4fd', color: f.source === 'manual' ? '#666' : '#2196f3' }}>{f.source === 'manual' ? 'Manual' : 'AI'}</span>
+            <SourceBadge source={f.source} sourceUrl={f.source_url} />
             <span style={{ cursor: 'pointer', color: T.textMuted, fontSize: 14 }} onClick={() => deleteFlag(f.id)}>&times;</span>
           </div>
         ))}
@@ -1206,9 +1235,15 @@ export default function DealDetail() {
   function RecentNewsWidget() {
     const items = (companyProfile?.recent_news || '').split(/[;|\n]/).map(s => s.trim()).filter(s => s.length > 3)
     return items.length === 0 ? <div style={{ color: T.textMuted, fontSize: 12, fontStyle: 'italic' }}>No recent news</div> : (
-      <div>{items.map((item, i) => (
-        <div key={i} style={{ fontSize: 12, padding: '6px 0', borderBottom: '1px solid ' + T.borderLight, lineHeight: 1.5 }}><BulletText text={item} /></div>
-      ))}</div>
+      <div>{items.map((item, i) => {
+        const parsed = parseNewsItem(item)
+        return (
+          <div key={i} style={{ fontSize: 12, padding: '4px 0', borderBottom: '1px solid ' + T.borderLight, lineHeight: 1.4, display: 'flex', alignItems: 'baseline', gap: 6 }}>
+            <span style={{ flex: 1 }}><BulletText text={parsed.text} /></span>
+            <SourceLink url={parsed.url} label="Article" />
+          </div>
+        )
+      })}</div>
     )
   }
 
@@ -1581,7 +1616,7 @@ export default function DealDetail() {
                           <div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                               <span style={{ fontSize: 15, fontWeight: 700, color: T.text }}>{c.name}</span>
-                              {c.linkedin && <span onClick={() => window.open(c.linkedin, '_blank')} style={{ background: '#0a66c2', color: '#fff', fontSize: 10, fontWeight: 700, borderRadius: 4, padding: '2px 8px', cursor: 'pointer' }}>LinkedIn</span>}
+                              <LinkedInBadge url={c.linkedin} />
                             </div>
                             <div style={{ fontSize: 12, color: T.textSecondary }}>{c.title}{c.department ? ` - ${c.department}` : ''}</div>
                             {c.background && c.background !== 'Unknown' && (
@@ -1607,7 +1642,7 @@ export default function DealDetail() {
                         <Field label="Priorities" value={c.priorities} />
                         <Field label="Communication Style" value={c.communication_style} />
                         {c.email && <div style={{ fontSize: 12, color: T.primary }}>{c.email}</div>}
-                        {c.source_url && <a href={c.source_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, color: T.primary, textDecoration: 'none' }}>Source {'\u2197'}</a>}
+                        <SourceLink url={c.source_url} />
                       </>
                     )}
                   </Card>
