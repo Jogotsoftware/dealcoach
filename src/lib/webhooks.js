@@ -562,3 +562,28 @@ export async function callDealChat(dealId, sessionId, message, userId) {
     return { error: err.message }
   }
 }
+
+/**
+ * Call the Supabase Edge Function to update coaching summary for a user.
+ */
+export async function callUpdateCoachingSummary(userId) {
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) return { error: 'Not authenticated' }
+  try {
+    const response = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/update-coaching-summary`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ user_id: userId }),
+      }
+    )
+    return await response.json()
+  } catch (err) {
+    return { error: err.message }
+  }
+}
