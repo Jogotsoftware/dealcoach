@@ -14,7 +14,7 @@ import 'react-resizable/css/styles.css'
 const ResponsiveGridLayout = WidthProvider(Responsive)
 
 // === LOCAL LABEL STYLE ===
-const ddLabelStyle = { fontSize: 11, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4, display: 'block' }
+const ddLabelStyle = { fontSize: 11, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2, display: 'block' }
 const unknownStyle = { color: '#e8a0a0', fontStyle: 'italic', fontWeight: 400 }
 
 // === BULLET ITEM with bold colon prefix ===
@@ -32,6 +32,8 @@ function EditableField({ label, value, field, table, recordId, onSaved, type = '
   const [val, setVal] = useState(value || '')
   const [saved, setSaved] = useState(false)
   const [hover, setHover] = useState(false)
+  const isEmpty = !value || value === 'Unknown' || value === 'unknown'
+  const labelColor = isEmpty ? '#e74c3c' : '#8899aa'
 
   useEffect(() => { setVal(value || '') }, [value])
 
@@ -52,11 +54,13 @@ function EditableField({ label, value, field, table, recordId, onSaved, type = '
     if (e.key === 'Escape') { setVal(value || ''); setEditing(false) }
   }
 
+  const editLabelStyle = { ...ddLabelStyle, color: labelColor }
+
   if (editing) {
     if (type === 'select' && options) {
       return (
-        <div style={{ marginBottom: 12 }}>
-          <div style={ddLabelStyle}>{label}</div>
+        <div style={{ marginBottom: 4 }}>
+          <div style={editLabelStyle}>{label}</div>
           <select style={{ ...inputStyle, cursor: 'pointer' }} value={val} onChange={e => { setVal(e.target.value); }}
             onBlur={save} autoFocus>
             <option value="">--</option>
@@ -67,8 +71,8 @@ function EditableField({ label, value, field, table, recordId, onSaved, type = '
     }
     if (type === 'textarea') {
       return (
-        <div style={{ marginBottom: 12 }}>
-          <div style={ddLabelStyle}>{label}</div>
+        <div style={{ marginBottom: 4 }}>
+          <div style={editLabelStyle}>{label}</div>
           <textarea style={{ ...inputStyle, minHeight: 80, resize: 'vertical' }} value={val}
             onChange={e => setVal(e.target.value)} onBlur={save} autoFocus />
         </div>
@@ -76,16 +80,16 @@ function EditableField({ label, value, field, table, recordId, onSaved, type = '
     }
     if (type === 'date') {
       return (
-        <div style={{ marginBottom: 12 }}>
-          <div style={ddLabelStyle}>{label}</div>
+        <div style={{ marginBottom: 4 }}>
+          <div style={editLabelStyle}>{label}</div>
           <input type="date" style={inputStyle} value={val} onChange={e => setVal(e.target.value)}
             onBlur={save} onKeyDown={handleKeyDown} autoFocus />
         </div>
       )
     }
     return (
-      <div style={{ marginBottom: 12 }}>
-        <div style={ddLabelStyle}>{label}</div>
+      <div style={{ marginBottom: 4 }}>
+        <div style={editLabelStyle}>{label}</div>
         <input type={type === 'number' ? 'number' : 'text'} style={inputStyle} value={val}
           onChange={e => setVal(e.target.value)} onBlur={save} onKeyDown={handleKeyDown} autoFocus />
       </div>
@@ -101,16 +105,16 @@ function EditableField({ label, value, field, table, recordId, onSaved, type = '
     const items = value.split(/[;|\n]/).map(s => s.trim()).filter(s => s.length > 3)
     if (items.length > 0 && !(items.length === 1 && items[0] === 'Unknown')) {
       return (
-        <div style={{ marginBottom: 12, cursor: 'pointer', position: 'relative' }}
+        <div style={{ marginBottom: 4, cursor: 'pointer', position: 'relative' }}
           onClick={() => setEditing(true)}
           onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
-          <div style={{ ...ddLabelStyle, display: 'flex', alignItems: 'center', gap: 4 }}>
+          <div style={{ ...editLabelStyle, display: 'flex', alignItems: 'center', gap: 4 }}>
             {label}
             {hover && <span style={{ fontSize: 10, color: T.textMuted }}>{'\u270E'}</span>}
             {saved && <span style={{ fontSize: 10, color: T.success, fontWeight: 600 }}>Saved</span>}
           </div>
           {items.map((item, i) => (
-            <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 3, fontSize: 13, color: T.text, lineHeight: 1.5 }}>
+            <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 2, fontSize: 13, color: T.text, lineHeight: 1.4 }}>
               <span style={{ color: T.textMuted, flexShrink: 0 }}>&bull;</span>
               <span><BulletText text={item} /></span>
             </div>
@@ -121,16 +125,16 @@ function EditableField({ label, value, field, table, recordId, onSaved, type = '
   }
 
   return (
-    <div style={{ marginBottom: 12, cursor: 'pointer', position: 'relative' }}
+    <div style={{ marginBottom: 4, cursor: 'pointer', position: 'relative' }}
       onClick={() => setEditing(true)}
       onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
-      <div style={{ ...ddLabelStyle, display: 'flex', alignItems: 'center', gap: 4 }}>
+      <div style={{ ...editLabelStyle, display: 'flex', alignItems: 'center', gap: 4 }}>
         {label}
         {hover && <span style={{ fontSize: 10, color: T.textMuted }}>{'\u270E'}</span>}
         {saved && <span style={{ fontSize: 10, color: T.success, fontWeight: 600 }}>Saved</span>}
       </div>
-      <div style={{ fontSize: 13, lineHeight: 1.5, whiteSpace: type === 'textarea' ? 'pre-wrap' : undefined, ...((!displayVal || displayVal === 'Unknown') ? unknownStyle : { color: T.text, fontWeight: 600 }) }}>
-        {(!displayVal || displayVal === 'Unknown') ? (displayVal === 'Unknown' ? 'Unknown' : 'Click to edit') : displayVal}
+      <div style={{ fontSize: 13, lineHeight: 1.4, whiteSpace: type === 'textarea' ? 'pre-wrap' : undefined, ...(isEmpty ? unknownStyle : { color: T.text, fontWeight: 600 }) }}>
+        {isEmpty ? (value === 'Unknown' ? 'Unknown' : 'Click to edit') : displayVal}
       </div>
     </div>
   )
@@ -1480,18 +1484,21 @@ export default function DealDetail() {
                   setLayout(merged)
                 }}
               >
-                {widgets.filter(w => w.visible).map(w => (
-                  <div key={w.id} style={{ background: T.surface, border: editMode ? '1px dashed rgba(93,173,226,0.3)' : `1px solid ${T.border}`, borderRadius: 10, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                    <div style={{ padding: '8px 14px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', gap: 8, background: T.surfaceAlt, flexShrink: 0 }}>
-                      {editMode && <span className="widget-drag-handle" style={{ cursor: 'grab', color: T.textMuted, fontSize: 14, userSelect: 'none' }}>{'\u2807'}</span>}
-                      <span style={{ fontSize: 13, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: T.text, flex: 1 }}>{w.title}</span>
-                      {editMode && <span style={{ cursor: 'pointer', color: T.textMuted, fontSize: 16, lineHeight: 1 }} onClick={() => toggleWidget(w.id)}>&times;</span>}
+                {(() => {
+                  const wbc = { company_profile: '#3498db', recent_news: '#3498db', tech_systems: '#3498db', qualification: '#f39c12', scores: '#f39c12', risks: '#e74c3c', red_flags: '#e74c3c', pain_points: '#e74c3c', green_flags: '#27ae60', events: '#27ae60', call_history: '#9b59b6' }
+                  return widgets.filter(w => w.visible).map(w => (
+                    <div key={w.id} style={{ background: T.surface, border: editMode ? '1px dashed rgba(93,173,226,0.3)' : `1px solid ${T.border}`, borderLeft: '3px solid ' + (wbc[w.id] || '#8899aa'), borderRadius: 10, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                      <div style={{ padding: '6px 10px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', gap: 8, background: T.surfaceAlt, flexShrink: 0 }}>
+                        {editMode && <span className="widget-drag-handle" style={{ cursor: 'grab', color: T.textMuted, fontSize: 14, userSelect: 'none' }}>{'\u2807'}</span>}
+                        <span style={{ fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: T.text, flex: 1 }}>{w.title}</span>
+                        {editMode && <span style={{ cursor: 'pointer', color: T.textMuted, fontSize: 16, lineHeight: 1 }} onClick={() => toggleWidget(w.id)}>&times;</span>}
+                      </div>
+                      <div style={{ padding: 10, overflow: 'auto', flex: 1, fontSize: 12 }}>
+                        {renderWidget(w.id)}
+                      </div>
                     </div>
-                    <div style={{ padding: 14, overflow: 'auto', flex: 1 }}>
-                      {renderWidget(w.id)}
-                    </div>
-                  </div>
-                ))}
+                  ))
+                })()}
               </ResponsiveGridLayout>
             </div>
 

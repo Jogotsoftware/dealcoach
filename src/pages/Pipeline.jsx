@@ -684,18 +684,21 @@ export default function Pipeline() {
               setPLayout(merged)
             }}
           >
-            {pWidgets.filter(w => w.visible).map(w => (
-              <div key={w.id} style={{ background: T.surface, border: editMode ? '1px dashed rgba(93,173,226,0.3)' : '1px solid ' + T.border, borderRadius: 10, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                <div style={{ padding: '8px 14px', borderBottom: '1px solid ' + T.border, display: 'flex', alignItems: 'center', gap: 8, background: T.surfaceAlt, flexShrink: 0 }}>
-                  {editMode && <span className="widget-drag-handle" style={{ cursor: 'grab', color: T.textMuted, fontSize: 14, userSelect: 'none' }}>{'\u2807'}</span>}
-                  <span style={{ fontSize: 13, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: T.text, flex: 1 }}>{w.title}</span>
-                  {editMode && <span style={{ cursor: 'pointer', color: T.textMuted, fontSize: 16, lineHeight: 1 }} onClick={() => setPWidgets(pw => pw.map(ww => ww.id === w.id ? { ...ww, visible: false } : ww))}>&times;</span>}
+            {(() => {
+              const wbc = { forecast_summary: '#3498db', pipeline_view: '#9b59b6', quota_tracker: '#f39c12', coaching_feedback: '#27ae60', scoreboard: '#f39c12', task_list: '#e74c3c', recent_activity: '#8899aa' }
+              return pWidgets.filter(w => w.visible).map(w => (
+                <div key={w.id} style={{ background: T.surface, border: editMode ? '1px dashed rgba(93,173,226,0.3)' : '1px solid ' + T.border, borderLeft: '3px solid ' + (wbc[w.id] || '#8899aa'), borderRadius: 10, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                  <div style={{ padding: '6px 10px', borderBottom: '1px solid ' + T.border, display: 'flex', alignItems: 'center', gap: 8, background: T.surfaceAlt, flexShrink: 0 }}>
+                    {editMode && <span className="widget-drag-handle" style={{ cursor: 'grab', color: T.textMuted, fontSize: 14, userSelect: 'none' }}>{'\u2807'}</span>}
+                    <span style={{ fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: T.text, flex: 1 }}>{w.title}</span>
+                    {editMode && <span style={{ cursor: 'pointer', color: T.textMuted, fontSize: 16, lineHeight: 1 }} onClick={() => setPWidgets(pw => pw.map(ww => ww.id === w.id ? { ...ww, visible: false } : ww))}>&times;</span>}
+                  </div>
+                  <div style={{ padding: 10, overflow: 'auto', flex: 1, fontSize: 12 }}>
+                    {renderWidget(w.id)}
+                  </div>
                 </div>
-                <div style={{ padding: 14, overflow: 'auto', flex: 1 }}>
-                  {renderWidget(w.id)}
-                </div>
-              </div>
-            ))}
+              ))
+            })()}
           </ResponsiveGridLayout>
         </div>
       </div>
