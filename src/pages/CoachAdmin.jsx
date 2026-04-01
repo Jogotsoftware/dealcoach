@@ -32,6 +32,7 @@ export default function CoachAdmin() {
   const [newEmailTpl, setNewEmailTpl] = useState({ name: '', email_type: 'follow_up', description: '' })
   const [expandedEmailTemplate, setExpandedEmailTemplate] = useState(null)
   const [researchConfig, setResearchConfig] = useState(null)
+  const [slideConfig, setSlideConfig] = useState(null)
 
   // Editing states
   const [editingCoach, setEditingCoach] = useState(false)
@@ -107,6 +108,9 @@ export default function CoachAdmin() {
 
         const { data: rc } = await supabase.from('coach_research_config').select('*').eq('coach_id', activeCoach.id).single()
         setResearchConfig(rc || null)
+
+        const { data: sc } = await supabase.from('coach_slide_config').select('*').eq('coach_id', activeCoach.id).single()
+        setSlideConfig(sc || null)
 
         // Load template stages/milestones
         const tplIds = (templatesRes.data || []).map(t => t.id)
@@ -288,6 +292,7 @@ export default function CoachAdmin() {
     { key: 'templates', label: `MSP Templates (${mspTemplates.length})` },
     { key: 'emails', label: `Email Templates (${emailTemplatesAdmin.length})` },
     { key: 'research', label: 'Research' },
+    { key: 'slides', label: 'Slides' },
   ]
 
   const EMAIL_TYPES = ['sc_briefing', 'scoping_kt', 'exec_alignment', 'follow_up', 'internal_update', 'custom']
@@ -855,6 +860,130 @@ export default function CoachAdmin() {
                   await supabase.from('coach_research_config').update({ custom_instructions: e.target.value }).eq('id', researchConfig.id)
                   setResearchConfig(p => ({ ...p, custom_instructions: e.target.value }))
                 }} />
+            </Card>
+          </>
+        )}
+
+        {/* ===== SLIDES TAB ===== */}
+        {tab === 'slides' && coach && (
+          <>
+            <Card title="Default Sage Team">
+              <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 8 }}>Team members that appear on every Team Introductions slide.</div>
+              {(slideConfig?.sage_team_defaults || []).map((m, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid ' + T.borderLight }}>
+                  <span style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{m.name}</span>
+                  <span style={{ fontSize: 12, color: T.textMuted }}>{m.title}</span>
+                  <span style={{ cursor: 'pointer', color: T.textMuted, fontSize: 14 }} onClick={async () => {
+                    const updated = (slideConfig.sage_team_defaults || []).filter((_, idx) => idx !== i)
+                    await supabase.from('coach_slide_config').update({ sage_team_defaults: updated }).eq('id', slideConfig.id)
+                    setSlideConfig(p => ({ ...p, sage_team_defaults: updated }))
+                  }}>&times;</span>
+                </div>
+              ))}
+              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                <input id="st-name" placeholder="Name" style={{ ...inputStyle, flex: 1 }} />
+                <input id="st-title" placeholder="Title" style={{ ...inputStyle, flex: 1 }} />
+                <Button onClick={async () => {
+                  const name = document.getElementById('st-name').value.trim()
+                  const title = document.getElementById('st-title').value.trim()
+                  if (!name) return
+                  const updated = [...(slideConfig?.sage_team_defaults || []), { name, title }]
+                  if (slideConfig?.id) {
+                    await supabase.from('coach_slide_config').update({ sage_team_defaults: updated }).eq('id', slideConfig.id)
+                    setSlideConfig(p => ({ ...p, sage_team_defaults: updated }))
+                  } else {
+                    const { data } = await supabase.from('coach_slide_config').insert({ coach_id: coach.id, sage_team_defaults: updated }).select().single()
+                    if (data) setSlideConfig(data)
+                  }
+                  document.getElementById('st-name').value = ''
+                  document.getElementById('st-title').value = ''
+                }} style={{ padding: '6px 12px', fontSize: 11 }}>+ Add</Button>
+              </div>
+            </Card>
+            <Card title="Branding">
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <label style={labelStyle}>Primary Color</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <input type="color" value={'#' + (slideConfig?.primary_color || '00D639')} onChange={async e => {
+                      const val = e.target.value.replace('#', '')
+                      if (!slideConfig?.id) return
+                      await supabase.from('coach_slide_config').update({ primary_color: val }).eq('id', slideConfig.id)
+                      setSlideConfig(p => ({ ...p, primary_color: val }))
+                    }} style={{ width: 40, height: 30, border: 'none', cursor: 'pointer' }} />
+                    <span style={{ fontSize: 12, color: T.textMuted, fontFamily: T.mono }}>#{slideConfig?.primary_color || '00D639'}</span>
+                  </div>
+                </div>
+                <div>
+                  <label style={labelStyle}>Accent Color</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <input type="color" value={'#' + (slideConfig?.accent_color || '1A1A2E')} onChange={async e => {
+                      const val = e.target.value.replace('#', '')
+                      if (!slideConfig?.id) return
+                      await supabase.from('coach_slide_config').update({ accent_color: val }).eq('id', slideConfig.id)
+                      setSlideConfig(p => ({ ...p, accent_color: val }))
+                    }} style={{ width: 40, height: 30, border: 'none', cursor: 'pointer' }} />
+                    <span style={{ fontSize: 12, color: T.textMuted, fontFamily: T.mono }}>#{slideConfig?.accent_color || '1A1A2E'}</span>
+                  </div>
+                </div>
+              </div>
+            </Card>
+            <Card title="Footer & Fonts">
+              <div style={{ marginBottom: 10 }}>
+                <label style={labelStyle}>Footer Text</label>
+                <input style={inputStyle} defaultValue={slideConfig?.footer_text || '\u00A9 {year} The Sage Group plc, or its licensors. All rights reserved.'}
+                  onBlur={async e => { if (!slideConfig?.id) return; await supabase.from('coach_slide_config').update({ footer_text: e.target.value }).eq('id', slideConfig.id) }} />
+                <div style={{ fontSize: 10, color: T.textMuted, marginTop: 2 }}>Use {'{year}'} for dynamic year</div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 10 }}>
+                <div>
+                  <label style={labelStyle}>Title Font</label>
+                  <select style={{ ...inputStyle, cursor: 'pointer' }} value={slideConfig?.title_font || 'Calibri'} onChange={async e => {
+                    if (!slideConfig?.id) return
+                    await supabase.from('coach_slide_config').update({ title_font: e.target.value }).eq('id', slideConfig.id)
+                    setSlideConfig(p => ({ ...p, title_font: e.target.value }))
+                  }}>{['Calibri', 'Arial', 'Georgia', 'Trebuchet MS', 'Cambria'].map(f => <option key={f} value={f}>{f}</option>)}</select>
+                </div>
+                <div>
+                  <label style={labelStyle}>Body Font</label>
+                  <select style={{ ...inputStyle, cursor: 'pointer' }} value={slideConfig?.body_font || 'Arial'} onChange={async e => {
+                    if (!slideConfig?.id) return
+                    await supabase.from('coach_slide_config').update({ body_font: e.target.value }).eq('id', slideConfig.id)
+                    setSlideConfig(p => ({ ...p, body_font: e.target.value }))
+                  }}>{['Arial', 'Calibri', 'Georgia', 'Trebuchet MS', 'Cambria'].map(f => <option key={f} value={f}>{f}</option>)}</select>
+                </div>
+                <div>
+                  <label style={labelStyle}>Title Size</label>
+                  <input type="number" style={inputStyle} defaultValue={slideConfig?.title_size || 32} onBlur={async e => {
+                    if (!slideConfig?.id) return; await supabase.from('coach_slide_config').update({ title_size: Number(e.target.value) }).eq('id', slideConfig.id)
+                  }} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Body Size</label>
+                  <input type="number" style={inputStyle} defaultValue={slideConfig?.body_size || 16} onBlur={async e => {
+                    if (!slideConfig?.id) return; await supabase.from('coach_slide_config').update({ body_size: Number(e.target.value) }).eq('id', slideConfig.id)
+                  }} />
+                </div>
+              </div>
+            </Card>
+            <Card title="Default Selected Slides">
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {['team_introductions', 'company_overview', 'why_we_are_here', 'solution_priorities', 'solution_map', 'agenda'].map(st => {
+                  const defaults = slideConfig?.default_slides || ['team_introductions', 'company_overview', 'why_we_are_here', 'solution_priorities']
+                  const checked = defaults.includes(st)
+                  return (
+                    <label key={st} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, cursor: 'pointer' }}>
+                      <input type="checkbox" checked={checked} onChange={async () => {
+                        const updated = checked ? defaults.filter(s => s !== st) : [...defaults, st]
+                        if (!slideConfig?.id) return
+                        await supabase.from('coach_slide_config').update({ default_slides: updated }).eq('id', slideConfig.id)
+                        setSlideConfig(p => ({ ...p, default_slides: updated }))
+                      }} />
+                      {st.replace(/_/g, ' ')}
+                    </label>
+                  )
+                })}
+              </div>
             </Card>
           </>
         )}

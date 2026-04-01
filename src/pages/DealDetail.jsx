@@ -7,6 +7,7 @@ import TranscriptUpload from '../components/TranscriptUpload'
 import { callGenerateEmail, callResearchFunction, reprocessDeal } from '../lib/webhooks'
 import DealChat from '../components/DealChat'
 import CompanyLogo from '../components/CompanyLogo'
+import SlideGenerator from '../components/SlideGenerator'
 import { useAuth } from '../hooks/useAuth'
 import { useModules } from '../hooks/useModules'
 import { Responsive, WidthProvider } from 'react-grid-layout'
@@ -408,6 +409,7 @@ export default function DealDetail() {
   const [generatedEmails, setGeneratedEmails] = useState([])
   const [expandedEmail, setExpandedEmail] = useState(null)
   const [showChat, setShowChat] = useState(false)
+  const [showSlideGenerator, setShowSlideGenerator] = useState(false)
   const [showMoreMenu, setShowMoreMenu] = useState(false)
 
   useEffect(() => { if (id && id !== 'new') loadDeal() }, [id])
@@ -1436,6 +1438,7 @@ export default function DealDetail() {
                   }}>
                     <MoreMenuItem label={reprocessing ? (reprocessStatus || 'Reprocessing...') : 'Reprocess Deal'} disabled={reprocessing} onClick={() => { handleReprocess(); setShowMoreMenu(false) }} />
                     <MoreMenuItem label={researchRunning ? 'Researching...' : 'Re-run Research'} disabled={researchRunning} onClick={() => { rerunResearch(); setShowMoreMenu(false) }} />
+                    <MoreMenuItem label="Generate Slides" onClick={() => { setShowSlideGenerator(true); setShowMoreMenu(false) }} />
                     <MoreMenuItem label={editMode ? 'Lock Dashboard' : 'Edit Dashboard'} onClick={() => { setEditMode(!editMode); setShowMoreMenu(false) }} />
                     <div style={{ borderTop: `1px solid ${T.border}`, margin: '4px 0' }} />
                     <MoreMenuItem label="Delete Deal" danger onClick={() => { setShowMoreMenu(false); if (window.confirm('Delete this deal and all its data?')) { supabase.from('deals').delete().eq('id', deal.id).then(() => navigate('/')) } }} />
@@ -1964,6 +1967,7 @@ export default function DealDetail() {
       </div>
 
       <DealChat dealId={id} userId={profile?.id} isOpen={showChat} onClose={() => setShowChat(false)} onAction={() => loadDeal()} />
+      {showSlideGenerator && <SlideGenerator dealId={id} companyName={deal.company_name} onClose={() => setShowSlideGenerator(false)} />}
     </div>
   )
 }

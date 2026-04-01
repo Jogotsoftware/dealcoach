@@ -638,3 +638,28 @@ export async function reprocessDeal(dealId, onStatus) {
   results.success = true
   return results
 }
+
+/**
+ * Call the Supabase Edge Function to generate presentation slides for a deal.
+ */
+export async function callGenerateSlides(dealId, slideTypes, model = 'claude-opus-4-6') {
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) return { error: 'Not authenticated' }
+  try {
+    const response = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-slides`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ deal_id: dealId, slide_types: slideTypes, model }),
+      }
+    )
+    return await response.json()
+  } catch (err) {
+    return { error: err.message }
+  }
+}
