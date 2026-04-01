@@ -90,18 +90,24 @@ export function formatCurrency(n) {
 }
 
 export function formatDate(d) {
-  if (!d) return '--'
-  return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  if (!d) return '\u2014'
+  const dt = new Date(d + (d.length <= 10 ? 'T00:00:00' : ''))
+  if (isNaN(dt.getTime())) return '\u2014'
+  return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
 export function formatDateLong(d) {
-  if (!d) return 'Not set'
-  return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+  if (!d) return '\u2014'
+  const dt = new Date(d + (d.length <= 10 ? 'T00:00:00' : ''))
+  if (isNaN(dt.getTime())) return '\u2014'
+  return dt.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
 }
 
 export function daysUntil(d) {
   if (!d) return null
-  return Math.ceil((new Date(d) - new Date()) / 86_400_000)
+  const dt = new Date(d)
+  if (isNaN(dt.getTime())) return null
+  return Math.ceil((dt - new Date()) / 86_400_000)
 }
 
 export function pctOf(value, total) {

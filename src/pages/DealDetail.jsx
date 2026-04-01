@@ -221,21 +221,21 @@ const DOC_TYPES = ['rfp', 'rfi', 'demo_schedule', 'sow', 'proposal', 'pricing', 
 
 // === WIDGET LAYOUT DEFAULTS ===
 const DEFAULT_LAYOUT = [
-  { i: 'call_history', x: 0, y: 0, w: 12, h: 4, minW: 6, minH: 2 },
-  { i: 'company_profile', x: 0, y: 4, w: 8, h: 5, minW: 4, minH: 3 },
+  { i: 'call_history', x: 0, y: 0, w: 12, h: 4, minW: 2, minH: 1 },
+  { i: 'company_profile', x: 0, y: 4, w: 8, h: 5, minW: 2, minH: 1 },
   { i: 'scores', x: 8, y: 4, w: 4, h: 5, minW: 3, minH: 3 },
-  { i: 'contacts', x: 0, y: 9, w: 4, h: 4, minW: 3, minH: 2 },
-  { i: 'dates', x: 4, y: 9, w: 8, h: 3, minW: 4, minH: 2 },
-  { i: 'analysis', x: 0, y: 13, w: 6, h: 5, minW: 4, minH: 3 },
-  { i: 'qualification', x: 6, y: 13, w: 6, h: 5, minW: 4, minH: 3 },
-  { i: 'red_flags', x: 0, y: 18, w: 6, h: 3, minW: 4, minH: 2 },
-  { i: 'green_flags', x: 6, y: 18, w: 6, h: 3, minW: 4, minH: 2 },
-  { i: 'risks', x: 0, y: 21, w: 12, h: 3, minW: 6, minH: 2 },
-  { i: 'pain_points', x: 0, y: 24, w: 12, h: 3, minW: 6, minH: 2 },
-  { i: 'recent_news', x: 0, y: 27, w: 6, h: 3, minW: 4, minH: 2 },
-  { i: 'tech_systems', x: 6, y: 27, w: 6, h: 3, minW: 4, minH: 2 },
-  { i: 'quote_sizing', x: 0, y: 30, w: 6, h: 3, minW: 4, minH: 2 },
-  { i: 'documents', x: 6, y: 30, w: 6, h: 3, minW: 4, minH: 2 },
+  { i: 'contacts', x: 0, y: 9, w: 4, h: 4, minW: 2, minH: 1 },
+  { i: 'dates', x: 4, y: 9, w: 8, h: 3, minW: 2, minH: 1 },
+  { i: 'analysis', x: 0, y: 13, w: 6, h: 5, minW: 2, minH: 1 },
+  { i: 'qualification', x: 6, y: 13, w: 6, h: 5, minW: 2, minH: 1 },
+  { i: 'red_flags', x: 0, y: 18, w: 6, h: 3, minW: 2, minH: 1 },
+  { i: 'green_flags', x: 6, y: 18, w: 6, h: 3, minW: 2, minH: 1 },
+  { i: 'risks', x: 0, y: 21, w: 12, h: 3, minW: 2, minH: 1 },
+  { i: 'pain_points', x: 0, y: 24, w: 12, h: 3, minW: 2, minH: 1 },
+  { i: 'recent_news', x: 0, y: 27, w: 6, h: 3, minW: 2, minH: 1 },
+  { i: 'tech_systems', x: 6, y: 27, w: 6, h: 3, minW: 2, minH: 1 },
+  { i: 'quote_sizing', x: 0, y: 30, w: 6, h: 3, minW: 2, minH: 1 },
+  { i: 'documents', x: 6, y: 30, w: 6, h: 3, minW: 2, minH: 1 },
   { i: 'notes', x: 0, y: 33, w: 12, h: 2, minW: 6, minH: 1 },
 ]
 
@@ -741,12 +741,18 @@ export default function DealDetail() {
     return (
       <>
         <EditableField label="Overview" value={cp?.overview} field="overview" table="company_profile" recordId={cp?.id} type="textarea" onSaved={cpSave} />
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, margin: '10px 0' }}>
+        {deal.website && (
+          <a href={deal.website.startsWith('http') ? deal.website : 'https://' + deal.website} target="_blank" rel="noopener noreferrer"
+            style={{ display: 'inline-block', fontSize: 12, color: T.primary, textDecoration: 'none', marginBottom: 8 }}>
+            {deal.website.replace(/^https?:\/\//, '').replace(/\/$/, '')} {'\u2197'}
+          </a>
+        )}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, margin: '6px 0' }}>
           <EditableField label="Industry" value={cp?.industry} field="industry" table="company_profile" recordId={cp?.id} onSaved={cpSave} />
           <EditableField label="Revenue" value={cp?.revenue} field="revenue" table="company_profile" recordId={cp?.id} onSaved={cpSave} />
           <EditableField label="Employees" value={cp?.employee_count} field="employee_count" table="company_profile" recordId={cp?.id} onSaved={cpSave} />
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, margin: '10px 0' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, margin: '6px 0' }}>
           <EditableField label="Headquarters" value={cp?.headquarters} field="headquarters" table="company_profile" recordId={cp?.id} onSaved={cpSave} />
           <EditableField label="Founded" value={cp?.founded} field="founded" table="company_profile" recordId={cp?.id} onSaved={cpSave} />
         </div>
@@ -789,13 +795,6 @@ export default function DealDetail() {
           <EditableField label="CMRR" value={deal.cmrr} field="cmrr" table="deals" recordId={deal.id} type="number" onSaved={(f, v) => setDeal(p => ({ ...p, [f]: v }))} />
           <EditableField label="Target Close" value={deal.target_close_date} field="target_close_date" table="deals" recordId={deal.id} type="date" onSaved={(f, v) => setDeal(p => ({ ...p, [f]: v }))} />
         </div>
-        <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${T.borderLight}` }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Running Problem Cost</div>
-          <div style={{ fontSize: 28, fontWeight: 800, color: '#e74c3c', fontFeatureSettings: '"tnum"' }}>{totalPainCost > 0 ? formatCurrency(totalPainCost) : '$0'}</div>
-          <EditableField label="Hard Dollars" value={analysis?.running_problem_cost_dollars} field="running_problem_cost_dollars" table="deal_analysis" recordId={analysis?.id} type="number" onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
-          <EditableField label="Hours" value={analysis?.running_problem_cost_hours} field="running_problem_cost_hours" table="deal_analysis" recordId={analysis?.id} type="number" onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
-          <EditableField label="Notes" value={analysis?.running_problem_cost_notes} field="running_problem_cost_notes" table="deal_analysis" recordId={analysis?.id} onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
-        </div>
       </>
     )
   }
@@ -811,7 +810,7 @@ export default function DealDetail() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 13, fontWeight: 700 }}>{c.name}</span>
               {c.title && <span style={{ fontSize: 11, color: T.textMuted }}>{'\u2014'} {c.title}</span>}
-              {c.linkedin && <span onClick={() => window.open(c.linkedin, '_blank')} style={{ background: '#0a66c2', color: '#fff', fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 3, cursor: 'pointer' }}>LinkedIn</span>}
+              {c.linkedin && <a href={c.linkedin} target="_blank" rel="noopener noreferrer" style={{ background: '#0a66c2', color: '#fff', fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 3, textDecoration: 'none', display: 'inline-block' }}>LinkedIn {'\u2197'}</a>}
               {c.is_champion && <span style={{ background: '#d4edda', color: '#155724', fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 3 }}>Champion</span>}
               {c.is_economic_buyer && <span style={{ background: '#cce5ff', color: '#004085', fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 3 }}>EB</span>}
               {c.is_signer && <span style={{ background: '#fff3cd', color: '#856404', fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 3 }}>Signer</span>}
@@ -874,15 +873,23 @@ export default function DealDetail() {
     ]
     return (
       <>
+        <div style={{ display: 'flex', gap: 16, padding: '8px 0', marginBottom: 8, borderBottom: '1px solid ' + T.borderLight }}>
+          <div>
+            <span style={{ fontSize: 10, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase' }}>Problem Cost: </span>
+            <span style={{ fontSize: 16, fontWeight: 800, color: '#e74c3c' }}>{analysis?.running_problem_cost_dollars ? '$' + Number(analysis.running_problem_cost_dollars).toLocaleString() : '$0'}</span>
+          </div>
+          <div>
+            <span style={{ fontSize: 10, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase' }}>Hours: </span>
+            <span style={{ fontSize: 14, fontWeight: 700 }}>{analysis?.running_problem_cost_hours ? Number(analysis.running_problem_cost_hours).toLocaleString() + ' hrs' : '0 hrs'}</span>
+          </div>
+        </div>
         {fields.map(f => {
           const val = analysis?.[f.field]
           const hasData = val && val !== 'Unknown'
           return (
-            <div key={f.field} style={{ marginBottom: 6 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: hasData ? '#27ae60' : '#e74c3c' }} />
-              </div>
-              <EditableField label={f.label} value={val} field={f.field} table="deal_analysis" recordId={analysis?.id} type="textarea" displayAs="list" onSaved={(fld, v) => setAnalysis(p => ({ ...p, [fld]: v }))} />
+            <div key={f.field} style={{ marginBottom: 4 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: hasData ? '#8899aa' : '#e74c3c', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{f.label}</div>
+              <EditableField value={val} field={f.field} table="deal_analysis" recordId={analysis?.id} type="textarea" displayAs="list" onSaved={(fld, v) => setAnalysis(p => ({ ...p, [fld]: v }))} />
             </div>
           )
         })}
@@ -891,26 +898,17 @@ export default function DealDetail() {
   }
 
   function QualificationWidget() {
-    const budgetStatus = analysis?.budget && analysis.budget !== 'Unknown' ? (risks.some(r => r.category === 'budget') ? 'yellow' : 'green') : 'red'
-    const authorityStatus = analysis?.champion && analysis.champion !== 'Unknown' && analysis?.economic_buyer && analysis.economic_buyer !== 'Unknown' ? 'green' : (analysis?.champion && analysis.champion !== 'Unknown') || (analysis?.economic_buyer && analysis.economic_buyer !== 'Unknown') ? 'yellow' : 'red'
-    const needStatus = painPoints.filter(p => p.annual_cost).length >= 3 ? 'green' : painPoints.length > 0 ? 'yellow' : 'red'
-    const timelineStatus = analysis?.decision_date && analysis.decision_date !== 'Unknown' ? (analysis?.go_live_date && analysis.go_live_date !== 'Unknown' ? 'green' : 'yellow') : 'red'
     const sc = { green: '#27ae60', yellow: '#f39c12', red: '#e74c3c' }
+    const bantItems = [
+      { label: 'BUDGET', status: analysis?.budget && analysis.budget !== 'Unknown' ? 'green' : 'red' },
+      { label: 'AUTHORITY', status: analysis?.champion && analysis.champion !== 'Unknown' && analysis?.economic_buyer && analysis.economic_buyer !== 'Unknown' ? 'green' : (analysis?.champion && analysis.champion !== 'Unknown') || (analysis?.economic_buyer && analysis.economic_buyer !== 'Unknown') ? 'yellow' : 'red' },
+      { label: 'NEED', status: painPoints.filter(p => p.annual_cost).length >= 3 ? 'green' : painPoints.length > 0 ? 'yellow' : 'red' },
+      { label: 'TIMELINE', status: analysis?.decision_date && analysis.decision_date !== 'Unknown' ? 'green' : deal.target_close_date ? 'yellow' : 'red' },
+    ]
     return (
       <>
-        <div style={{ textAlign: 'center', marginBottom: 12, padding: 10, background: T.surfaceAlt, borderRadius: 8 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase' }}>Deal Score</div>
-          <div style={{ fontSize: 32, fontWeight: 800, color: (deal.deal_health_score || 0) >= 7 ? '#27ae60' : (deal.deal_health_score || 0) >= 5 ? '#f39c12' : '#e74c3c' }}>
-            {deal.deal_health_score || '\u2014'}<span style={{ fontSize: 14, color: T.textMuted }}>/10</span>
-          </div>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, marginBottom: 12, padding: 8, background: T.surfaceAlt, borderRadius: 6 }}>
-          {[['Budget', budgetStatus], ['Authority', authorityStatus], ['Need', needStatus], ['Timeline', timelineStatus]].map(([label, status]) => (
-            <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 0' }}>
-              <span style={{ width: 10, height: 10, borderRadius: '50%', background: sc[status], flexShrink: 0 }} />
-              <span style={{ fontSize: 12, fontWeight: 600 }}>{label}</span>
-            </div>
-          ))}
+        <div style={{ display: 'flex', gap: 16, padding: '8px 0', marginBottom: 8, borderBottom: '1px solid ' + T.borderLight }}>
+          {bantItems.map(b => <span key={b.label} style={{ fontSize: 12, fontWeight: 800, color: sc[b.status], letterSpacing: '0.05em' }}>{b.label}</span>)}
         </div>
         <EditableField label="Champion" value={analysis?.champion} field="champion" table="deal_analysis" recordId={analysis?.id} onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
         <EditableField label="Economic Buyer" value={analysis?.economic_buyer} field="economic_buyer" table="deal_analysis" recordId={analysis?.id} onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
@@ -959,16 +957,6 @@ export default function DealDetail() {
   function PainPointsWidget() {
     return (
       <>
-        <div style={{ display: 'flex', gap: 24, marginBottom: 16, padding: 14, background: T.surfaceAlt, borderRadius: 6, border: `1px solid ${T.borderLight}`, alignItems: 'flex-end' }}>
-          <div>
-            <div style={{ fontSize: 10, fontWeight: 800, color: '#1a2a3a', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>Running Problem Cost</div>
-            <div style={{ fontSize: 28, fontWeight: 800, color: '#e74c3c', fontFeatureSettings: '"tnum"' }}>{totalPainCost > 0 ? formatCurrency(totalPainCost) : '$0'}</div>
-          </div>
-          <EditableField label="Hard Dollars" value={analysis?.running_problem_cost_dollars} field="running_problem_cost_dollars" table="deal_analysis" recordId={analysis?.id} type="number" onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
-          <EditableField label="Hours" value={analysis?.running_problem_cost_hours} field="running_problem_cost_hours" table="deal_analysis" recordId={analysis?.id} type="number" onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
-          <EditableField label="Notes" value={analysis?.running_problem_cost_notes} field="running_problem_cost_notes" table="deal_analysis" recordId={analysis?.id} onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
-        </div>
-        <EditableField label="AI Pain Points" value={analysis?.pain_points} field="pain_points" table="deal_analysis" recordId={analysis?.id} type="textarea" displayAs="list" onSaved={(f, v) => setAnalysis(p => ({ ...p, [f]: v }))} />
         <div style={{ marginBottom: 8 }}><Button style={{ padding: '4px 10px', fontSize: 10 }} onClick={() => setShowAddPain(true)}>+ Add Pain Point</Button></div>
         {showAddPain && (
           <div style={{ padding: 10, background: T.surfaceAlt, borderRadius: 6, marginBottom: 8, border: `1px solid ${T.borderLight}` }}>
@@ -1115,11 +1103,13 @@ export default function DealDetail() {
   function RedFlagsWidget() {
     const redFlags = dealFlags.filter(f => f.flag_type === 'red')
     const sevColors = { critical: '#dc3545', high: '#e67e22', medium: '#f39c12', low: '#95a5a6' }
+    const [addingRedFlag, setAddingRedFlag] = useState(false)
+    const [newRedFlagDesc, setNewRedFlagDesc] = useState('')
     async function addRedFlag() {
-      const desc = prompt('Red flag description:')
-      if (!desc) return
-      const { data, error } = await supabase.from('deal_flags').insert({ deal_id: id, flag_type: 'red', description: desc, source: 'manual', category: 'custom', severity: 'medium' }).select().single()
+      if (!newRedFlagDesc.trim()) return
+      const { data, error } = await supabase.from('deal_flags').insert({ deal_id: id, flag_type: 'red', description: newRedFlagDesc, source: 'manual', category: 'custom', severity: 'medium' }).select().single()
       if (!error && data) setDealFlags(prev => [...prev, data])
+      setNewRedFlagDesc(''); setAddingRedFlag(false)
     }
     async function toggleResolved(flagId, current) {
       await supabase.from('deal_flags').update({ resolved: !current }).eq('id', flagId)
@@ -1137,18 +1127,30 @@ export default function DealDetail() {
             <span style={{ cursor: 'pointer', color: T.textMuted, fontSize: 14 }} onClick={() => deleteFlag(f.id)}>&times;</span>
           </div>
         ))}
-        <button onClick={addRedFlag} style={{ background: 'none', border: 'none', color: '#e74c3c', fontSize: 11, fontWeight: 600, cursor: 'pointer', padding: '6px 0' }}>+ Add Red Flag</button>
+        {redFlags.length === 0 && !addingRedFlag && <div style={{ color: T.textMuted, fontSize: 11, fontStyle: 'italic', padding: '4px 0' }}>No flags yet. Flags are created from research and call analysis, or add manually.</div>}
+        {addingRedFlag ? (
+          <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
+            <input value={newRedFlagDesc} onChange={e => setNewRedFlagDesc(e.target.value)} onKeyDown={e => e.key === 'Enter' && addRedFlag()} placeholder="Describe the flag..."
+              style={{ flex: 1, padding: '4px 8px', fontSize: 12, border: '1px solid ' + T.border, borderRadius: 4, background: T.surface, color: T.text, fontFamily: T.font }} autoFocus />
+            <button onClick={addRedFlag} style={{ background: T.primary, color: '#fff', border: 'none', borderRadius: 4, padding: '4px 10px', fontSize: 11, cursor: 'pointer' }}>Add</button>
+            <button onClick={() => setAddingRedFlag(false)} style={{ background: 'none', border: '1px solid ' + T.border, borderRadius: 4, padding: '4px 8px', fontSize: 11, cursor: 'pointer', color: T.textMuted }}>Cancel</button>
+          </div>
+        ) : (
+          <button onClick={() => setAddingRedFlag(true)} style={{ background: 'none', border: 'none', color: '#e74c3c', fontSize: 11, fontWeight: 600, cursor: 'pointer', padding: '6px 0' }}>+ Add Red Flag</button>
+        )}
       </div>
     )
   }
 
   function GreenFlagsWidget() {
     const greenFlags = dealFlags.filter(f => f.flag_type === 'green')
+    const [addingGreenFlag, setAddingGreenFlag] = useState(false)
+    const [newGreenFlagDesc, setNewGreenFlagDesc] = useState('')
     async function addGreenFlag() {
-      const desc = prompt('Green flag description:')
-      if (!desc) return
-      const { data, error } = await supabase.from('deal_flags').insert({ deal_id: id, flag_type: 'green', description: desc, source: 'manual', category: 'custom' }).select().single()
+      if (!newGreenFlagDesc.trim()) return
+      const { data, error } = await supabase.from('deal_flags').insert({ deal_id: id, flag_type: 'green', description: newGreenFlagDesc, source: 'manual', category: 'custom' }).select().single()
       if (!error && data) setDealFlags(prev => [...prev, data])
+      setNewGreenFlagDesc(''); setAddingGreenFlag(false)
     }
     async function deleteFlag(flagId) { await supabase.from('deal_flags').delete().eq('id', flagId); setDealFlags(prev => prev.filter(f => f.id !== flagId)) }
     return (
@@ -1161,7 +1163,17 @@ export default function DealDetail() {
             <span style={{ cursor: 'pointer', color: T.textMuted, fontSize: 14 }} onClick={() => deleteFlag(f.id)}>&times;</span>
           </div>
         ))}
-        <button onClick={addGreenFlag} style={{ background: 'none', border: 'none', color: '#27ae60', fontSize: 11, fontWeight: 600, cursor: 'pointer', padding: '6px 0' }}>+ Add Green Flag</button>
+        {greenFlags.length === 0 && !addingGreenFlag && <div style={{ color: T.textMuted, fontSize: 11, fontStyle: 'italic', padding: '4px 0' }}>No flags yet. Flags are created from research and call analysis, or add manually.</div>}
+        {addingGreenFlag ? (
+          <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
+            <input value={newGreenFlagDesc} onChange={e => setNewGreenFlagDesc(e.target.value)} onKeyDown={e => e.key === 'Enter' && addGreenFlag()} placeholder="Describe the flag..."
+              style={{ flex: 1, padding: '4px 8px', fontSize: 12, border: '1px solid ' + T.border, borderRadius: 4, background: T.surface, color: T.text, fontFamily: T.font }} autoFocus />
+            <button onClick={addGreenFlag} style={{ background: T.primary, color: '#fff', border: 'none', borderRadius: 4, padding: '4px 10px', fontSize: 11, cursor: 'pointer' }}>Add</button>
+            <button onClick={() => setAddingGreenFlag(false)} style={{ background: 'none', border: '1px solid ' + T.border, borderRadius: 4, padding: '4px 8px', fontSize: 11, cursor: 'pointer', color: T.textMuted }}>Cancel</button>
+          </div>
+        ) : (
+          <button onClick={() => setAddingGreenFlag(true)} style={{ background: 'none', border: 'none', color: '#27ae60', fontSize: 11, fontWeight: 600, cursor: 'pointer', padding: '6px 0' }}>+ Add Green Flag</button>
+        )}
       </div>
     )
   }
@@ -1463,7 +1475,7 @@ export default function DealDetail() {
                   if (!editMode) return
                   const merged = newLayout.map(item => {
                     const orig = layout.find(l => l.i === item.i)
-                    return { ...item, minW: orig?.minW || 4, minH: orig?.minH || 2 }
+                    return { ...item, minW: orig?.minW || 2, minH: orig?.minH || 1 }
                   })
                   setLayout(merged)
                 }}
