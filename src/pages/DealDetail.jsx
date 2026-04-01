@@ -8,7 +8,7 @@ import { callGenerateEmail, callResearchFunction } from '../lib/webhooks'
 import DealChat from '../components/DealChat'
 import { useAuth } from '../hooks/useAuth'
 import { useModules } from '../hooks/useModules'
-import { ResponsiveGridLayout, useContainerWidth } from 'react-grid-layout'
+import { ResponsiveGridLayout, useContainerWidth, getCompactor } from 'react-grid-layout'
 import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
 
@@ -1219,13 +1219,9 @@ export default function DealDetail() {
                 rowHeight={60}
                 margin={[12, 12]}
                 containerPadding={[0, 0]}
-                isDraggable={editMode}
-                isResizable={editMode}
-                compactType="vertical"
-                useCSSTransforms={true}
-                preventCollision={false}
-                transformScale={1}
-                draggableHandle=".widget-drag-handle"
+                compactor={getCompactor("vertical")}
+                dragConfig={{ enabled: editMode, handle: '.widget-drag-handle' }}
+                resizeConfig={{ enabled: editMode }}
                 onLayoutChange={(newLayout) => {
                   if (!editMode) return
                   const merged = newLayout.map(item => {

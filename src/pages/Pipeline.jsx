@@ -8,7 +8,7 @@ import {
 } from '../lib/theme'
 import { Badge, ForecastBadge, StageBadge, ScoreBar, StatusDot, Spinner, Button } from '../components/Shared'
 import TranscriptUpload from '../components/TranscriptUpload'
-import { ResponsiveGridLayout, useContainerWidth } from 'react-grid-layout'
+import { ResponsiveGridLayout, useContainerWidth, getCompactor } from 'react-grid-layout'
 import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
 
@@ -475,13 +475,9 @@ export default function Pipeline() {
             rowHeight={60}
             margin={[12, 12]}
             containerPadding={[0, 0]}
-            isDraggable={editMode}
-            isResizable={editMode}
-            compactType="vertical"
-            useCSSTransforms={true}
-            preventCollision={false}
-            transformScale={1}
-            draggableHandle=".widget-drag-handle"
+            compactor={getCompactor("vertical")}
+            dragConfig={{ enabled: editMode, handle: '.widget-drag-handle' }}
+            resizeConfig={{ enabled: editMode }}
             onLayoutChange={(newLayout) => {
               if (!editMode) return
               const merged = newLayout.map(item => {
