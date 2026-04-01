@@ -760,12 +760,18 @@ export default function DealDetail() {
           <EditableField label="Headquarters" value={cp?.headquarters} field="headquarters" table="company_profile" recordId={cp?.id} onSaved={cpSave} />
           <EditableField label="Founded" value={cp?.founded} field="founded" table="company_profile" recordId={cp?.id} onSaved={cpSave} />
         </div>
-        <EditableField label="Revenue Streams" value={cp?.revenue_streams} field="revenue_streams" table="company_profile" recordId={cp?.id} type="textarea" displayAs="list" onSaved={cpSave} />
-        <EditableField label="Business Goals" value={cp?.business_goals} field="business_goals" table="company_profile" recordId={cp?.id} type="textarea" displayAs="list" onSaved={cpSave} />
-        <EditableField label="Business Priorities" value={cp?.business_priorities} field="business_priorities" table="company_profile" recordId={cp?.id} type="textarea" displayAs="list" onSaved={cpSave} />
-        <EditableField label="Growth Plans" value={cp?.growth_plans} field="growth_plans" table="company_profile" recordId={cp?.id} type="textarea" displayAs="list" onSaved={cpSave} />
-        <EditableField label="International Operations" value={cp?.international_operations} field="international_operations" table="company_profile" recordId={cp?.id} type="textarea" onSaved={cpSave} />
-        <EditableField label="Other Initiatives" value={cp?.other_initiatives} field="other_initiatives" table="company_profile" recordId={cp?.id} type="textarea" displayAs="list" onSaved={cpSave} />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 4 }}>
+          <div>
+            <EditableField label="Revenue Streams" value={cp?.revenue_streams} field="revenue_streams" table="company_profile" recordId={cp?.id} type="textarea" displayAs="list" onSaved={cpSave} />
+            <EditableField label="Business Goals" value={cp?.business_goals} field="business_goals" table="company_profile" recordId={cp?.id} type="textarea" displayAs="list" onSaved={cpSave} />
+            <EditableField label="Growth Plans" value={cp?.growth_plans} field="growth_plans" table="company_profile" recordId={cp?.id} type="textarea" displayAs="list" onSaved={cpSave} />
+          </div>
+          <div>
+            <EditableField label="Business Priorities" value={cp?.business_priorities} field="business_priorities" table="company_profile" recordId={cp?.id} type="textarea" displayAs="list" onSaved={cpSave} />
+            <EditableField label="International Ops" value={cp?.international_operations} field="international_operations" table="company_profile" recordId={cp?.id} type="textarea" displayAs="list" onSaved={cpSave} />
+            <EditableField label="Other Initiatives" value={cp?.other_initiatives} field="other_initiatives" table="company_profile" recordId={cp?.id} type="textarea" displayAs="list" onSaved={cpSave} />
+          </div>
+        </div>
         <EditableField label="Entities / Locations" value={cp?.tax_ids_locations} field="tax_ids_locations" table="company_profile" recordId={cp?.id} type="textarea" onSaved={cpSave} />
         {industryCompetitors.length > 0 && (
           <div style={{ marginTop: 12 }}>
@@ -1061,7 +1067,7 @@ export default function DealDetail() {
             </div>
           </div>
         )}
-        {events.length === 0 ? <div style={{ color: '#bbb', fontSize: 13, fontStyle: 'italic' }}>No compelling events.</div> : events.map(e => (
+        {events.length === 0 ? <div style={{ color: T.textMuted, fontSize: 11, fontStyle: 'italic' }}>What bad thing happens if they don't act? Consequence of inaction.</div> : events.map(e => (
           <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: T.surfaceAlt, borderRadius: 6, marginBottom: 4, border: `1px solid ${T.borderLight}` }}>
             <div style={{ flex: 1, fontSize: 13, fontWeight: 600, color: T.text }}>{e.event_description}</div>
             {e.event_date && <span style={{ fontSize: 11, color: T.textSecondary }}>{formatDate(e.event_date)}</span>}
@@ -1090,7 +1096,7 @@ export default function DealDetail() {
             </div>
           </div>
         )}
-        {catalysts.length === 0 ? <div style={{ color: '#bbb', fontSize: 13, fontStyle: 'italic' }}>No catalysts identified.</div> : catalysts.map(c => (
+        {catalysts.length === 0 ? <div style={{ color: T.textMuted, fontSize: 11, fontStyle: 'italic' }}>What's driving the need to change? Triggers and forces.</div> : catalysts.map(c => (
           <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: T.surfaceAlt, borderRadius: 6, marginBottom: 4, border: `1px solid ${T.borderLight}` }}>
             <div style={{ flex: 1, fontSize: 13, fontWeight: 600, color: T.text }}>{c.catalyst}</div>
             <Badge color={T.primary}>{c.category}</Badge>
@@ -1485,7 +1491,7 @@ export default function DealDetail() {
                 }}
               >
                 {(() => {
-                  const wbc = { company_profile: '#3498db', recent_news: '#3498db', tech_systems: '#3498db', qualification: '#f39c12', scores: '#f39c12', risks: '#e74c3c', red_flags: '#e74c3c', pain_points: '#e74c3c', green_flags: '#27ae60', events: '#27ae60', call_history: '#9b59b6' }
+                  const wbc = { company_profile: '#3498db', recent_news: '#3498db', tech_systems: '#3498db', qualification: '#f39c12', scores: '#f39c12', risks: '#e74c3c', red_flags: '#e74c3c', pain_points: '#e74c3c', green_flags: '#27ae60', events: '#27ae60', catalysts: '#27ae60', call_history: '#9b59b6', quote_sizing: '#9b59b6' }
                   return widgets.filter(w => w.visible).map(w => (
                     <div key={w.id} style={{ background: T.surface, border: editMode ? '1px dashed rgba(93,173,226,0.3)' : `1px solid ${T.border}`, borderLeft: '3px solid ' + (wbc[w.id] || '#8899aa'), borderRadius: 10, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                       <div style={{ padding: '6px 10px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', gap: 8, background: T.surfaceAlt, flexShrink: 0 }}>

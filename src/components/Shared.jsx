@@ -28,21 +28,21 @@ export function Card({ children, title, action, style: s, className }) {
   return (
     <div style={{
       background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.radius,
-      boxShadow: T.shadow, overflow: 'hidden', marginBottom: 16, ...s,
+      boxShadow: T.shadow, overflow: 'hidden', marginBottom: 12, ...s,
     }}>
       {title && (
         <div style={{
-          padding: '12px 18px', borderBottom: `1px solid ${T.border}`,
+          padding: '8px 14px', borderBottom: `1px solid ${T.border}`,
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           background: T.surfaceAlt,
         }}>
-          <span style={{ fontSize: 15, fontWeight: 800, color: '#1a1a2e', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+          <span style={{ fontSize: 13, fontWeight: 800, color: '#1a1a2e', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
             {title}
           </span>
           {action}
         </div>
       )}
-      <div style={{ padding: 18 }}>{children}</div>
+      <div style={{ padding: 10 }}>{children}</div>
     </div>
   )
 }

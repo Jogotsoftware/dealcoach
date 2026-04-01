@@ -31,6 +31,7 @@ export default function CoachAdmin() {
   const [showAddEmailTemplate, setShowAddEmailTemplate] = useState(false)
   const [newEmailTpl, setNewEmailTpl] = useState({ name: '', email_type: 'follow_up', description: '' })
   const [expandedEmailTemplate, setExpandedEmailTemplate] = useState(null)
+  const [researchConfig, setResearchConfig] = useState(null)
 
   // Editing states
   const [editingCoach, setEditingCoach] = useState(false)
@@ -103,6 +104,9 @@ export default function CoachAdmin() {
 
         const { data: emailTpls } = await supabase.from('email_templates').select('*').eq('coach_id', activeCoach.id).order('sort_order')
         setEmailTemplatesAdmin(emailTpls || [])
+
+        const { data: rc } = await supabase.from('coach_research_config').select('*').eq('coach_id', activeCoach.id).single()
+        setResearchConfig(rc || null)
 
         // Load template stages/milestones
         const tplIds = (templatesRes.data || []).map(t => t.id)
@@ -283,6 +287,7 @@ export default function CoachAdmin() {
     { key: 'rep_scoring', label: `Rep Scoring (${repScoringConfigs.length})` },
     { key: 'templates', label: `MSP Templates (${mspTemplates.length})` },
     { key: 'emails', label: `Email Templates (${emailTemplatesAdmin.length})` },
+    { key: 'research', label: 'Research' },
   ]
 
   const EMAIL_TYPES = ['sc_briefing', 'scoping_kt', 'exec_alignment', 'follow_up', 'internal_update', 'custom']
@@ -416,9 +421,10 @@ export default function CoachAdmin() {
                 }>
                   {editingResearchPrompt ? (
                     <div>
-                      <textarea style={{ ...inputStyle, fontFamily: T.mono, fontSize: 12, minHeight: 180, resize: 'vertical' }}
+                      <textarea style={{ ...inputStyle, fontFamily: T.mono, fontSize: 12, minHeight: 300, resize: 'vertical', width: '100%' }}
                         value={researchPromptVal} onChange={e => setResearchPromptVal(e.target.value)}
                         placeholder="Enter the research prompt for this coach..." />
+                      <div style={{ fontSize: 10, color: T.textMuted, marginTop: 2 }}>{researchPromptVal.length} chars</div>
                       <Button primary onClick={saveResearchPrompt} style={{ marginTop: 8 }}>Save</Button>
                     </div>
                   ) : (
@@ -440,8 +446,9 @@ export default function CoachAdmin() {
                 }>
                   {editingExtraction ? (
                     <div>
-                      <textarea style={{ ...inputStyle, fontFamily: T.mono, fontSize: 12, minHeight: 180, resize: 'vertical' }}
+                      <textarea style={{ ...inputStyle, fontFamily: T.mono, fontSize: 12, minHeight: 300, resize: 'vertical', width: '100%' }}
                         value={extractionVal} onChange={e => setExtractionVal(e.target.value)} />
+                      <div style={{ fontSize: 10, color: T.textMuted, marginTop: 2 }}>{extractionVal.length} chars</div>
                       <Button primary onClick={saveExtraction} style={{ marginTop: 8 }}>Save</Button>
                     </div>
                   ) : (
@@ -464,7 +471,7 @@ export default function CoachAdmin() {
                         {CALL_TYPE_KEYS.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
                       <div><label style={labelStyle}>Label *</label><input style={inputStyle} value={newPrompt.label} onChange={e => setNewPrompt(p => ({ ...p, label: e.target.value }))} autoFocus /></div>
                     </div>
-                    <div style={{ marginBottom: 10 }}><label style={labelStyle}>Prompt</label><textarea style={{ ...inputStyle, fontFamily: T.mono, fontSize: 12, minHeight: 120, resize: 'vertical' }} value={newPrompt.prompt} onChange={e => setNewPrompt(p => ({ ...p, prompt: e.target.value }))} /></div>
+                    <div style={{ marginBottom: 10 }}><label style={labelStyle}>Prompt</label><textarea style={{ ...inputStyle, fontFamily: T.mono, fontSize: 12, minHeight: 300, resize: 'vertical', width: '100%' }} value={newPrompt.prompt} onChange={e => setNewPrompt(p => ({ ...p, prompt: e.target.value }))} /></div>
                     <div style={{ display: 'flex', gap: 6 }}><Button primary onClick={addPrompt}>Add Prompt</Button><Button onClick={() => setShowAddPrompt(false)}>Cancel</Button></div>
                   </Card>
                 )}
@@ -473,7 +480,7 @@ export default function CoachAdmin() {
                     {editingPrompt === p.id ? (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                         <div><label style={labelStyle}>Label</label><input style={inputStyle} value={editPromptData.label || ''} onChange={e => setEditPromptData(prev => ({ ...prev, label: e.target.value }))} /></div>
-                        <div><label style={labelStyle}>Prompt</label><textarea style={{ ...inputStyle, fontFamily: T.mono, fontSize: 12, minHeight: 200, resize: 'vertical' }} value={editPromptData.prompt || ''} onChange={e => setEditPromptData(prev => ({ ...prev, prompt: e.target.value }))} /></div>
+                        <div><label style={labelStyle}>Prompt</label><textarea style={{ ...inputStyle, fontFamily: T.mono, fontSize: 12, minHeight: 300, resize: 'vertical', width: '100%' }} value={editPromptData.prompt || ''} onChange={e => setEditPromptData(prev => ({ ...prev, prompt: e.target.value }))} /><div style={{ fontSize: 10, color: T.textMuted, marginTop: 2 }}>{(editPromptData.prompt || '').length} chars</div></div>
                         <div style={{ display: 'flex', gap: 6 }}>
                           <Button primary onClick={() => savePrompt(p.id)}>Save</Button>
                           <Button onClick={() => setEditingPrompt(null)}>Cancel</Button>
@@ -769,6 +776,86 @@ export default function CoachAdmin() {
                 })}
               </div>
             )}
+          </>
+        )}
+
+        {/* ===== RESEARCH TAB ===== */}
+        {tab === 'research' && coach && (
+          <>
+            <Card title="Perplexity Integration">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={researchConfig?.use_perplexity || false}
+                    onChange={async e => {
+                      const val = e.target.checked
+                      if (researchConfig?.id) {
+                        await supabase.from('coach_research_config').update({ use_perplexity: val }).eq('id', researchConfig.id)
+                        setResearchConfig(p => ({ ...p, use_perplexity: val }))
+                      } else {
+                        const { data } = await supabase.from('coach_research_config').insert({ coach_id: coach.id, use_perplexity: val }).select().single()
+                        if (data) setResearchConfig(data)
+                      }
+                    }} />
+                  Enable Perplexity Research
+                </label>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+                <div>
+                  <label style={labelStyle}>Perplexity API Key</label>
+                  <input type="password" style={inputStyle} defaultValue={researchConfig?.perplexity_api_key || ''} placeholder="pplx-..."
+                    onBlur={async e => {
+                      if (!researchConfig?.id) return
+                      await supabase.from('coach_research_config').update({ perplexity_api_key: e.target.value }).eq('id', researchConfig.id)
+                    }} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Perplexity Model</label>
+                  <select style={{ ...inputStyle, cursor: 'pointer' }} value={researchConfig?.perplexity_model || 'sonar'}
+                    onChange={async e => {
+                      if (!researchConfig?.id) return
+                      await supabase.from('coach_research_config').update({ perplexity_model: e.target.value }).eq('id', researchConfig.id)
+                      setResearchConfig(p => ({ ...p, perplexity_model: e.target.value }))
+                    }}>
+                    <option value="sonar">sonar -- Fast, $0.20/M tokens</option>
+                    <option value="sonar-pro">sonar-pro -- Better quality, $0.50/M tokens</option>
+                    <option value="sonar-reasoning">sonar-reasoning -- Multi-step reasoning, $1/M tokens</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label style={labelStyle}>Claude Model for Research</label>
+                <select style={{ ...inputStyle, cursor: 'pointer' }} value={researchConfig?.claude_model || 'claude-sonnet-4-20250514'}
+                  onChange={async e => {
+                    if (!researchConfig?.id) return
+                    await supabase.from('coach_research_config').update({ claude_model: e.target.value }).eq('id', researchConfig.id)
+                    setResearchConfig(p => ({ ...p, claude_model: e.target.value }))
+                  }}>
+                  <option value="claude-sonnet-4-20250514">claude-sonnet-4-20250514 -- Best balance</option>
+                  <option value="claude-haiku-4-5-20251001">claude-haiku-4-5-20251001 -- Fastest, cheapest</option>
+                </select>
+              </div>
+            </Card>
+            <Card title="Focus Areas">
+              <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 6 }}>One focus area per line. These guide what the AI researches about each company.</div>
+              <textarea style={{ ...inputStyle, fontFamily: T.mono, fontSize: 12, minHeight: 180, resize: 'vertical', width: '100%' }}
+                defaultValue={(researchConfig?.focus_areas || []).join('\n')}
+                onBlur={async e => {
+                  if (!researchConfig?.id) return
+                  const areas = e.target.value.split('\n').map(s => s.trim()).filter(Boolean)
+                  await supabase.from('coach_research_config').update({ focus_areas: areas }).eq('id', researchConfig.id)
+                  setResearchConfig(p => ({ ...p, focus_areas: areas }))
+                }} />
+            </Card>
+            <Card title="Custom Research Instructions">
+              <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 6 }}>Additional instructions for the AI when researching companies.</div>
+              <textarea style={{ ...inputStyle, fontFamily: T.mono, fontSize: 12, minHeight: 180, resize: 'vertical', width: '100%' }}
+                defaultValue={researchConfig?.custom_instructions || ''}
+                onBlur={async e => {
+                  if (!researchConfig?.id) return
+                  await supabase.from('coach_research_config').update({ custom_instructions: e.target.value }).eq('id', researchConfig.id)
+                  setResearchConfig(p => ({ ...p, custom_instructions: e.target.value }))
+                }} />
+            </Card>
           </>
         )}
       </div>
