@@ -26,10 +26,13 @@ export default function Layout() {
 
   const initials = profile?.initials || profile?.full_name?.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() || '?'
 
+  const isAdmin = ['admin', 'system_admin'].includes(profile?.role)
   const navItems = [
     { to: '/', icon: '\u25A6', label: 'Pipeline', show: true },
-    { to: '/coach', icon: '\u25CE', label: 'Coach Admin', show: hasModule('coach_customization') && ['admin', 'system_admin'].includes(profile?.role) },
+    { to: '/coach', icon: '\u25CE', label: 'Coach Admin', show: hasModule('coach_customization') && isAdmin },
     { to: '/settings', icon: '\u2699', label: 'Settings', show: true },
+    { to: '/settings/team', icon: '\u2630', label: 'Team', show: isAdmin },
+    { to: '/settings/organization', icon: '\u2302', label: 'Organization', show: isAdmin },
     { to: '/admin', icon: '\u2691', label: 'Platform Admin', show: isPlatformAdmin },
   ].filter(item => item.show)
 
