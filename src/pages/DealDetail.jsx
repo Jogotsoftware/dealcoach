@@ -1224,7 +1224,7 @@ export default function DealDetail() {
         <TabBar tabs={tabs} active={tab} onChange={setTab} />
       </div>
 
-      <div style={{ padding: '16px 24px' }}>
+      <div style={{ padding: '16px 24px', width: '100%' }}>
 
         {/* Research status banner */}
         {researchStatus === 'in_progress' && (

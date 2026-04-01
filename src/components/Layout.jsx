@@ -135,7 +135,7 @@ export default function Layout() {
       </aside>
 
       {/* Main content */}
-      <div style={{ flex: 1, minWidth: 0, overflow: 'auto' }}>
+      <div style={{ flex: 1, minWidth: 0, overflow: 'auto', width: '100%' }}>
         <Outlet />
       </div>
     </div>
