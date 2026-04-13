@@ -100,6 +100,7 @@ export default function CallDetail() {
     { key: 'value_articulation_score', label: 'Value' },
     { key: 'objection_handling_score', label: 'Objections' },
     { key: 'next_steps_quality_score', label: 'Next Steps' },
+    { key: 'independently_wealthy_score', label: 'Indep. Wealthy', tooltip: 'Measures whether the rep controlled the call from a position of strength \u2014 asking hard questions, qualifying ruthlessly, willing to walk away from a bad deal. High = sold like they don\'t need the deal.' },
   ]
 
   const sectionStyle = {
@@ -206,7 +207,9 @@ export default function CallDetail() {
               {individualScores
                 .filter(s => analysis[s.key] != null)
                 .map(s => (
-                  <ScoreBar key={s.key} label={s.label} score={analysis[s.key]} max={10} />
+                  <div key={s.key} title={s.tooltip || ''}>
+                    <ScoreBar label={s.label} score={analysis[s.key]} max={10} />
+                  </div>
                 ))
               }
 

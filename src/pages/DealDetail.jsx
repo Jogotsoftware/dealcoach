@@ -301,14 +301,16 @@ function detectDocType(filename) {
   return map[ext] || 'custom'
 }
 
-function fileIcon(mimeType) {
-  if (!mimeType) return '\u{1F4C4}'
-  if (mimeType.includes('pdf')) return '\u{1F4D5}'
-  if (mimeType.includes('word') || mimeType.includes('document')) return '\u{1F4D8}'
-  if (mimeType.includes('sheet') || mimeType.includes('excel')) return '\u{1F4D7}'
-  if (mimeType.includes('presentation') || mimeType.includes('powerpoint')) return '\u{1F4D9}'
-  if (mimeType.includes('image')) return '\u{1F5BC}'
-  return '\u{1F4C4}'
+function FileIcon({ mimeType }) {
+  let label = 'FILE', bg = '#6c757d'
+  if (mimeType?.includes('pdf')) { label = 'PDF'; bg = '#dc3545' }
+  else if (mimeType?.includes('word') || mimeType?.includes('document')) { label = 'DOC'; bg = '#0d6efd' }
+  else if (mimeType?.includes('sheet') || mimeType?.includes('excel')) { label = 'XLS'; bg = '#198754' }
+  else if (mimeType?.includes('presentation') || mimeType?.includes('powerpoint')) { label = 'PPT'; bg = '#fd7e14' }
+  else if (mimeType?.includes('image')) { label = 'IMG'; bg = '#6f42c1' }
+  return (
+    <span style={{ display: 'inline-block', fontSize: 9, fontWeight: 700, color: '#fff', background: bg, borderRadius: 3, padding: '2px 5px', minWidth: 28, textAlign: 'center', letterSpacing: '0.03em' }}>{label}</span>
+  )
 }
 
 function formatFileSize(bytes) {
@@ -595,11 +597,25 @@ export default function DealDetail() {
 
   function addWidget(widgetId) {
     if (!widgetId) return
-    const updated = widgets.map(w => w.id === widgetId ? { ...w, visible: true } : w)
+
+    // Check if it's a custom widget not yet in the widgets array
+    const isNew = !widgets.some(w => w.id === widgetId)
+    const customDef = customWidgetDefs.find(w => w.id === widgetId)
+    const reg = registeredWidgets.find(r => r.id === widgetId)
+
+    let updated
+    if (isNew && customDef) {
+      updated = [...widgets, { id: customDef.id, title: customDef.name, visible: true }]
+    } else {
+      updated = widgets.map(w => w.id === widgetId ? { ...w, visible: true } : w)
+    }
     setWidgets(updated)
+
     if (!layout.find(l => l.i === widgetId)) {
-      const reg = registeredWidgets.find(r => r.id === widgetId)
-      const newItem = { i: widgetId, x: 0, y: 999, w: reg?.default_w || 12, h: reg?.default_h || 3, minW: reg?.min_w || 4, minH: reg?.min_h || 2 }
+      const w = customDef?.default_w || reg?.default_w || 6
+      const h = customDef?.default_h || reg?.default_h || 4
+      const maxY = layout.reduce((max, l) => Math.max(max, l.y + l.h), 0)
+      const newItem = { i: widgetId, x: 0, y: maxY, w, h, minW: customDef?.min_w || reg?.min_w || 2, minH: customDef?.min_h || reg?.min_h || 1 }
       setLayout([...layout, newItem])
     }
     saveWidgets(updated)
@@ -1064,7 +1080,7 @@ export default function DealDetail() {
           <div style={{ textAlign: 'center', color: T.textMuted, padding: 12, fontSize: 12 }}>No documents uploaded</div>
         ) : documents.map(doc => (
           <div key={doc.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid ' + T.border }}>
-            <span style={{ fontSize: 18 }}>{fileIcon(doc.mime_type)}</span>
+            <span style={{ fontSize: 18 }}><FileIcon mimeType={doc.mime_type} /></span>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{doc.name}</div>
               <div style={{ fontSize: 11, color: T.textMuted }}>{doc.doc_type} {'\u2022'} {formatFileSize(doc.file_size)} {'\u2022'} {formatDate(doc.created_at?.split('T')[0])}</div>
@@ -1506,6 +1522,9 @@ export default function DealDetail() {
                     value="" onChange={e => { if (e.target.value) addWidget(e.target.value); e.target.value = '' }}>
                     <option value="">+ Add Widget</option>
                     {widgets.filter(w => !w.visible).map(w => <option key={w.id} value={w.id}>{w.title}</option>)}
+                    {customWidgetDefs.filter(cw => cw.widget_type === 'deal' && !widgets.some(w => w.id === cw.id)).map(cw => (
+                      <option key={cw.id} value={cw.id}>[Custom] {cw.name}</option>
+                    ))}
                   </select>
                   <button onClick={resetLayout} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '4px 10px', color: T.textMuted, fontSize: 11, cursor: 'pointer', fontFamily: T.font }}>Reset</button>
                   <button onClick={() => { setEditMode(false); saveLayout(layout) }} style={{ background: '#5DADE2', border: 'none', borderRadius: 6, padding: '4px 14px', color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: T.font }}>Done</button>
@@ -1850,7 +1869,7 @@ export default function DealDetail() {
                 <tbody>
                   {documents.map(doc => (
                     <tr key={doc.id} style={{ borderBottom: `1px solid ${T.borderLight}` }}>
-                      <td style={{ padding: '8px 10px', fontSize: 18 }}>{fileIcon(doc.mime_type)}</td>
+                      <td style={{ padding: '8px 10px', fontSize: 18 }}><FileIcon mimeType={doc.mime_type} /></td>
                       <td style={{ padding: '8px 10px' }}>
                         <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{doc.name}</div>
                       </td>

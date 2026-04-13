@@ -143,6 +143,29 @@ export default function Pipeline() {
     if (profile?.id) loadPipelineLayout()
   }, [profile])
 
+  function addPipelineWidget(widgetId) {
+    if (!widgetId) return
+    const isNew = !pWidgets.some(w => w.id === widgetId)
+    const customDef = customWidgetDefs.find(w => w.id === widgetId)
+
+    let updated
+    if (isNew && customDef) {
+      updated = [...pWidgets, { id: customDef.id, title: customDef.name, visible: true }]
+    } else {
+      updated = pWidgets.map(w => w.id === widgetId ? { ...w, visible: true } : w)
+    }
+    setPWidgets(updated)
+
+    if (!pLayout.find(l => l.i === widgetId)) {
+      const maxY = pLayout.reduce((max, l) => Math.max(max, l.y + l.h), 0)
+      setPLayout(prev => [...prev, {
+        i: widgetId, x: 0, y: maxY,
+        w: customDef?.default_w || 6, h: customDef?.default_h || 4,
+        minW: customDef?.min_w || 2, minH: customDef?.min_h || 1,
+      }])
+    }
+  }
+
   async function savePipelineLayout(newLayout) {
     setPLayout(newLayout)
     const isAdmin = profile.role === 'admin' || profile.role === 'system_admin'
@@ -649,9 +672,12 @@ export default function Pipeline() {
           <span style={{ fontSize: 12, color: '#5DADE2', fontWeight: 600 }}>Editing pipeline layout {(profile.role === 'admin' || profile.role === 'system_admin') ? '(org default)' : '(your view)'}</span>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <select style={{ background: T.surfaceAlt, border: '1px solid ' + T.border, borderRadius: 6, padding: '4px 8px', color: T.text, fontSize: 11, cursor: 'pointer', fontFamily: T.font }}
-              value="" onChange={e => { if (e.target.value) { setPWidgets(pw => pw.map(w => w.id === e.target.value ? { ...w, visible: true } : w)); e.target.value = '' } }}>
+              value="" onChange={e => { if (e.target.value) { addPipelineWidget(e.target.value); e.target.value = '' } }}>
               <option value="">+ Add Widget</option>
               {pWidgets.filter(w => !w.visible).map(w => <option key={w.id} value={w.id}>{w.title}</option>)}
+              {customWidgetDefs.filter(cw => cw.widget_type === 'pipeline' && !pWidgets.some(w => w.id === cw.id)).map(cw => (
+                <option key={cw.id} value={cw.id}>[Custom] {cw.name}</option>
+              ))}
             </select>
             <button onClick={() => { setPLayout(PIPELINE_LAYOUT); setPWidgets(PIPELINE_WIDGETS) }} style={{ background: 'none', border: '1px solid ' + T.border, borderRadius: 6, padding: '4px 10px', color: T.textMuted, fontSize: 11, cursor: 'pointer', fontFamily: T.font }}>Reset</button>
             <button onClick={() => { setEditMode(false); savePipelineLayout(pLayout) }} style={{ background: '#5DADE2', border: 'none', borderRadius: 6, padding: '4px 14px', color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: T.font }}>Done</button>

@@ -3,11 +3,47 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { theme as T } from '../lib/theme'
 import { Card, Badge, Button, Spinner, inputStyle, labelStyle } from '../components/Shared'
-import { SECTION_TYPES, FORMAT_TYPES, OPERATORS, CLICK_ACTIONS, AGGREGATES } from '../lib/widgetSchema'
+import { TABLES, SECTION_TYPES, FORMAT_TYPES, OPERATORS, CLICK_ACTIONS, AGGREGATES } from '../lib/widgetSchema'
 import WidgetFieldPicker from '../components/WidgetFieldPicker'
 import WidgetRenderer from '../components/WidgetRenderer'
 
 function genId() { return 'f_' + Math.random().toString(36).slice(2, 10) }
+
+const PRESETS = [
+  {
+    name: 'Contact List', description: 'Key contacts for the deal', widget_type: 'deal',
+    sections: [{ type: 'table', layout: 'vertical', data_source: { base_table: 'contacts', fields: [
+      { id: genId(), table: 'contacts', field: 'name', label: 'Name', type: 'text', format: { type: 'text' }, sortable: true, aggregate: 'none', click_action: { type: 'none' } },
+      { id: genId(), table: 'contacts', field: 'title', label: 'Title', type: 'text', format: { type: 'text' }, sortable: true, aggregate: 'none', click_action: { type: 'none' } },
+      { id: genId(), table: 'contacts', field: 'role_in_deal', label: 'Role', type: 'text', format: { type: 'text' }, sortable: true, aggregate: 'none', click_action: { type: 'none' } },
+      { id: genId(), table: 'contacts', field: 'influence_level', label: 'Influence', type: 'badge', format: { type: 'badge' }, sortable: true, aggregate: 'none', click_action: { type: 'none' } },
+    ], filters: [], ordering: [] }, conditional_rules: [] }],
+  },
+  {
+    name: 'Pain Points', description: 'Discovered pain points with dollar impact', widget_type: 'deal',
+    sections: [{ type: 'table', layout: 'vertical', data_source: { base_table: 'deal_pain_points', fields: [
+      { id: genId(), table: 'deal_pain_points', field: 'pain_description', label: 'Pain', type: 'text', format: { type: 'text' }, sortable: true, aggregate: 'none', click_action: { type: 'none' } },
+      { id: genId(), table: 'deal_pain_points', field: 'category', label: 'Category', type: 'text', format: { type: 'text' }, sortable: true, aggregate: 'none', click_action: { type: 'none' } },
+      { id: genId(), table: 'deal_pain_points', field: 'annual_cost', label: 'Annual Cost', type: 'currency', format: { type: 'currency' }, sortable: true, aggregate: 'sum', click_action: { type: 'none' } },
+    ], filters: [], ordering: [] }, conditional_rules: [] }],
+  },
+  {
+    name: 'Risk Tracker', description: 'Deal risks with severity and status', widget_type: 'deal',
+    sections: [{ type: 'list', layout: 'vertical', data_source: { base_table: 'deal_risks', fields: [
+      { id: genId(), table: 'deal_risks', field: 'risk_description', label: 'Risk', type: 'text', format: { type: 'text' }, sortable: true, aggregate: 'none', click_action: { type: 'none' } },
+      { id: genId(), table: 'deal_risks', field: 'severity', label: 'Severity', type: 'badge', format: { type: 'badge' }, sortable: true, aggregate: 'none', click_action: { type: 'none' } },
+      { id: genId(), table: 'deal_risks', field: 'status', label: 'Status', type: 'badge', format: { type: 'badge' }, sortable: true, aggregate: 'none', click_action: { type: 'none' } },
+    ], filters: [], ordering: [] }, conditional_rules: [] }],
+  },
+  {
+    name: 'Competitor Grid', description: 'Competitive landscape comparison', widget_type: 'deal',
+    sections: [{ type: 'grid', layout: { columns: 2 }, data_source: { base_table: 'deal_competitors', fields: [
+      { id: genId(), table: 'deal_competitors', field: 'competitor_name', label: 'Competitor', type: 'text', format: { type: 'text' }, sortable: true, aggregate: 'none', click_action: { type: 'none' } },
+      { id: genId(), table: 'deal_competitors', field: 'strengths', label: 'Strengths', type: 'text', format: { type: 'text' }, sortable: false, aggregate: 'none', click_action: { type: 'none' } },
+      { id: genId(), table: 'deal_competitors', field: 'weaknesses', label: 'Weaknesses', type: 'text', format: { type: 'text' }, sortable: false, aggregate: 'none', click_action: { type: 'none' } },
+    ], filters: [], ordering: [] }, conditional_rules: [] }],
+  },
+]
 
 export default function WidgetBuilder() {
   const { profile } = useAuth()
@@ -16,6 +52,9 @@ export default function WidgetBuilder() {
   const [editing, setEditing] = useState(null) // widget id or 'new'
   const [showFieldPicker, setShowFieldPicker] = useState(null) // section index
   const [showJson, setShowJson] = useState(false)
+  const [showPresets, setShowPresets] = useState(false)
+  const [previewDealId, setPreviewDealId] = useState(null)
+  const [previewDeals, setPreviewDeals] = useState([])
 
   // Builder form state
   const [name, setName] = useState('')
@@ -29,19 +68,29 @@ export default function WidgetBuilder() {
 
   async function loadWidgets() {
     setLoading(true)
-    const { data } = await supabase.from('custom_widget_definitions').select('*').eq('org_id', profile.org_id).order('sort_order')
+    const [{ data }, { data: deals }] = await Promise.all([
+      supabase.from('custom_widget_definitions').select('*').eq('org_id', profile.org_id).order('sort_order'),
+      supabase.from('deals').select('id, company_name').order('created_at', { ascending: false }).limit(10),
+    ])
     setWidgets(data || [])
+    setPreviewDeals(deals || [])
+    if (deals?.length) setPreviewDealId(deals[0].id)
     setLoading(false)
   }
 
   function startNew() {
+    setShowPresets(true)
+  }
+
+  function startFromPreset(preset) {
+    setShowPresets(false)
     setEditing('new')
-    setName('')
-    setDescription('')
-    setWidgetType('deal')
+    setName(preset ? preset.name : '')
+    setDescription(preset ? preset.description : '')
+    setWidgetType(preset ? preset.widget_type : 'deal')
     setDefaultW(6)
     setDefaultH(4)
-    setSections([{ type: 'table', layout: 'vertical', data_source: { base_table: 'deals', fields: [], filters: [], ordering: [] }, conditional_rules: [] }])
+    setSections(preset ? JSON.parse(JSON.stringify(preset.sections)) : [{ type: 'table', layout: 'vertical', data_source: { base_table: 'deals', fields: [], filters: [], ordering: [] }, conditional_rules: [] }])
   }
 
   function startEdit(w) {
@@ -156,6 +205,35 @@ export default function WidgetBuilder() {
 
   if (loading) return <Spinner />
 
+  // === PRESET PICKER MODAL ===
+  if (showPresets) return (
+    <div>
+      <div style={{ padding: '14px 24px', borderBottom: '1px solid ' + T.border, background: T.surface, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button onClick={() => setShowPresets(false)} style={{ background: T.surfaceAlt, border: '1px solid ' + T.border, borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontSize: 12, color: T.primary, fontWeight: 600, fontFamily: T.font }}>&larr; Back</button>
+          <h2 style={{ fontSize: 18, fontWeight: 700, color: T.text, margin: 0 }}>Choose a Starting Point</h2>
+        </div>
+      </div>
+      <div style={{ padding: '24px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 12 }}>
+        <div onClick={() => startFromPreset(null)} style={{ padding: 20, background: T.surface, border: '2px dashed ' + T.border, borderRadius: T.radius, cursor: 'pointer', textAlign: 'center' }}>
+          <div style={{ fontSize: 20, color: T.textMuted, marginBottom: 8 }}>+</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: T.text }}>Blank Widget</div>
+          <div style={{ fontSize: 11, color: T.textMuted, marginTop: 4 }}>Start from scratch</div>
+        </div>
+        {PRESETS.map((p, i) => (
+          <div key={i} onClick={() => startFromPreset(p)} style={{ padding: 20, background: T.surface, border: '1px solid ' + T.border, borderRadius: T.radius, cursor: 'pointer' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: T.text }}>{p.name}</div>
+              <Badge color={T.primary}>{p.sections[0].type}</Badge>
+            </div>
+            <div style={{ fontSize: 11, color: T.textMuted }}>{p.description}</div>
+            <div style={{ fontSize: 10, color: T.textSecondary, marginTop: 6 }}>{p.sections[0].data_source.fields.length} fields from {TABLES[p.sections[0].data_source.base_table]?.label || p.sections[0].data_source.base_table}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+
   // === LIST VIEW ===
   if (!editing) return (
     <div>
@@ -235,7 +313,7 @@ export default function WidgetBuilder() {
               {/* Section type + layout */}
               <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
                 <div><label style={labelStyle}>Section Type</label><select style={{ ...inputStyle, cursor: 'pointer' }} value={section.type} onChange={e => updateSection(si, { type: e.target.value })}>{SECTION_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
-                <div><label style={labelStyle}>Base Table</label><select style={{ ...inputStyle, cursor: 'pointer' }} value={section.data_source.base_table} onChange={e => updateSection(si, { data_source: { ...section.data_source, base_table: e.target.value } })}>{['deals','contacts','tasks','compelling_events','business_catalysts','deal_competitors','deal_flags','deal_risks','deal_pain_points','conversations','company_systems'].map(t => <option key={t} value={t}>{t}</option>)}</select></div>
+                <div><label style={labelStyle}>Base Table</label><select style={{ ...inputStyle, cursor: 'pointer' }} value={section.data_source.base_table} onChange={e => updateSection(si, { data_source: { ...section.data_source, base_table: e.target.value } })}>{Object.entries(TABLES).map(([key, val]) => <option key={key} value={key}>{val.label}</option>)}</select></div>
                 {(section.type === 'grid' || section.type === 'card') && (
                   <div><label style={labelStyle}>Columns</label><select style={{ ...inputStyle, cursor: 'pointer' }} value={section.layout?.columns || 2} onChange={e => updateSection(si, { layout: { ...section.layout, columns: Number(e.target.value) } })}>{[1,2,3,4].map(n => <option key={n} value={n}>{n}</option>)}</select></div>
                 )}
@@ -305,9 +383,17 @@ export default function WidgetBuilder() {
         {/* RIGHT: Preview + JSON */}
         <div style={{ width: 400, flexShrink: 0 }}>
           <Card title="Live Preview">
+            {widgetType === 'deal' && previewDeals.length > 0 && (
+              <div style={{ marginBottom: 10 }}>
+                <label style={labelStyle}>Preview Deal</label>
+                <select style={{ ...inputStyle, cursor: 'pointer' }} value={previewDealId || ''} onChange={e => setPreviewDealId(e.target.value)}>
+                  {previewDeals.map(d => <option key={d.id} value={d.id}>{d.company_name}</option>)}
+                </select>
+              </div>
+            )}
             <div style={{ minHeight: 100 }}>
               {sections.length > 0 && sections[0].data_source.fields.length > 0 ? (
-                <WidgetRenderer config={buildConfig()} context={{ user_id: profile.id }} />
+                <WidgetRenderer config={buildConfig()} context={{ deal_id: previewDealId, user_id: profile.id }} />
               ) : (
                 <div style={{ textAlign: 'center', padding: 20, color: T.textMuted, fontSize: 12 }}>Add fields to see a preview</div>
               )}
