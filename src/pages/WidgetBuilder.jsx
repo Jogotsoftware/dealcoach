@@ -94,6 +94,7 @@ export default function WidgetBuilder() {
   }
 
   function startEdit(w) {
+    setShowPresets(false)
     setEditing(w.id)
     setName(w.name)
     setDescription(w.description || '')
@@ -101,6 +102,22 @@ export default function WidgetBuilder() {
     setDefaultW(w.default_w || 6)
     setDefaultH(w.default_h || 4)
     setSections(w.config?.sections || [])
+  }
+
+  function cloneWidget(widget) {
+    const cloned = {
+      org_id: profile.org_id, created_by: profile.id,
+      name: widget.name + ' (Copy)', description: widget.description || '',
+      widget_type: widget.widget_type,
+      default_w: widget.default_w || 6, default_h: widget.default_h || 4,
+      min_w: widget.min_w || 2, min_h: widget.min_h || 1,
+      config: JSON.parse(JSON.stringify(widget.config)),
+      active: true,
+    }
+    supabase.from('custom_widget_definitions').insert(cloned).select().single()
+      .then(({ data, error }) => {
+        if (!error && data) { loadWidgets(); startEdit(data) }
+      })
   }
 
   async function save() {
@@ -265,6 +282,7 @@ export default function WidgetBuilder() {
                 </div>
                 <div style={{ display: 'flex', gap: 6 }}>
                   <Button onClick={() => startEdit(w)} style={{ padding: '4px 10px', fontSize: 11 }}>Edit</Button>
+                  <Button onClick={() => cloneWidget(w)} style={{ padding: '4px 10px', fontSize: 11 }}>Clone</Button>
                   <Button onClick={() => deleteWidget(w.id)} style={{ padding: '4px 10px', fontSize: 11, color: T.error }}>Delete</Button>
                 </div>
               </Card>

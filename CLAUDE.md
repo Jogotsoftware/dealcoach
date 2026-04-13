@@ -24,7 +24,7 @@ DealCoach is an AI-powered sales coaching and deal intelligence platform for ent
 - All tokens in `src/lib/theme.js`
 - Shared components in `src/components/Shared.jsx` (Card, Badge, Button, ScoreBar, Field, TabBar, etc.)
 - No emojis in the UI
-- System font stack: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial
+- Font: Plus Jakarta Sans (Google Fonts) with system fallbacks
 
 ## Architecture
 

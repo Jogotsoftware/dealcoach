@@ -42,7 +42,7 @@ export const theme = {
   radius: 8,
 
   // Typography
-  font: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
+  font: "'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif",
   mono: "SFMono-Regular, Menlo, Consolas, monospace",
 }
 

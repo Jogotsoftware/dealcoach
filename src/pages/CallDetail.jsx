@@ -164,7 +164,7 @@ export default function CallDetail() {
 
         {/* SECTION 2: Coaching - three cards side by side */}
         <div style={sectionStyle}>Coaching</div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginBottom: 16 }}>
           {/* Strengths */}
           <Card style={{ borderLeft: `4px solid ${T.success}`, marginBottom: 0 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: T.success, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 8 }}>Strengths</div>
@@ -196,6 +196,30 @@ export default function CallDetail() {
               <div style={{ color: T.textMuted, fontSize: 13 }}>No data</div>
             )}
           </Card>
+
+          {/* Deal Killers */}
+          {analysis?.top_deal_killers?.length > 0 && (
+            <Card style={{ borderLeft: `4px solid ${T.error}`, marginBottom: 0 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: T.error, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 8 }}>Deal Killers</div>
+              {analysis.top_deal_killers.map((item, i) => (
+                <div key={i} style={{ fontSize: 12, lineHeight: 1.6, color: T.text, padding: '4px 0', borderBottom: i < analysis.top_deal_killers.length - 1 ? `1px solid ${T.borderLight}` : 'none' }}>
+                  {item}
+                </div>
+              ))}
+            </Card>
+          )}
+
+          {/* Ways to Win */}
+          {analysis?.top_ways_to_win?.length > 0 && (
+            <Card style={{ borderLeft: `4px solid ${T.success}`, marginBottom: 0 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: T.success, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 8 }}>Ways to Win</div>
+              {analysis.top_ways_to_win.map((item, i) => (
+                <div key={i} style={{ fontSize: 12, lineHeight: 1.6, color: T.text, padding: '4px 0', borderBottom: i < analysis.top_ways_to_win.length - 1 ? `1px solid ${T.borderLight}` : 'none' }}>
+                  {item}
+                </div>
+              ))}
+            </Card>
+          )}
         </div>
 
         {/* SECTION 3: Scores */}
@@ -234,6 +258,22 @@ export default function CallDetail() {
                 </div>
               )}
             </Card>
+
+            {/* Independently Wealthy Reasoning */}
+            {analysis?.independently_wealthy_reason && (
+              <div style={{
+                marginTop: 12, padding: '10px 14px',
+                borderLeft: `3px solid ${T.primary}`,
+                background: T.surfaceAlt, borderRadius: '0 6px 6px 0',
+              }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: T.textSecondary, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>
+                  Independently Wealthy — Why This Score
+                </div>
+                <div style={{ fontSize: 12, lineHeight: 1.6, color: T.text, fontStyle: 'italic' }}>
+                  {analysis.independently_wealthy_reason}
+                </div>
+              </div>
+            )}
           </>
         )}
 
