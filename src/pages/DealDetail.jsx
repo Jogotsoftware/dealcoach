@@ -400,6 +400,7 @@ export default function DealDetail() {
   const [newPain, setNewPain] = useState({ pain_description: '', category: 'operational', annual_cost: '', affected_team: '', notes: '' })
   const [showAddTask, setShowAddTask] = useState(false)
   const [newTask, setNewTask] = useState({ title: '', priority: 'medium', due_date: '', notes: '' })
+  const [taskCommitFilter, setTaskCommitFilter] = useState('all')
   const [showAddContact, setShowAddContact] = useState(false)
   const [newContact, setNewContact] = useState({ name: '', title: '', email: '', role_in_deal: '' })
 
@@ -1789,8 +1790,19 @@ export default function DealDetail() {
         {/* ===== TASKS TAB ===== */}
         {tab === 'tasks' && (
           <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: T.text }}>Action Items ({openTasks.length} open)</h3>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: T.text }}>Action Items ({openTasks.length} open)</h3>
+                <div style={{ display: 'flex', gap: 2, background: T.surfaceAlt, borderRadius: 6, padding: 2, border: `1px solid ${T.border}` }}>
+                  {[{ key: 'all', label: 'All' }, { key: 'rep', label: 'Rep' }, { key: 'prospect', label: 'Prospect' }].map(f => (
+                    <button key={f.key} onClick={() => setTaskCommitFilter(f.key)} style={{
+                      padding: '3px 10px', fontSize: 10, fontWeight: 600, border: 'none', borderRadius: 4, cursor: 'pointer', fontFamily: T.font,
+                      background: taskCommitFilter === f.key ? T.primary : 'transparent',
+                      color: taskCommitFilter === f.key ? '#fff' : T.textMuted,
+                    }}>{f.label}</button>
+                  ))}
+                </div>
+              </div>
               <Button primary onClick={() => setShowAddTask(true)}>+ Add Task</Button>
             </div>
             {showAddTask && (
@@ -1805,40 +1817,51 @@ export default function DealDetail() {
                 <div style={{ display: 'flex', gap: 6 }}><Button primary onClick={addTask}>Add Task</Button><Button onClick={() => setShowAddTask(false)}>Cancel</Button></div>
               </div>
             )}
-            {openTasks.length > 0 && (
-              <Card title="Open">
-                {openTasks.map(t => {
-                  const overdue = t.due_date && daysUntil(t.due_date) < 0
-                  return (
-                    <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderBottom: `1px solid ${T.borderLight}` }}>
-                      <button onClick={() => toggleTask(t.id)} style={{ width: 20, height: 20, borderRadius: 5, border: `1.5px solid ${T.border}`, background: 'transparent', cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }} />
-                      <span style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, background: t.priority === 'high' ? T.error : t.priority === 'medium' ? T.warning : T.textMuted }} />
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 13, color: T.text, display: 'flex', alignItems: 'center', gap: 6 }}>
-                          {t.title}
-                          {t.is_blocking && <Badge color={T.error}>Blocking</Badge>}
-                          {t.auto_generated && <Badge color={T.primary}>AI</Badge>}
+            {(() => {
+              const filteredOpen = taskCommitFilter === 'all' ? openTasks : openTasks.filter(t => t.committed_by === taskCommitFilter)
+              const filteredDone = taskCommitFilter === 'all' ? doneTasks : doneTasks.filter(t => t.committed_by === taskCommitFilter)
+              return (
+                <>
+                  {filteredOpen.length > 0 && (
+                    <Card title="Open">
+                      {filteredOpen.map(t => {
+                        const overdue = t.due_date && daysUntil(t.due_date) < 0
+                        return (
+                          <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderBottom: `1px solid ${T.borderLight}` }}>
+                            <button onClick={() => toggleTask(t.id)} style={{ width: 20, height: 20, borderRadius: 5, border: `1.5px solid ${T.border}`, background: 'transparent', cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }} />
+                            <span style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, background: t.priority === 'high' ? T.error : t.priority === 'medium' ? T.warning : T.textMuted }} />
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontSize: 13, color: T.text, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                {t.title}
+                                {t.is_blocking && <Badge color={T.error}>Blocking</Badge>}
+                                {t.auto_generated && <Badge color={T.primary}>AI</Badge>}
+                                {t.committed_by && <Badge color={t.committed_by === 'prospect' ? T.warning : T.primary}>{t.committed_by === 'prospect' ? 'Prospect' : 'Rep'}</Badge>}
+                                {t.committed_by_name && <span style={{ fontSize: 10, color: T.textMuted }}>{t.committed_by_name}</span>}
+                              </div>
+                              <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>{t.category || 'Uncategorized'}</div>
+                            </div>
+                            <span style={{ fontSize: 11, fontWeight: 500, color: overdue ? T.error : T.textMuted, fontFeatureSettings: '"tnum"' }}>{t.due_date ? formatDate(t.due_date) : ''}</span>
+                            <DeleteBtn onClick={() => deleteTask(t.id)} />
+                          </div>
+                        )
+                      })}
+                    </Card>
+                  )}
+                  {filteredDone.length > 0 && (
+                    <Card title="Completed">
+                      {filteredDone.map(t => (
+                        <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderBottom: `1px solid ${T.borderLight}`, opacity: 0.5 }}>
+                          <button onClick={() => toggleTask(t.id)} style={{ width: 20, height: 20, borderRadius: 5, border: `1.5px solid ${T.success}`, background: T.success, cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}><span style={{ color: '#fff', fontSize: 12 }}>&#10003;</span></button>
+                          <span style={{ flex: 1, fontSize: 13, color: T.textMuted, textDecoration: 'line-through' }}>{t.title}</span>
+                          {t.committed_by && <Badge color={t.committed_by === 'prospect' ? T.warning : T.primary}>{t.committed_by === 'prospect' ? 'Prospect' : 'Rep'}</Badge>}
                         </div>
-                        <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>{t.category || 'Uncategorized'}</div>
-                      </div>
-                      <span style={{ fontSize: 11, fontWeight: 500, color: overdue ? T.error : T.textMuted, fontFeatureSettings: '"tnum"' }}>{t.due_date ? formatDate(t.due_date) : ''}</span>
-                      <DeleteBtn onClick={() => deleteTask(t.id)} />
-                    </div>
-                  )
-                })}
-              </Card>
-            )}
-            {doneTasks.length > 0 && (
-              <Card title="Completed">
-                {doneTasks.map(t => (
-                  <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderBottom: `1px solid ${T.borderLight}`, opacity: 0.5 }}>
-                    <button onClick={() => toggleTask(t.id)} style={{ width: 20, height: 20, borderRadius: 5, border: `1.5px solid ${T.success}`, background: T.success, cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}><span style={{ color: '#fff', fontSize: 12 }}>&#10003;</span></button>
-                    <span style={{ flex: 1, fontSize: 13, color: T.textMuted, textDecoration: 'line-through' }}>{t.title}</span>
-                  </div>
-                ))}
-              </Card>
-            )}
-            {openTasks.length === 0 && doneTasks.length === 0 && <EmptyState message="No tasks for this deal yet." />}
+                      ))}
+                    </Card>
+                  )}
+                  {filteredOpen.length === 0 && filteredDone.length === 0 && <EmptyState message={taskCommitFilter === 'all' ? 'No tasks for this deal yet.' : `No ${taskCommitFilter} commitments found.`} />}
+                </>
+              )
+            })()}
           </div>
         )}
 

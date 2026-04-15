@@ -11,7 +11,15 @@ const MEMBER_TYPES = [
   { key: 'internal_sc', label: 'Internal SC' },
   { key: 'external_sc', label: 'External SC' },
   { key: 'technical_sc', label: 'Technical SC' },
+  { key: 'sales_engineer', label: 'Sales Engineer' },
   { key: 'partner', label: 'Partner' },
+  { key: 'var', label: 'VAR / Reseller' },
+  { key: 'implementation', label: 'Implementation Consultant' },
+  { key: 'manager', label: 'Sales Manager' },
+  { key: 'director', label: 'Sales Director' },
+  { key: 'executive_sponsor', label: 'Executive Sponsor' },
+  { key: 'channel_manager', label: 'Channel Manager' },
+  { key: 'csm', label: 'Customer Success' },
   { key: 'other', label: 'Other' },
 ]
 
@@ -290,6 +298,93 @@ export default function Settings() {
           </div>
         </Card>
 
+        {/* My Team */}
+        <Card title="My Team" action={<Button style={{ padding: '4px 12px', fontSize: 11 }} onClick={() => setShowAddMember(true)}>+ Add Member</Button>}>
+          <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 12, lineHeight: 1.4 }}>
+            Your working team — SCs, partners, managers, and collaborators. These people don't need DealCoach accounts. They can be assigned to deals and will be excluded from AI contact extraction.
+          </div>
+          {showAddMember && (
+            <div style={{ padding: 12, background: T.surfaceAlt, borderRadius: 6, marginBottom: 12, border: `1px solid ${T.borderLight}` }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
+                <div><label style={labelStyle}>Name *</label><input style={inputStyle} value={newMember.name} onChange={e => setNewMember(p => ({ ...p, name: e.target.value }))} autoFocus /></div>
+                <div><label style={labelStyle}>Title</label><input style={inputStyle} value={newMember.title} onChange={e => setNewMember(p => ({ ...p, title: e.target.value }))} /></div>
+                <div><label style={labelStyle}>Company</label><input style={inputStyle} value={newMember.company} onChange={e => setNewMember(p => ({ ...p, company: e.target.value }))} /></div>
+                <div><label style={labelStyle}>Email</label><input style={inputStyle} value={newMember.email} onChange={e => setNewMember(p => ({ ...p, email: e.target.value }))} /></div>
+                <div><label style={labelStyle}>Phone</label><input style={inputStyle} value={newMember.phone} onChange={e => setNewMember(p => ({ ...p, phone: e.target.value }))} /></div>
+                <div><label style={labelStyle}>Type</label><select style={{ ...inputStyle, cursor: 'pointer' }} value={newMember.member_type} onChange={e => setNewMember(p => ({ ...p, member_type: e.target.value }))}>
+                  {MEMBER_TYPES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}</select></div>
+              </div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <Button primary onClick={addTeamMember}>Add</Button>
+                <Button onClick={() => setShowAddMember(false)}>Cancel</Button>
+              </div>
+            </div>
+          )}
+
+          {teamMembers.length === 0 ? (
+            <div style={{ color: T.textMuted, fontSize: 13, padding: '8px 0' }}>No team members yet. Add your SCs, partners, and other collaborators.</div>
+          ) : (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ borderBottom: `1px solid ${T.border}` }}>
+                  {['Name', 'Title', 'Company', 'Email', 'Phone', 'Type', 'Default', 'Active', 'Uses', ''].map(h => (
+                    <th key={h} style={{ textAlign: 'left', padding: '6px 8px', fontSize: 10, fontWeight: 600, color: T.textMuted, textTransform: 'uppercase' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {teamMembers.map(m => (
+                  <tr key={m.id} style={{ borderBottom: `1px solid ${T.borderLight}` }}>
+                    <td style={{ padding: '8px' }}>
+                      <input style={{ ...inputStyle, padding: '4px 6px', fontSize: 12 }} defaultValue={m.name}
+                        onBlur={e => updateTeamMember(m.id, 'name', e.target.value)} />
+                    </td>
+                    <td style={{ padding: '8px' }}>
+                      <input style={{ ...inputStyle, padding: '4px 6px', fontSize: 12 }} defaultValue={m.title || ''}
+                        onBlur={e => updateTeamMember(m.id, 'title', e.target.value)} />
+                    </td>
+                    <td style={{ padding: '8px' }}>
+                      <input style={{ ...inputStyle, padding: '4px 6px', fontSize: 12 }} defaultValue={m.company || ''}
+                        onBlur={e => updateTeamMember(m.id, 'company', e.target.value)} />
+                    </td>
+                    <td style={{ padding: '8px' }}>
+                      <input style={{ ...inputStyle, padding: '4px 6px', fontSize: 12 }} defaultValue={m.email || ''}
+                        onBlur={e => updateTeamMember(m.id, 'email', e.target.value)} />
+                    </td>
+                    <td style={{ padding: '8px' }}>
+                      <input style={{ ...inputStyle, padding: '4px 6px', fontSize: 12 }} defaultValue={m.phone || ''}
+                        onBlur={e => updateTeamMember(m.id, 'phone', e.target.value)} />
+                    </td>
+                    <td style={{ padding: '8px' }}>
+                      <select style={{ ...inputStyle, padding: '4px 6px', fontSize: 11, cursor: 'pointer' }}
+                        defaultValue={m.member_type || 'other'} onChange={e => updateTeamMember(m.id, 'member_type', e.target.value)}>
+                        {MEMBER_TYPES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+                      </select>
+                    </td>
+                    <td style={{ padding: '8px', textAlign: 'center' }}>
+                      <div onClick={() => updateTeamMember(m.id, 'is_default_team', !m.is_default_team)}
+                        style={{ width: 32, height: 18, borderRadius: 9, cursor: 'pointer', background: m.is_default_team ? T.success : T.borderLight, position: 'relative', transition: 'background 0.2s' }}>
+                        <div style={{ width: 14, height: 14, borderRadius: '50%', background: '#fff', position: 'absolute', top: 2, left: m.is_default_team ? 16 : 2, boxShadow: T.shadow, transition: 'left 0.2s' }} />
+                      </div>
+                    </td>
+                    <td style={{ padding: '8px', textAlign: 'center' }}>
+                      <div onClick={() => updateTeamMember(m.id, 'is_active', !m.is_active)}
+                        style={{ width: 32, height: 18, borderRadius: 9, cursor: 'pointer', background: m.is_active !== false ? T.success : T.borderLight, position: 'relative', transition: 'background 0.2s' }}>
+                        <div style={{ width: 14, height: 14, borderRadius: '50%', background: '#fff', position: 'absolute', top: 2, left: m.is_active !== false ? 16 : 2, boxShadow: T.shadow, transition: 'left 0.2s' }} />
+                      </div>
+                    </td>
+                    <td style={{ padding: '8px', fontSize: 11, color: T.textMuted, textAlign: 'center' }}>{m.usage_count || 0}</td>
+                    <td style={{ padding: '8px' }}>
+                      <button onClick={() => deleteTeamMember(m.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, fontSize: 14 }}
+                        onMouseEnter={e => e.currentTarget.style.color = T.error} onMouseLeave={e => e.currentTarget.style.color = T.textMuted}>&#10005;</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </Card>
+
         {/* Organization */}
         {orgData && (
           <Card title="Organization" action={
@@ -450,90 +545,6 @@ export default function Settings() {
             <Button primary onClick={saveQuota} disabled={loading}>{loading ? 'Saving...' : 'Save Quota'}</Button>
             {saved && <span style={{ fontSize: 13, color: T.success, fontWeight: 600 }}>&#10003; Saved</span>}
           </div>
-        </Card>
-
-        {/* My Team */}
-        <Card title="My Team" action={<Button style={{ padding: '4px 12px', fontSize: 11 }} onClick={() => setShowAddMember(true)}>+ Add Member</Button>}>
-          {showAddMember && (
-            <div style={{ padding: 12, background: T.surfaceAlt, borderRadius: 6, marginBottom: 12, border: `1px solid ${T.borderLight}` }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
-                <div><label style={labelStyle}>Name *</label><input style={inputStyle} value={newMember.name} onChange={e => setNewMember(p => ({ ...p, name: e.target.value }))} autoFocus /></div>
-                <div><label style={labelStyle}>Title</label><input style={inputStyle} value={newMember.title} onChange={e => setNewMember(p => ({ ...p, title: e.target.value }))} /></div>
-                <div><label style={labelStyle}>Company</label><input style={inputStyle} value={newMember.company} onChange={e => setNewMember(p => ({ ...p, company: e.target.value }))} /></div>
-                <div><label style={labelStyle}>Email</label><input style={inputStyle} value={newMember.email} onChange={e => setNewMember(p => ({ ...p, email: e.target.value }))} /></div>
-                <div><label style={labelStyle}>Phone</label><input style={inputStyle} value={newMember.phone} onChange={e => setNewMember(p => ({ ...p, phone: e.target.value }))} /></div>
-                <div><label style={labelStyle}>Type</label><select style={{ ...inputStyle, cursor: 'pointer' }} value={newMember.member_type} onChange={e => setNewMember(p => ({ ...p, member_type: e.target.value }))}>
-                  {MEMBER_TYPES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}</select></div>
-              </div>
-              <div style={{ display: 'flex', gap: 6 }}>
-                <Button primary onClick={addTeamMember}>Add</Button>
-                <Button onClick={() => setShowAddMember(false)}>Cancel</Button>
-              </div>
-            </div>
-          )}
-
-          {teamMembers.length === 0 ? (
-            <div style={{ color: T.textMuted, fontSize: 13, padding: '8px 0' }}>No team members yet. Add your SCs, partners, and other collaborators.</div>
-          ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <thead>
-                <tr style={{ borderBottom: `1px solid ${T.border}` }}>
-                  {['Name', 'Title', 'Company', 'Email', 'Phone', 'Type', 'Default', 'Active', 'Uses', ''].map(h => (
-                    <th key={h} style={{ textAlign: 'left', padding: '6px 8px', fontSize: 10, fontWeight: 600, color: T.textMuted, textTransform: 'uppercase' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {teamMembers.map(m => (
-                  <tr key={m.id} style={{ borderBottom: `1px solid ${T.borderLight}` }}>
-                    <td style={{ padding: '8px' }}>
-                      <input style={{ ...inputStyle, padding: '4px 6px', fontSize: 12 }} defaultValue={m.name}
-                        onBlur={e => updateTeamMember(m.id, 'name', e.target.value)} />
-                    </td>
-                    <td style={{ padding: '8px' }}>
-                      <input style={{ ...inputStyle, padding: '4px 6px', fontSize: 12 }} defaultValue={m.title || ''}
-                        onBlur={e => updateTeamMember(m.id, 'title', e.target.value)} />
-                    </td>
-                    <td style={{ padding: '8px' }}>
-                      <input style={{ ...inputStyle, padding: '4px 6px', fontSize: 12 }} defaultValue={m.company || ''}
-                        onBlur={e => updateTeamMember(m.id, 'company', e.target.value)} />
-                    </td>
-                    <td style={{ padding: '8px' }}>
-                      <input style={{ ...inputStyle, padding: '4px 6px', fontSize: 12 }} defaultValue={m.email || ''}
-                        onBlur={e => updateTeamMember(m.id, 'email', e.target.value)} />
-                    </td>
-                    <td style={{ padding: '8px' }}>
-                      <input style={{ ...inputStyle, padding: '4px 6px', fontSize: 12 }} defaultValue={m.phone || ''}
-                        onBlur={e => updateTeamMember(m.id, 'phone', e.target.value)} />
-                    </td>
-                    <td style={{ padding: '8px' }}>
-                      <select style={{ ...inputStyle, padding: '4px 6px', fontSize: 11, cursor: 'pointer' }}
-                        defaultValue={m.member_type || 'other'} onChange={e => updateTeamMember(m.id, 'member_type', e.target.value)}>
-                        {MEMBER_TYPES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
-                      </select>
-                    </td>
-                    <td style={{ padding: '8px', textAlign: 'center' }}>
-                      <div onClick={() => updateTeamMember(m.id, 'is_default_team', !m.is_default_team)}
-                        style={{ width: 32, height: 18, borderRadius: 9, cursor: 'pointer', background: m.is_default_team ? T.success : T.borderLight, position: 'relative', transition: 'background 0.2s' }}>
-                        <div style={{ width: 14, height: 14, borderRadius: '50%', background: '#fff', position: 'absolute', top: 2, left: m.is_default_team ? 16 : 2, boxShadow: T.shadow, transition: 'left 0.2s' }} />
-                      </div>
-                    </td>
-                    <td style={{ padding: '8px', textAlign: 'center' }}>
-                      <div onClick={() => updateTeamMember(m.id, 'is_active', !m.is_active)}
-                        style={{ width: 32, height: 18, borderRadius: 9, cursor: 'pointer', background: m.is_active !== false ? T.success : T.borderLight, position: 'relative', transition: 'background 0.2s' }}>
-                        <div style={{ width: 14, height: 14, borderRadius: '50%', background: '#fff', position: 'absolute', top: 2, left: m.is_active !== false ? 16 : 2, boxShadow: T.shadow, transition: 'left 0.2s' }} />
-                      </div>
-                    </td>
-                    <td style={{ padding: '8px', fontSize: 11, color: T.textMuted, textAlign: 'center' }}>{m.usage_count || 0}</td>
-                    <td style={{ padding: '8px' }}>
-                      <button onClick={() => deleteTeamMember(m.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, fontSize: 14 }}
-                        onMouseEnter={e => e.currentTarget.style.color = T.error} onMouseLeave={e => e.currentTarget.style.color = T.textMuted}>&#10005;</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
         </Card>
 
         {/* Preferences */}
