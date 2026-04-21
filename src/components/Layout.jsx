@@ -38,6 +38,8 @@ export default function Layout() {
     { to: '/settings/organization', icon: '\u2302', label: 'Organization', show: isAdmin },
     { to: '/admin/widgets', icon: '\u2637', label: 'Widgets', show: isAdmin },
     { to: '/admin', icon: '\u2691', label: 'Platform Admin', show: isPlatformAdmin },
+    { to: '/admin/invitations', icon: '\u2709', label: 'Invitations', show: isPlatformAdmin },
+    { to: '/admin/feedback', icon: '\u2690', label: 'Feedback', show: isPlatformAdmin },
   ].filter(item => item.show)
 
   return (

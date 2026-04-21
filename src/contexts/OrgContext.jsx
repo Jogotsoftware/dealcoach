@@ -9,6 +9,7 @@ export function OrgProvider({ children }) {
   const [org, setOrg] = useState(null)
   const [plan, setPlan] = useState(null)
   const [credits, setCredits] = useState(null)
+  const [enabledModuleKeys, setEnabledModuleKeys] = useState(new Set())
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -29,6 +30,17 @@ export function OrgProvider({ children }) {
         setPlan(orgRes.data.plans || null)
       }
       setCredits(creditsRes.data || null)
+
+      // Load resolved module access via RPC (respects plan + overrides)
+      if (profile.org_id) {
+        const { data: moduleRows } = await supabase.rpc('get_org_modules', { p_org_id: profile.org_id })
+        if (moduleRows) {
+          setEnabledModuleKeys(new Set(moduleRows.filter(m => m.enabled).map(m => m.module_key)))
+        } else {
+          // Fallback to plan modules if RPC not available
+          setEnabledModuleKeys(new Set(orgRes.data?.plans?.modules || []))
+        }
+      }
     } catch (err) {
       console.error('Error loading org:', err)
     } finally {
@@ -38,7 +50,7 @@ export function OrgProvider({ children }) {
 
   const isAdmin = profile?.role === 'admin' || profile?.role === 'system_admin'
   const isSystemAdmin = profile?.role === 'system_admin'
-  const hasModule = (key) => (plan?.modules || []).includes(key)
+  const hasModule = (key) => enabledModuleKeys.has(key)
   const isTrialing = org?.trial_ends_at && new Date(org.trial_ends_at) > new Date()
   const fyEndMonth = org?.fiscal_year_end_month ?? 12
   const fyEndDay = org?.fiscal_year_end_day ?? 31

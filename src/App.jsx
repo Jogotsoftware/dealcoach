@@ -23,6 +23,8 @@ import OrgSettings from './pages/settings/OrgSettings'
 import WidgetBuilder from './pages/WidgetBuilder'
 import BetaFeedbackAdmin from './pages/admin/BetaFeedback'
 import InvitationsAdmin from './pages/admin/Invitations'
+import PlatformAdminDashboard from './pages/admin/PlatformAdminDashboard'
+import OrgDetail from './pages/admin/OrgDetail'
 import PlatformAdminGuard from './components/guards/PlatformAdminGuard'
 import { Spinner } from './components/Shared'
 
@@ -76,6 +78,7 @@ export default function App() {
                   <Route path="/admin/widgets" element={<WidgetBuilder />} />
                   <Route path="/admin/feedback" element={<BetaFeedbackAdmin />} />
                   <Route path="/admin/invitations" element={<InvitationsAdmin />} />
+                  <Route path="/admin/orgs/:orgId" element={<OrgDetail />} />
                 </Route>
               </Route>
             </Route>
