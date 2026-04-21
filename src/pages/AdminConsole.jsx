@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { theme as T, formatCurrency, formatDate } from '../lib/theme'
@@ -30,6 +31,7 @@ function StatusBadge({ status }) {
 
 export default function AdminConsole() {
   const { profile } = useAuth()
+  const nav = useNavigate()
   const [tab, setTab] = useState('orgs')
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(null)
 
@@ -51,7 +53,10 @@ export default function AdminConsole() {
   return (
     <div style={{ fontFamily: T.font, color: T.text, fontSize: 13, minHeight: '100vh', background: T.bg }}>
       <div style={{ padding: '16px 24px', borderBottom: `1px solid ${T.border}`, background: T.surface }}>
-        <h1 style={{ fontSize: 18, fontWeight: 800, margin: 0, color: T.text }}>Platform Admin Console</h1>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h1 style={{ fontSize: 18, fontWeight: 800, margin: 0, color: T.text }}>Platform Admin Console</h1>
+          <button onClick={() => nav('/admin/feedback')} style={{ background: T.primary, color: '#fff', border: 'none', borderRadius: 6, padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: T.font }}>Beta Feedback</button>
+        </div>
       </div>
       <div style={{ background: T.surface, borderBottom: `1px solid ${T.border}` }}>
         <TabBar tabs={ADMIN_TABS} active={tab} onChange={setTab} />

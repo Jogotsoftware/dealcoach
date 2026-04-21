@@ -31,7 +31,7 @@ export const theme = {
   error: '#dc3545',
   errorLight: 'rgba(220, 53, 69, 0.08)',
 
-  // Sage
+  // Brand accent
   sageGreen: '#6bb644',
 
   // Shadows
@@ -79,7 +79,26 @@ export const TASK_CATEGORIES = [
   'Follow Up', 'Internal', 'Send Materials', 'Deal Action', 'CRM Update', 'Research',
 ]
 
-export const FY_START_MONTH = 10 // October
+// Fiscal year helpers — fyEndMonth is the month the fiscal year ENDS (e.g., 12 for calendar year, 9 for Oct-Sep)
+export function getFiscalYearStartMonth(fyEndMonth) {
+  if (!fyEndMonth || fyEndMonth < 1 || fyEndMonth > 12) return 1
+  return (fyEndMonth % 12) + 1
+}
+
+export function getFiscalYear(date, fyEndMonth = 12) {
+  const d = date instanceof Date ? date : new Date(date || Date.now())
+  const startMonth = getFiscalYearStartMonth(fyEndMonth)
+  if (startMonth === 1) return d.getFullYear()
+  return (d.getMonth() + 1) >= startMonth ? d.getFullYear() + 1 : d.getFullYear()
+}
+
+export function getFiscalQuarter(date, fyEndMonth = 12) {
+  const d = date instanceof Date ? date : new Date(date || Date.now())
+  const startMonth = getFiscalYearStartMonth(fyEndMonth)
+  const m = d.getMonth() + 1
+  const monthsIntoFY = m >= startMonth ? m - startMonth : m + (12 - startMonth)
+  return Math.floor(monthsIntoFY / 3) + 1
+}
 
 // Formatting helpers
 export function formatCurrency(n) {
@@ -114,16 +133,16 @@ export function pctOf(value, total) {
   return total > 0 ? Math.round((value / total) * 100) : 0
 }
 
-// Fiscal year helpers
-export function getFiscalPeriods(today = new Date()) {
+// Fiscal period helpers
+export function getFiscalPeriods(today = new Date(), fyEndMonth = 12) {
   const m = today.getMonth() + 1
   const y = today.getFullYear()
-  const fy = m >= FY_START_MONTH ? y + 1 : y
-  const monthsIntoFY = m >= FY_START_MONTH ? m - FY_START_MONTH : m + (12 - FY_START_MONTH)
-  const fq = Math.floor(monthsIntoFY / 3) + 1
+  const startMonth = getFiscalYearStartMonth(fyEndMonth)
+  const fy = getFiscalYear(today, fyEndMonth)
+  const fq = getFiscalQuarter(today, fyEndMonth)
 
-  const qStartMonthRaw = FY_START_MONTH + (fq - 1) * 3
-  const qStartYear = qStartMonthRaw > 12 ? fy : fy - 1
+  const qStartMonthRaw = startMonth + (fq - 1) * 3
+  const qStartYear = qStartMonthRaw > 12 ? fy - 1 + 1 : fy - 1
   const qStartMonth = qStartMonthRaw > 12 ? qStartMonthRaw - 12 : qStartMonthRaw
   const qEndMonthRaw = qStartMonth + 2
   const qEndYear = qEndMonthRaw > 12 ? qStartYear + 1 : qStartYear

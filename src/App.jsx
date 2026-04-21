@@ -21,6 +21,7 @@ import AcceptInvite from './pages/AcceptInvite'
 import TeamManagement from './pages/settings/TeamManagement'
 import OrgSettings from './pages/settings/OrgSettings'
 import WidgetBuilder from './pages/WidgetBuilder'
+import BetaFeedbackAdmin from './pages/admin/BetaFeedback'
 import { Spinner } from './components/Shared'
 
 function ProtectedRoute({ children }) {
@@ -71,6 +72,7 @@ export default function App() {
                   <Route path="/settings/team" element={<TeamManagement />} />
                   <Route path="/settings/organization" element={<OrgSettings />} />
                   <Route path="/admin/widgets" element={<WidgetBuilder />} />
+                  <Route path="/admin/feedback" element={<BetaFeedbackAdmin />} />
                 </Route>
               </Route>
             </Route>

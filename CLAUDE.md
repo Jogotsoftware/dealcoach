@@ -1,7 +1,7 @@
 # CLAUDE.md — DealCoach Project Context
 
 ## What This Is
-DealCoach is an AI-powered sales coaching and deal intelligence platform for enterprise B2B sales teams (initially Sage Intacct AEs). React + Vite frontend, Supabase backend (45 tables), Make.com for AI processing via Claude API.
+DealCoach is an AI-powered sales coaching and deal intelligence platform for enterprise B2B sales teams. React + Vite frontend, Supabase backend (45+ tables), Edge Functions for AI processing via Claude API.
 
 ## Tech Stack
 - Frontend: React 18 + Vite + React Router
@@ -44,31 +44,22 @@ DealCoach is an AI-powered sales coaching and deal intelligence platform for ent
 | /coach | CoachAdmin.jsx | Coach config, prompts, docs, scoring, MSP templates |
 | /settings | Settings.jsx | Profile, quota, coach selection, my team, preferences |
 
-### AI Processing Flow (Make.com)
-Each call type has its own Make.com webhook URL configured in `.env`:
-- VITE_WEBHOOK_QDC, VITE_WEBHOOK_FUNCTIONAL_DISCOVERY, VITE_WEBHOOK_DEMO, etc.
+### AI Processing Flow (Edge Functions)
+All AI processing uses Supabase Edge Functions (no more Make.com). Each function handles auth, credit checks, and calls Claude API.
 
 When a transcript is uploaded:
 1. Frontend saves to `conversations` table
-2. Frontend loads FULL deal context from 13 tables
-3. Frontend sends payload to the call-type-specific webhook
-4. Make.com receives payload → calls Claude API → parses JSON response
-5. Make.com writes back to Supabase: tasks, contacts, deal_analysis, proposal_insights, ai_response_log
-6. Frontend polls/refreshes to show results
+2. Frontend calls `process-transcript` edge function
+3. Edge function loads full deal context, calls Claude API, writes results back
+4. Frontend refreshes to show results
 
-The webhook payload (`src/lib/webhooks.js`) includes:
-- Transcript + metadata
-- Full company profile (industry, revenue, employees, tech stack, goals, etc.)
-- Full deal analysis (30+ fields: pains, budget, champion, EB, red/green flags, timeline, etc.)
-- All contacts with roles, influence, champion/EB/signer flags
-- All competitors with strengths/weaknesses/strategy
-- Compelling events and business catalysts
-- All previous call summaries + coaching notes
-- Current open tasks (so AI doesn't duplicate)
-- Existing proposal insights (so AI doesn't duplicate)
-- MSP stage/milestone status
-- Current scores
-- Coach system prompt + call-type-specific prompt + extraction rules + coach documents
+Edge function callers in `src/lib/webhooks.js`:
+- `callProcessTranscript` — transcript analysis + coaching
+- `callResearchFunction` — company research via Perplexity + Claude
+- `callDealChat` — AI coaching chat
+- `callGenerateEmail` — AI email generation
+- `callGenerateSlides` — presentation slide generation
+- `reprocessDeal` — full re-research + re-process all transcripts
 
 ### Database Schema (45 tables)
 
@@ -107,10 +98,9 @@ The webhook payload (`src/lib/webhooks.js`) includes:
 - `update_updated_at`: BEFORE UPDATE on all major tables
 
 ### Sales Methodology
-- BANT qualification (Budget, Authority, Need, Timeline)
-- Selling Through Curiosity
-- Fiscal year starts October (FY2026 = Oct 2025 - Sep 2026)
-- Next steps format: `JP MM/DD - RED/GREEN reasoning, MM/DD next call + type, MM/DD last call + type, RISK: shorthand`
+- Revenue Instruments Framework (default) — seven pillars: Curiosity, Independently Wealthy, Continuous Qualification, Empathetic Listening, Outcome-Goal Alignment, Mutual Authoring, Buyer Risk Mitigation
+- BANT qualification (Budget, Authority, Need, Timeline) — available as add-on
+- Fiscal year is per-org configurable (organizations.fiscal_year_end_month/day)
 - Deal stages: qualify, discovery, solution_validation, confirming_value, selection, disqualified, closed_won, closed_lost
 - Call types (separate from stages): qdc, functional_discovery, demo, scoping, proposal, negotiation, sync, custom
 

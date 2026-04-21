@@ -896,7 +896,7 @@ export default function CoachAdmin() {
         {/* ===== SLIDES TAB ===== */}
         {tab === 'slides' && coach && (
           <>
-            <Card title="Default Sage Team">
+            <Card title="Default Sales Team">
               <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 8 }}>Team members that appear on every Team Introductions slide.</div>
               {(slideConfig?.sage_team_defaults || []).map((m, i) => (
                 <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid ' + T.borderLight }}>
@@ -960,7 +960,7 @@ export default function CoachAdmin() {
             <Card title="Footer & Fonts">
               <div style={{ marginBottom: 10 }}>
                 <label style={labelStyle}>Footer Text</label>
-                <input style={inputStyle} defaultValue={slideConfig?.footer_text || '\u00A9 {year} The Sage Group plc, or its licensors. All rights reserved.'}
+                <input style={inputStyle} defaultValue={slideConfig?.footer_text || '\u00A9 {year} All rights reserved.'}
                   onBlur={async e => { if (!slideConfig?.id) return; await supabase.from('coach_slide_config').update({ footer_text: e.target.value }).eq('id', slideConfig.id) }} />
                 <div style={{ fontSize: 10, color: T.textMuted, marginTop: 2 }}>Use {'{year}'} for dynamic year</div>
               </div>
@@ -1071,7 +1071,7 @@ export default function CoachAdmin() {
                 </div>
 
                 <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 8, marginTop: 16, textTransform: 'uppercase', letterSpacing: '0.04em' }}>System Signals</div>
-                <TagInput label="Current Systems (good fit)" value={icpForm.current_systems} onChange={v => setIcpForm(p => ({ ...p, current_systems: v }))} placeholder="e.g. QuickBooks, Sage 50..." />
+                <TagInput label="Current Systems (good fit)" value={icpForm.current_systems} onChange={v => setIcpForm(p => ({ ...p, current_systems: v }))} placeholder="e.g. QuickBooks, Xero, NetSuite..." />
                 <TagInput label="Tech Red Flags" value={icpForm.tech_red_flags} onChange={v => setIcpForm(p => ({ ...p, tech_red_flags: v }))} placeholder="e.g. SAP, Oracle..." />
 
                 <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 8, marginTop: 16, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Behavioral Signals</div>

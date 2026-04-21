@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { theme as T, formatCurrency, getFiscalPeriods } from '../lib/theme'
+import { useOrg } from '../contexts/OrgContext'
 import { Card, Badge, Button, Spinner, inputStyle, labelStyle } from '../components/Shared'
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
@@ -25,10 +26,11 @@ const MEMBER_TYPES = [
 
 export default function Settings() {
   const { profile } = useAuth()
+  const { fyEndMonth: orgFyEndMonth } = useOrg()
   const [loading, setLoading] = useState(false)
   const [saved, setSaved] = useState(false)
-  const [fyEndMonth, setFyEndMonth] = useState(9)
-  const fp = getFiscalPeriods()
+  const [fyEndMonth, setFyEndMonth] = useState(orgFyEndMonth || 12)
+  const fp = getFiscalPeriods(new Date(), fyEndMonth)
 
   // Coach selection
   const [coaches, setCoaches] = useState([])

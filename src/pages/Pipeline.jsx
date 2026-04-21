@@ -2,10 +2,11 @@ import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
+import { useOrg } from '../contexts/OrgContext'
 import { callUpdateCoachingSummary } from '../lib/webhooks'
 import {
   theme as T, STAGES, FORECAST_CATEGORIES, TERMINAL_STAGES,
-  formatCurrency, formatDate, daysUntil, pctOf, getNext3Months, getFiscalPeriods,
+  formatCurrency, formatDate, daysUntil, pctOf, getNext3Months, getFiscalPeriods, getFiscalYear, getFiscalQuarter,
 } from '../lib/theme'
 import { Badge, ForecastBadge, StageBadge, ScoreBar, StatusDot, Spinner, Button } from '../components/Shared'
 import TranscriptUpload from '../components/TranscriptUpload'
@@ -46,20 +47,19 @@ function MoreMenuItem({ label, onClick }) {
   )
 }
 
-// Fiscal helpers
-function getFiscalYear(date = new Date()) { const d = new Date(date); return d.getMonth() >= 9 ? d.getFullYear() + 1 : d.getFullYear() }
-function getFiscalQuarter(date = new Date()) { const m = new Date(date).getMonth(); if (m >= 9 && m <= 11) return 1; if (m >= 0 && m <= 2) return 2; if (m >= 3 && m <= 5) return 3; return 4 }
+// Fiscal helpers (now use fyEndMonth from OrgContext, passed in at call sites)
 function isInCurrentMonth(dateStr) { if (!dateStr) return false; const d = new Date(dateStr), n = new Date(); return d.getMonth() === n.getMonth() && d.getFullYear() === n.getFullYear() }
-function isInCurrentQuarter(dateStr) {
+function isInCurrentQuarter(dateStr, fyEndMonth = 12) {
   if (!dateStr) return false
-  const d = new Date(dateStr), now = new Date(), fy = getFiscalYear(now), fq = getFiscalQuarter(now), yb = fy - 1
-  const qs = { 1: [new Date(yb, 9, 1), new Date(yb, 11, 31)], 2: [new Date(fy, 0, 1), new Date(fy, 2, 31)], 3: [new Date(fy, 3, 1), new Date(fy, 5, 30)], 4: [new Date(fy, 6, 1), new Date(fy, 8, 30)] }
-  const [s, e] = qs[fq] || []; return s && d >= s && d <= e
+  const d = new Date(dateStr), now = new Date()
+  const fp = getFiscalPeriods(now, fyEndMonth)
+  return dateStr >= fp.quarterStart && dateStr <= fp.quarterEnd
 }
 function getARR(deal) { return deal.deal_value || (deal.cmrr ? deal.cmrr * 12 : 0) }
 
 export default function Pipeline() {
   const { profile } = useAuth()
+  const { fyEndMonth } = useOrg()
   const navigate = useNavigate()
 
   // Data
@@ -176,14 +176,14 @@ export default function Pipeline() {
   // Computed
   const active = deals.filter(d => !TERMINAL_STAGES.includes(d.stage))
   const closedDeals = deals.filter(d => d.stage === 'closed_won')
-  const fp = getFiscalPeriods()
-  const fy = getFiscalYear()
-  const fq = getFiscalQuarter()
+  const fp = getFiscalPeriods(new Date(), fyEndMonth)
+  const fy = getFiscalYear(new Date(), fyEndMonth)
+  const fq = getFiscalQuarter(new Date(), fyEndMonth)
 
   function filterDealsByPeriod(d) {
     const a = d.filter(dd => !TERMINAL_STAGES.includes(dd.stage))
     if (forecastPeriod === 'month') return a.filter(dd => isInCurrentMonth(dd.target_close_date))
-    if (forecastPeriod === 'quarter') return a.filter(dd => isInCurrentQuarter(dd.target_close_date))
+    if (forecastPeriod === 'quarter') return a.filter(dd => isInCurrentQuarter(dd.target_close_date, fyEndMonth))
     return a
   }
 
@@ -356,7 +356,7 @@ export default function Pipeline() {
   function QuotaTrackerWidget() {
     const monthClosed = closedDeals.filter(d => isInCurrentMonth(d.target_close_date)).reduce((s, d) => s + getARR(d), 0)
     const quarterClosed = closedDeals.filter(d => isInCurrentQuarter(d.target_close_date)).reduce((s, d) => s + getARR(d), 0)
-    const fyClosed = closedDeals.filter(d => d.target_close_date && getFiscalYear(new Date(d.target_close_date)) === fy).reduce((s, d) => s + getARR(d), 0)
+    const fyClosed = closedDeals.filter(d => d.target_close_date && getFiscalYear(new Date(d.target_close_date), fyEndMonth) === fy).reduce((s, d) => s + getARR(d), 0)
     const mQ = quota / 12, qQ = quota / 4
     const periods = [
       { label: 'Monthly', closed: monthClosed, q: mQ },

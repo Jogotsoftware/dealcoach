@@ -6,14 +6,25 @@ import { theme as T } from '../lib/theme'
 import { Button, Spinner, inputStyle, labelStyle } from '../components/Shared'
 
 const METHODOLOGIES = [
-  { id: 'bant', name: 'BANT', desc: 'Budget, Authority, Need, Timeline' },
-  { id: 'meddpic', name: 'MEDDPIC', desc: 'Metrics, Economic Buyer, Decision Criteria/Process, Identify Pain, Champion' },
-  { id: 'challenger', name: 'Challenger Sale', desc: 'Teach, Tailor, Take Control' },
-  { id: 'sandler', name: 'Sandler', desc: 'Pain, Budget, Decision Process' },
-  { id: 'spiced', name: 'SPICED', desc: 'Situation, Pain, Impact, Critical Event, Decision' },
-  { id: 'stc', name: 'Selling Through Curiosity', desc: 'Always ask why, go 2-3 layers deep' },
-  { id: 'value', name: 'Value Selling', desc: 'Quantify business impact and ROI' },
+  { id: 'rif', name: 'Revenue Instruments Framework', desc: 'Discovery-first, signal-driven, AI-coached. Seven pillars: Curiosity, Independently Wealthy, Continuous Qualification, Empathetic Listening, Outcome-Goal Alignment, Mutual Authoring, Buyer Risk Mitigation.', is_recommended: true },
+  { id: 'bant', name: 'BANT', desc: 'Budget, Authority, Need, Timeline — classic qualification' },
+  { id: 'meddpicc', name: 'MEDDPICC', desc: 'Metrics, Economic Buyer, Decision Criteria, Decision Process, Paper Process, Identified Pain, Champion, Competition' },
+  { id: 'challenger', name: 'Challenger Sale', desc: 'Teach, tailor, take control (Dixon & Adamson)' },
+  { id: 'spin', name: 'SPIN Selling', desc: 'Situation, Problem, Implication, Need-payoff (Rackham)' },
+  { id: 'solution_selling', name: 'Solution Selling', desc: 'Pain chain, solution vision, compelling event (Bosworth)' },
+  { id: 'sandler', name: 'Sandler', desc: 'Up-front contracts, pain funnel, post-sell (Sandler)' },
+  { id: 'jolt', name: 'JOLT Effect', desc: 'Judge indecision, Offer recommendation, Limit exploration, Take risk off the table (Dixon & McKenna)' },
+  { id: 'command_message', name: 'Command of the Message', desc: 'Required capabilities, differentiation, PBOs (Force Management)' },
 ]
+
+const FY_PRESETS = [
+  { month: 12, day: 31, label: 'Dec 31 (Calendar Year)' },
+  { month: 6, day: 30, label: 'Jun 30' },
+  { month: 9, day: 30, label: 'Sep 30' },
+  { month: 3, day: 31, label: 'Mar 31' },
+]
+const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December']
+const DAYS_IN_MONTH = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
 
 const INDUSTRIES = ['SaaS / Technology', 'Financial Services', 'Healthcare', 'Manufacturing', 'Professional Services', 'Retail / E-Commerce', 'Real Estate', 'Nonprofit', 'Education', 'Construction', 'Distribution', 'Hospitality']
 const COMPANY_SIZES = ['1-50', '51-200', '201-1000', '1000-5000', '5000+']
@@ -37,7 +48,10 @@ export default function Onboarding() {
   const [website, setWebsite] = useState('')
   const [productName, setProductName] = useState('')
   const [productDesc, setProductDesc] = useState('')
-  const [methodologies, setMethodologies] = useState(['bant', 'stc'])
+  const [methodologies, setMethodologies] = useState(['rif'])
+  const [fyEndMonth, setFyEndMonth] = useState(12)
+  const [fyEndDay, setFyEndDay] = useState(31)
+  const [fyCustom, setFyCustom] = useState(false)
   const [icpIndustries, setIcpIndustries] = useState([])
   const [icpSizes, setIcpSizes] = useState([])
   const [icpRevenue, setIcpRevenue] = useState([])
@@ -116,6 +130,8 @@ export default function Onboarding() {
             icpRevenueRanges: icpRevenue,
             coachingStyle: 'independently_wealthy',
             teamSize,
+            fiscalYearEndMonth: fyEndMonth,
+            fiscalYearEndDay: fyEndDay,
             stages: [
               { id: 'qualify', name: 'Qualify', active: true },
               { id: 'discovery', name: 'Discovery', active: true },
@@ -221,7 +237,7 @@ export default function Onboarding() {
         {/* Mode selection */}
         {!mode && (
           <>
-            <h1 style={{ fontSize: 22, fontWeight: 800, color: T.text, marginBottom: 8 }}>Welcome to DealCoach</h1>
+            <h1 style={{ fontSize: 22, fontWeight: 800, color: T.text, marginBottom: 8 }}>Welcome to Revenue Instruments</h1>
             <p style={{ fontSize: 13, color: T.textSecondary, marginBottom: 24, lineHeight: 1.5 }}>Get started by creating your organization or joining an existing team.</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <Button primary onClick={() => { setMode('create'); setStep(1) }} style={{ width: '100%', justifyContent: 'center', padding: '12px 20px' }}>Create Organization</Button>
@@ -259,7 +275,7 @@ export default function Onboarding() {
           <>
             {/* Progress */}
             <div style={{ display: 'flex', gap: 4, marginBottom: 20 }}>
-              {['Company', 'Product', 'Methodology', 'Launch'].map((label, i) => (
+              {['Company', 'Product', 'Methodology', 'Review'].map((label, i) => (
                 <div key={label} style={{ flex: 1, textAlign: 'center' }}>
                   <div style={{ height: 3, borderRadius: 2, background: i < step ? T.primary : T.border, marginBottom: 4, transition: 'background 0.3s' }} />
                   <span style={{ fontSize: 10, color: i < step ? T.primary : i === step ? T.text : T.textMuted, fontWeight: 600 }}>{label}</span>
@@ -272,8 +288,8 @@ export default function Onboarding() {
               <>
                 <h2 style={{ fontSize: 18, fontWeight: 700, color: T.text, marginBottom: 4 }}>Your Company</h2>
                 <p style={{ fontSize: 12, color: T.textSecondary, marginBottom: 16 }}>Tell us about your company and who you sell to.</p>
-                <div style={{ marginBottom: 12 }}><label style={labelStyle}>Company Name *</label><input style={inputStyle} value={orgName} onChange={e => setOrgName(e.target.value)} placeholder="e.g. Sage" /></div>
-                <div style={{ marginBottom: 12 }}><label style={labelStyle}>Website</label><input style={inputStyle} value={website} onChange={e => setWebsite(e.target.value)} placeholder="e.g. sage.com" /></div>
+                <div style={{ marginBottom: 12 }}><label style={labelStyle}>Company Name *</label><input style={inputStyle} value={orgName} onChange={e => setOrgName(e.target.value)} placeholder="Company name" /></div>
+                <div style={{ marginBottom: 12 }}><label style={labelStyle}>Website</label><input style={inputStyle} value={website} onChange={e => setWebsite(e.target.value)} placeholder="yourcompany.com" /></div>
                 <div style={{ marginBottom: 12 }}>
                   <label style={labelStyle}>Target Industries</label>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -304,13 +320,34 @@ export default function Onboarding() {
               <>
                 <h2 style={{ fontSize: 18, fontWeight: 700, color: T.text, marginBottom: 4 }}>Your Product</h2>
                 <p style={{ fontSize: 12, color: T.textSecondary, marginBottom: 16 }}>The AI needs to understand what you sell to coach effectively.</p>
-                <div style={{ marginBottom: 12 }}><label style={labelStyle}>Product Name</label><input style={inputStyle} value={productName} onChange={e => setProductName(e.target.value)} placeholder="e.g. Sage Intacct" /></div>
-                <div style={{ marginBottom: 12 }}><label style={labelStyle}>What does it do?</label><textarea style={{ ...inputStyle, minHeight: 80, resize: 'vertical' }} value={productDesc} onChange={e => setProductDesc(e.target.value)} placeholder="Cloud ERP for mid-market companies..." /></div>
-                <div style={{ marginBottom: 16 }}>
+                <div style={{ marginBottom: 12 }}><label style={labelStyle}>Product Name</label><input style={inputStyle} value={productName} onChange={e => setProductName(e.target.value)} placeholder="Product name" /></div>
+                <div style={{ marginBottom: 12 }}><label style={labelStyle}>What does it do?</label><textarea style={{ ...inputStyle, minHeight: 80, resize: 'vertical' }} value={productDesc} onChange={e => setProductDesc(e.target.value)} placeholder="What does it do?" /></div>
+                <div style={{ marginBottom: 12 }}>
                   <label style={labelStyle}>Team Size</label>
                   <select style={{ ...inputStyle, cursor: 'pointer' }} value={teamSize} onChange={e => setTeamSize(e.target.value)}>
                     {['1', '2-5', '6-15', '16-50', '50+'].map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
+                </div>
+                <div style={{ marginBottom: 16 }}>
+                  <label style={labelStyle}>Fiscal Year End</label>
+                  <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 8 }}>When does your company's fiscal year end?</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                    {FY_PRESETS.map(p => {
+                      const active = !fyCustom && fyEndMonth === p.month && fyEndDay === p.day
+                      return <span key={p.label} onClick={() => { setFyEndMonth(p.month); setFyEndDay(p.day); setFyCustom(false) }} style={chipStyle(active)}>{p.label}</span>
+                    })}
+                    <span onClick={() => setFyCustom(true)} style={chipStyle(fyCustom)}>Custom</span>
+                  </div>
+                  {fyCustom && (
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <select style={{ ...inputStyle, cursor: 'pointer', flex: 1 }} value={fyEndMonth} onChange={e => { const m = Number(e.target.value); setFyEndMonth(m); if (fyEndDay > DAYS_IN_MONTH[m - 1]) setFyEndDay(DAYS_IN_MONTH[m - 1]) }}>
+                        {MONTH_NAMES.map((n, i) => <option key={i} value={i + 1}>{n}</option>)}
+                      </select>
+                      <select style={{ ...inputStyle, cursor: 'pointer', width: 70 }} value={fyEndDay} onChange={e => setFyEndDay(Number(e.target.value))}>
+                        {Array.from({ length: DAYS_IN_MONTH[fyEndMonth - 1] }, (_, i) => <option key={i + 1} value={i + 1}>{i + 1}</option>)}
+                      </select>
+                    </div>
+                  )}
                 </div>
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                   <Button onClick={() => setStep(1)}>Back</Button>
@@ -329,10 +366,15 @@ export default function Onboarding() {
                     const active = methodologies.includes(m.id)
                     return (
                       <div key={m.id} onClick={() => toggleArr(methodologies, setMethodologies, m.id)} style={{
-                        padding: '12px 14px', borderRadius: 8, cursor: 'pointer', border: '1px solid ' + (active ? T.primary : T.border),
-                        background: active ? T.primaryLight : 'transparent', transition: 'all 0.15s',
+                        padding: '12px 14px', borderRadius: 8, cursor: 'pointer',
+                        border: m.is_recommended ? `2px solid ${active ? T.primary : T.primaryBorder}` : `1px solid ${active ? T.primary : T.border}`,
+                        background: active ? T.primaryLight : m.is_recommended ? 'rgba(93,173,226,0.03)' : 'transparent',
+                        transition: 'all 0.15s',
                       }}>
-                        <div style={{ fontSize: 14, fontWeight: 600, color: active ? T.primary : T.text }}>{m.name}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <div style={{ fontSize: 14, fontWeight: 600, color: active ? T.primary : T.text, flex: 1 }}>{m.name}</div>
+                          {m.is_recommended && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 3, background: T.success + '18', color: T.success, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Recommended</span>}
+                        </div>
                         <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>{m.desc}</div>
                       </div>
                     )
@@ -357,6 +399,7 @@ export default function Onboarding() {
                     ['Product', productName || orgName],
                     ['Team Size', teamSize],
                     ['Industries', icpIndustries.join(', ') || 'Any'],
+                    ['Fiscal Year End', `${MONTH_NAMES[fyEndMonth - 1]} ${fyEndDay}`],
                     ['Methodologies', methodologies.map(id => METHODOLOGIES.find(m => m.id === id)?.name).join(', ')],
                   ].map(([k, v]) => (
                     <div key={k} style={{ padding: '8px 10px', background: T.surfaceAlt, borderRadius: 6, fontSize: 12 }}>

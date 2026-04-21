@@ -4,11 +4,11 @@ import { Button, Spinner } from './Shared'
 import { callGenerateSlides } from '../lib/webhooks'
 
 const SLIDE_TYPES = [
-  { id: 'team_introductions', label: 'Team Introductions', desc: 'Client team + Sage team side by side' },
+  { id: 'team_introductions', label: 'Team Introductions', desc: 'Client team + your team side by side' },
   { id: 'company_overview', label: 'Company Overview', desc: 'Revenue, org structure, goals, KPIs' },
   { id: 'why_we_are_here', label: 'Why We Are Here', desc: 'Key pains and drivers — the hook slide' },
   { id: 'solution_priorities', label: 'Solution Priorities', desc: 'Detailed pain areas with bold headers' },
-  { id: 'solution_map', label: 'Solution Map', desc: 'Sage Intacct at center with integrations' },
+  { id: 'solution_map', label: 'Solution Map', desc: 'Your product at center with integrations' },
   { id: 'agenda', label: 'Agenda', desc: 'Meeting agenda items' },
 ]
 
@@ -19,7 +19,7 @@ const SUBTITLE_GOLD = '997700'
 const BG_LIGHT = 'F5F5F5'
 const BORDER_LIGHT = 'E0E0E0'
 
-export default function SlideGenerator({ dealId, companyName, onClose }) {
+export default function SlideGenerator({ dealId, companyName, orgName = 'Our Company', onClose }) {
   const [selected, setSelected] = useState(['team_introductions', 'company_overview', 'why_we_are_here', 'solution_priorities'])
   const [generating, setGenerating] = useState(false)
   const [slides, setSlides] = useState(null)
@@ -47,15 +47,15 @@ export default function SlideGenerator({ dealId, companyName, onClose }) {
     const pres = new pptxgen()
     pres.layout = 'LAYOUT_WIDE'
     pres.author = 'DealCoach'
-    pres.title = `${companyName} + Sage Intacct`
+    pres.title = `${companyName} + ${orgName}`
 
     for (let i = 0; i < slides.length; i++) {
       const slide = slides[i]
       const s = pres.addSlide()
 
       // Common footer on every slide
-      s.addText('Sage', { x: 0.3, y: 6.8, w: 1.2, h: 0.5, fontSize: 22, fontFace: 'Arial', bold: true, color: SAGE_GREEN })
-      s.addText(`\u00A9 ${new Date().getFullYear()} The Sage Group plc, or its licensors. All rights reserved.`, { x: 3.5, y: 7.0, w: 6, h: 0.35, fontSize: 9, fontFace: 'Calibri', color: TEXT_MUTED, align: 'center' })
+      s.addText(orgName, { x: 0.3, y: 6.8, w: 2, h: 0.5, fontSize: 22, fontFace: 'Arial', bold: true, color: SAGE_GREEN })
+      s.addText(`\u00A9 ${new Date().getFullYear()} ${orgName}. All rights reserved.`, { x: 3.5, y: 7.0, w: 6, h: 0.35, fontSize: 9, fontFace: 'Calibri', color: TEXT_MUTED, align: 'center' })
       s.addText(`Page ${i + 1}`, { x: 12.0, y: 7.0, w: 1, h: 0.35, fontSize: 9, fontFace: 'Calibri', color: TEXT_MUTED, align: 'right' })
 
       switch (slide.slide_type) {
@@ -69,7 +69,7 @@ export default function SlideGenerator({ dealId, companyName, onClose }) {
       if (slide.speaker_notes) s.addNotes(slide.speaker_notes)
     }
 
-    await pres.writeFile({ fileName: `${companyName.replace(/[^a-zA-Z0-9 ]/g, '').replace(/\s+/g, '_')}_Sage_Intacct.pptx` })
+    await pres.writeFile({ fileName: `${companyName.replace(/[^a-zA-Z0-9 ]/g, '').replace(/\s+/g, '_')}_${orgName.replace(/[^a-zA-Z0-9 ]/g, '').replace(/\s+/g, '_')}.pptx` })
   }
 
   function renderTeamSlide(s, slide) {
@@ -82,9 +82,9 @@ export default function SlideGenerator({ dealId, companyName, onClose }) {
       { text: c.title, options: { italic: true, fontSize: 16, fontFace: 'Calibri', color: SUBTITLE_GOLD, breakLine: i < arr.length - 1, paraSpaceAfter: i < arr.length - 1 ? 10 : 0 } },
     ])
     if (ct.length) s.addText(ct, { x: 0.5, y: 1.6, w: 7, h: 4.5 })
-    // Sage box (white, green border)
+    // Our team box (white, green border)
     s.addShape('roundRect', { x: 8.52, y: 1.28, w: 4.62, h: 5.56, rectRadius: 0.1, fill: { color: 'FFFFFF' }, line: { color: SAGE_GREEN, width: 2 } })
-    s.addText('Sage', { x: 8.84, y: 1.5, w: 1.5, h: 0.6, fontSize: 22, fontFace: 'Arial', bold: true, color: SAGE_GREEN })
+    s.addText(orgName, { x: 8.84, y: 1.5, w: 3, h: 0.6, fontSize: 22, fontFace: 'Arial', bold: true, color: SAGE_GREEN })
     const st = (content.sage_team || []).flatMap((c, i, arr) => [
       { text: c.name, options: { bold: true, fontSize: 16, fontFace: 'Calibri', color: TEXT_BLACK, breakLine: true } },
       { text: c.title, options: { italic: true, fontSize: 14, fontFace: 'Calibri', color: SAGE_GREEN, breakLine: i < arr.length - 1, paraSpaceAfter: i < arr.length - 1 ? 10 : 0 } },
@@ -127,9 +127,9 @@ export default function SlideGenerator({ dealId, companyName, onClose }) {
   function renderMapSlide(s, slide) {
     s.background = { color: BG_LIGHT }
     s.addText(slide.title || 'Solution Map', { x: 0.58, y: 0.37, w: 5, h: 0.65, fontSize: 32, fontFace: 'Calibri', bold: true, color: TEXT_BLACK })
-    // Center oval with Sage
+    // Center oval with org name
     s.addShape('ellipse', { x: 5.0, y: 2.5, w: 3.5, h: 2.3, fill: { color: 'FFFFFF' }, line: { color: SAGE_GREEN, width: 2, dashType: 'dash' } })
-    s.addText('Sage', { x: 5.5, y: 3.0, w: 2.5, h: 1.2, fontSize: 32, fontFace: 'Arial', bold: true, color: SAGE_GREEN, align: 'center', valign: 'middle' })
+    s.addText(orgName, { x: 5.0, y: 3.0, w: 3.5, h: 1.2, fontSize: 28, fontFace: 'Arial', bold: true, color: SAGE_GREEN, align: 'center', valign: 'middle' })
     // Integration nodes around the oval
     const positions = [{ x: 0.5, y: 2.5, w: 3 }, { x: 10.0, y: 1.8, w: 3 }, { x: 10.0, y: 3.8, w: 3 }, { x: 0.5, y: 4.5, w: 3 }, { x: 4.5, y: 5.5, w: 4 }, { x: 0.5, y: 0.8, w: 3 }]
     ;(slide.content?.integrations || []).slice(0, 6).forEach((intg, i) => {
@@ -214,7 +214,7 @@ export default function SlideGenerator({ dealId, companyName, onClose }) {
                 {slide.content?.client_team && (
                   <div style={{ display: 'flex', gap: 20, marginTop: 4, fontSize: 11 }}>
                     <div><div style={{ fontWeight: 700, marginBottom: 2 }}>Client ({slide.content.client_team.length})</div>{slide.content.client_team.slice(0, 3).map((c, j) => <div key={j}>{c.name} {'\u2014'} {c.title}</div>)}</div>
-                    <div><div style={{ fontWeight: 700, marginBottom: 2 }}>Sage ({(slide.content.sage_team || []).length})</div>{(slide.content.sage_team || []).slice(0, 3).map((c, j) => <div key={j}>{c.name} {'\u2014'} {c.title}</div>)}</div>
+                    <div><div style={{ fontWeight: 700, marginBottom: 2 }}>Our Team ({(slide.content.sage_team || []).length})</div>{(slide.content.sage_team || []).slice(0, 3).map((c, j) => <div key={j}>{c.name} {'\u2014'} {c.title}</div>)}</div>
                   </div>
                 )}
                 {slide.content?.sections && (

@@ -40,11 +40,14 @@ export function OrgProvider({ children }) {
   const isSystemAdmin = profile?.role === 'system_admin'
   const hasModule = (key) => (plan?.modules || []).includes(key)
   const isTrialing = org?.trial_ends_at && new Date(org.trial_ends_at) > new Date()
+  const fyEndMonth = org?.fiscal_year_end_month ?? 12
+  const fyEndDay = org?.fiscal_year_end_day ?? 31
 
   return (
     <OrgContext.Provider value={{
       user: profile, org, plan, credits,
       isAdmin, isSystemAdmin, hasModule, isTrialing,
+      fyEndMonth, fyEndDay,
       refreshOrg: loadOrg, loading,
     }}>
       {children}

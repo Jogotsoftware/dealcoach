@@ -67,6 +67,32 @@ export default function OrgSettings() {
           </div>
         </Card>
 
+        <Card title="Fiscal Year">
+          <div style={{ fontSize: 13, color: T.text, marginBottom: 8 }}>
+            <strong>Current:</strong> {['January','February','March','April','May','June','July','August','September','October','November','December'][(org?.fiscal_year_end_month || 12) - 1]} {org?.fiscal_year_end_day || 31}
+            {(org?.fiscal_year_end_month || 12) === 12 && (org?.fiscal_year_end_day || 31) === 31 && <span style={{ color: T.textMuted, marginLeft: 8 }}>(Calendar Year)</span>}
+          </div>
+          {isSystemAdmin && (
+            <div>
+              <div style={{ fontSize: 11, color: T.warning, marginBottom: 8 }}>Changing fiscal year end will recalculate all attainment displays. Historical data is unchanged.</div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+                <div>
+                  <label style={labelStyle}>End Month</label>
+                  <select style={{ ...inputStyle, cursor: 'pointer' }} value={org?.fiscal_year_end_month || 12} onChange={e => saveOrgField('fiscal_year_end_month', Number(e.target.value))}>
+                    {['January','February','March','April','May','June','July','August','September','October','November','December'].map((n, i) => <option key={i} value={i + 1}>{n}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={labelStyle}>End Day</label>
+                  <select style={{ ...inputStyle, cursor: 'pointer' }} value={org?.fiscal_year_end_day || 31} onChange={e => saveOrgField('fiscal_year_end_day', Number(e.target.value))}>
+                    {Array.from({ length: 31 }, (_, i) => <option key={i + 1} value={i + 1}>{i + 1}</option>)}
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
+        </Card>
+
         <Card title="Plan & Usage">
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
             {[

@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
+import { useOrg } from '../contexts/OrgContext'
 import { theme as T, formatCurrency, formatDateLong } from '../lib/theme'
 import { Badge, Button, TabBar, EmptyState, Spinner, inputStyle, labelStyle } from '../components/Shared'
 
@@ -9,6 +10,8 @@ export default function ProposalBuilder() {
   const { dealId } = useParams()
   const navigate = useNavigate()
   const { profile } = useAuth()
+  const { org } = useOrg()
+  const vendorName = org?.name || 'Our Company'
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [deal, setDeal] = useState(null)
@@ -465,7 +468,7 @@ export default function ProposalBuilder() {
             {/* ── Proposal Header ── */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 36, paddingBottom: 24, borderBottom: `2px solid ${T.borderLight}` }}>
               <div>
-                <div style={{ fontSize: 24, fontWeight: 800, color: sc, letterSpacing: '-0.02em' }}>Sage</div>
+                <div style={{ fontSize: 24, fontWeight: 800, color: sc, letterSpacing: '-0.02em' }}>{vendorName}</div>
               </div>
               <div style={{ textAlign: 'center', flex: 1 }}>
                 <div style={{ fontSize: 26, fontWeight: 800, color: T.text, letterSpacing: '-0.02em' }}>{deal.company_name}</div>
@@ -789,7 +792,7 @@ export default function ProposalBuilder() {
             {/* ── Footer ── */}
             <div style={{ marginTop: 40, paddingTop: 16, borderTop: `2px solid ${T.borderLight}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div style={{ fontSize: 11, color: T.textMuted }}>Confidential - Prepared for {deal.company_name}</div>
-              <div style={{ fontSize: 16, fontWeight: 700, color: sc }}>Sage</div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: sc }}>{vendorName}</div>
             </div>
           </div>
         )}
@@ -864,7 +867,7 @@ export default function ProposalBuilder() {
                 }}>
                   {/* Mini header */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12, paddingBottom: 8, borderBottom: `1px solid ${T.borderLight}` }}>
-                    <span style={{ fontWeight: 800, color: settings.secondary_color || sc }}>Sage</span>
+                    <span style={{ fontWeight: 800, color: settings.secondary_color || sc }}>{vendorName}</span>
                     <span style={{ fontWeight: 700 }}>{deal.company_name}</span>
                     <span style={{ color: T.textMuted, fontSize: 9 }}>Valid Until: ...</span>
                   </div>
