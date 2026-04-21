@@ -55,7 +55,10 @@ export default function AdminConsole() {
       <div style={{ padding: '16px 24px', borderBottom: `1px solid ${T.border}`, background: T.surface }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <h1 style={{ fontSize: 18, fontWeight: 800, margin: 0, color: T.text }}>Platform Admin Console</h1>
-          <button onClick={() => nav('/admin/feedback')} style={{ background: T.primary, color: '#fff', border: 'none', borderRadius: 6, padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: T.font }}>Beta Feedback</button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={() => nav('/admin/invitations')} style={{ background: T.surface, color: T.primary, border: `1px solid ${T.primary}`, borderRadius: 6, padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: T.font }}>Invitations</button>
+            <button onClick={() => nav('/admin/feedback')} style={{ background: T.primary, color: '#fff', border: 'none', borderRadius: 6, padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: T.font }}>Beta Feedback</button>
+          </div>
         </div>
       </div>
       <div style={{ background: T.surface, borderBottom: `1px solid ${T.border}` }}>

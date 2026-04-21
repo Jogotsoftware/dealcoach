@@ -22,6 +22,8 @@ import TeamManagement from './pages/settings/TeamManagement'
 import OrgSettings from './pages/settings/OrgSettings'
 import WidgetBuilder from './pages/WidgetBuilder'
 import BetaFeedbackAdmin from './pages/admin/BetaFeedback'
+import InvitationsAdmin from './pages/admin/Invitations'
+import PlatformAdminGuard from './components/guards/PlatformAdminGuard'
 import { Spinner } from './components/Shared'
 
 function ProtectedRoute({ children }) {
@@ -73,6 +75,7 @@ export default function App() {
                   <Route path="/settings/organization" element={<OrgSettings />} />
                   <Route path="/admin/widgets" element={<WidgetBuilder />} />
                   <Route path="/admin/feedback" element={<BetaFeedbackAdmin />} />
+                  <Route path="/admin/invitations" element={<InvitationsAdmin />} />
                 </Route>
               </Route>
             </Route>

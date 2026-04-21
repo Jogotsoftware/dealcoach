@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useOrg } from '../../contexts/OrgContext'
 import { theme as T } from '../../lib/theme'
+import { callSendInvitation } from '../../lib/webhooks'
 import { Card, Badge, Button, Spinner, inputStyle, labelStyle } from '../../components/Shared'
 
 export default function TeamManagement() {
@@ -13,6 +14,8 @@ export default function TeamManagement() {
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteRole, setInviteRole] = useState('rep')
   const [copiedLink, setCopiedLink] = useState(null)
+  const [toast, setToast] = useState(null)
+  const [sendingEmail, setSendingEmail] = useState(null)
 
   useEffect(() => { loadTeam() }, [])
 
@@ -34,16 +37,21 @@ export default function TeamManagement() {
       return
     }
     const { data, error } = await supabase.from('invitations').insert({
-      org_id: org.id, email: inviteEmail, role: inviteRole, invited_by: user.id,
+      org_id: org.id, email: inviteEmail, role: inviteRole, invited_by: user.id, invitation_type: 'teammate',
     }).select().single()
     if (!error && data) {
       setInvitations(prev => [data, ...prev])
       setShowInvite(false)
       setInviteEmail('')
-      const link = `${window.location.origin}/invite/${data.token}`
-      navigator.clipboard.writeText(link)
-      setCopiedLink(data.id)
-      setTimeout(() => setCopiedLink(null), 3000)
+      // Send email via edge function
+      const res = await callSendInvitation(data.id)
+      if (res.error) {
+        setToast({ msg: `Invitation created but email failed: ${res.error}`, isError: true })
+      } else {
+        setToast({ msg: `Invitation email sent to ${data.email}` })
+      }
+      setTimeout(() => setToast(null), 4000)
+      loadTeam()
     }
   }
 
@@ -83,6 +91,11 @@ export default function TeamManagement() {
           <Button primary onClick={() => setShowInvite(true)}>Invite Member</Button>
         </div>
       </div>
+      {toast && (
+        <div style={{ padding: '10px 24px', background: toast.isError ? T.errorLight : T.successLight, borderBottom: `1px solid ${toast.isError ? T.error : T.success}25`, fontSize: 13, fontWeight: 600, color: toast.isError ? T.error : T.success }}>
+          {toast.msg}
+        </div>
+      )}
       <div style={{ padding: '16px 24px' }}>
         {showInvite && (
           <Card style={{ marginBottom: 16 }}>
@@ -136,7 +149,11 @@ export default function TeamManagement() {
               <div key={inv.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid ' + T.borderLight }}>
                 <span style={{ flex: 1, fontSize: 13 }}>{inv.email}</span>
                 <Badge color={T.primary}>{inv.role}</Badge>
+                <Badge color={inv.email_status === 'sent' ? T.success : inv.email_status === 'failed' ? T.error : T.textMuted}>{inv.email_status || 'unsent'}</Badge>
                 <span style={{ fontSize: 10, color: T.textMuted }}>Expires {inv.expires_at?.split('T')[0]}</span>
+                <Button onClick={async () => { setSendingEmail(inv.id); const r = await callSendInvitation(inv.id); setSendingEmail(null); if (r.error) setToast({ msg: r.error, isError: true }); else setToast({ msg: 'Email resent' }); setTimeout(() => setToast(null), 3000); loadTeam() }} style={{ padding: '3px 10px', fontSize: 10 }} disabled={sendingEmail === inv.id}>
+                  {sendingEmail === inv.id ? '...' : 'Resend'}
+                </Button>
                 <Button onClick={() => copyInviteLink(inv.token, inv.id)} style={{ padding: '3px 10px', fontSize: 10 }}>
                   {copiedLink === inv.id ? 'Copied!' : 'Copy Link'}
                 </Button>

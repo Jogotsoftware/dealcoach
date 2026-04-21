@@ -29,7 +29,32 @@ async function getOrgIdFromSession() {
   return profile?.org_id || null
 }
 
-// Edge function callers — all Make.com webhook code has been removed
+// Edge function callers
+
+/**
+ * Call the send-invitation edge function to email an invitation via Resend.
+ */
+export async function callSendInvitation(invitationId) {
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) return { error: 'Not authenticated' }
+  try {
+    const response = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-invitation`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ invitation_id: invitationId }),
+      }
+    )
+    return await response.json()
+  } catch (err) {
+    return { error: err.message }
+  }
+}
 
 
 /**
