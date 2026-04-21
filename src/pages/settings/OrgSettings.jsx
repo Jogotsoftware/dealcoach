@@ -9,8 +9,13 @@ export default function OrgSettings() {
   const [memberCount, setMemberCount] = useState(0)
   const [dealCount, setDealCount] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [allPlans, setAllPlans] = useState([])
 
   useEffect(() => { loadCounts() }, [org?.id])
+  useEffect(() => {
+    supabase.from('plans').select('*').eq('active', true).eq('is_public', true).order('sort_order')
+      .then(({ data }) => setAllPlans(data || []))
+  }, [])
 
   async function loadCounts() {
     if (!org?.id) return
@@ -85,6 +90,39 @@ export default function OrgSettings() {
             </div>
           )}
         </Card>
+
+        {allPlans.length > 0 && (
+          <Card title="Available Plans">
+            <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(allPlans.length, 4)}, 1fr)`, gap: 12 }}>
+              {allPlans.map(p => {
+                const isCurrent = p.id === org?.plan_id
+                return (
+                  <div key={p.id} style={{
+                    padding: 16, borderRadius: 8, textAlign: 'center',
+                    background: isCurrent ? T.primaryLight : T.surfaceAlt,
+                    border: isCurrent ? `2px solid ${T.primary}` : `1px solid ${T.border}`,
+                  }}>
+                    <div style={{ fontSize: 16, fontWeight: 800, color: T.text, marginBottom: 4 }}>{p.name}</div>
+                    <div style={{ fontSize: 22, fontWeight: 800, color: T.primary, marginBottom: 8 }}>
+                      {p.monthly_price ? `$${p.monthly_price}/mo` : 'Free'}
+                    </div>
+                    <div style={{ fontSize: 11, color: T.textMuted, lineHeight: 1.8 }}>
+                      <div>{p.credits_monthly || 0} credits/month</div>
+                      <div>{p.max_users || '\u221E'} users</div>
+                      <div>{p.max_deals || '\u221E'} deals</div>
+                      {p.modules?.length > 0 && <div style={{ marginTop: 4 }}>{p.modules.length} modules</div>}
+                    </div>
+                    {isCurrent ? (
+                      <div style={{ marginTop: 10, fontSize: 11, fontWeight: 700, color: T.primary }}>Current Plan</div>
+                    ) : (
+                      <button style={{ marginTop: 10, padding: '5px 14px', fontSize: 11, fontWeight: 600, border: `1px solid ${T.border}`, borderRadius: 6, background: T.surface, color: T.textMuted, cursor: 'pointer', fontFamily: T.font }}>Coming Soon</button>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </Card>
+        )}
 
         {isSystemAdmin && (
           <Card title="Danger Zone" style={{ border: '1px solid ' + T.error + '30' }}>

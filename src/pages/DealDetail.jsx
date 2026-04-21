@@ -866,6 +866,15 @@ export default function DealDetail() {
       <>
         <ScoreBar score={deal.fit_score || 0} label="Fit" />
         <ScoreBar score={deal.deal_health_score || 0} label="Health" />
+        {deal.icp_fit_score != null && (
+          <div style={{ marginBottom: 8 }}>
+            <div style={ddLabelStyle}>ICP Fit</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 22, fontWeight: 800, fontFeatureSettings: '"tnum"', color: deal.icp_fit_score >= 70 ? T.success : deal.icp_fit_score >= 40 ? T.warning : T.error }}>{deal.icp_fit_score}</span>
+              <span style={{ fontSize: 11, color: T.textMuted }}>/100</span>
+            </div>
+          </div>
+        )}
         <div style={{ marginTop: 12 }}>
           <EditableField label="Stage" value={deal.stage} field="stage" table="deals" recordId={deal.id} type="select" options={allStageOptions} onSaved={(f, v) => setDeal(p => ({ ...p, [f]: v }))} />
           <EditableField label="Forecast" value={deal.forecast_category} field="forecast_category" table="deals" recordId={deal.id} type="select" options={FORECAST_CATEGORIES} onSaved={(f, v) => setDeal(p => ({ ...p, [f]: v }))} />

@@ -294,6 +294,7 @@ export default function Pipeline() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                       <CompanyLogo logoUrl={deal.company_profile?.logo_url} companyName={deal.company_name} size="sm" />
                       <span style={{ fontSize: 13, fontWeight: 600, color: T.text, flex: 1 }}>{deal.company_name}</span>
+                      {deal.icp_fit_score != null && <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: deal.icp_fit_score >= 70 ? T.success : deal.icp_fit_score >= 40 ? T.warning : T.error }} title={`ICP: ${deal.icp_fit_score}/100`} />}
                       <ForecastBadge category={deal.forecast_category} />
                     </div>
                     <div style={{ fontSize: 16, fontWeight: 700, color: T.text, fontFeatureSettings: '"tnum"', marginBottom: 6 }}>{formatCurrency(getARR(deal))}</div>

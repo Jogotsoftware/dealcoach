@@ -5,7 +5,7 @@ import { theme as T } from '../../lib/theme'
 import { Card, Badge, Button, Spinner, inputStyle, labelStyle } from '../../components/Shared'
 
 export default function TeamManagement() {
-  const { user, org, plan, isSystemAdmin } = useOrg()
+  const { user, org, plan, isAdmin, isSystemAdmin } = useOrg()
   const [members, setMembers] = useState([])
   const [invitations, setInvitations] = useState([])
   const [loading, setLoading] = useState(true)
@@ -40,7 +40,7 @@ export default function TeamManagement() {
       setInvitations(prev => [data, ...prev])
       setShowInvite(false)
       setInviteEmail('')
-      const link = `${window.location.origin}/onboarding?token=${data.token}`
+      const link = `${window.location.origin}/invite/${data.token}`
       navigator.clipboard.writeText(link)
       setCopiedLink(data.id)
       setTimeout(() => setCopiedLink(null), 3000)
@@ -52,13 +52,19 @@ export default function TeamManagement() {
     setMembers(prev => prev.map(m => m.id === memberId ? { ...m, role: newRole } : m))
   }
 
+  async function removeMember(memberId) {
+    if (!window.confirm('Remove this member from the organization? They will lose access.')) return
+    await supabase.from('profiles').update({ org_id: null, role: 'rep' }).eq('id', memberId)
+    setMembers(prev => prev.filter(m => m.id !== memberId))
+  }
+
   async function revokeInvite(invId) {
     await supabase.from('invitations').update({ status: 'revoked' }).eq('id', invId)
     setInvitations(prev => prev.map(i => i.id === invId ? { ...i, status: 'revoked' } : i))
   }
 
   function copyInviteLink(token, invId) {
-    navigator.clipboard.writeText(`${window.location.origin}/onboarding?token=${token}`)
+    navigator.clipboard.writeText(`${window.location.origin}/invite/${token}`)
     setCopiedLink(invId)
     setTimeout(() => setCopiedLink(null), 3000)
   }
@@ -113,7 +119,11 @@ export default function TeamManagement() {
                     )}
                   </td>
                   <td style={{ padding: '10px 8px', fontSize: 11, color: T.textMuted }}>{m.created_at?.split('T')[0]}</td>
-                  <td style={{ padding: '10px 8px' }}>{m.id === user.id && <span style={{ fontSize: 10, color: T.textMuted }}>You</span>}</td>
+                  <td style={{ padding: '10px 8px' }}>
+                    {m.id === user.id ? <span style={{ fontSize: 10, color: T.textMuted }}>You</span> : (
+                      isAdmin && <button onClick={() => removeMember(m.id)} style={{ background: 'none', border: 'none', color: T.textMuted, fontSize: 11, cursor: 'pointer', fontFamily: T.font }} onMouseEnter={e => e.currentTarget.style.color = T.error} onMouseLeave={e => e.currentTarget.style.color = T.textMuted}>Remove</button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

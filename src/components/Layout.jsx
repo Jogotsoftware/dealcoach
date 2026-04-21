@@ -2,12 +2,14 @@ import { useState, useEffect } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { useModules } from '../hooks/useModules'
+import { useOrg } from '../contexts/OrgContext'
 import { supabase } from '../lib/supabase'
 import { theme as T } from '../lib/theme'
 
 export default function Layout() {
   const { profile, signOut } = useAuth()
   const { hasModule } = useModules()
+  const { org, credits, isTrialing } = useOrg()
   const navigate = useNavigate()
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false)
   const [sidebarExpanded, setSidebarExpanded] = useState(false)
@@ -119,6 +121,7 @@ export default function Layout() {
               <div style={{ flex: 1, overflow: 'hidden' }}>
                 <div style={{ fontSize: 12, fontWeight: 600, color: '#e0e0e0', overflow: 'hidden', textOverflow: 'ellipsis' }}>{profile?.full_name || 'Loading...'}</div>
                 <div style={{ fontSize: 10, color: '#667788', overflow: 'hidden', textOverflow: 'ellipsis' }}>{profile?.email || ''}</div>
+                {credits && <div style={{ fontSize: 10, color: '#667788', marginTop: 2 }}>{credits.balance ?? 0} credits</div>}
               </div>
               <button
                 onClick={handleSignOut}
@@ -140,6 +143,15 @@ export default function Layout() {
 
       {/* Main content */}
       <div style={{ flex: 1, minWidth: 0, overflow: 'auto', width: '100%' }}>
+        {isTrialing && org?.trial_ends_at && (
+          <div style={{
+            padding: '8px 24px', background: T.warningLight, borderBottom: `1px solid ${T.warning}25`,
+            fontSize: 12, color: T.warning, fontWeight: 600, display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          }}>
+            <span>Trial ends {new Date(org.trial_ends_at).toLocaleDateString()} — {Math.max(0, Math.ceil((new Date(org.trial_ends_at) - new Date()) / 86400000))} days remaining</span>
+            <button onClick={() => navigate('/settings/organization')} style={{ padding: '3px 10px', fontSize: 10, background: T.warning, color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontWeight: 700, fontFamily: T.font }}>Upgrade</button>
+          </div>
+        )}
         <Outlet />
       </div>
     </div>

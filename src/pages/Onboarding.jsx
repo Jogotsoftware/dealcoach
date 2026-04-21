@@ -143,6 +143,15 @@ export default function Onboarding() {
       )
       const data = await res.json()
       if (data.error) throw new Error(data.error)
+
+      // Assign free plan if org has no plan
+      if (data.org_id) {
+        const { data: freePlan } = await supabase.from('plans').select('id').eq('slug', 'free').single()
+        if (freePlan) {
+          await supabase.from('organizations').update({ plan_id: freePlan.id }).eq('id', data.org_id).is('plan_id', null)
+        }
+      }
+
       setResult(data)
     } catch (err) {
       setError(err.message)

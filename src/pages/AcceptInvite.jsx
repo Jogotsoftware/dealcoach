@@ -51,6 +51,20 @@ export default function AcceptInvite() {
     setError(null)
 
     try {
+      // 0. Check if user is already logged in — just join the org
+      const { data: { session: existingSession } } = await supabase.auth.getSession()
+      if (existingSession?.user) {
+        await supabase.from('profiles').update({
+          org_id: invitation.org_id,
+          role: invitation.role || 'rep',
+        }).eq('id', existingSession.user.id)
+        await supabase.from('invitations').update({
+          status: 'accepted', accepted_at: new Date().toISOString(),
+        }).eq('id', invitation.id)
+        navigate('/')
+        return
+      }
+
       // 1. Sign up
       const { data: authData, error: signUpErr } = await supabase.auth.signUp({
         email: invitation.email,

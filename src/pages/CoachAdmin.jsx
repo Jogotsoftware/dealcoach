@@ -33,6 +33,15 @@ export default function CoachAdmin() {
   const [expandedEmailTemplate, setExpandedEmailTemplate] = useState(null)
   const [researchConfig, setResearchConfig] = useState(null)
   const [slideConfig, setSlideConfig] = useState(null)
+  const [icp, setIcp] = useState(null)
+  const [icpForm, setIcpForm] = useState({
+    name: 'Default ICP', industries: [], geographies: [], current_systems: [], tech_red_flags: [], buying_signals: [], disqualifiers: [],
+    revenue_min: '', revenue_max: '', employee_min: '', employee_max: '', entity_count_min: '', entity_count_max: '',
+    weight_industry: 20, weight_revenue: 15, weight_employees: 10, weight_entities: 20, weight_current_system: 15, weight_buying_signals: 20,
+  })
+  const [icpTestDealId, setIcpTestDealId] = useState('')
+  const [icpTestResult, setIcpTestResult] = useState(null)
+  const [icpDeals, setIcpDeals] = useState([])
 
   // Editing states
   const [editingCoach, setEditingCoach] = useState(false)
@@ -111,6 +120,25 @@ export default function CoachAdmin() {
 
         const { data: sc } = await supabase.from('coach_slide_config').select('*').eq('coach_id', activeCoach.id).single()
         setSlideConfig(sc || null)
+
+        const { data: icpData } = await supabase.from('coach_icp').select('*').eq('coach_id', activeCoach.id).eq('active', true).limit(1).single()
+        setIcp(icpData || null)
+        if (icpData) {
+          setIcpForm({
+            name: icpData.name || 'Default ICP', industries: icpData.industries || [], geographies: icpData.geographies || [],
+            current_systems: icpData.current_systems || [], tech_red_flags: icpData.tech_red_flags || [],
+            buying_signals: icpData.buying_signals || [], disqualifiers: icpData.disqualifiers || [],
+            revenue_min: icpData.revenue_min || '', revenue_max: icpData.revenue_max || '',
+            employee_min: icpData.employee_min || '', employee_max: icpData.employee_max || '',
+            entity_count_min: icpData.entity_count_min || '', entity_count_max: icpData.entity_count_max || '',
+            weight_industry: icpData.weight_industry ?? 20, weight_revenue: icpData.weight_revenue ?? 15,
+            weight_employees: icpData.weight_employees ?? 10, weight_entities: icpData.weight_entities ?? 20,
+            weight_current_system: icpData.weight_current_system ?? 15, weight_buying_signals: icpData.weight_buying_signals ?? 20,
+          })
+        }
+
+        const { data: dealsForIcp } = await supabase.from('deals').select('id, company_name').order('created_at', { ascending: false }).limit(20)
+        setIcpDeals(dealsForIcp || [])
 
         // Load template stages/milestones
         const tplIds = (templatesRes.data || []).map(t => t.id)
@@ -293,6 +321,7 @@ export default function CoachAdmin() {
     { key: 'emails', label: `Email Templates (${emailTemplatesAdmin.length})` },
     { key: 'research', label: 'Research' },
     { key: 'slides', label: 'Slides' },
+    { key: 'icp', label: 'ICP' },
   ]
 
   const EMAIL_TYPES = ['sc_briefing', 'scoping_kt', 'exec_alignment', 'follow_up', 'internal_update', 'custom']
@@ -987,7 +1016,160 @@ export default function CoachAdmin() {
             </Card>
           </>
         )}
+
+        {/* ===== ICP TAB ===== */}
+        {tab === 'icp' && coach && (() => {
+          const weightTotal = (icpForm.weight_industry || 0) + (icpForm.weight_revenue || 0) + (icpForm.weight_employees || 0) + (icpForm.weight_entities || 0) + (icpForm.weight_current_system || 0) + (icpForm.weight_buying_signals || 0)
+
+          async function saveIcp() {
+            const record = {
+              coach_id: coach.id, name: icpForm.name || 'Default ICP', active: true,
+              industries: icpForm.industries, geographies: icpForm.geographies,
+              revenue_min: icpForm.revenue_min || null, revenue_max: icpForm.revenue_max || null,
+              employee_min: icpForm.employee_min || null, employee_max: icpForm.employee_max || null,
+              entity_count_min: icpForm.entity_count_min || null, entity_count_max: icpForm.entity_count_max || null,
+              current_systems: icpForm.current_systems, tech_red_flags: icpForm.tech_red_flags,
+              buying_signals: icpForm.buying_signals, disqualifiers: icpForm.disqualifiers,
+              weight_industry: icpForm.weight_industry, weight_revenue: icpForm.weight_revenue,
+              weight_employees: icpForm.weight_employees, weight_entities: icpForm.weight_entities,
+              weight_current_system: icpForm.weight_current_system, weight_buying_signals: icpForm.weight_buying_signals,
+            }
+            if (icp?.id) {
+              await supabase.from('coach_icp').update(record).eq('id', icp.id)
+            } else {
+              const { data } = await supabase.from('coach_icp').insert(record).select().single()
+              if (data) setIcp(data)
+            }
+          }
+
+          async function testIcpScore() {
+            if (!icpTestDealId) return
+            setIcpTestResult(null)
+            const { data, error } = await supabase.rpc('compute_icp_score', { p_deal_id: icpTestDealId, p_coach_id: coach.id })
+            if (error) setIcpTestResult({ error: error.message })
+            else setIcpTestResult(data)
+          }
+
+          return (
+            <>
+              <Card title="Ideal Customer Profile">
+                <div style={{ marginBottom: 12 }}>
+                  <label style={labelStyle}>ICP Name</label>
+                  <input style={inputStyle} value={icpForm.name} onChange={e => setIcpForm(p => ({ ...p, name: e.target.value }))} />
+                </div>
+
+                <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 8, marginTop: 16, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Target Firmographics</div>
+                <TagInput label="Industries" value={icpForm.industries} onChange={v => setIcpForm(p => ({ ...p, industries: v }))} placeholder="e.g. Healthcare, Manufacturing..." />
+                <TagInput label="Geographies" value={icpForm.geographies} onChange={v => setIcpForm(p => ({ ...p, geographies: v }))} placeholder="e.g. US, Canada, UK..." />
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+                  <div><label style={labelStyle}>Revenue Min ($)</label><input type="number" style={inputStyle} value={icpForm.revenue_min} onChange={e => setIcpForm(p => ({ ...p, revenue_min: e.target.value }))} placeholder="e.g. 5000000" /></div>
+                  <div><label style={labelStyle}>Revenue Max ($)</label><input type="number" style={inputStyle} value={icpForm.revenue_max} onChange={e => setIcpForm(p => ({ ...p, revenue_max: e.target.value }))} placeholder="e.g. 500000000" /></div>
+                  <div><label style={labelStyle}>Employee Min</label><input type="number" style={inputStyle} value={icpForm.employee_min} onChange={e => setIcpForm(p => ({ ...p, employee_min: e.target.value }))} placeholder="e.g. 25" /></div>
+                  <div><label style={labelStyle}>Employee Max</label><input type="number" style={inputStyle} value={icpForm.employee_max} onChange={e => setIcpForm(p => ({ ...p, employee_max: e.target.value }))} placeholder="e.g. 5000" /></div>
+                  <div><label style={labelStyle}>Entity Count Min</label><input type="number" style={inputStyle} value={icpForm.entity_count_min} onChange={e => setIcpForm(p => ({ ...p, entity_count_min: e.target.value }))} placeholder="e.g. 2" /></div>
+                  <div><label style={labelStyle}>Entity Count Max</label><input type="number" style={inputStyle} value={icpForm.entity_count_max} onChange={e => setIcpForm(p => ({ ...p, entity_count_max: e.target.value }))} placeholder="e.g. 50" /></div>
+                </div>
+
+                <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 8, marginTop: 16, textTransform: 'uppercase', letterSpacing: '0.04em' }}>System Signals</div>
+                <TagInput label="Current Systems (good fit)" value={icpForm.current_systems} onChange={v => setIcpForm(p => ({ ...p, current_systems: v }))} placeholder="e.g. QuickBooks, Sage 50..." />
+                <TagInput label="Tech Red Flags" value={icpForm.tech_red_flags} onChange={v => setIcpForm(p => ({ ...p, tech_red_flags: v }))} placeholder="e.g. SAP, Oracle..." />
+
+                <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 8, marginTop: 16, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Behavioral Signals</div>
+                <TagInput label="Buying Signals" value={icpForm.buying_signals} onChange={v => setIcpForm(p => ({ ...p, buying_signals: v }))} placeholder="e.g. PE acquisition, CFO hire..." />
+                <TagInput label="Disqualifiers" value={icpForm.disqualifiers} onChange={v => setIcpForm(p => ({ ...p, disqualifiers: v }))} placeholder="e.g. Government, Pre-revenue..." />
+
+                <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 8, marginTop: 16, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Scoring Weights</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, padding: '6px 12px', background: weightTotal === 100 ? T.successLight : T.errorLight, borderRadius: 6, border: `1px solid ${weightTotal === 100 ? T.success + '40' : T.error + '40'}` }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: weightTotal === 100 ? T.success : T.error }}>Total: {weightTotal}/100</span>
+                  {weightTotal !== 100 && <span style={{ fontSize: 11, color: T.error }}>Weights should sum to 100</span>}
+                </div>
+                {[
+                  { key: 'weight_industry', label: 'Industry Match' },
+                  { key: 'weight_revenue', label: 'Revenue Range' },
+                  { key: 'weight_employees', label: 'Employee Count' },
+                  { key: 'weight_entities', label: 'Entity Count' },
+                  { key: 'weight_current_system', label: 'Current System' },
+                  { key: 'weight_buying_signals', label: 'Buying Signals' },
+                ].map(w => (
+                  <div key={w.key} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                    <span style={{ fontSize: 12, color: T.text, width: 120, flexShrink: 0 }}>{w.label}</span>
+                    <input type="range" min="0" max="100" value={icpForm[w.key] || 0} onChange={e => setIcpForm(p => ({ ...p, [w.key]: Number(e.target.value) }))} style={{ flex: 1, accentColor: T.primary }} />
+                    <input type="number" min="0" max="100" value={icpForm[w.key] || 0} onChange={e => setIcpForm(p => ({ ...p, [w.key]: Number(e.target.value) }))} style={{ ...inputStyle, width: 50, textAlign: 'center', padding: '4px' }} />
+                  </div>
+                ))}
+
+                <div style={{ marginTop: 16, display: 'flex', gap: 8 }}>
+                  <Button primary onClick={saveIcp}>Save ICP</Button>
+                </div>
+              </Card>
+
+              <Card title="Test ICP Score">
+                <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', marginBottom: 12 }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={labelStyle}>Select a Deal</label>
+                    <select style={{ ...inputStyle, cursor: 'pointer' }} value={icpTestDealId} onChange={e => setIcpTestDealId(e.target.value)}>
+                      <option value="">Choose deal...</option>
+                      {icpDeals.map(d => <option key={d.id} value={d.id}>{d.company_name}</option>)}
+                    </select>
+                  </div>
+                  <Button primary onClick={testIcpScore} disabled={!icpTestDealId}>Test Score</Button>
+                </div>
+                {icpTestResult && (
+                  icpTestResult.error ? (
+                    <div style={{ color: T.error, fontSize: 12, padding: 10, background: T.errorLight, borderRadius: 6 }}>{icpTestResult.error}</div>
+                  ) : (
+                    <div style={{ padding: 12, background: T.surfaceAlt, borderRadius: 6 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+                        <div style={{ fontSize: 36, fontWeight: 800, color: (icpTestResult.score ?? icpTestResult) >= 70 ? T.success : (icpTestResult.score ?? icpTestResult) >= 40 ? T.warning : T.error }}>
+                          {icpTestResult.score ?? icpTestResult}
+                        </div>
+                        <span style={{ fontSize: 14, color: T.textMuted }}>/100</span>
+                      </div>
+                      {icpTestResult.breakdown && typeof icpTestResult.breakdown === 'object' && (
+                        <div>
+                          {Object.entries(icpTestResult.breakdown).map(([k, v]) => (
+                            <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: `1px solid ${T.borderLight}`, fontSize: 12 }}>
+                              <span style={{ color: T.text }}>{k.replace(/_/g, ' ')}</span>
+                              <span style={{ fontWeight: 700, color: typeof v === 'number' ? (v > 0 ? T.success : T.textMuted) : T.text }}>{typeof v === 'number' ? v : JSON.stringify(v)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                )}
+              </Card>
+            </>
+          )
+        })()}
       </div>
+    </div>
+  )
+}
+
+function TagInput({ label, value, onChange, placeholder }) {
+  const [input, setInput] = useState('')
+  function addTag() {
+    const tags = input.split(/[,\n]/).map(s => s.trim()).filter(s => s && !value.includes(s))
+    if (tags.length) { onChange([...value, ...tags]); setInput('') }
+  }
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <label style={{ fontSize: 10, fontWeight: 600, color: '#8899aa', textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: 3 }}>{label}</label>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 4 }}>
+        {value.map((tag, i) => (
+          <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '3px 8px', borderRadius: 4, background: 'rgba(93,173,226,0.1)', border: '1px solid rgba(93,173,226,0.25)', color: '#2c3e50' }}>
+            {tag}
+            <span style={{ cursor: 'pointer', color: '#999', fontSize: 13, lineHeight: 1 }} onClick={() => onChange(value.filter((_, j) => j !== i))}>&times;</span>
+          </span>
+        ))}
+      </div>
+      <input
+        style={{ width: '100%', padding: '6px 10px', fontSize: 12, border: '1px solid #e1e4e8', borderRadius: 6, background: '#fff', color: '#2c3e50', fontFamily: "'Plus Jakarta Sans', -apple-system, sans-serif" }}
+        value={input} onChange={e => setInput(e.target.value)} placeholder={placeholder}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addTag() } }}
+        onBlur={addTag}
+      />
     </div>
   )
 }
