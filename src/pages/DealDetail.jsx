@@ -1392,13 +1392,13 @@ export default function DealDetail() {
 
   const tabs = [
     { key: 'overview', label: 'Overview' },
-    { key: 'contacts', label: `Contacts (${contacts.length})` },
-    { key: 'transcripts', label: `Transcripts (${conversations.length})` },
+    hasModule('deal_management') && { key: 'contacts', label: `Contacts (${contacts.length})` },
+    hasModule('transcript_analysis') && { key: 'transcripts', label: `Transcripts (${conversations.length})` },
     hasModule('msp') && { key: 'msp', label: 'MSP' },
     hasModule('proposal') && { key: 'proposal', label: 'Proposal' },
     { key: 'tasks', label: `Tasks (${openTasks.length})` },
     { key: 'documents', label: `Documents (${documents.length})` },
-    { key: 'emails', label: `Emails (${generatedEmails.length})` },
+    hasModule('coaching') && { key: 'emails', label: `Emails (${generatedEmails.length})` },
   ].filter(Boolean)
 
   return (
@@ -1703,23 +1703,36 @@ export default function DealDetail() {
               <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: T.text }}>Transcripts</h3>
               {hasModule('transcript_analysis') ? <Button primary onClick={() => setShowTranscriptUpload(true)}>Upload Transcript</Button> : <Button disabled title="Upgrade your plan">Upload Transcript</Button>}
             </div>
-            {conversations.length === 0 ? <EmptyState message="No transcripts yet. Upload a call transcript for AI analysis and auto-extracted tasks." /> : conversations.map(cv => (
-              <div key={cv.id} onClick={() => navigate(`/deal/${id}/call/${cv.id}`)} style={{ cursor: 'pointer' }}>
-                <Card>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
-                    <div>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: T.text }}>{cv.title || 'Untitled'}</div>
-                      <div style={{ display: 'flex', gap: 8, marginTop: 4 }}><Badge color={T.primary}>{cv.call_type}</Badge><span style={{ fontSize: 12, color: T.textSecondary }}>{formatDateLong(cv.call_date)}</span></div>
-                    </div>
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      {cv.processed && <Badge color={T.success}>Processed</Badge>}
-                      {cv.task_count > 0 && <span style={{ fontSize: 11, color: T.textSecondary }}>{cv.task_count} tasks</span>}
-                    </div>
+            {conversations.length === 0 ? <EmptyState message="No transcripts yet. Upload a call transcript for AI analysis and auto-extracted tasks." /> : conversations.map(cv => {
+              const isStuck = !cv.processed && (Date.now() - new Date(cv.created_at).getTime() > 5 * 60 * 1000)
+              return (
+                <div key={cv.id} style={{ position: 'relative' }}>
+                  <div onClick={() => navigate(`/deal/${id}/call/${cv.id}`)} style={{ cursor: 'pointer' }}>
+                    <Card>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+                        <div>
+                          <div style={{ fontSize: 14, fontWeight: 700, color: T.text }}>{cv.title || 'Untitled'}</div>
+                          <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                            <Badge color={T.primary}>{cv.call_type}</Badge>
+                            <span style={{ fontSize: 12, color: T.textSecondary }}>{formatDateLong(cv.call_date)}</span>
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          {cv.processed && <Badge color={T.success}>Processed</Badge>}
+                          {isStuck && (
+                            <button onClick={async (e) => { e.stopPropagation(); const { callProcessTranscript } = await import('../lib/webhooks'); await callProcessTranscript(cv.id); loadDeal() }} style={{ background: T.warning, color: '#fff', border: 'none', borderRadius: 4, padding: '3px 10px', fontSize: 10, fontWeight: 600, cursor: 'pointer', fontFamily: T.font }}>Retry</button>
+                          )}
+                          {!cv.processed && !isStuck && <Badge color={T.warning}>Processing...</Badge>}
+                          {cv.task_count > 0 && <span style={{ fontSize: 11, color: T.textSecondary }}>{cv.task_count} tasks</span>}
+                          <button onClick={async (e) => { e.stopPropagation(); if (!confirm('Delete this transcript?')) return; await supabase.from('conversations').delete().eq('id', cv.id); loadDeal() }} style={{ background: 'none', border: 'none', color: T.textMuted, cursor: 'pointer', fontSize: 14, padding: '0 4px' }} onMouseEnter={e => e.currentTarget.style.color = T.error} onMouseLeave={e => e.currentTarget.style.color = T.textMuted}>&times;</button>
+                        </div>
+                      </div>
+                      {cv.ai_summary && <div style={{ fontSize: 13, color: T.text, lineHeight: 1.6, background: T.surfaceAlt, padding: 14, borderRadius: 6, border: `1px solid ${T.border}` }}>{cv.ai_summary}</div>}
+                    </Card>
                   </div>
-                  {cv.ai_summary && <div style={{ fontSize: 13, color: T.text, lineHeight: 1.6, background: T.surfaceAlt, padding: 14, borderRadius: 6, border: `1px solid ${T.border}` }}>{cv.ai_summary}</div>}
-                </Card>
-              </div>
-            ))}
+                </div>
+              )
+            })}
           </div>
         )}
 

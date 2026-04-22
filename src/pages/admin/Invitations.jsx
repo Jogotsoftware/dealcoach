@@ -184,6 +184,7 @@ export default function Invitations() {
                           <button onClick={() => resendInvite(inv.id)} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 4, padding: '2px 8px', fontSize: 10, cursor: 'pointer', color: T.primary, fontFamily: T.font }}>Resend</button>
                           <button onClick={() => copyLink(inv.token)} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 4, padding: '2px 8px', fontSize: 10, cursor: 'pointer', color: T.textMuted, fontFamily: T.font }}>Copy</button>
                           <button onClick={() => revokeInvite(inv.id)} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 4, padding: '2px 8px', fontSize: 10, cursor: 'pointer', color: T.error, fontFamily: T.font }}>Revoke</button>
+                          <button onClick={async () => { if (!window.confirm('Permanently delete this invitation?')) return; const { error } = await supabase.rpc('delete_invitation', { p_invitation_id: inv.id }); if (error) { showToast(error.message, true); return }; showToast('Invitation deleted'); loadInvitations() }} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 4, padding: '2px 8px', fontSize: 10, cursor: 'pointer', color: T.textMuted, fontFamily: T.font }}>Delete</button>
                         </div>
                       )}
                     </td>

@@ -4,6 +4,8 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { theme as T, formatCurrency, formatDate } from '../lib/theme'
 import { Button, Badge, Spinner, TabBar, inputStyle, labelStyle } from '../components/Shared'
+import ModuleAccessPicker from '../components/ModuleAccessPicker'
+import { callSendInvitation } from '../lib/webhooks'
 
 const MODULE_SLUGS = [
   'pipeline', 'deal_management', 'transcript_analysis', 'coaching',
@@ -14,7 +16,7 @@ const ADMIN_TABS = [
   { key: 'orgs', label: 'Organizations' },
   { key: 'users', label: 'Users' },
   { key: 'plans', label: 'Plans' },
-  { key: 'credits', label: 'Credits' },
+  { key: 'credits', label: 'Billing (beta)' },
   { key: 'costs', label: 'Credit Costs' },
   { key: 'modules', label: 'Modules' },
   { key: 'usage', label: 'Usage' },
@@ -91,6 +93,8 @@ function OrganizationsTab() {
   const [allModules, setAllModules] = useState([])
   const [moduleToggles, setModuleToggles] = useState({})
   const [deals, setDeals] = useState([])
+  const [showInviteOrg, setShowInviteOrg] = useState(false)
+  const [inviteOrgForm, setInviteOrgForm] = useState({ email: '', name: '', orgName: '', message: '', modules: null })
 
   useEffect(() => { loadOrgs() }, [])
 
@@ -151,6 +155,22 @@ function OrganizationsTab() {
     loadOrgs()
   }
 
+  async function inviteOrg() {
+    if (!inviteOrgForm.email.trim()) return
+    const { data, error } = await supabase.rpc('invite_new_org_with_admin', {
+      p_admin_email: inviteOrgForm.email.trim().toLowerCase(),
+      p_admin_name: inviteOrgForm.name.trim() || null,
+      p_org_name: inviteOrgForm.orgName.trim() || null,
+      p_personal_message: inviteOrgForm.message.trim() || null,
+      p_modules: inviteOrgForm.modules,
+    })
+    if (error) { alert(error.message); return }
+    await callSendInvitation(data.id || data).catch(() => {})
+    setShowInviteOrg(false)
+    setInviteOrgForm({ email: '', name: '', orgName: '', message: '', modules: null })
+    loadOrgs()
+  }
+
   async function deleteOrg(id) {
     if (!confirm('Delete this organization? This cannot be undone.')) return
     await supabase.from('organizations').delete().eq('id', id)
@@ -182,6 +202,7 @@ function OrganizationsTab() {
     <div>
       <div style={{ marginBottom: 16, display: 'flex', gap: 8 }}>
         <Button primary onClick={() => setShowCreate(!showCreate)}>Create Organization</Button>
+        <Button onClick={() => setShowInviteOrg(true)} style={{ marginLeft: 8 }}>+ Invite Organization</Button>
       </div>
 
       {showCreate && (
@@ -198,6 +219,28 @@ function OrganizationsTab() {
           </div>
           <Button primary onClick={createOrg} disabled={!newOrg.name}>Save</Button>
           <Button style={{ marginLeft: 8 }} onClick={() => setShowCreate(false)}>Cancel</Button>
+        </div>
+      )}
+
+      {/* Invite Organization Modal */}
+      {showInviteOrg && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)' }} onClick={() => setShowInviteOrg(false)} />
+          <div style={{ position: 'relative', zIndex: 1, background: T.surface, borderRadius: 12, padding: 24, width: 520, maxHeight: '85vh', overflow: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.15)', border: `1px solid ${T.border}` }}>
+            <h3 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 700 }}>Invite Organization</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+              <div><label style={labelStyle}>Admin Email *</label><input style={smallInput} value={inviteOrgForm.email} onChange={e => setInviteOrgForm(p => ({ ...p, email: e.target.value }))} placeholder="admin@company.com" /></div>
+              <div><label style={labelStyle}>Admin Name</label><input style={smallInput} value={inviteOrgForm.name} onChange={e => setInviteOrgForm(p => ({ ...p, name: e.target.value }))} placeholder="Jane Smith" /></div>
+            </div>
+            <div style={{ marginBottom: 10 }}><label style={labelStyle}>Organization Name</label><input style={smallInput} value={inviteOrgForm.orgName} onChange={e => setInviteOrgForm(p => ({ ...p, orgName: e.target.value }))} placeholder="Acme Corp" /></div>
+            <div style={{ marginBottom: 10 }}><label style={labelStyle}>Personal Message</label><textarea style={{ ...smallInput, minHeight: 50, resize: 'vertical' }} value={inviteOrgForm.message} onChange={e => setInviteOrgForm(p => ({ ...p, message: e.target.value.slice(0, 500) }))} placeholder="Optional..." /></div>
+            <label style={labelStyle}>Module Access</label>
+            <ModuleAccessPicker value={inviteOrgForm.modules} onChange={v => setInviteOrgForm(p => ({ ...p, modules: v }))} orgId={null} />
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+              <Button onClick={() => setShowInviteOrg(false)}>Cancel</Button>
+              <Button primary onClick={inviteOrg} disabled={!inviteOrgForm.email.trim()}>Send Invitation</Button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -470,6 +513,7 @@ function UsersTab() {
                       }} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 4, padding: '2px 6px', fontSize: 10, cursor: 'pointer', color: T.primary, fontFamily: T.font }}>Resend</button>
                       <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/invite/${inv.token}`) }} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 4, padding: '2px 6px', fontSize: 10, cursor: 'pointer', color: T.textMuted, fontFamily: T.font }}>Copy</button>
                       <button onClick={async () => { await supabase.from('invitations').update({ status: 'revoked' }).eq('id', inv.id); loadUsers() }} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 4, padding: '2px 6px', fontSize: 10, cursor: 'pointer', color: T.error, fontFamily: T.font }}>Revoke</button>
+                      <button onClick={async () => { if (!confirm('Permanently delete this invitation?')) return; const { error } = await supabase.rpc('delete_invitation', { p_invitation_id: inv.id }); if (error) alert(error.message); loadUsers() }} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 4, padding: '2px 6px', fontSize: 10, cursor: 'pointer', color: T.textMuted, fontFamily: T.font }}>Delete</button>
                     </div>
                   </td>
                 </tr>

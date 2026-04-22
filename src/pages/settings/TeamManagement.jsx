@@ -158,6 +158,7 @@ export default function TeamManagement() {
                   {copiedLink === inv.id ? 'Copied!' : 'Copy Link'}
                 </Button>
                 <Button onClick={() => revokeInvite(inv.id)} style={{ padding: '3px 10px', fontSize: 10, color: T.error }}>Revoke</Button>
+                <Button onClick={async () => { if (!window.confirm('Permanently delete this invitation?')) return; const { error } = await supabase.rpc('delete_invitation', { p_invitation_id: inv.id }); if (error) { setToast({ msg: error.message, isError: true }); return }; setToast({ msg: 'Deleted' }); setTimeout(() => setToast(null), 3000); loadTeam() }} style={{ padding: '3px 10px', fontSize: 10 }}>Delete</Button>
               </div>
             ))}
           </Card>

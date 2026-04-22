@@ -62,8 +62,9 @@ export default function AcceptInvite() {
     try {
       const { data, error: rpcErr } = await supabase.rpc('accept_invitation', { p_token: token, p_user_id: user.id })
       if (rpcErr) throw new Error(rpcErr.message)
+      await supabase.rpc('apply_invitation_module_access', { p_invitation_id: invitation.id, p_user_id: user.id }).catch(() => {})
       if (invitation.invitation_type === 'new_instance') {
-        navigate('/onboarding')
+        window.location.href = `/onboarding?invite=${invitation.id}`
       } else {
         window.location.href = '/'
       }
@@ -94,11 +95,12 @@ export default function AcceptInvite() {
         role: invitation.role || 'rep',
       })
 
-      // Accept the invitation
+      // Accept the invitation + apply module access
       await supabase.rpc('accept_invitation', { p_token: token, p_user_id: userId })
+      await supabase.rpc('apply_invitation_module_access', { p_invitation_id: invitation.id, p_user_id: userId }).catch(() => {})
 
       if (invitation.invitation_type === 'new_instance') {
-        window.location.href = '/onboarding'
+        window.location.href = `/onboarding?invite=${invitation.id}`
       } else {
         window.location.href = '/'
       }

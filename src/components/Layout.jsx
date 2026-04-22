@@ -30,17 +30,24 @@ export default function Layout() {
   const initials = profile?.initials || profile?.full_name?.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() || '?'
 
   const isAdmin = ['admin', 'system_admin'].includes(profile?.role)
-  const navItems = [
-    { to: '/', icon: '\u25A6', label: 'Pipeline', show: true },
-    { to: '/coach', icon: '\u25CE', label: 'Coach Admin', show: hasModule('coach_customization') && isAdmin },
-    { to: '/settings', icon: '\u2699', label: 'Settings', show: true },
-    { to: '/settings/team', icon: '\u2630', label: 'Team', show: isAdmin },
-    { to: '/settings/organization', icon: '\u2302', label: 'Organization', show: isAdmin },
-    { to: '/admin/widgets', icon: '\u2637', label: 'Widgets', show: isAdmin },
-    { to: '/admin', icon: '\u2691', label: 'Platform Admin', show: isPlatformAdmin },
-    { to: '/admin/invitations', icon: '\u2709', label: 'Invitations', show: isPlatformAdmin },
-    { to: '/admin/feedback', icon: '\u2690', label: 'Feedback', show: isPlatformAdmin },
-  ].filter(item => item.show)
+
+  const sections = [
+    { label: 'Workspace', items: [
+      { to: '/', icon: '\u25A6', label: 'Pipeline', show: hasModule('pipeline') },
+      { to: '/settings', icon: '\u2699', label: 'Settings', show: true },
+    ]},
+    { label: 'Org Admin', show: isAdmin, items: [
+      { to: '/settings/team', icon: '\u2630', label: 'Users', show: true },
+      { to: '/settings/organization', icon: '\u2302', label: 'Organization', show: true },
+      { to: '/coach', icon: '\u25CE', label: 'Coach', show: hasModule('coach_customization') },
+    ]},
+    { label: 'Platform Admin', show: isPlatformAdmin, items: [
+      { to: '/admin', icon: '\u2691', label: 'Organizations', show: true },
+      { to: '/admin/invitations', icon: '\u2709', label: 'Invitations', show: true },
+      { to: '/admin/feedback', icon: '\u2690', label: 'Feedback', show: true },
+      { to: '/admin/widgets', icon: '\u2637', label: 'Widgets', show: true },
+    ]},
+  ]
 
   return (
     <div style={{ display: 'flex', fontFamily: T.font, background: T.bg, minHeight: '100vh', color: T.text, fontSize: 14 }}>
@@ -79,29 +86,33 @@ export default function Layout() {
           {sidebarExpanded && <span style={{ fontSize: 16, fontWeight: 700, color: '#fff' }}>DealCoach</span>}
         </div>
 
-        {/* Nav items */}
+        {/* Nav sections */}
         <div style={{ flex: 1, padding: '12px 8px' }}>
-          {navItems.map(item => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.to === '/'}
-              title={!sidebarExpanded ? item.label : undefined}
-              style={({ isActive }) => ({
-                display: 'flex', alignItems: 'center', gap: 12,
-                padding: sidebarExpanded ? '10px 16px' : '10px 16px',
-                borderRadius: 8, textDecoration: 'none', margin: '2px 0',
-                fontSize: 13, fontWeight: isActive ? 700 : 500,
-                background: isActive ? 'rgba(93,173,226,0.1)' : 'transparent',
-                color: isActive ? '#5DADE2' : '#8899aa',
-                whiteSpace: 'nowrap', overflow: 'hidden',
-                transition: 'all 0.15s',
-              })}
-            >
-              <span style={{ fontSize: 18, width: 24, textAlign: 'center', flexShrink: 0 }}>{item.icon}</span>
-              {sidebarExpanded && <span>{item.label}</span>}
-            </NavLink>
-          ))}
+          {sections.filter(s => s.show !== false).map(section => {
+            const items = section.items.filter(i => i.show !== false)
+            if (!items.length) return null
+            return (
+              <div key={section.label} style={{ marginBottom: 8 }}>
+                {sidebarExpanded && section.label !== 'Workspace' && (
+                  <div style={{ fontSize: 9, fontWeight: 700, color: '#556677', textTransform: 'uppercase', letterSpacing: '0.08em', padding: '8px 16px 4px', userSelect: 'none' }}>{section.label}</div>
+                )}
+                {items.map(item => (
+                  <NavLink key={item.to} to={item.to} end={item.to === '/'} title={!sidebarExpanded ? item.label : undefined}
+                    style={({ isActive }) => ({
+                      display: 'flex', alignItems: 'center', gap: 12,
+                      padding: '10px 16px', borderRadius: 8, textDecoration: 'none', margin: '2px 0',
+                      fontSize: 13, fontWeight: isActive ? 700 : 500,
+                      background: isActive ? 'rgba(93,173,226,0.1)' : 'transparent',
+                      color: isActive ? '#5DADE2' : '#8899aa',
+                      whiteSpace: 'nowrap', overflow: 'hidden', transition: 'all 0.15s',
+                    })}>
+                    <span style={{ fontSize: 18, width: 24, textAlign: 'center', flexShrink: 0 }}>{item.icon}</span>
+                    {sidebarExpanded && <span>{item.label}</span>}
+                  </NavLink>
+                ))}
+              </div>
+            )
+          })}
         </div>
 
         {/* User footer */}

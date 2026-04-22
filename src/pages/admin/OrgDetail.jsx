@@ -166,7 +166,7 @@ export default function OrgDetail() {
     { key: 'overview', label: 'Overview' },
     { key: 'modules', label: `Modules (${modules.filter(m => m.enabled).length}/${modules.length})` },
     { key: 'users', label: `Users (${users.length})` },
-    { key: 'credits', label: 'Credits' },
+    { key: 'credits', label: 'Billing (beta)' },
     { key: 'plan', label: 'Plan & Billing' },
     { key: 'danger', label: 'Danger Zone' },
   ]

@@ -3,25 +3,36 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
 
 export function useModules() {
-  const { profile } = useAuth()
-  const [modules, setModules] = useState([])
+  const { user } = useAuth()
+  const [modules, setModules] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!profile?.org_id) {
-      setLoading(false)
-      return
-    }
-    supabase.from('organizations').select('plan_id').eq('id', profile.org_id).single()
-      .then(async ({ data: org }) => {
-        if (org?.plan_id) {
-          const { data: plan } = await supabase.from('plans').select('modules').eq('id', org.plan_id).single()
-          setModules(plan?.modules || [])
-        }
+    if (!user?.id) { setModules([]); setLoading(false); return }
+    let cancelled = false
+    supabase.rpc('resolve_user_modules', { p_user_id: user.id }).then(({ data, error }) => {
+      if (cancelled) return
+      if (error || !Array.isArray(data)) {
+        // Fallback: load from plan modules via org
+        supabase.from('profiles').select('org_id').eq('id', user.id).single().then(async ({ data: prof }) => {
+          if (cancelled || !prof?.org_id) { setModules([]); setLoading(false); return }
+          const { data: org } = await supabase.from('organizations').select('plan_id, modules_override, plans(modules)').eq('id', prof.org_id).single()
+          if (cancelled) return
+          setModules(org?.modules_override || org?.plans?.modules || [])
+          setLoading(false)
+        })
+      } else {
+        setModules(data)
         setLoading(false)
-      })
-  }, [profile?.org_id])
+      }
+    })
+    return () => { cancelled = true }
+  }, [user?.id])
 
-  const hasModule = (slug) => modules.includes(slug)
+  function hasModule(key) {
+    if (modules === null) return false
+    return modules.includes(key)
+  }
+
   return { modules, hasModule, loading }
 }

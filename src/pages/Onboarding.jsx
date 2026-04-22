@@ -35,8 +35,9 @@ export default function Onboarding() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const inviteToken = searchParams.get('token')
+  const inviteId = searchParams.get('invite')
 
-  const [mode, setMode] = useState(inviteToken ? 'invite' : null) // null = choose, 'create', 'invite'
+  const [mode, setMode] = useState(inviteToken ? 'invite' : inviteId ? 'create' : null) // null = choose, 'create', 'invite'
   const [step, setStep] = useState(0) // 0=welcome, 1=company, 2=product, 3=methodology, 4=review
   const [invitation, setInvitation] = useState(null)
   const [processing, setProcessing] = useState(false)
@@ -76,6 +77,18 @@ export default function Onboarding() {
         }
       })
   }, [inviteToken])
+
+  // Pre-fill org name from accepted invitation (new_instance flow)
+  useEffect(() => {
+    if (!inviteId) return
+    supabase.from('invitations').select('email, invited_name, personal_message').eq('id', inviteId).single()
+      .then(({ data: inv }) => {
+        if (!inv?.personal_message) return
+        const match = inv.personal_message.match(/set up Revenue Instruments for (.+?)\./)
+        if (match && !orgName) setOrgName(match[1])
+      })
+    setStep(1) // Jump to company step
+  }, [inviteId])
 
   async function acceptInvitation() {
     if (!invitation) return
@@ -160,11 +173,19 @@ export default function Onboarding() {
       const data = await res.json()
       if (data.error) throw new Error(data.error)
 
-      // Assign free plan if org has no plan
+      // Post-onboard patches: fiscal year, free plan, methodology extras
       if (data.org_id) {
+        const orgUpdates = { fiscal_year_end_month: fyEndMonth, fiscal_year_end_day: fyEndDay }
         const { data: freePlan } = await supabase.from('plans').select('id').eq('slug', 'free').single()
-        if (freePlan) {
-          await supabase.from('organizations').update({ plan_id: freePlan.id }).eq('id', data.org_id).is('plan_id', null)
+        if (freePlan) orgUpdates.plan_id = freePlan.id
+        await supabase.from('organizations').update(orgUpdates).eq('id', data.org_id)
+
+        // Persist methodology extras to coach
+        if (data.coach_id) {
+          const extras = methodologies.filter(m => m !== 'rif')
+          if (extras.length) {
+            await supabase.from('coaches').update({ methodology_extras: extras }).eq('id', data.coach_id)
+          }
         }
       }
 
