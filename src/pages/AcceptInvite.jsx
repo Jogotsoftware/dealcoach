@@ -13,7 +13,8 @@ export default function AcceptInvite() {
   const [state, setState] = useState('loading') // loading, not_found, expired, revoked, already_accepted, show_invite, confirm_accept, signup_form
   const [user, setUser] = useState(null)
   const [submitting, setSubmitting] = useState(false)
-  const [form, setForm] = useState({ full_name: '', initials: '', password: '' })
+  const [form, setForm] = useState({ full_name: '', initials: '', password: '', confirm_password: '' })
+  const [showPassword, setShowPassword] = useState(false)
 
   useEffect(() => { loadInvitation() }, [token])
 
@@ -232,12 +233,24 @@ export default function AcceptInvite() {
           <label style={labelStyle}>Initials</label>
           <input style={inputStyle} value={form.initials} onChange={e => setForm(p => ({ ...p, initials: e.target.value }))} placeholder={form.full_name ? form.full_name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2) : 'JS'} maxLength={3} />
         </div>
-        <div style={{ marginBottom: 16 }}>
+        <div style={{ marginBottom: 10 }}>
           <label style={labelStyle}>Password *</label>
-          <input type="password" style={inputStyle} value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} placeholder="Min 6 characters" />
+          <div style={{ position: 'relative' }}>
+            <input type={showPassword ? 'text' : 'password'} style={{ ...inputStyle, paddingRight: 44 }} value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} placeholder="Min 6 characters" />
+            <button type="button" onClick={() => setShowPassword(p => !p)} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: T.textMuted, fontFamily: T.font, padding: '4px 6px' }}>{showPassword ? 'Hide' : 'Show'}</button>
+          </div>
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <label style={labelStyle}>Confirm Password *</label>
+          <div style={{ position: 'relative' }}>
+            <input type={showPassword ? 'text' : 'password'} style={{ ...inputStyle, paddingRight: 44 }} value={form.confirm_password} onChange={e => setForm(p => ({ ...p, confirm_password: e.target.value }))} placeholder="Re-enter password" />
+          </div>
+          {form.confirm_password && form.password !== form.confirm_password && (
+            <div style={{ fontSize: 11, color: T.error, marginTop: 4 }}>Passwords do not match</div>
+          )}
         </div>
         {error && <div style={{ color: T.error, fontSize: 13, padding: 8, background: T.errorLight, borderRadius: 6, marginBottom: 12 }}>{error}</div>}
-        <Button primary disabled={!form.full_name || !form.password || form.password.length < 6 || submitting} style={{ width: '100%', justifyContent: 'center', padding: '12px 20px' }}>
+        <Button primary disabled={!form.full_name || !form.password || form.password.length < 6 || form.password !== form.confirm_password || submitting} style={{ width: '100%', justifyContent: 'center', padding: '12px 20px' }}>
           {submitting ? 'Creating account...' : 'Create Account & Accept'}
         </Button>
       </form>

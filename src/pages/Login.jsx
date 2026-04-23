@@ -1,16 +1,18 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { theme as T } from '../lib/theme'
 
 export default function Login() {
-  const [mode, setMode] = useState('signin') // signin | signup
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [fullName, setFullName] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(false)
-  const { signIn, signUp } = useAuth()
+  const [resetSent, setResetSent] = useState(false)
+  const [showReset, setShowReset] = useState(false)
+  const { signIn } = useAuth()
   const navigate = useNavigate()
 
   const handleSubmit = async (e) => {
@@ -19,14 +21,27 @@ export default function Login() {
     setLoading(true)
 
     try {
-      if (mode === 'signin') {
-        const { error } = await signIn(email, password)
-        if (error) throw error
-      } else {
-        const { error } = await signUp(email, password, fullName)
-        if (error) throw error
-      }
+      const { error } = await signIn(email, password)
+      if (error) throw error
       navigate('/')
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleResetPassword = async (e) => {
+    e.preventDefault()
+    if (!email) { setError('Enter your email address'); return }
+    setError(null)
+    setLoading(true)
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/login`,
+      })
+      if (error) throw error
+      setResetSent(true)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -62,98 +77,154 @@ export default function Login() {
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
             fontWeight: 800, fontSize: 24, color: '#fff', marginBottom: 16,
           }}>
-            D
+            R
           </div>
           <div style={{ fontSize: 24, fontWeight: 700, color: T.text, marginBottom: 4 }}>
-            DealCoach
+            Revenue Instruments
           </div>
           <div style={{ fontSize: 14, color: T.textSecondary, marginBottom: 28 }}>
-            {mode === 'signin' ? 'Sign in to your account' : 'Create your account'}
+            {showReset ? 'Reset your password' : 'Sign in to your account'}
           </div>
         </div>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} style={{ padding: '0 40px 36px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {mode === 'signup' && (
+        {showReset ? (
+          /* Reset password form */
+          <form onSubmit={handleResetPassword} style={{ padding: '0 40px 36px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {resetSent ? (
+              <div style={{ padding: '16px', borderRadius: 6, fontSize: 13, background: T.successLight, color: T.success, textAlign: 'center', lineHeight: 1.6 }}>
+                Password reset email sent. Check your inbox.
+              </div>
+            ) : (
+              <>
+                <div>
+                  <label style={labelStyle}>Email</label>
+                  <input
+                    style={inputStyle}
+                    type="email"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    placeholder="you@company.com"
+                    required
+                    autoFocus
+                    onFocus={e => { e.target.style.borderColor = T.primary }}
+                    onBlur={e => { e.target.style.borderColor = T.border }}
+                  />
+                </div>
+
+                {error && (
+                  <div style={{ padding: '10px 14px', borderRadius: 6, fontSize: 13, background: T.errorLight, color: T.error, border: `1px solid ${T.error}25` }}>
+                    {error}
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  style={{
+                    width: '100%', padding: 14, borderRadius: 6, border: 'none',
+                    background: T.primary, color: '#fff', fontSize: 14, fontWeight: 600,
+                    cursor: loading ? 'not-allowed' : 'pointer', fontFamily: T.font,
+                    opacity: loading ? 0.7 : 1, marginTop: 4,
+                  }}
+                >
+                  {loading ? 'Sending...' : 'Send Reset Link'}
+                </button>
+              </>
+            )}
+
+            <div style={{ textAlign: 'center', fontSize: 13, color: T.textSecondary }}>
+              <button
+                type="button"
+                onClick={() => { setShowReset(false); setResetSent(false); setError(null) }}
+                style={{ background: 'none', border: 'none', color: T.primary, cursor: 'pointer', fontWeight: 600, fontFamily: T.font, fontSize: 13 }}
+              >
+                Back to Sign In
+              </button>
+            </div>
+          </form>
+        ) : (
+          /* Sign in form */
+          <form onSubmit={handleSubmit} style={{ padding: '0 40px 36px', display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div>
-              <label style={labelStyle}>Full Name</label>
+              <label style={labelStyle}>Email</label>
               <input
                 style={inputStyle}
-                value={fullName}
-                onChange={e => setFullName(e.target.value)}
-                placeholder="Joe Patterson"
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                placeholder="you@company.com"
                 required
                 onFocus={e => { e.target.style.borderColor = T.primary }}
                 onBlur={e => { e.target.style.borderColor = T.border }}
               />
             </div>
-          )}
 
-          <div>
-            <label style={labelStyle}>Email</label>
-            <input
-              style={inputStyle}
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              placeholder="you@company.com"
-              required
-              onFocus={e => { e.target.style.borderColor = T.primary }}
-              onBlur={e => { e.target.style.borderColor = T.border }}
-            />
-          </div>
-
-          <div>
-            <label style={labelStyle}>Password</label>
-            <input
-              style={inputStyle}
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              placeholder="Enter password"
-              required
-              minLength={6}
-              onFocus={e => { e.target.style.borderColor = T.primary }}
-              onBlur={e => { e.target.style.borderColor = T.border }}
-            />
-          </div>
-
-          {error && (
-            <div style={{
-              padding: '10px 14px', borderRadius: 6, fontSize: 13,
-              background: T.errorLight, color: T.error, border: `1px solid ${T.error}25`,
-            }}>
-              {error}
+            <div>
+              <label style={{ ...labelStyle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>Password</span>
+                <button
+                  type="button"
+                  onClick={() => { setShowReset(true); setError(null) }}
+                  style={{ background: 'none', border: 'none', color: T.primary, cursor: 'pointer', fontFamily: T.font, fontSize: 11, fontWeight: 600, textTransform: 'none', letterSpacing: 'normal', padding: 0 }}
+                >
+                  Forgot password?
+                </button>
+              </label>
+              <div style={{ position: 'relative' }}>
+                <input
+                  style={{ ...inputStyle, paddingRight: 52 }}
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  placeholder="Enter password"
+                  required
+                  minLength={6}
+                  onFocus={e => { e.target.style.borderColor = T.primary }}
+                  onBlur={e => { e.target.style.borderColor = T.border }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(p => !p)}
+                  style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: T.textMuted, fontFamily: T.font, padding: '4px 6px' }}
+                >
+                  {showPassword ? 'Hide' : 'Show'}
+                </button>
+              </div>
             </div>
-          )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            style={{
-              width: '100%', padding: 14, borderRadius: 6, border: 'none',
-              background: T.primary, color: '#fff', fontSize: 14, fontWeight: 600,
-              cursor: loading ? 'not-allowed' : 'pointer', fontFamily: T.font,
-              opacity: loading ? 0.7 : 1, marginTop: 4,
-            }}
-          >
-            {loading ? 'Loading...' : mode === 'signin' ? 'Sign In' : 'Create Account'}
-          </button>
+            {error && (
+              <div style={{
+                padding: '10px 14px', borderRadius: 6, fontSize: 13,
+                background: T.errorLight, color: T.error, border: `1px solid ${T.error}25`,
+              }}>
+                {error}
+              </div>
+            )}
 
-          <div style={{ textAlign: 'center', fontSize: 13, color: T.textSecondary }}>
-            {mode === 'signin' ? "Don't have an account? " : 'Already have an account? '}
             <button
-              type="button"
-              onClick={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); setError(null) }}
+              type="submit"
+              disabled={loading}
               style={{
-                background: 'none', border: 'none', color: T.primary,
-                cursor: 'pointer', fontWeight: 600, fontFamily: T.font, fontSize: 13,
+                width: '100%', padding: 14, borderRadius: 6, border: 'none',
+                background: T.primary, color: '#fff', fontSize: 14, fontWeight: 600,
+                cursor: loading ? 'not-allowed' : 'pointer', fontFamily: T.font,
+                opacity: loading ? 0.7 : 1, marginTop: 4,
               }}
             >
-              {mode === 'signin' ? 'Sign Up' : 'Sign In'}
+              {loading ? 'Signing in...' : 'Sign In'}
             </button>
-          </div>
-        </form>
+
+            <div style={{ textAlign: 'center', fontSize: 13, color: T.textSecondary }}>
+              {"Don't have an account? "}
+              <a
+                href="mailto:joe@revenueinstruments.com?subject=Request%20an%20Invitation&body=Hi%2C%20I'd%20like%20to%20request%20an%20invitation%20to%20Revenue%20Instruments."
+                style={{ color: T.primary, fontWeight: 600, textDecoration: 'none' }}
+              >
+                Request an invitation
+              </a>
+            </div>
+          </form>
+        )}
       </div>
     </div>
   )
