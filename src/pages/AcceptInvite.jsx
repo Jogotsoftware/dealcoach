@@ -86,27 +86,35 @@ export default function AcceptInvite() {
     setSubmitting(true)
     setError(null)
     try {
-      const { data: authData, error: signUpErr } = await supabase.auth.signUp({
-        email: invitation.email,
+      // Create user via edge function (auto-confirms, creates profile, accepts invitation)
+      const resp = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-invited-user`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+          },
+          body: JSON.stringify({
+            token,
+            password: form.password,
+            full_name: form.full_name,
+            initials: form.initials || undefined,
+          }),
+        }
+      )
+      const result = await resp.json()
+      if (!resp.ok || result.error) throw new Error(result.error || 'Signup failed')
+
+      // Sign in with the newly created credentials
+      const { error: signInErr } = await supabase.auth.signInWithPassword({
+        email: result.email,
         password: form.password,
       })
-      if (signUpErr) throw signUpErr
-      const userId = authData.user?.id
-      if (!userId) throw new Error('Sign up failed')
+      if (signInErr) throw signInErr
 
-      const initials = form.initials || form.full_name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
-      await supabase.from('profiles').insert({
-        id: userId, email: invitation.email, full_name: form.full_name, initials,
-        org_id: invitation.invitation_type === 'teammate' ? invitation.org_id : null,
-        role: invitation.role || 'rep',
-      })
-
-      // Accept the invitation + apply module access
-      await supabase.rpc('accept_invitation', { p_token: token, p_user_id: userId })
-      try { await supabase.rpc('apply_invitation_module_access', { p_invitation_id: invitation.id, p_user_id: userId }) } catch (_) {}
-
-      if (invitation.invitation_type === 'new_instance') {
-        window.location.href = `/onboarding?invite=${invitation.id}`
+      if (result.invitation_type === 'new_instance') {
+        window.location.href = `/onboarding?invite=${result.invitation_id}`
       } else {
         window.location.href = '/'
       }
