@@ -438,28 +438,11 @@ export default function CoachAdmin() {
                   )}
                 </Card>
 
-                {/* System Prompt */}
-                <Card title="System Prompt" action={
-                  <Button style={{ padding: '4px 12px', fontSize: 11 }}
-                    onClick={() => {
-                      if (editingSystemPrompt) { setEditingSystemPrompt(false) }
-                      else { setEditingSystemPrompt(true); setSystemPromptVal(coach.system_prompt || '') }
-                    }}>
-                    {editingSystemPrompt ? 'Cancel' : 'Edit'}
-                  </Button>
-                }>
-                  {editingSystemPrompt ? (
-                    <div>
-                      <textarea style={{ ...inputStyle, fontFamily: T.mono, fontSize: 12, minHeight: 250, resize: 'vertical' }}
-                        value={systemPromptVal} onChange={e => setSystemPromptVal(e.target.value)} />
-                      <Button primary onClick={saveSystemPrompt} style={{ marginTop: 8 }}>Save</Button>
-                    </div>
-                  ) : (
-                    <div style={{ fontFamily: T.mono, fontSize: 12, lineHeight: 1.6, color: T.text, background: T.surfaceAlt, padding: 14, borderRadius: 6, maxHeight: 300, overflow: 'auto', whiteSpace: 'pre-wrap' }}>
-                      {coach.system_prompt || 'No system prompt configured'}
-                    </div>
-                  )}
-                </Card>
+                {/* System Prompt — layered 4-layer preview */}
+                <AssembledPromptPreview coach={coach} editing={editingSystemPrompt}
+                  onEdit={() => { setEditingSystemPrompt(true); setSystemPromptVal(coach.system_prompt || '') }}
+                  onCancel={() => setEditingSystemPrompt(false)}
+                  value={systemPromptVal} setValue={setSystemPromptVal} onSave={saveSystemPrompt} />
 
                 {/* Research Prompt */}
                 <Card title="Research Prompt" action={
@@ -486,29 +469,8 @@ export default function CoachAdmin() {
                   )}
                 </Card>
 
-                {/* Extraction Rules */}
-                <Card title="Extraction Rules" action={
-                  <Button style={{ padding: '4px 12px', fontSize: 11 }}
-                    onClick={() => {
-                      if (editingExtraction) { setEditingExtraction(false) }
-                      else { setEditingExtraction(true); setExtractionVal(coach.extraction_rules || '') }
-                    }}>
-                    {editingExtraction ? 'Cancel' : 'Edit'}
-                  </Button>
-                }>
-                  {editingExtraction ? (
-                    <div>
-                      <textarea style={{ ...inputStyle, fontFamily: T.mono, fontSize: 12, minHeight: 300, resize: 'vertical', width: '100%' }}
-                        value={extractionVal} onChange={e => setExtractionVal(e.target.value)} />
-                      <div style={{ fontSize: 10, color: T.textMuted, marginTop: 2 }}>{extractionVal.length} chars</div>
-                      <Button primary onClick={saveExtraction} style={{ marginTop: 8 }}>Save</Button>
-                    </div>
-                  ) : (
-                    <div style={{ fontFamily: T.mono, fontSize: 12, lineHeight: 1.6, color: T.text, background: T.surfaceAlt, padding: 14, borderRadius: 6, maxHeight: 200, overflow: 'auto', whiteSpace: 'pre-wrap' }}>
-                      {coach.extraction_rules || 'No extraction rules configured'}
-                    </div>
-                  )}
-                </Card>
+                {/* Extraction Rules — structured */}
+                <ExtractionRulesEditor coach={coach} onSaved={(newRules) => setCoach(prev => ({ ...prev, extraction_rules: newRules }))} />
               </div>
             )}
 
@@ -1274,6 +1236,172 @@ export default function CoachAdmin() {
         )}
       </div>
     </div>
+  )
+}
+
+// Layered assembled-prompt preview with collapsible locked sections
+function AssembledPromptPreview({ coach, editing, onEdit, onCancel, value, setValue, onSave }) {
+  const [assembled, setAssembled] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [expanded, setExpanded] = useState({ platform_core: false, methodology: false, coach: true, icp: false })
+
+  async function reload() {
+    if (!coach?.id) return
+    setLoading(true)
+    try {
+      const { data } = await supabase.rpc('assemble_coach_prompt', { p_coach_id: coach.id, p_call_type: null, p_action: 'process_transcript' })
+      setAssembled(data || '')
+    } catch (e) { console.log('assemble error:', e) }
+    setLoading(false)
+  }
+
+  useEffect(() => { if (coach?.id && !editing) reload() }, [coach?.id, editing])
+
+  // Split the assembled content into its layer sections. The assembler uses "=== HEADER ===" banners.
+  const sections = []
+  if (assembled) {
+    const regex = /=== ([^=]+?) ===/g
+    let lastIdx = 0
+    let lastName = null
+    const matches = []
+    let m
+    while ((m = regex.exec(assembled)) !== null) matches.push({ name: m[1].trim(), start: m.index, end: m.index + m[0].length })
+    if (matches.length === 0) {
+      sections.push({ name: 'FULL PROMPT', content: assembled, locked: false })
+    } else {
+      for (let i = 0; i < matches.length; i++) {
+        const cur = matches[i]
+        const nextStart = i + 1 < matches.length ? matches[i + 1].start : assembled.length
+        const body = assembled.slice(cur.end, nextStart).trim()
+        const nameLC = cur.name.toLowerCase()
+        const locked = nameLC.includes('platform core') || nameLC.includes('methodology')
+        sections.push({ name: cur.name, content: body, locked })
+      }
+    }
+  }
+
+  return (
+    <Card title="System Prompt (Assembled View)" action={
+      <Button style={{ padding: '4px 12px', fontSize: 11 }} onClick={editing ? onCancel : onEdit}>{editing ? 'Cancel' : 'Edit Coach Context'}</Button>
+    }>
+      {editing ? (
+        <div>
+          <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 6 }}>Editing just the coach-level context. Platform core + methodology layers are managed by Revenue Instruments and can't be changed here.</div>
+          <textarea style={{ ...inputStyle, fontFamily: T.mono, fontSize: 12, minHeight: 260, resize: 'vertical', width: '100%' }}
+            value={value} onChange={e => setValue(e.target.value)} placeholder="Your coach's personality, voice, and custom instructions..." />
+          <div style={{ fontSize: 10, color: T.textMuted, marginTop: 2 }}>{(value || '').length} chars · autosaves on Save</div>
+          <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+            <Button primary onClick={onSave}>Save</Button>
+            <Button onClick={onCancel}>Cancel</Button>
+          </div>
+        </div>
+      ) : (
+        <div>
+          {loading && <div style={{ fontSize: 12, color: T.textMuted, textAlign: 'center', padding: 10 }}>Loading assembled prompt...</div>}
+          {!loading && sections.length === 0 && (
+            <div style={{ fontSize: 12, color: T.textMuted, padding: 12 }}>No prompt assembled. Make sure coach has an ID and try saving.</div>
+          )}
+          {!loading && sections.map((s, i) => {
+            const key = s.name.toLowerCase().includes('platform') ? 'platform_core' : s.name.toLowerCase().includes('methodology') ? 'methodology' : s.name.toLowerCase().includes('icp') ? 'icp' : 'coach'
+            const isExpanded = expanded[key] !== undefined ? expanded[key] : false
+            const accent = s.locked ? T.textMuted : T.primary
+            return (
+              <div key={i} style={{ marginBottom: 8, border: `1px solid ${s.locked ? T.border : T.primary}40`, borderRadius: 6, overflow: 'hidden' }}>
+                <button onClick={() => setExpanded(e => ({ ...e, [key]: !isExpanded }))}
+                  style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 8, padding: '8px 12px', background: s.locked ? T.surfaceAlt : (T.primaryLight || 'rgba(93,173,226,0.08)'), border: 'none', cursor: 'pointer', fontFamily: T.font, textAlign: 'left' }}>
+                  <span style={{ fontSize: 10, color: accent, fontWeight: 800 }}>{isExpanded ? '▼' : '▶'}</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{s.name}</span>
+                  {s.locked && <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 3, background: T.border, color: T.textMuted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>🔒 Managed by Revenue Instruments</span>}
+                  <span style={{ flex: 1 }} />
+                  <span style={{ fontSize: 10, color: T.textMuted }}>{s.content.length} chars</span>
+                </button>
+                {isExpanded && (
+                  <pre style={{ margin: 0, padding: 12, background: s.locked ? T.surfaceAlt : T.surface, fontFamily: T.mono, fontSize: 11, lineHeight: 1.5, color: T.text, whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 300, overflow: 'auto' }}>{s.content || '(empty)'}</pre>
+                )}
+              </div>
+            )
+          })}
+          <div style={{ fontSize: 10, color: T.textMuted, marginTop: 6, fontStyle: 'italic' }}>This is what the AI sees when processing transcripts for this coach.</div>
+        </div>
+      )}
+    </Card>
+  )
+}
+
+const EXTRACTION_ENTITIES = [
+  { key: 'pain_points', label: 'Pain Points' },
+  { key: 'catalysts', label: 'Business Catalysts' },
+  { key: 'compelling_events', label: 'Compelling Events' },
+  { key: 'tasks', label: 'Tasks / Commitments' },
+  { key: 'contacts', label: 'Contacts' },
+  { key: 'competitors', label: 'Competitors' },
+  { key: 'risks', label: 'Risks' },
+  { key: 'decision_criteria', label: 'Decision Criteria' },
+]
+
+// Structured extraction rules editor. Serializes to JSON and stores in coaches.extraction_rules.
+// Falls back to free-form text if the field isn't JSON yet.
+function ExtractionRulesEditor({ coach, onSaved }) {
+  const initial = (() => {
+    try { return JSON.parse(coach.extraction_rules || '{}') }
+    catch { return { _legacy_text: coach.extraction_rules || '' } }
+  })()
+  const [rules, setRules] = useState(initial)
+  const [saving, setSaving] = useState(false)
+  const [expanded, setExpanded] = useState({})
+
+  function toggle(key) {
+    setRules(r => ({ ...r, [key]: { ...(r[key] || {}), enabled: !(r[key]?.enabled ?? true) } }))
+  }
+  function setInstructions(key, text) {
+    setRules(r => ({ ...r, [key]: { ...(r[key] || { enabled: true }), instructions: text } }))
+  }
+
+  async function save() {
+    setSaving(true)
+    const json = JSON.stringify(rules, null, 2)
+    const { error } = await supabase.from('coaches').update({ extraction_rules: json }).eq('id', coach.id)
+    setSaving(false)
+    if (!error && onSaved) onSaved(json)
+  }
+
+  return (
+    <Card title="Extraction Rules (Structured)" action={<Button primary onClick={save} disabled={saving} style={{ padding: '4px 12px', fontSize: 11 }}>{saving ? 'Saving...' : 'Save'}</Button>}>
+      <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 10 }}>Pick which entity types the AI should extract and add optional org-specific instructions. Serialized as JSON and injected into the extraction prompt.</div>
+      {rules._legacy_text && (
+        <div style={{ padding: 10, background: T.surfaceAlt, borderRadius: 6, marginBottom: 10, fontSize: 11, color: T.textMuted }}>
+          <div style={{ fontWeight: 700, color: T.warning, marginBottom: 4 }}>Legacy free-form rules detected:</div>
+          <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontFamily: T.mono }}>{rules._legacy_text}</pre>
+          <div style={{ marginTop: 6, fontStyle: 'italic' }}>These will be kept and passed through. Add structured rules below to layer on top.</div>
+        </div>
+      )}
+      {EXTRACTION_ENTITIES.map(ent => {
+        const r = rules[ent.key] || { enabled: true }
+        const isExpanded = expanded[ent.key]
+        return (
+          <div key={ent.key} style={{ marginBottom: 6, border: `1px solid ${r.enabled ? T.primary + '40' : T.borderLight}`, borderRadius: 6, background: r.enabled ? T.surface : T.surfaceAlt, opacity: r.enabled ? 1 : 0.65 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px' }}>
+              <div onClick={() => toggle(ent.key)}
+                style={{ width: 32, height: 18, borderRadius: 9, cursor: 'pointer', background: r.enabled ? T.success : T.borderLight, position: 'relative', transition: 'background 0.2s', flexShrink: 0 }}>
+                <div style={{ width: 14, height: 14, borderRadius: '50%', background: '#fff', position: 'absolute', top: 2, left: r.enabled ? 16 : 2, boxShadow: T.shadow, transition: 'left 0.2s' }} />
+              </div>
+              <span style={{ fontSize: 13, fontWeight: 600, color: T.text, flex: 1 }}>{ent.label}</span>
+              <button onClick={() => setExpanded(e => ({ ...e, [ent.key]: !isExpanded }))} style={{ fontSize: 10, padding: '2px 8px', background: 'transparent', border: `1px solid ${T.border}`, borderRadius: 4, cursor: 'pointer', color: T.textMuted, fontFamily: T.font }}>
+                {r.instructions ? 'Edit instructions' : '+ Instructions'}
+              </button>
+            </div>
+            {isExpanded && (
+              <div style={{ padding: 10, borderTop: `1px solid ${T.borderLight}`, background: T.surfaceAlt }}>
+                <textarea
+                  placeholder={`Custom instructions for ${ent.label.toLowerCase()} extraction (optional)...`}
+                  value={r.instructions || ''} onChange={e => setInstructions(ent.key, e.target.value)}
+                  style={{ ...inputStyle, fontFamily: T.mono, fontSize: 12, minHeight: 60, resize: 'vertical', width: '100%' }} />
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </Card>
   )
 }
 
