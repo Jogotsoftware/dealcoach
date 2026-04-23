@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { theme as T, formatDateLong } from '../lib/theme'
 import { Card, Badge, ScoreBar, Button, Spinner, inputStyle, labelStyle } from '../components/Shared'
@@ -10,12 +10,14 @@ import DealChat from '../components/DealChat'
 export default function CallDetail() {
   const { dealId, conversationId } = useParams()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const { profile } = useAuth()
   const [loading, setLoading] = useState(true)
   const [conversation, setConversation] = useState(null)
   const [analysis, setAnalysis] = useState(null)
   const [companyName, setCompanyName] = useState('')
-  const [showTranscript, setShowTranscript] = useState(false)
+  const excerptParam = searchParams.get('excerpt')
+  const [showTranscript, setShowTranscript] = useState(!!excerptParam)
   const [showEmailGen, setShowEmailGen] = useState(false)
   const [emailTemplates, setEmailTemplates] = useState([])
   const [selTpl, setSelTpl] = useState('')
@@ -353,13 +355,27 @@ export default function CallDetail() {
           {showTranscript && (
             <Card style={{ marginTop: 12 }}>
               {conversation.transcript ? (
-                <div style={{
+                <div ref={el => {
+                  if (!el || !excerptParam) return
+                  setTimeout(() => {
+                    const mark = el.querySelector('mark[data-excerpt]')
+                    if (mark) { mark.scrollIntoView({ behavior: 'smooth', block: 'center' }); setTimeout(() => mark.style.background = 'transparent', 3000) }
+                  }, 300)
+                }} style={{
                   maxHeight: 600, overflowY: 'auto', background: T.surfaceAlt,
                   border: `1px solid ${T.border}`, padding: 16, fontSize: 12,
                   lineHeight: 1.7, whiteSpace: 'pre-wrap', fontFamily: T.mono,
                   borderRadius: 6,
                 }}>
-                  {conversation.transcript}
+                  {(() => {
+                    if (!excerptParam) return conversation.transcript
+                    const idx = conversation.transcript.toLowerCase().indexOf(excerptParam.toLowerCase().substring(0, 40))
+                    if (idx === -1) return conversation.transcript
+                    const before = conversation.transcript.substring(0, idx)
+                    const matched = conversation.transcript.substring(idx, idx + excerptParam.length + 20)
+                    const after = conversation.transcript.substring(idx + excerptParam.length + 20)
+                    return <>{before}<mark data-excerpt style={{ background: 'rgba(93,173,226,0.3)', padding: '2px 4px', borderRadius: 3, transition: 'background 1s' }}>{matched}</mark>{after}</>
+                  })()}
                 </div>
               ) : (
                 <div style={{ color: T.textMuted, fontSize: 13 }}>No transcript available</div>

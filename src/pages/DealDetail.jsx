@@ -227,11 +227,15 @@ function LinkedInBadge({ url }) {
   return <a href={url} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-block', background: '#0a66c2', color: '#fff', fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 3, textDecoration: 'none' }}>LinkedIn {'\u2197'}</a>
 }
 
-function SourceBadge({ source, sourceUrl, conversationId, dealId, navigate: nav }) {
+function SourceBadge({ source, sourceUrl, conversationId, dealId, navigate: nav, transcriptExcerpt, speaker, timestampInCall, quote }) {
   const label = source === 'ai_research' ? 'Research' : source === 'ai_transcript' ? 'Call' : source === 'manual' ? 'Manual' : source === 'chat' ? 'Chat' : source || 'AI'
   const color = source === 'ai_research' ? '#3498db' : source === 'ai_transcript' ? '#9b59b6' : source === 'manual' ? '#6c757d' : '#8899aa'
   if (sourceUrl) return <a href={sourceUrl.startsWith('http') ? sourceUrl : 'https://' + sourceUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 3, background: color + '20', color, textDecoration: 'none' }}>{label} {'\u2197'}</a>
-  if (conversationId && dealId && nav) return <span onClick={() => nav(`/deal/${dealId}/call/${conversationId}`)} style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 3, background: color + '20', color, cursor: 'pointer' }}>{label} {'\u2197'}</span>
+  if (conversationId && dealId && nav) {
+    const excerpt = transcriptExcerpt || quote || ''
+    const displayLabel = [speaker, timestampInCall].filter(Boolean).join(' \u00B7 ')
+    return <span onClick={e => { e.stopPropagation(); nav(`/deal/${dealId}/call/${conversationId}${excerpt ? `?excerpt=${encodeURIComponent(excerpt.substring(0, 100))}` : ''}`) }} title={quote || transcriptExcerpt || 'View in transcript'} style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 3, background: color + '20', color, cursor: 'pointer' }}>{displayLabel ? `[${displayLabel}]` : `${label} \u2197`}</span>
+  }
   return <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 3, background: color + '20', color }}>{label}</span>
 }
 
@@ -1149,7 +1153,7 @@ export default function DealDetail() {
             <div style={{ flex: 1, fontSize: 12, fontWeight: 600, color: T.text }}>{e.event_description}</div>
             {e.event_date && <span style={{ fontSize: 10, color: T.textSecondary }}>{formatDate(e.event_date)}</span>}
             <Badge color={STRENGTH_COLORS[e.strength] || T.textMuted}>{e.strength}</Badge>
-            <SourceBadge source={e.source} sourceUrl={e.source_url} conversationId={e.source_conversation_id} dealId={id} navigate={navigate} />
+            <SourceBadge source={e.source} sourceUrl={e.source_url} conversationId={e.source_conversation_id} dealId={id} navigate={navigate} transcriptExcerpt={e.transcript_excerpt} speaker={e.speaker} timestampInCall={e.timestamp_in_call} quote={e.quote} />
             <DeleteBtn onClick={() => deleteEvent(e.id)} />
           </div>
         ))}
@@ -1179,7 +1183,7 @@ export default function DealDetail() {
             <div style={{ flex: 1, fontSize: 12, fontWeight: 600, color: T.text }}>{c.catalyst}</div>
             <Badge color={T.primary}>{c.category}</Badge>
             <Badge color={URGENCY_COLORS[c.urgency] || T.textMuted}>{c.urgency}</Badge>
-            <SourceBadge source={c.source} sourceUrl={c.source_url} conversationId={c.source_conversation_id} dealId={id} navigate={navigate} />
+            <SourceBadge source={c.source} sourceUrl={c.source_url} conversationId={c.source_conversation_id} dealId={id} navigate={navigate} transcriptExcerpt={c.transcript_excerpt} speaker={c.speaker} timestampInCall={c.timestamp_in_call} quote={c.quote} />
             <DeleteBtn onClick={() => deleteCatalyst(c.id)} />
           </div>
         ))}

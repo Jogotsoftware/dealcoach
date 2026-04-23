@@ -46,6 +46,7 @@ export default function Layout() {
       { to: '/admin', icon: '\u2691', label: 'Organizations', show: true },
       { to: '/admin/invitations', icon: '\u2709', label: 'Invitations', show: true },
       { to: '/admin/feedback', icon: '\u2690', label: 'Feedback', show: true },
+      { to: '/admin/extraction-definitions', icon: '\u2261', label: 'AI Rules', show: true },
     ]},
   ]
 
