@@ -41,13 +41,11 @@ serve(async (req) => {
     let userId: string
     if (existing) {
       userId = existing.id
-      // Auto-confirm if not confirmed
-      if (!existing.email_confirmed_at) {
-        await admin.auth.admin.updateUserById(userId, {
-          email_confirm: true,
-          password,
-        })
-      }
+      // Auto-confirm and set password
+      await admin.auth.admin.updateUserById(userId, {
+        email_confirm: true,
+        password,
+      })
     } else {
       // Create user with auto-confirm
       const { data: newUser, error: createErr } = await admin.auth.admin.createUser({
@@ -80,13 +78,7 @@ serve(async (req) => {
       await admin.rpc('apply_invitation_module_access', { p_invitation_id: inv.id, p_user_id: userId })
     } catch (_) {}
 
-    // Sign the user in to get a session
-    const { data: signInData, error: signInErr } = await admin.auth.admin.generateLink({
-      type: 'magiclink',
-      email: inv.email,
-    })
-
-    // Return success with user ID — frontend will sign in with password
+    // Return success — frontend will sign in with password
     return jsonResp(200, {
       success: true,
       user_id: userId,
