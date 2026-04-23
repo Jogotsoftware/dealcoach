@@ -60,13 +60,24 @@ function MessageContent({ content }) {
   )
 }
 
-export default function DealChat({ dealId, userId, isOpen, onClose, onAction }) {
+const THUMBS_DOWN_REASONS = [
+  { key: 'wrong_info', label: 'Wrong info' },
+  { key: 'not_helpful', label: 'Not helpful' },
+  { key: 'off_topic', label: 'Off topic' },
+  { key: 'other', label: 'Other' },
+]
+
+export default function DealChat({ dealId, userId, isOpen, onClose, onAction, orgId }) {
   const [sessions, setSessions] = useState([])
   const [sessionId, setSessionId] = useState(null)
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [loaded, setLoaded] = useState(false)
+  // feedbackState: { [messageId]: { sentiment, showPicker, reasonKey, notes, submitted } }
+  const [feedbackState, setFeedbackState] = useState({})
+  const [satisfactionShown, setSatisfactionShown] = useState(false)
+  const [satisfactionRating, setSatisfactionRating] = useState(null)
   const messagesEndRef = useRef(null)
   const inputRef = useRef(null)
 
@@ -136,7 +147,59 @@ export default function DealChat({ dealId, userId, isOpen, onClose, onAction }) 
       actions_taken: res.actions_taken || [], created_at: new Date().toISOString(),
     }])
 
+    // Refetch with IDs so thumbs feedback can target the assistant message
+    const sid = res.session_id || sessionId
+    if (sid) {
+      const { data: refetched } = await supabase.from('deal_chat_messages').select('*').eq('session_id', sid).order('created_at')
+      if (refetched?.length) setMessages(refetched)
+    }
+
     if (res.actions_taken?.length > 0 && onAction) onAction()
+  }
+
+  async function submitThumbs(message, sentiment, reasonKey, notes) {
+    if (!message.id) return
+    try {
+      await supabase.from('ai_output_feedback').insert({
+        org_id: orgId || null,
+        user_id: userId,
+        deal_id: dealId,
+        sentiment,
+        target_type: 'chat_response',
+        target_id: message.id,
+        reason: reasonKey || null,
+        notes: notes || null,
+      })
+      setFeedbackState(s => ({ ...s, [message.id]: { ...s[message.id], sentiment, showPicker: false, submitted: true } }))
+    } catch (e) { console.log('feedback insert error:', e) }
+  }
+
+  async function submitSatisfaction(score) {
+    setSatisfactionRating(score)
+    if (!sessionId) return
+    try {
+      const thumbsUp = Object.values(feedbackState).filter((f) => f?.sentiment === 'thumbs_up').length
+      const thumbsDown = Object.values(feedbackState).filter((f) => f?.sentiment === 'thumbs_down').length
+      await supabase.from('chatbot_session_feedback').insert({
+        session_id: sessionId,
+        org_id: orgId || null,
+        user_id: userId,
+        deal_id: dealId,
+        message_count: messages.length,
+        thumbs_up_count: thumbsUp,
+        thumbs_down_count: thumbsDown,
+        satisfaction_score: score,
+      })
+    } catch (e) { console.log('satisfaction insert error:', e) }
+  }
+
+  function handleClose() {
+    const assistantCount = messages.filter(m => m.role === 'assistant').length
+    if (assistantCount >= 3 && !satisfactionShown) {
+      setSatisfactionShown(true)
+    } else {
+      onClose()
+    }
   }
 
   function handleKeyDown(e) {
@@ -150,7 +213,7 @@ export default function DealChat({ dealId, userId, isOpen, onClose, onAction }) 
     <>
       {/* Backdrop */}
       {isOpen && (
-        <div onClick={onClose} style={{
+        <div onClick={handleClose} style={{
           position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.2)', zIndex: 1099,
         }} />
       )}
@@ -185,7 +248,7 @@ export default function DealChat({ dealId, userId, isOpen, onClose, onAction }) 
             border: `1px solid ${T.border}`, background: T.surfaceAlt, color: T.primary,
             cursor: 'pointer', fontFamily: T.font,
           }}>New</button>
-          <button onClick={onClose} style={{
+          <button onClick={handleClose} style={{
             background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted,
             fontSize: 20, padding: '0 4px', lineHeight: 1,
           }}>&times;</button>
@@ -241,9 +304,45 @@ export default function DealChat({ dealId, userId, isOpen, onClose, onAction }) 
                     ))}
                   </div>
                 )}
-                <div style={{ fontSize: 10, color: msg.role === 'user' ? 'rgba(255,255,255,0.6)' : T.textMuted, marginTop: 4 }}>
-                  {relativeTime(msg.created_at)}
+                <div style={{ fontSize: 10, color: msg.role === 'user' ? 'rgba(255,255,255,0.6)' : T.textMuted, marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span>{relativeTime(msg.created_at)}</span>
+                  {msg.role === 'assistant' && msg.id && (() => {
+                    const fb = feedbackState[msg.id] || {}
+                    return (
+                      <>
+                        <span style={{ flex: 1 }} />
+                        <button title="Helpful" onClick={() => submitThumbs(msg, 'thumbs_up')}
+                          style={{ background: 'none', border: 'none', cursor: fb.submitted ? 'default' : 'pointer', padding: 0, fontSize: 12, opacity: fb.sentiment === 'thumbs_up' ? 1 : 0.5, color: fb.sentiment === 'thumbs_up' ? T.success : T.textMuted }}
+                          disabled={fb.submitted}>👍</button>
+                        <button title="Not helpful" onClick={() => { if (fb.submitted) return; setFeedbackState(s => ({ ...s, [msg.id]: { ...s[msg.id], showPicker: true, sentiment: 'thumbs_down' } })) }}
+                          style={{ background: 'none', border: 'none', cursor: fb.submitted ? 'default' : 'pointer', padding: 0, fontSize: 12, opacity: fb.sentiment === 'thumbs_down' ? 1 : 0.5, color: fb.sentiment === 'thumbs_down' ? T.error : T.textMuted }}
+                          disabled={fb.submitted}>👎</button>
+                      </>
+                    )
+                  })()}
                 </div>
+                {/* Thumbs-down reason picker */}
+                {msg.role === 'assistant' && msg.id && feedbackState[msg.id]?.showPicker && !feedbackState[msg.id]?.submitted && (
+                  <div style={{ marginTop: 8, padding: 8, borderTop: `1px solid ${T.borderLight}` }}>
+                    <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 4 }}>What was wrong?</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 6 }}>
+                      {THUMBS_DOWN_REASONS.map(r => (
+                        <button key={r.key} onClick={() => setFeedbackState(s => ({ ...s, [msg.id]: { ...s[msg.id], reasonKey: r.key } }))}
+                          style={{ fontSize: 10, padding: '3px 8px', borderRadius: 10, border: `1px solid ${feedbackState[msg.id]?.reasonKey === r.key ? T.primary : T.border}`, background: feedbackState[msg.id]?.reasonKey === r.key ? T.primaryLight : 'transparent', color: feedbackState[msg.id]?.reasonKey === r.key ? T.primary : T.textSecondary, cursor: 'pointer', fontFamily: T.font }}>{r.label}</button>
+                      ))}
+                    </div>
+                    <input type="text" placeholder="Optional detail..." value={feedbackState[msg.id]?.notes || ''}
+                      onChange={e => setFeedbackState(s => ({ ...s, [msg.id]: { ...s[msg.id], notes: e.target.value } }))}
+                      style={{ width: '100%', fontSize: 11, padding: '5px 8px', border: `1px solid ${T.border}`, borderRadius: 4, background: T.surface, color: T.text, fontFamily: T.font, marginBottom: 6 }} />
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      <button onClick={() => submitThumbs(msg, 'thumbs_down', feedbackState[msg.id]?.reasonKey, feedbackState[msg.id]?.notes)}
+                        disabled={!feedbackState[msg.id]?.reasonKey}
+                        style={{ fontSize: 10, fontWeight: 600, padding: '4px 10px', borderRadius: 4, border: 'none', background: feedbackState[msg.id]?.reasonKey ? T.primary : T.borderLight, color: '#fff', cursor: feedbackState[msg.id]?.reasonKey ? 'pointer' : 'default', fontFamily: T.font }}>Submit</button>
+                      <button onClick={() => setFeedbackState(s => ({ ...s, [msg.id]: {} }))}
+                        style={{ fontSize: 10, padding: '4px 10px', borderRadius: 4, border: `1px solid ${T.border}`, background: 'transparent', color: T.textMuted, cursor: 'pointer', fontFamily: T.font }}>Cancel</button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           ))}
@@ -303,6 +402,35 @@ export default function DealChat({ dealId, userId, isOpen, onClose, onAction }) 
             40% { opacity: 1; transform: scale(1); }
           }
         `}</style>
+
+        {/* End-of-session satisfaction overlay */}
+        {satisfactionShown && isOpen && (
+          <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+            <div style={{ background: T.surface, borderRadius: 12, padding: 24, width: '100%', maxWidth: 320, boxShadow: '0 20px 60px rgba(0,0,0,0.25)', textAlign: 'center' }}>
+              {satisfactionRating ? (
+                <>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: T.success, marginBottom: 6 }}>Thanks for the feedback!</div>
+                  <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 14 }}>This helps us improve the AI coach.</div>
+                  <button onClick={onClose} style={{ padding: '8px 20px', background: T.primary, color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 600, fontFamily: T.font, fontSize: 13 }}>Close</button>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: T.text, marginBottom: 4 }}>How was this session?</div>
+                  <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 14 }}>Rate your AI coach chat</div>
+                  <div style={{ display: 'flex', justifyContent: 'center', gap: 6, marginBottom: 14 }}>
+                    {[1, 2, 3, 4, 5].map(n => (
+                      <button key={n} onClick={() => submitSatisfaction(n)}
+                        style={{ width: 36, height: 36, borderRadius: 8, border: `1px solid ${T.border}`, background: T.surfaceAlt, cursor: 'pointer', fontSize: 18, fontFamily: T.font, color: T.textMuted }}
+                        onMouseEnter={e => { e.currentTarget.style.background = T.primaryLight; e.currentTarget.style.borderColor = T.primary }}
+                        onMouseLeave={e => { e.currentTarget.style.background = T.surfaceAlt; e.currentTarget.style.borderColor = T.border }}>{n}</button>
+                    ))}
+                  </div>
+                  <button onClick={onClose} style={{ fontSize: 11, color: T.textMuted, background: 'none', border: 'none', cursor: 'pointer', fontFamily: T.font }}>Skip</button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </>
   )

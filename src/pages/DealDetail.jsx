@@ -6,6 +6,26 @@ import { Card, Badge, ForecastBadge, StageBadge, ScoreBar, Field, StatusDot, Tab
 import TranscriptUpload from '../components/TranscriptUpload'
 import { callGenerateEmail, callResearchFunction, reprocessDeal } from '../lib/webhooks'
 import { track } from '../lib/analytics'
+
+// AI suggestion tracking helper — silently records user actions on AI-generated entities
+async function trackSuggestion({ orgId, dealId, userId, targetType, targetId, action, before, after, createdAt }) {
+  if (!targetId) return
+  try {
+    const timeToAction = createdAt ? Math.max(0, Math.round((Date.now() - new Date(createdAt).getTime()) / 1000)) : null
+    await supabase.from('ai_suggestion_tracking').insert({
+      org_id: orgId || null,
+      deal_id: dealId || null,
+      user_id: userId || null,
+      target_type: targetType,
+      target_id: targetId,
+      action,
+      action_at: new Date().toISOString(),
+      time_to_action_seconds: timeToAction,
+      original_value: before || null,
+      final_value: after || null,
+    })
+  } catch (e) { console.log('trackSuggestion error:', e) }
+}
 import DealChat from '../components/DealChat'
 import CompanyLogo from '../components/CompanyLogo'
 import SlideGenerator from '../components/SlideGenerator'
@@ -701,7 +721,12 @@ export default function DealDetail() {
     const task = tasks.find(t => t.id === taskId)
     if (!task) return
     const { error } = await supabase.from('tasks').update({ completed: !task.completed, completed_at: !task.completed ? new Date().toISOString() : null }).eq('id', taskId)
-    if (!error) setTasks(prev => prev.map(t => t.id === taskId ? { ...t, completed: !t.completed } : t))
+    if (!error) {
+      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, completed: !t.completed } : t))
+      if (task.auto_generated && !task.completed) {
+        trackSuggestion({ orgId: profile?.org_id, dealId: id, userId: profile?.id, targetType: 'task', targetId: taskId, action: 'accepted', createdAt: task.created_at })
+      }
+    }
   }
   async function addRisk() {
     if (!newRisk.risk_description.trim()) return
@@ -727,7 +752,16 @@ export default function DealDetail() {
     await supabase.from('deal_pain_points').update({ include_in_proposal: !current }).eq('id', painId)
     setPainPoints(prev => prev.map(p => p.id === painId ? { ...p, include_in_proposal: !current } : p))
   }
-  async function deleteContact(contactId) { if (!window.confirm('Delete this contact?')) return; await supabase.from('contacts').delete().eq('id', contactId); setContacts(prev => prev.filter(c => c.id !== contactId)) }
+  async function deleteContact(contactId) {
+    if (!window.confirm('Delete this contact?')) return
+    const contact = contacts.find(c => c.id === contactId)
+    await supabase.from('contacts').delete().eq('id', contactId)
+    setContacts(prev => prev.filter(c => c.id !== contactId))
+    // Treat AI-sourced contacts (notes prefix 'Source: transcript' or 'Source: Apollo'/etc) as trackable
+    if (contact?.notes && /^Source:/i.test(contact.notes)) {
+      trackSuggestion({ orgId: profile?.org_id, dealId: id, userId: profile?.id, targetType: 'contact', targetId: contactId, action: 'rejected', before: { name: contact.name, title: contact.title, role_in_deal: contact.role_in_deal }, createdAt: contact.created_at })
+    }
+  }
   async function deletePainPoint(painId) { await supabase.from('deal_pain_points').delete().eq('id', painId); setPainPoints(prev => prev.filter(p => p.id !== painId)) }
   async function deleteRisk(riskId) { await supabase.from('deal_risks').delete().eq('id', riskId); setRisks(prev => prev.filter(r => r.id !== riskId)) }
   async function deleteEvent(eventId) { await supabase.from('compelling_events').delete().eq('id', eventId); setEvents(prev => prev.filter(e => e.id !== eventId)) }
@@ -739,7 +773,15 @@ export default function DealDetail() {
     const { data, error } = await supabase.from('tasks').insert({ deal_id: id, title: newTask.title.trim(), priority: newTask.priority, due_date: newTask.due_date || null, notes: newTask.notes || null, auto_generated: false, completed: false }).select().single()
     if (!error && data) { setTasks(prev => [data, ...prev]); setShowAddTask(false); setNewTask({ title: '', priority: 'medium', due_date: '', notes: '' }) }
   }
-  async function deleteTask(taskId) { if (!window.confirm('Delete this task?')) return; await supabase.from('tasks').delete().eq('id', taskId); setTasks(prev => prev.filter(t => t.id !== taskId)) }
+  async function deleteTask(taskId) {
+    if (!window.confirm('Delete this task?')) return
+    const task = tasks.find(t => t.id === taskId)
+    await supabase.from('tasks').delete().eq('id', taskId)
+    setTasks(prev => prev.filter(t => t.id !== taskId))
+    if (task?.auto_generated) {
+      trackSuggestion({ orgId: profile?.org_id, dealId: id, userId: profile?.id, targetType: 'task', targetId: taskId, action: 'rejected', before: { title: task.title, priority: task.priority, due_date: task.due_date }, createdAt: task.created_at })
+    }
+  }
   async function addNewContact() {
     if (!newContact.name.trim()) return
     const { data, error } = await supabase.from('contacts').insert({ deal_id: id, name: newContact.name.trim(), title: newContact.title || null, email: newContact.email || null, role_in_deal: newContact.role_in_deal || null, influence_level: 'Unknown' }).select().single()
@@ -2076,7 +2118,7 @@ export default function DealDetail() {
         )}
       </div>
 
-      <DealChat dealId={id} userId={profile?.id} isOpen={showChat} onClose={() => setShowChat(false)} onAction={() => loadDeal()} />
+      <DealChat dealId={id} userId={profile?.id} orgId={profile?.org_id} isOpen={showChat} onClose={() => setShowChat(false)} onAction={() => loadDeal()} />
       {showSlideGenerator && <SlideGenerator dealId={id} companyName={deal.company_name} onClose={() => setShowSlideGenerator(false)} />}
 
       {/* Mandatory close-out modal */}
@@ -2132,23 +2174,53 @@ export default function DealDetail() {
               <label style={labelStyle}>Key lesson *</label>
               <input style={inputStyle} value={closeOutForm.key_lesson} onChange={e => setCloseOutForm(p => ({ ...p, key_lesson: e.target.value }))} placeholder="What would you do differently?" />
             </div>
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <Button onClick={() => { setShowCloseOutModal(false); setPendingStage(null) }}>Cancel</Button>
-              <Button primary disabled={!closeOutForm.primary_reason || !closeOutForm.what_helped || !closeOutForm.key_lesson} onClick={async () => {
-                await supabase.from('deal_outcome_factors').insert({
-                  deal_id: id, outcome: pendingStage,
-                  primary_reason: closeOutForm.primary_reason,
-                  what_helped_hurt: closeOutForm.what_helped,
-                  key_lesson: closeOutForm.key_lesson,
-                  submitted_by: profile?.id,
-                }).catch(() => {})
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between', alignItems: 'center' }}>
+              <Button onClick={async () => {
+                // Skip — still close the deal, but log that the user dismissed the form
+                try {
+                  await supabase.from('deal_outcome_factors').insert({
+                    deal_id: id, org_id: profile?.org_id || null, rep_id: profile?.id || null,
+                    outcome: pendingStage, primary_reason: 'dismissed',
+                    what_helped_or_hurt: null, key_lesson: null,
+                    filled_by: profile?.id || null,
+                    structured_factors: { dismissed: true },
+                  })
+                } catch (e) {}
                 await supabase.from('deals').update({ stage: pendingStage }).eq('id', id)
-                track('deal_closed', { outcome: pendingStage, primary_reason: closeOutForm.primary_reason, deal_value: deal?.deal_value || null, cmrr: deal?.cmrr || null })
+                track('deal_closed', { outcome: pendingStage, primary_reason: 'dismissed', skipped: true, deal_value: deal?.deal_value || null })
                 setDeal(p => ({ ...p, stage: pendingStage }))
-                setShowCloseOutModal(false)
-                setPendingStage(null)
+                setShowCloseOutModal(false); setPendingStage(null)
                 setCloseOutForm({ primary_reason: '', what_helped: '', key_lesson: '' })
-              }}>Submit & Close Deal</Button>
+              }} style={{ fontSize: 11, color: T.textMuted }}>Skip</Button>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <Button onClick={() => { setShowCloseOutModal(false); setPendingStage(null) }}>Cancel</Button>
+                <Button primary disabled={!closeOutForm.primary_reason || !closeOutForm.what_helped || !closeOutForm.key_lesson} onClick={async () => {
+                  try {
+                    await supabase.from('deal_outcome_factors').insert({
+                      deal_id: id, org_id: profile?.org_id || null, rep_id: profile?.id || null,
+                      outcome: pendingStage,
+                      primary_reason: closeOutForm.primary_reason,
+                      what_helped_or_hurt: closeOutForm.what_helped,
+                      key_lesson: closeOutForm.key_lesson,
+                      filled_by: profile?.id || null,
+                    })
+                  } catch (e) { console.log('outcome_factors insert error:', e) }
+                  await supabase.from('deals').update({ stage: pendingStage }).eq('id', id)
+                  track('deal_closed', { outcome: pendingStage, primary_reason: closeOutForm.primary_reason, deal_value: deal?.deal_value || null, cmrr: deal?.cmrr || null })
+                  setDeal(p => ({ ...p, stage: pendingStage }))
+                  setShowCloseOutModal(false)
+                  setPendingStage(null)
+                  setCloseOutForm({ primary_reason: '', what_helped: '', key_lesson: '' })
+                  // Fire-and-forget retrospective generation (trigger also queues, this is an immediate kick)
+                  try {
+                    fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-deal-retrospective`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`, 'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY },
+                      body: JSON.stringify({ deal_id: id }),
+                    }).catch(() => {})
+                  } catch (e) {}
+                }}>Submit & Close Deal</Button>
+              </div>
             </div>
           </div>
         </div>

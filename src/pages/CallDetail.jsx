@@ -438,7 +438,7 @@ export default function CallDetail() {
       )}
 
       {/* Deal Chat Drawer */}
-      <DealChat dealId={dealId} userId={profile?.id} isOpen={showChat} onClose={() => setShowChat(false)} onAction={() => loadData()} />
+      <DealChat dealId={dealId} userId={profile?.id} orgId={profile?.org_id} isOpen={showChat} onClose={() => setShowChat(false)} onAction={() => loadData()} />
     </div>
   )
 }
