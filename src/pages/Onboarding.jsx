@@ -39,7 +39,7 @@ export default function Onboarding() {
   const inviteId = searchParams.get('invite')
 
   const [mode, setMode] = useState(inviteToken ? 'invite' : inviteId ? 'create' : null) // null = choose, 'create', 'invite'
-  const [step, setStep] = useState(0) // 0=welcome, 1=company, 2=product, 3=methodology, 4=review
+  const [step, setStep] = useState(0) // 0=welcome/mode, 1-7 create flow, 8 processing
   const [invitation, setInvitation] = useState(null)
   const [processing, setProcessing] = useState(false)
   const [error, setError] = useState(null)
@@ -59,6 +59,18 @@ export default function Onboarding() {
   const [icpRevenue, setIcpRevenue] = useState([])
   const [teamSize, setTeamSize] = useState('2-5')
   const [inviteCode, setInviteCode] = useState(inviteToken || '')
+
+  // New fields (Phase E)
+  const [dealSize, setDealSize] = useState('') // < $10K / $10K-$50K / $50K-$250K / $250K+
+  const [salesCycle, setSalesCycle] = useState('') // < 1mo / 1-3mo / 3-6mo / 6+mo
+  const [primaryBuyer, setPrimaryBuyer] = useState('') // CFO / VP Finance / CEO / Ops / IT / Other
+  const [geographies, setGeographies] = useState([]) // multi-select
+  const [competitors, setCompetitors] = useState(['', '', '']) // 3 text slots
+  const [valueProps, setValueProps] = useState('')
+  const [greenFlagsText, setGreenFlagsText] = useState('')
+  const [redFlagsText, setRedFlagsText] = useState('')
+  const [objectionsText, setObjectionsText] = useState('')
+  const [personas, setPersonas] = useState([{ title: '', role_in_decision: '', pain_points: '', priorities: '' }])
 
   // Redirect if already has org
   useEffect(() => {
@@ -142,10 +154,19 @@ export default function Onboarding() {
             icpIndustries,
             icpCompanySizes: icpSizes,
             icpRevenueRanges: icpRevenue,
+            icpGeographies: geographies,
             coachingStyle: 'independently_wealthy',
             teamSize,
             fiscalYearEndMonth: fyEndMonth,
             fiscalYearEndDay: fyEndDay,
+            // Phase E enrichment
+            dealSize, salesCycle, primaryBuyer,
+            competitors: competitors.filter(c => c && c.trim()),
+            valuePropositions: valueProps,
+            greenFlags: greenFlagsText.split(/[,\n]/).map(s => s.trim()).filter(Boolean),
+            redFlags: redFlagsText.split(/[,\n]/).map(s => s.trim()).filter(Boolean),
+            objections: objectionsText,
+            personas: personas.filter(p => p.title?.trim()),
             stages: [
               { id: 'qualify', name: 'Qualify', active: true },
               { id: 'discovery', name: 'Discovery', active: true },
@@ -181,11 +202,38 @@ export default function Onboarding() {
         if (freePlan) orgUpdates.plan_id = freePlan.id
         await supabase.from('organizations').update(orgUpdates).eq('id', data.org_id)
 
-        // Persist methodology extras to coach
+        // Persist methodology extras + new Phase E fields to coach + coach_icp
         if (data.coach_id) {
           const extras = methodologies.filter(m => m !== 'rif')
-          if (extras.length) {
-            await supabase.from('coaches').update({ methodology_extras: extras }).eq('id', data.coach_id)
+          const coachUpdate = {}
+          if (extras.length) coachUpdate.methodology_extras = extras
+          if (valueProps?.trim()) coachUpdate.value_propositions = valueProps.trim()
+          const competitorList = competitors.filter(c => c && c.trim())
+          if (competitorList.length) coachUpdate.competitor_context = competitorList.join('\n')
+          if (objectionsText?.trim()) {
+            coachUpdate.general_notes = `Common objections encountered:\n${objectionsText.trim()}`
+          }
+          if (Object.keys(coachUpdate).length) {
+            await supabase.from('coaches').update(coachUpdate).eq('id', data.coach_id)
+          }
+
+          // ICP: write personas + green/red flags if we have them
+          const filledPersonas = personas.filter(p => p.title?.trim())
+          const greens = greenFlagsText.split(/[,\n]/).map(s => s.trim()).filter(Boolean)
+          const reds = redFlagsText.split(/[,\n]/).map(s => s.trim()).filter(Boolean)
+          if (filledPersonas.length || greens.length || reds.length) {
+            // find or create the default ICP row
+            const { data: existingIcp } = await supabase.from('coach_icp').select('id').eq('coach_id', data.coach_id).eq('active', true).limit(1).maybeSingle()
+            const icpPatch = {
+              ...(filledPersonas.length ? { personas: filledPersonas } : {}),
+              ...(greens.length ? { green_flags: greens } : {}),
+              ...(reds.length ? { red_flags: reds } : {}),
+            }
+            if (existingIcp?.id) {
+              await supabase.from('coach_icp').update(icpPatch).eq('id', existingIcp.id)
+            } else {
+              await supabase.from('coach_icp').insert({ coach_id: data.coach_id, name: 'Default ICP', active: true, ...icpPatch })
+            }
           }
         }
       }
@@ -245,7 +293,7 @@ export default function Onboarding() {
       <div style={{ ...cardStyle, textAlign: 'center' }}>
         <Spinner />
         <h2 style={{ fontSize: 18, fontWeight: 700, color: T.text, marginTop: 20, marginBottom: 8 }}>Setting Up Your Environment</h2>
-        <p style={{ fontSize: 13, color: T.textSecondary }}>Perplexity is researching your market. Claude is generating coaching prompts. This takes 15-30 seconds.</p>
+        <p style={{ fontSize: 13, color: T.textSecondary }}>Researching your market and configuring your coach. This takes 15-30 seconds.</p>
       </div>
     </div>
     </>
@@ -342,13 +390,35 @@ export default function Onboarding() {
               </>
             )}
 
-            {/* Step 2: Product */}
+            {/* Step 2: What you sell */}
             {step === 2 && (
               <>
-                <h2 style={{ fontSize: 18, fontWeight: 700, color: T.text, marginBottom: 4 }}>Your Product</h2>
-                <p style={{ fontSize: 12, color: T.textSecondary, marginBottom: 16 }}>The AI needs to understand what you sell to coach effectively.</p>
+                <h2 style={{ fontSize: 18, fontWeight: 700, color: T.text, marginBottom: 4 }}>What You Sell</h2>
+                <p style={{ fontSize: 12, color: T.textSecondary, marginBottom: 16 }}>Tell us about your product and your typical deal shape.</p>
                 <div style={{ marginBottom: 12 }}><label style={labelStyle}>Product Name</label><input style={inputStyle} value={productName} onChange={e => setProductName(e.target.value)} placeholder="Product name" /></div>
-                <div style={{ marginBottom: 12 }}><label style={labelStyle}>What does it do?</label><textarea style={{ ...inputStyle, minHeight: 80, resize: 'vertical' }} value={productDesc} onChange={e => setProductDesc(e.target.value)} placeholder="What does it do?" /></div>
+                <div style={{ marginBottom: 12 }}><label style={labelStyle}>One-line description</label><textarea style={{ ...inputStyle, minHeight: 60, resize: 'vertical' }} value={productDesc} onChange={e => setProductDesc(e.target.value)} placeholder="What does it do, in one sentence?" /></div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+                  <div>
+                    <label style={labelStyle}>Average deal size</label>
+                    <select style={{ ...inputStyle, cursor: 'pointer' }} value={dealSize} onChange={e => setDealSize(e.target.value)}>
+                      <option value="">Select...</option>
+                      {['< $10K', '$10K-$50K', '$50K-$250K', '$250K+'].map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Average sales cycle</label>
+                    <select style={{ ...inputStyle, cursor: 'pointer' }} value={salesCycle} onChange={e => setSalesCycle(e.target.value)}>
+                      <option value="">Select...</option>
+                      {['< 1 month', '1-3 months', '3-6 months', '6+ months'].map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div style={{ marginBottom: 12 }}>
+                  <label style={labelStyle}>Primary buyer title</label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {['CFO', 'VP Finance', 'CEO', 'Operations', 'IT', 'Other'].map(b => <span key={b} onClick={() => setPrimaryBuyer(b)} style={chipStyle(primaryBuyer === b)}>{b}</span>)}
+                  </div>
+                </div>
                 <div style={{ marginBottom: 12 }}>
                   <label style={labelStyle}>Team Size</label>
                   <select style={{ ...inputStyle, cursor: 'pointer' }} value={teamSize} onChange={e => setTeamSize(e.target.value)}>
@@ -383,11 +453,101 @@ export default function Onboarding() {
               </>
             )}
 
-            {/* Step 3: Methodology */}
+            {/* Step 3: Your market */}
             {step === 3 && (
               <>
-                <h2 style={{ fontSize: 18, fontWeight: 700, color: T.text, marginBottom: 4 }}>Sales Methodology</h2>
-                <p style={{ fontSize: 12, color: T.textSecondary, marginBottom: 16 }}>Select all frameworks your team uses. These shape how the AI coaches.</p>
+                <h2 style={{ fontSize: 18, fontWeight: 700, color: T.text, marginBottom: 4 }}>Your Market</h2>
+                <p style={{ fontSize: 12, color: T.textSecondary, marginBottom: 16 }}>Where do you play and who do you compete against?</p>
+                <div style={{ marginBottom: 12 }}>
+                  <label style={labelStyle}>Target Geographies</label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {['US', 'Canada', 'UK', 'EMEA', 'APAC', 'LATAM', 'Global'].map(g => <span key={g} onClick={() => toggleArr(geographies, setGeographies, g)} style={chipStyle(geographies.includes(g))}>{g}</span>)}
+                  </div>
+                </div>
+                <div style={{ marginBottom: 16 }}>
+                  <label style={labelStyle}>Primary competitors (up to 3)</label>
+                  {competitors.map((c, i) => (
+                    <input key={i} style={{ ...inputStyle, marginBottom: 6 }} value={c} onChange={e => setCompetitors(prev => prev.map((v, j) => j === i ? e.target.value : v))} placeholder={`Competitor ${i + 1}`} />
+                  ))}
+                </div>
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                  <Button onClick={() => setStep(2)}>Back</Button>
+                  <Button primary onClick={() => setStep(4)}>Continue</Button>
+                </div>
+              </>
+            )}
+
+            {/* Step 4: What makes you win */}
+            {step === 4 && (
+              <>
+                <h2 style={{ fontSize: 18, fontWeight: 700, color: T.text, marginBottom: 4 }}>What Makes You Win</h2>
+                <p style={{ fontSize: 12, color: T.textSecondary, marginBottom: 16 }}>Your coach learns what to look for and what to push on.</p>
+                <div style={{ marginBottom: 12 }}>
+                  <label style={labelStyle}>Top 3 value propositions</label>
+                  <textarea style={{ ...inputStyle, minHeight: 80, resize: 'vertical' }} value={valueProps} onChange={e => setValueProps(e.target.value)} placeholder={`e.g.\n- 50% faster close process vs legacy tools\n- Single platform replaces 3+ point solutions\n- Built-in compliance for SOX / GAAP`} />
+                </div>
+                <div style={{ marginBottom: 12 }}>
+                  <label style={labelStyle}>Signs of a good-fit deal (green flags)</label>
+                  <textarea style={{ ...inputStyle, minHeight: 60, resize: 'vertical' }} value={greenFlagsText} onChange={e => setGreenFlagsText(e.target.value)} placeholder="Comma or newline separated. e.g. Executive sponsor identified, Budget approved, Compelling event with deadline" />
+                </div>
+                <div style={{ marginBottom: 12 }}>
+                  <label style={labelStyle}>Signs of a bad-fit deal (red flags)</label>
+                  <textarea style={{ ...inputStyle, minHeight: 60, resize: 'vertical' }} value={redFlagsText} onChange={e => setRedFlagsText(e.target.value)} placeholder="Comma or newline separated. e.g. No executive access, Unclear decision process, Competitor entrenched" />
+                </div>
+                <div style={{ marginBottom: 16 }}>
+                  <label style={labelStyle}>Common objections you face</label>
+                  <textarea style={{ ...inputStyle, minHeight: 60, resize: 'vertical' }} value={objectionsText} onChange={e => setObjectionsText(e.target.value)} placeholder="e.g. 'Too expensive', 'We're locked into our current vendor', 'Not a priority this quarter'" />
+                </div>
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                  <Button onClick={() => setStep(3)}>Back</Button>
+                  <Button primary onClick={() => setStep(5)}>Continue</Button>
+                </div>
+              </>
+            )}
+
+            {/* Step 5: Your buyers */}
+            {step === 5 && (
+              <>
+                <h2 style={{ fontSize: 18, fontWeight: 700, color: T.text, marginBottom: 4 }}>Your Buyers</h2>
+                <p style={{ fontSize: 12, color: T.textSecondary, marginBottom: 16 }}>Add 1-3 buyer personas. Your coach uses these to guide stakeholder strategy.</p>
+                {personas.map((p, i) => (
+                  <div key={i} style={{ padding: 10, background: T.surfaceAlt, borderRadius: 8, border: `1px solid ${T.border}`, marginBottom: 10 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: T.text }}>Persona {i + 1}</span>
+                      {personas.length > 1 && (
+                        <button onClick={() => setPersonas(prev => prev.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, fontSize: 14 }}>\u00d7</button>
+                      )}
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+                      <input style={inputStyle} value={p.title} onChange={e => setPersonas(prev => prev.map((v, j) => j === i ? { ...v, title: e.target.value } : v))} placeholder="Title (e.g. CFO)" />
+                      <select style={{ ...inputStyle, cursor: 'pointer' }} value={p.role_in_decision} onChange={e => setPersonas(prev => prev.map((v, j) => j === i ? { ...v, role_in_decision: e.target.value } : v))}>
+                        <option value="">Role in decision...</option>
+                        <option value="economic_buyer">Economic Buyer</option>
+                        <option value="champion">Champion</option>
+                        <option value="technical_evaluator">Technical Evaluator</option>
+                        <option value="end_user">End User</option>
+                        <option value="influencer">Influencer</option>
+                      </select>
+                    </div>
+                    <textarea style={{ ...inputStyle, minHeight: 50, resize: 'vertical', marginBottom: 6, fontSize: 12 }} value={p.pain_points} onChange={e => setPersonas(prev => prev.map((v, j) => j === i ? { ...v, pain_points: e.target.value } : v))} placeholder="Their pain points..." />
+                    <textarea style={{ ...inputStyle, minHeight: 50, resize: 'vertical', fontSize: 12 }} value={p.priorities} onChange={e => setPersonas(prev => prev.map((v, j) => j === i ? { ...v, priorities: e.target.value } : v))} placeholder="Their priorities / KPIs..." />
+                  </div>
+                ))}
+                {personas.length < 3 && (
+                  <Button onClick={() => setPersonas(prev => [...prev, { title: '', role_in_decision: '', pain_points: '', priorities: '' }])} style={{ marginBottom: 12 }}>+ Add persona</Button>
+                )}
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                  <Button onClick={() => setStep(4)}>Back</Button>
+                  <Button primary onClick={() => setStep(6)} disabled={!personas.some(p => p.title?.trim())}>Continue</Button>
+                </div>
+              </>
+            )}
+
+            {/* Step 6: Methodology */}
+            {step === 6 && (
+              <>
+                <h2 style={{ fontSize: 18, fontWeight: 700, color: T.text, marginBottom: 4 }}>Your Sales Process</h2>
+                <p style={{ fontSize: 12, color: T.textSecondary, marginBottom: 16 }}>Select all frameworks your team uses. These shape how your coach evaluates deals and calls.</p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
                   {METHODOLOGIES.map(m => {
                     const active = methodologies.includes(m.id)
@@ -408,24 +568,30 @@ export default function Onboarding() {
                   })}
                 </div>
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                  <Button onClick={() => setStep(2)}>Back</Button>
-                  <Button primary onClick={() => setStep(4)} disabled={!methodologies.length}>Continue</Button>
+                  <Button onClick={() => setStep(5)}>Back</Button>
+                  <Button primary onClick={() => setStep(7)} disabled={!methodologies.length}>Continue</Button>
                 </div>
               </>
             )}
 
-            {/* Step 4: Review & Launch */}
-            {step === 4 && (
+            {/* Step 7: Review & Launch */}
+            {step === 7 && (
               <>
                 <h2 style={{ fontSize: 18, fontWeight: 700, color: T.text, marginBottom: 4 }}>Review & Launch</h2>
-                <p style={{ fontSize: 12, color: T.textSecondary, marginBottom: 16 }}>The AI will research your market and auto-configure your coaching environment.</p>
+                <p style={{ fontSize: 12, color: T.textSecondary, marginBottom: 16 }}>We'll research your market and configure your workspace with a coach tuned to your buyers.</p>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
                   {[
                     ['Company', orgName],
                     ['Website', website || '\u2014'],
                     ['Product', productName || orgName],
+                    ['Deal Size', dealSize || '\u2014'],
+                    ['Sales Cycle', salesCycle || '\u2014'],
+                    ['Primary Buyer', primaryBuyer || '\u2014'],
                     ['Team Size', teamSize],
                     ['Industries', icpIndustries.join(', ') || 'Any'],
+                    ['Geographies', geographies.join(', ') || '\u2014'],
+                    ['Competitors', competitors.filter(c => c?.trim()).join(', ') || '\u2014'],
+                    ['Personas', personas.filter(p => p.title?.trim()).map(p => p.title).join(', ') || '\u2014'],
                     ['Fiscal Year End', `${MONTH_NAMES[fyEndMonth - 1]} ${fyEndDay}`],
                     ['Methodologies', methodologies.map(id => METHODOLOGIES.find(m => m.id === id)?.name).join(', ')],
                   ].map(([k, v]) => (
@@ -435,13 +601,13 @@ export default function Onboarding() {
                     </div>
                   ))}
                 </div>
-                <div style={{ padding: 12, background: T.primaryLight, border: '1px solid ' + T.primaryBorder, borderRadius: 8, marginBottom: 16, fontSize: 12, color: T.primary, lineHeight: 1.5 }}>
-                  Perplexity will research your market and ICP. Claude Opus will generate your coach persona, call prompts, scoring criteria, and pipeline configuration.
+                <div style={{ padding: 12, background: T.primaryLight || 'rgba(93,173,226,0.08)', border: '1px solid ' + (T.primaryBorder || 'rgba(93,173,226,0.3)'), borderRadius: 8, marginBottom: 16, fontSize: 12, color: T.primary, lineHeight: 1.5 }}>
+                  Your workspace will be configured with a coach tuned to your market, buyers, and sales process.
                 </div>
                 {error && <div style={{ color: T.error, fontSize: 12, marginBottom: 12, padding: 8, background: T.errorLight, borderRadius: 6 }}>{error}</div>}
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                  <Button onClick={() => setStep(3)}>Back</Button>
-                  <Button primary onClick={launchOrg}>Launch DealCoach</Button>
+                  <Button onClick={() => setStep(6)}>Back</Button>
+                  <Button primary onClick={launchOrg}>Launch</Button>
                 </div>
               </>
             )}
