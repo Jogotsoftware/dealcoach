@@ -1,7 +1,10 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-// process-transcript v30
+// process-transcript v31
+// CHANGES FROM v30:
+// - Calls ingest-deal-knowledge instead of embed-chunks directly (wraps + chunks
+//   company_profile + deal_analysis in addition to the conversation)
 // CHANGES FROM v29:
 // - Uses assemble_coach_prompt RPC for 4-layer system prompt (platform core + methodology + coach + ICP)
 // - Upserts assembled_prompt_versions (dedup by SHA-256 hash, increments use_count on repeat)
@@ -139,22 +142,22 @@ Deno.serve(async (req: Request) => {
   const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
   try {
-    if (!ANTHROPIC_API_KEY) return jr({ error: 'v30: No API key' }, 500);
+    if (!ANTHROPIC_API_KEY) return jr({ error: 'v31: No API key' }, 500);
     const reqBody = await req.json();
-    console.log('process-transcript v30 keys:', Object.keys(reqBody));
+    console.log('process-transcript v31 keys:', Object.keys(reqBody));
 
     const conversation_id = reqBody.conversation_id || reqBody.conversationId || reqBody.id;
-    if (!conversation_id) return jr({ error: `v30: no conversation_id. Keys: ${Object.keys(reqBody).join(', ')}` }, 400);
+    if (!conversation_id) return jr({ error: `v31: no conversation_id. Keys: ${Object.keys(reqBody).join(', ')}` }, 400);
 
     const { data: conv } = await sb.from('conversations').select('*').eq('id', conversation_id).single();
-    if (!conv) return jr({ error: 'v30: Conversation not found' }, 404);
-    if (!conv.transcript) return jr({ error: 'v30: No transcript' }, 400);
+    if (!conv) return jr({ error: 'v31: Conversation not found' }, 404);
+    if (!conv.transcript) return jr({ error: 'v31: No transcript' }, 400);
 
     const deal_id = reqBody.deal_id || reqBody.dealId || conv.deal_id;
-    if (!deal_id) return jr({ error: 'v30: No deal_id' }, 400);
+    if (!deal_id) return jr({ error: 'v31: No deal_id' }, 400);
 
     const { data: deal } = await sb.from('deals').select('*').eq('id', deal_id).single();
-    if (!deal) return jr({ error: 'v30: Deal not found' }, 404);
+    if (!deal) return jr({ error: 'v31: Deal not found' }, 404);
 
     const { data: rep } = await sb.from('profiles').select('active_coach_id, org_id, full_name, initials, email').eq('id', deal.rep_id).single();
     const cid = rep?.active_coach_id;
@@ -240,7 +243,7 @@ Deno.serve(async (req: Request) => {
     const { data: log } = await sb.from('ai_response_log').insert({ deal_id, response_type: 'transcript_analysis', coach_id: cid, ai_model_used: model, temperature: temp, status: 'processing', triggered_by: deal.rep_id }).select('id').single();
 
     const cr = await callClaude({ model, max_tokens: 8000, temperature: temp, system: sysPrompt, messages: [{ role: 'user', content: prompt }] });
-    if (!cr.ok) { const e = await cr.text(); await ulog(sb, log?.id, 'failed', `v30: ${e}`, t0); return jr({ error: `v30: Claude ${cr.status}` }, 500); }
+    if (!cr.ok) { const e = await cr.text(); await ulog(sb, log?.id, 'failed', `v31: ${e}`, t0); return jr({ error: `v31: Claude ${cr.status}` }, 500); }
 
     const cd = await cr.json();
     const usage = cd.usage || {};
@@ -252,7 +255,7 @@ Deno.serve(async (req: Request) => {
       const match = cleaned.match(/\{[\s\S]*\}/);
       if (!match) throw new Error('No JSON');
       p = JSON.parse(match[0]);
-    } catch (e: any) { await ulog(sb, log?.id, 'partial', `v30: ${e.message}`, t0, usage); return jr({ success: true, status: 'partial', error: e.message }); }
+    } catch (e: any) { await ulog(sb, log?.id, 'partial', `v31: ${e.message}`, t0, usage); return jr({ success: true, status: 'partial', error: e.message }); }
 
     await sb.from('conversations').update({ ai_summary: p.summary || null, ai_coaching_notes: p.coaching_notes || null, ai_raw_response: cd, processed: true }).eq('id', conversation_id);
 
@@ -540,15 +543,16 @@ Deno.serve(async (req: Request) => {
 
     // ── TRIGGER EMBED-CHUNKS ──
     try {
-      fetch(`${SUPABASE_URL}/functions/v1/embed-chunks`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, 'apikey': SUPABASE_SERVICE_ROLE_KEY }, body: JSON.stringify({ deal_id, conversation_id }) }).catch(e => console.log('embed error:', e));
+      // ingest-deal-knowledge: chunks this conversation + refreshes company_profile/deal_analysis chunks
+      fetch(`${SUPABASE_URL}/functions/v1/ingest-deal-knowledge`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, 'apikey': SUPABASE_SERVICE_ROLE_KEY }, body: JSON.stringify({ deal_id }) }).catch(e => console.log('ingest error:', e));
     } catch (e) {}
 
     await ulog(sb, log?.id, 'completed', null, t0, usage, sum);
-    return jr({ success: true, version: 'v30', summary: sum, commitments_created: sum.commitments || 0, contacts_found: sum.contacts || 0, memories_created: sum.memories_created || 0, icp_score: sum.icp_score || null });
+    return jr({ success: true, version: 'v31', summary: sum, commitments_created: sum.commitments || 0, contacts_found: sum.contacts || 0, memories_created: sum.memories_created || 0, icp_score: sum.icp_score || null });
 
   } catch (e: any) {
-    console.error('process-transcript v30 error:', e);
-    return jr({ error: `v30: ${e.message}` }, 500);
+    console.error('process-transcript v31 error:', e);
+    return jr({ error: `v31: ${e.message}` }, 500);
   }
 });
 
