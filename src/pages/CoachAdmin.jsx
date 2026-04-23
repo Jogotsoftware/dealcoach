@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { theme as T } from '../lib/theme'
@@ -14,6 +15,7 @@ const CATEGORIES = ['discovery', 'methodology', 'communication', 'qualification'
 
 export default function CoachAdmin() {
   const { profile } = useAuth()
+  const nav = useNavigate()
   const [tab, setTab] = useState('overview')
   const [loading, setLoading] = useState(true)
   const [allCoaches, setAllCoaches] = useState([])
@@ -333,6 +335,7 @@ export default function CoachAdmin() {
       <div style={{ padding: '14px 24px', borderBottom: `1px solid ${T.border}`, background: T.surface }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
           <h2 style={{ fontSize: 18, fontWeight: 700, color: T.text, margin: 0 }}>Coach Admin</h2>
+          <Button primary onClick={() => nav('/coach/builder')} style={{ padding: '5px 12px', fontSize: 11 }}>Coach Builder</Button>
           <select style={{ ...inputStyle, width: 'auto', padding: '6px 12px', cursor: 'pointer', fontWeight: 600, maxWidth: 250 }}
             value={selectedCoachId || ''} onChange={e => setSelectedCoachId(e.target.value)}>
             {allCoaches.map(c => <option key={c.id} value={c.id}>{c.name}{c.created_by === profile?.id ? '' : ' (shared)'}</option>)}

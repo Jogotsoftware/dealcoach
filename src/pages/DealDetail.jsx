@@ -396,6 +396,9 @@ export default function DealDetail() {
   const [showAddCatalyst, setShowAddCatalyst] = useState(false)
   const [showAddPain, setShowAddPain] = useState(false)
   const [expandedRisk, setExpandedRisk] = useState(null)
+  const [showCloseOutModal, setShowCloseOutModal] = useState(false)
+  const [pendingStage, setPendingStage] = useState(null)
+  const [closeOutForm, setCloseOutForm] = useState({ primary_reason: '', what_helped: '', key_lesson: '' })
 
   // New item forms
   const [newRisk, setNewRisk] = useState({ risk_description: '', category: 'general', severity: 'medium', mitigation_plan: '' })
@@ -405,6 +408,7 @@ export default function DealDetail() {
   const [showAddTask, setShowAddTask] = useState(false)
   const [newTask, setNewTask] = useState({ title: '', priority: 'medium', due_date: '', notes: '' })
   const [taskCommitFilter, setTaskCommitFilter] = useState('all')
+  const [selectedTasks, setSelectedTasks] = useState(new Set())
   const [showAddContact, setShowAddContact] = useState(false)
   const [newContact, setNewContact] = useState({ name: '', title: '', email: '', role_in_deal: '' })
 
@@ -880,7 +884,15 @@ export default function DealDetail() {
           </div>
         )}
         <div style={{ marginTop: 12 }}>
-          <EditableField label="Stage" value={deal.stage} field="stage" table="deals" recordId={deal.id} type="select" options={allStageOptions} onSaved={(f, v) => setDeal(p => ({ ...p, [f]: v }))} />
+          <EditableField label="Stage" value={deal.stage} field="stage" table="deals" recordId={deal.id} type="select" options={allStageOptions} onSaved={(f, v) => {
+            const terminalStages = ['closed_won', 'closed_lost', 'disqualified']
+            if (terminalStages.includes(v) && !terminalStages.includes(deal.stage)) {
+              setPendingStage(v)
+              setShowCloseOutModal(true)
+            } else {
+              setDeal(p => ({ ...p, [f]: v }))
+            }
+          }} />
           <EditableField label="Forecast" value={deal.forecast_category} field="forecast_category" table="deals" recordId={deal.id} type="select" options={FORECAST_CATEGORIES} onSaved={(f, v) => setDeal(p => ({ ...p, [f]: v }))} />
           <EditableField label="Deal Value" value={deal.deal_value} field="deal_value" table="deals" recordId={deal.id} type="number" onSaved={(f, v) => setDeal(p => ({ ...p, [f]: v }))} />
           <EditableField label="CMRR" value={deal.cmrr} field="cmrr" table="deals" recordId={deal.id} type="number" onSaved={(f, v) => setDeal(p => ({ ...p, [f]: v }))} />
@@ -1831,6 +1843,14 @@ export default function DealDetail() {
               </div>
               <Button primary onClick={() => setShowAddTask(true)}>+ Add Task</Button>
             </div>
+            {selectedTasks.size > 0 && (
+              <div style={{ display: 'flex', gap: 8, marginBottom: 12, padding: '8px 12px', background: T.primaryLight, borderRadius: 6, border: `1px solid ${T.primaryBorder}`, alignItems: 'center' }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: T.primary }}>{selectedTasks.size} selected</span>
+                <Button onClick={async () => { for (const tid of selectedTasks) { await supabase.from('tasks').update({ completed: true, completed_at: new Date().toISOString() }).eq('id', tid) } setSelectedTasks(new Set()); loadDeal() }} style={{ padding: '3px 10px', fontSize: 10 }}>Complete All</Button>
+                <Button onClick={async () => { if (!confirm(`Delete ${selectedTasks.size} tasks?`)) return; for (const tid of selectedTasks) { await supabase.from('tasks').delete().eq('id', tid) } setSelectedTasks(new Set()); loadDeal() }} style={{ padding: '3px 10px', fontSize: 10, color: T.error }}>Delete All</Button>
+                <Button onClick={() => setSelectedTasks(new Set())} style={{ padding: '3px 10px', fontSize: 10 }}>Clear</Button>
+              </div>
+            )}
             {showAddTask && (
               <div style={{ padding: 12, background: T.surfaceAlt, borderRadius: 6, marginBottom: 12, border: `1px solid ${T.borderLight}` }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
@@ -1854,6 +1874,7 @@ export default function DealDetail() {
                         const overdue = t.due_date && daysUntil(t.due_date) < 0
                         return (
                           <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderBottom: `1px solid ${T.borderLight}` }}>
+                            <input type="checkbox" checked={selectedTasks.has(t.id)} onChange={() => setSelectedTasks(prev => { const n = new Set(prev); n.has(t.id) ? n.delete(t.id) : n.add(t.id); return n })} style={{ accentColor: T.primary, flexShrink: 0 }} />
                             <button onClick={() => toggleTask(t.id)} style={{ width: 20, height: 20, borderRadius: 5, border: `1.5px solid ${T.border}`, background: 'transparent', cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }} />
                             <span style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, background: t.priority === 'high' ? T.error : t.priority === 'medium' ? T.warning : T.textMuted }} />
                             <div style={{ flex: 1 }}>
@@ -2048,6 +2069,80 @@ export default function DealDetail() {
 
       <DealChat dealId={id} userId={profile?.id} isOpen={showChat} onClose={() => setShowChat(false)} onAction={() => loadDeal()} />
       {showSlideGenerator && <SlideGenerator dealId={id} companyName={deal.company_name} onClose={() => setShowSlideGenerator(false)} />}
+
+      {/* Mandatory close-out modal */}
+      {showCloseOutModal && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)' }} />
+          <div style={{ position: 'relative', zIndex: 1, background: T.surface, borderRadius: 12, padding: 28, width: 480, boxShadow: '0 20px 60px rgba(0,0,0,0.2)', border: `1px solid ${T.border}` }}>
+            <h3 style={{ margin: '0 0 4px', fontSize: 17, fontWeight: 700, color: T.text }}>
+              {pendingStage === 'closed_won' ? 'Deal Won' : pendingStage === 'closed_lost' ? 'Deal Lost' : 'Deal Disqualified'}
+            </h3>
+            <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 16 }}>Quick close-out to capture learnings. Takes under 60 seconds.</div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={labelStyle}>Primary Reason *</label>
+              <select style={{ ...inputStyle, cursor: 'pointer' }} value={closeOutForm.primary_reason} onChange={e => setCloseOutForm(p => ({ ...p, primary_reason: e.target.value }))}>
+                <option value="">Select...</option>
+                {pendingStage === 'closed_won' ? (
+                  <>
+                    <option value="product_fit">Product fit</option>
+                    <option value="champion_strength">Strong champion</option>
+                    <option value="compelling_event">Compelling event / urgency</option>
+                    <option value="competitive_win">Won against competitor</option>
+                    <option value="price_value">Price / value</option>
+                    <option value="relationship">Relationship / trust</option>
+                    <option value="other_won">Other</option>
+                  </>
+                ) : pendingStage === 'closed_lost' ? (
+                  <>
+                    <option value="lost_to_competitor">Lost to competitor</option>
+                    <option value="no_decision">No decision / status quo</option>
+                    <option value="budget">Budget constraints</option>
+                    <option value="timing">Timing / not ready</option>
+                    <option value="product_gap">Product gap</option>
+                    <option value="champion_left">Champion left / changed</option>
+                    <option value="other_lost">Other</option>
+                  </>
+                ) : (
+                  <>
+                    <option value="bad_fit">Bad product fit</option>
+                    <option value="no_budget">No budget</option>
+                    <option value="no_authority">No decision authority</option>
+                    <option value="no_need">No real need</option>
+                    <option value="unresponsive">Unresponsive</option>
+                    <option value="other_dq">Other</option>
+                  </>
+                )}
+              </select>
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={labelStyle}>What helped or hurt most? *</label>
+              <input style={inputStyle} value={closeOutForm.what_helped} onChange={e => setCloseOutForm(p => ({ ...p, what_helped: e.target.value }))} placeholder="One sentence..." />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={labelStyle}>Key lesson *</label>
+              <input style={inputStyle} value={closeOutForm.key_lesson} onChange={e => setCloseOutForm(p => ({ ...p, key_lesson: e.target.value }))} placeholder="What would you do differently?" />
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <Button onClick={() => { setShowCloseOutModal(false); setPendingStage(null) }}>Cancel</Button>
+              <Button primary disabled={!closeOutForm.primary_reason || !closeOutForm.what_helped || !closeOutForm.key_lesson} onClick={async () => {
+                await supabase.from('deal_outcome_factors').insert({
+                  deal_id: id, outcome: pendingStage,
+                  primary_reason: closeOutForm.primary_reason,
+                  what_helped_hurt: closeOutForm.what_helped,
+                  key_lesson: closeOutForm.key_lesson,
+                  submitted_by: profile?.id,
+                }).catch(() => {})
+                await supabase.from('deals').update({ stage: pendingStage }).eq('id', id)
+                setDeal(p => ({ ...p, stage: pendingStage }))
+                setShowCloseOutModal(false)
+                setPendingStage(null)
+                setCloseOutForm({ primary_reason: '', what_helped: '', key_lesson: '' })
+              }}>Submit & Close Deal</Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

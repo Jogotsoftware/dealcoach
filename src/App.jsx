@@ -26,6 +26,7 @@ import InvitationsAdmin from './pages/admin/Invitations'
 import PlatformAdminDashboard from './pages/admin/PlatformAdminDashboard'
 import OrgDetail from './pages/admin/OrgDetail'
 import ExtractionDefinitions from './pages/admin/ExtractionDefinitions'
+import CoachBuilder from './pages/CoachBuilder'
 import PlatformAdminGuard from './components/guards/PlatformAdminGuard'
 import { Spinner } from './components/Shared'
 
@@ -69,6 +70,7 @@ export default function App() {
                 <Route path="/deal/:dealId/quote/:quoteId" element={<QuoteEditor />} />
                 <Route path="/deal/:dealId/proposal" element={<ProposalBuilder />} />
                 <Route path="/coach" element={<CoachAdmin />} />
+                <Route path="/coach/builder" element={<CoachBuilder />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/admin" element={<AdminConsole />} />
 
