@@ -1,4 +1,4 @@
-// VERSION: send-invitation@v1.0
+// VERSION: send-invitation@v2.0 — verify_jwt=false (function handles auth internally)
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.7'
 

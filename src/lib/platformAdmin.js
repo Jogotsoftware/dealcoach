@@ -7,7 +7,7 @@ export async function checkIsPlatformAdmin(userId) {
 }
 
 export async function getOrgModules(orgId) {
-  const { data, error } = await supabase.rpc('get_org_modules', { p_org_id: orgId })
+  const { data, error } = await supabase.rpc('resolve_org_modules', { p_org_id: orgId })
   if (error) throw error
   return data
 }

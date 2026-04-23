@@ -33,7 +33,7 @@ export function OrgProvider({ children }) {
 
       // Load resolved module access via RPC (respects plan + overrides)
       if (profile.org_id) {
-        const { data: moduleRows } = await supabase.rpc('get_org_modules', { p_org_id: profile.org_id })
+        const { data: moduleRows } = await supabase.rpc('resolve_org_modules', { p_org_id: profile.org_id })
         if (moduleRows) {
           setEnabledModuleKeys(new Set(moduleRows.filter(m => m.enabled).map(m => m.module_key)))
         } else {
