@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { theme as T } from '../lib/theme'
 import { Button, Spinner, inputStyle, labelStyle } from '../components/Shared'
+import BetaFeedbackButton from '../components/BetaFeedbackButton'
 
 const METHODOLOGIES = [
   { id: 'rif', name: 'Revenue Instruments Framework', desc: 'Discovery-first, signal-driven, AI-coached. Seven pillars: Curiosity, Independently Wealthy, Continuous Qualification, Empathetic Listening, Outcome-Goal Alignment, Mutual Authoring, Buyer Risk Mitigation.', is_recommended: true },
@@ -207,6 +208,7 @@ export default function Onboarding() {
 
   // Result screen
   if (result) return (
+    <><BetaFeedbackButton />
     <div style={{ minHeight: '100vh', background: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: T.font }}>
       <div style={{ ...cardStyle, textAlign: 'center' }}>
         <div style={{ width: 56, height: 56, borderRadius: 14, background: T.primary, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px', color: '#fff', fontSize: 28, fontWeight: 800 }}>D</div>
@@ -233,10 +235,12 @@ export default function Onboarding() {
         <Button primary onClick={() => { window.location.href = '/' }} style={{ width: '100%', justifyContent: 'center' }}>Go to Dashboard</Button>
       </div>
     </div>
+    </>
   )
 
   // Processing screen
   if (processing) return (
+    <><BetaFeedbackButton />
     <div style={{ minHeight: '100vh', background: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: T.font }}>
       <div style={{ ...cardStyle, textAlign: 'center' }}>
         <Spinner />
@@ -244,9 +248,11 @@ export default function Onboarding() {
         <p style={{ fontSize: 13, color: T.textSecondary }}>Perplexity is researching your market. Claude is generating coaching prompts. This takes 15-30 seconds.</p>
       </div>
     </div>
+    </>
   )
 
   return (
+    <><BetaFeedbackButton />
     <div style={{ minHeight: '100vh', background: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: T.font, padding: 24 }}>
       <div style={cardStyle}>
         {/* Logo */}
@@ -443,5 +449,6 @@ export default function Onboarding() {
         )}
       </div>
     </div>
+    </>
   )
 }

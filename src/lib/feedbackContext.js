@@ -12,6 +12,9 @@ export function detectFeatureArea(pathname) {
   if (pathname.match(/^\/deal\/[^/]+\/proposal/)) return 'proposal_builder'
   if (pathname.match(/^\/deal\/[^/]+\/call/)) return 'call_detail'
   if (pathname === '/coach') return 'coach_admin'
+  if (pathname === '/coach/builder') return 'coach_builder'
+  if (pathname === '/reports') return 'reports'
+  if (pathname.match(/^\/deal\/[^/]+\/retrospective/)) return 'deal_retrospective'
   if (pathname === '/settings') return 'settings'
   if (pathname === '/settings/team') return 'team_management'
   if (pathname === '/settings/org') return 'org_settings'
@@ -33,6 +36,9 @@ export function humanizePagePath(pathname) {
     proposal_builder: 'Proposal Builder',
     call_detail: 'Call Detail',
     coach_admin: 'Coach Admin',
+    coach_builder: 'Coach Builder',
+    reports: 'Reports',
+    deal_retrospective: 'Deal Retrospective',
     settings: 'Settings',
     team_management: 'Team Management',
     org_settings: 'Org Settings',
@@ -40,6 +46,9 @@ export function humanizePagePath(pathname) {
     admin_feedback: 'Admin Feedback',
     widget_builder: 'Widget Builder',
     onboarding: 'Onboarding',
+    invite_accept: 'Accept Invite',
+    msp_client_portal: 'MSP Client Portal',
+    partner_hub: 'Partner Hub',
     other: 'Other',
   }
   return labels[detectFeatureArea(pathname)] || 'Other'

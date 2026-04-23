@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { theme as T } from '../lib/theme'
 import { Button, Spinner, inputStyle, labelStyle } from '../components/Shared'
+import BetaFeedbackButton from '../components/BetaFeedbackButton'
 
 export default function AcceptInvite() {
   const { token } = useParams()
@@ -130,10 +131,12 @@ export default function AcceptInvite() {
   const inviterName = invitation?.profiles?.full_name || invitation?.inviter_name || 'Someone'
   const orgName = invitation?.organizations?.name || invitation?.org_name || ''
 
-  if (loading) return <div style={center}><Spinner /></div>
+  const wrap = (content) => <><BetaFeedbackButton />{content}</>
+
+  if (loading) return wrap(<div style={center}><Spinner /></div>)
 
   // Error states
-  if (state === 'not_found') return (
+  if (state === 'not_found') return wrap(
     <div style={center}><div style={cardStyle}>
       <h2 style={{ fontSize: 20, fontWeight: 700, color: T.text, marginBottom: 8 }}>Invitation not found</h2>
       <p style={{ fontSize: 14, color: T.textSecondary, marginBottom: 20 }}>This invitation link is invalid or has been removed.</p>
@@ -141,7 +144,7 @@ export default function AcceptInvite() {
     </div></div>
   )
 
-  if (state === 'expired') return (
+  if (state === 'expired') return wrap(
     <div style={center}><div style={cardStyle}>
       <h2 style={{ fontSize: 20, fontWeight: 700, color: T.text, marginBottom: 8 }}>Invitation expired</h2>
       <p style={{ fontSize: 14, color: T.textSecondary, marginBottom: 20 }}>This invitation has expired. Please contact the person who invited you to request a new one.</p>
@@ -149,7 +152,7 @@ export default function AcceptInvite() {
     </div></div>
   )
 
-  if (state === 'revoked') return (
+  if (state === 'revoked') return wrap(
     <div style={center}><div style={cardStyle}>
       <h2 style={{ fontSize: 20, fontWeight: 700, color: T.text, marginBottom: 8 }}>Invitation revoked</h2>
       <p style={{ fontSize: 14, color: T.textSecondary, marginBottom: 20 }}>This invitation is no longer valid.</p>
@@ -157,7 +160,7 @@ export default function AcceptInvite() {
     </div></div>
   )
 
-  if (state === 'already_accepted') return (
+  if (state === 'already_accepted') return wrap(
     <div style={center}><div style={cardStyle}>
       <h2 style={{ fontSize: 20, fontWeight: 700, color: T.text, marginBottom: 8 }}>Already accepted</h2>
       <p style={{ fontSize: 14, color: T.textSecondary, marginBottom: 20 }}>This invitation has already been used. If that was you, sign in to continue.</p>
@@ -165,7 +168,7 @@ export default function AcceptInvite() {
     </div></div>
   )
 
-  if (state === 'wrong_email') return (
+  if (state === 'wrong_email') return wrap(
     <div style={center}><div style={cardStyle}>
       <h2 style={{ fontSize: 20, fontWeight: 700, color: T.text, marginBottom: 8 }}>Wrong account</h2>
       <p style={{ fontSize: 14, color: T.textSecondary, marginBottom: 12 }}>This invitation is for <strong>{invitation.email}</strong>.</p>
@@ -175,7 +178,7 @@ export default function AcceptInvite() {
   )
 
   // Signed in, email matches — confirm acceptance
-  if (state === 'confirm_accept') return (
+  if (state === 'confirm_accept') return wrap(
     <div style={center}><div style={cardStyle}>
       <div style={{ fontSize: 20, fontWeight: 600, color: T.primary, marginBottom: 24 }}>Revenue Instruments</div>
       <h2 style={{ fontSize: 20, fontWeight: 700, color: T.text, marginBottom: 8 }}>
@@ -201,7 +204,7 @@ export default function AcceptInvite() {
   )
 
   // Not signed in — show invite + signup form
-  if (state === 'show_invite') return (
+  if (state === 'show_invite') return wrap(
     <div style={center}><div style={cardStyle}>
       <div style={{ fontSize: 20, fontWeight: 600, color: T.primary, marginBottom: 24 }}>Revenue Instruments</div>
       <h2 style={{ fontSize: 20, fontWeight: 700, color: T.text, marginBottom: 8 }}>
@@ -260,5 +263,5 @@ export default function AcceptInvite() {
     </div></div>
   )
 
-  return <div style={center}><Spinner /></div>
+  return wrap(<div style={center}><Spinner /></div>)
 }

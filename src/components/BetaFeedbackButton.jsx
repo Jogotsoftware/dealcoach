@@ -3,7 +3,7 @@ import { useLocation } from 'react-router-dom'
 import { theme as T } from '../lib/theme'
 import BetaFeedbackModal from './BetaFeedbackModal'
 
-const HIDDEN_ROUTES = ['/login', '/onboarding']
+const HIDDEN_ROUTES = ['/login']
 const HIDDEN_PREFIXES = ['/msp/shared/', '/partner']
 
 export default function BetaFeedbackButton({ dealContext }) {
