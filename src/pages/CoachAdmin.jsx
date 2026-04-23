@@ -40,6 +40,7 @@ export default function CoachAdmin() {
     name: 'Default ICP', industries: [], geographies: [], current_systems: [], tech_red_flags: [], buying_signals: [], disqualifiers: [],
     revenue_min: '', revenue_max: '', employee_min: '', employee_max: '', entity_count_min: '', entity_count_max: '',
     weight_industry: 20, weight_revenue: 15, weight_employees: 10, weight_entities: 20, weight_current_system: 15, weight_buying_signals: 20,
+    personas: [], green_flags: [], red_flags: [], functional_green_flags: [], functional_red_flags: [],
   })
   const [icpTestDealId, setIcpTestDealId] = useState('')
   const [icpTestResult, setIcpTestResult] = useState(null)
@@ -136,6 +137,8 @@ export default function CoachAdmin() {
             weight_industry: icpData.weight_industry ?? 20, weight_revenue: icpData.weight_revenue ?? 15,
             weight_employees: icpData.weight_employees ?? 10, weight_entities: icpData.weight_entities ?? 20,
             weight_current_system: icpData.weight_current_system ?? 15, weight_buying_signals: icpData.weight_buying_signals ?? 20,
+            personas: icpData.personas || [], green_flags: icpData.green_flags || [], red_flags: icpData.red_flags || [],
+            functional_green_flags: icpData.functional_green_flags || [], functional_red_flags: icpData.functional_red_flags || [],
           })
         }
 
@@ -500,6 +503,18 @@ export default function CoachAdmin() {
             {/* ══════════ CALL PROMPTS ══════════ */}
             {tab === 'prompts' && (
               <div>
+                {/* Call Type Definitions */}
+                {Array.isArray(coach.call_type_definitions) && coach.call_type_definitions.length > 0 && (
+                  <Card title="Call Type Definitions" style={{ marginBottom: 16 }}>
+                    <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 8 }}>Configured in Coach Builder. Shows the purpose of each call type for coaching context.</div>
+                    {coach.call_type_definitions.filter(ct => ct.enabled).map((ct, i) => (
+                      <div key={i} style={{ display: 'flex', gap: 10, padding: '8px 10px', background: T.surfaceAlt, borderRadius: 6, marginBottom: 4, alignItems: 'flex-start' }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: T.primary, minWidth: 120, flexShrink: 0 }}>{ct.label || ct.type}</span>
+                        <span style={{ fontSize: 12, color: T.textSecondary }}>{ct.purpose || 'No purpose defined'}</span>
+                      </div>
+                    ))}
+                  </Card>
+                )}
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}><Button primary onClick={() => setShowAddPrompt(true)}>+ Add Prompt</Button></div>
                 {showAddPrompt && (
                   <Card title="New Prompt" style={{ marginBottom: 16 }}>
@@ -1036,6 +1051,8 @@ export default function CoachAdmin() {
               weight_industry: icpForm.weight_industry, weight_revenue: icpForm.weight_revenue,
               weight_employees: icpForm.weight_employees, weight_entities: icpForm.weight_entities,
               weight_current_system: icpForm.weight_current_system, weight_buying_signals: icpForm.weight_buying_signals,
+              personas: icpForm.personas, green_flags: icpForm.green_flags, red_flags: icpForm.red_flags,
+              functional_green_flags: icpForm.functional_green_flags, functional_red_flags: icpForm.functional_red_flags,
             }
             if (icp?.id) {
               await supabase.from('coach_icp').update(record).eq('id', icp.id)
@@ -1080,6 +1097,41 @@ export default function CoachAdmin() {
                 <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 8, marginTop: 16, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Behavioral Signals</div>
                 <TagInput label="Buying Signals" value={icpForm.buying_signals} onChange={v => setIcpForm(p => ({ ...p, buying_signals: v }))} placeholder="e.g. PE acquisition, CFO hire..." />
                 <TagInput label="Disqualifiers" value={icpForm.disqualifiers} onChange={v => setIcpForm(p => ({ ...p, disqualifiers: v }))} placeholder="e.g. Government, Pre-revenue..." />
+
+                <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 8, marginTop: 16, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Business Flags</div>
+                <TagInput label="Green Flags (positive indicators)" value={icpForm.green_flags} onChange={v => setIcpForm(p => ({ ...p, green_flags: v }))} placeholder="e.g. Executive sponsor identified, Pain tied to revenue, Budget approved..." />
+                <TagInput label="Red Flags (risk indicators)" value={icpForm.red_flags} onChange={v => setIcpForm(p => ({ ...p, red_flags: v }))} placeholder="e.g. No executive access, Unclear decision process, Competitor entrenched..." />
+
+                <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 8, marginTop: 16, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Functional / Product Flags</div>
+                <TagInput label="Functional Green Flags (good fit features)" value={icpForm.functional_green_flags} onChange={v => setIcpForm(p => ({ ...p, functional_green_flags: v }))} placeholder="e.g. Multi-entity consolidation needed, AP automation required..." />
+                <TagInput label="Functional Red Flags (poor fit requirements)" value={icpForm.functional_red_flags} onChange={v => setIcpForm(p => ({ ...p, functional_red_flags: v }))} placeholder="e.g. Requires on-premise deployment, Needs payroll processing..." />
+
+                <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 8, marginTop: 16, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Buyer Personas</div>
+                <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 8 }}>Key buyer roles your reps engage with. Manage detailed personas in Coach Builder.</div>
+                {(icpForm.personas || []).map((p, i) => (
+                  <div key={i} style={{ padding: 10, background: T.surfaceAlt, borderRadius: 6, border: `1px solid ${T.borderLight}`, marginBottom: 6 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{p.title || `Persona ${i + 1}`}</span>
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                        {p.role_in_decision && <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 3, background: 'rgba(93,173,226,0.1)', color: T.primary, fontWeight: 600 }}>{p.role_in_decision.replace(/_/g, ' ')}</span>}
+                        <button onClick={() => setIcpForm(prev => ({ ...prev, personas: prev.personas.filter((_, j) => j !== i) }))}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, fontSize: 14 }}
+                          onMouseEnter={e => e.currentTarget.style.color = T.error} onMouseLeave={e => e.currentTarget.style.color = T.textMuted}>&times;</button>
+                      </div>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      <div><label style={labelStyle}>Title</label><input style={inputStyle} value={p.title || ''} onChange={e => { const u = [...icpForm.personas]; u[i] = { ...u[i], title: e.target.value }; setIcpForm(prev => ({ ...prev, personas: u })) }} /></div>
+                      <div><label style={labelStyle}>Role in Decision</label><select style={{ ...inputStyle, cursor: 'pointer' }} value={p.role_in_decision || ''} onChange={e => { const u = [...icpForm.personas]; u[i] = { ...u[i], role_in_decision: e.target.value }; setIcpForm(prev => ({ ...prev, personas: u })) }}>
+                        <option value="">Select...</option><option value="economic_buyer">Economic Buyer</option><option value="champion">Champion</option><option value="technical_evaluator">Technical Evaluator</option><option value="end_user">End User</option><option value="influencer">Influencer</option><option value="blocker">Potential Blocker</option><option value="coach">Coach</option>
+                      </select></div>
+                    </div>
+                    <div style={{ marginTop: 6 }}><label style={labelStyle}>Pain Points</label><textarea style={{ ...inputStyle, minHeight: 40, resize: 'vertical', fontSize: 12 }} value={p.pain_points || ''} onChange={e => { const u = [...icpForm.personas]; u[i] = { ...u[i], pain_points: e.target.value }; setIcpForm(prev => ({ ...prev, personas: u })) }} /></div>
+                    <div style={{ marginTop: 6 }}><label style={labelStyle}>Priorities</label><textarea style={{ ...inputStyle, minHeight: 40, resize: 'vertical', fontSize: 12 }} value={p.priorities || ''} onChange={e => { const u = [...icpForm.personas]; u[i] = { ...u[i], priorities: e.target.value }; setIcpForm(prev => ({ ...prev, personas: u })) }} /></div>
+                    <div style={{ marginTop: 6 }}><label style={labelStyle}>Common Objections</label><textarea style={{ ...inputStyle, minHeight: 40, resize: 'vertical', fontSize: 12 }} value={p.objections || ''} onChange={e => { const u = [...icpForm.personas]; u[i] = { ...u[i], objections: e.target.value }; setIcpForm(prev => ({ ...prev, personas: u })) }} /></div>
+                  </div>
+                ))}
+                <button onClick={() => setIcpForm(prev => ({ ...prev, personas: [...(prev.personas || []), { title: '', role_in_decision: '', pain_points: '', priorities: '', objections: '' }] }))}
+                  style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 14px', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: T.primary, fontFamily: T.font, marginTop: 4 }}>+ Add Persona</button>
 
                 <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 8, marginTop: 16, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Scoring Weights</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, padding: '6px 12px', background: weightTotal === 100 ? T.successLight : T.errorLight, borderRadius: 6, border: `1px solid ${weightTotal === 100 ? T.success + '40' : T.error + '40'}` }}>
