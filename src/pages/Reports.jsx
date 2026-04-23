@@ -10,7 +10,7 @@ const CATEGORY_COLORS = { performance: T.primary, pipeline: T.success, forecast:
 
 export default function Reports() {
   const { profile } = useAuth()
-  const { hasModule } = useModules()
+  const { hasModule, loading: modulesLoading } = useModules()
   const [reports, setReports] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedReport, setSelectedReport] = useState(null)
@@ -20,6 +20,7 @@ export default function Reports() {
 
   useEffect(() => { loadReports() }, [])
 
+  if (modulesLoading) return <Spinner />
   if (!hasModule('reports')) return <Navigate to="/" replace />
 
   async function loadReports() {

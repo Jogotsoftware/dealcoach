@@ -1,7 +1,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-// ingest-deal-knowledge v1
+// ingest-deal-knowledge v2
+// FIX: insert() doesn't throw — destructure { error } to surface real failures
 // Batch RAG ingestion for a deal:
 // - Loops all processed conversations → calls embed-chunks for each
 // - Chunks company_profile (overview + goals + priorities + growth plans + tech stack)
@@ -121,27 +122,30 @@ Deno.serve(async (req: Request) => {
         const embeddings = await getEmbeddings(allMetaChunks.map(c => c.content));
         for (let i = 0; i < allMetaChunks.length; i++) {
           const c = allMetaChunks[i];
-          try {
-            await sb.from('deal_context_chunks').insert({
-              deal_id, org_id: deal.org_id,
-              content: c.content, chunk_type: c.chunk_type,
-              source_table: c.source_table, source_field: c.field,
-              chunk_index: 0, embedding: JSON.stringify(embeddings[i]),
-              embedding_model: 'text-embedding-3-small',
-              token_count: Math.ceil(c.content.split(/\s+/).length * 1.3),
-              confidence: 'high', stale: false,
-              embedded_at: new Date().toISOString(),
-            });
+          const { error } = await sb.from('deal_context_chunks').insert({
+            deal_id, org_id: deal.org_id,
+            content: c.content, chunk_type: c.chunk_type,
+            source_table: c.source_table, source_field: c.field,
+            chunk_index: 0, embedding: JSON.stringify(embeddings[i]),
+            embedding_model: 'text-embedding-3-small',
+            token_count: Math.ceil(c.content.split(/\s+/).length * 1.3),
+            confidence: 'mentioned', stale: false,
+            embedded_at: new Date().toISOString(),
+          });
+          if (error) {
+            summary.errors.push(`meta chunk [${c.chunk_type}/${c.field}]: ${error.message}`);
+            console.error('meta chunk insert error:', c.chunk_type, c.field, error.message);
+          } else {
             if (c.chunk_type === 'company_profile') summary.profile_chunks++;
             else summary.analysis_chunks++;
-          } catch (e: any) { summary.errors.push(`meta chunk: ${e.message}`); }
+          }
         }
       } catch (e: any) {
         summary.errors.push(`meta embed: ${e.message}`);
       }
     }
 
-    return jr({ success: true, version: 'v1', summary });
+    return jr({ success: true, version: 'v2', summary });
   } catch (e: any) {
     console.error('ingest-deal-knowledge v1 error:', e);
     return jr({ error: `v1: ${e.message}` }, 500);

@@ -1,7 +1,15 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-// process-transcript v31
+// process-transcript v32
+// CHANGES FROM v31:
+// - Flags reconciliation: on each transcript, existing flags are either
+//   confirmed (last_confirmed_at updated), contradicted (resolved=true), or
+//   left as-is. New flags still insert as before.
+// - Contact extraction tightened: only DECISION-RELEVANT prospect-side
+//   contacts (Economic Buyer, Champion, Technical Evaluator, Decision Maker,
+//   Influencer, End User with buying influence). Drops delivery drivers,
+//   receptionists, IT helpdesk, assistants, etc.
 // CHANGES FROM v30:
 // - Calls ingest-deal-knowledge instead of embed-chunks directly (wraps + chunks
 //   company_profile + deal_analysis in addition to the conversation)
@@ -81,7 +89,11 @@ EXTRACT DOLLAR AMOUNTS:
 
 COMMITMENTS: ONLY explicit commitments someone made on the call. committed_by = rep or prospect.
 FLAGS vs RISKS: FLAGS = signals on THIS call. RISKS = strategic threats to DEAL closing.
-CONTACTS: Only PROSPECT-SIDE contacts. Do NOT include the rep, SCs, partners, or selling team.
+CONTACTS: Only extract PROSPECT-SIDE contacts who are DECISION-RELEVANT:
+- Economic Buyer, Champion, Technical Evaluator, Decision Maker, Influencer, End User with buying influence
+- DO NOT extract: delivery drivers, receptionists, IT helpdesk staff, assistants without decision influence, or anyone who is clearly not part of the buying process
+- DO NOT extract rep, SC, partner, or any selling-side team members
+- If uncertain whether someone is decision-relevant, OMIT them.
 MEMORY OBSERVATIONS: What should the AI remember for the next call? Track commitments, contradictions, unanswered questions, competitive signals, champion risks, stakeholder gaps. Be specific. If a previous observation was addressed, include its ID in resolved_memory_ids.`;
 
 function cors() { return { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS' }; }
@@ -142,22 +154,22 @@ Deno.serve(async (req: Request) => {
   const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
   try {
-    if (!ANTHROPIC_API_KEY) return jr({ error: 'v31: No API key' }, 500);
+    if (!ANTHROPIC_API_KEY) return jr({ error: 'v32: No API key' }, 500);
     const reqBody = await req.json();
-    console.log('process-transcript v31 keys:', Object.keys(reqBody));
+    console.log('process-transcript v32 keys:', Object.keys(reqBody));
 
     const conversation_id = reqBody.conversation_id || reqBody.conversationId || reqBody.id;
-    if (!conversation_id) return jr({ error: `v31: no conversation_id. Keys: ${Object.keys(reqBody).join(', ')}` }, 400);
+    if (!conversation_id) return jr({ error: `v32: no conversation_id. Keys: ${Object.keys(reqBody).join(', ')}` }, 400);
 
     const { data: conv } = await sb.from('conversations').select('*').eq('id', conversation_id).single();
-    if (!conv) return jr({ error: 'v31: Conversation not found' }, 404);
-    if (!conv.transcript) return jr({ error: 'v31: No transcript' }, 400);
+    if (!conv) return jr({ error: 'v32: Conversation not found' }, 404);
+    if (!conv.transcript) return jr({ error: 'v32: No transcript' }, 400);
 
     const deal_id = reqBody.deal_id || reqBody.dealId || conv.deal_id;
-    if (!deal_id) return jr({ error: 'v31: No deal_id' }, 400);
+    if (!deal_id) return jr({ error: 'v32: No deal_id' }, 400);
 
     const { data: deal } = await sb.from('deals').select('*').eq('id', deal_id).single();
-    if (!deal) return jr({ error: 'v31: Deal not found' }, 404);
+    if (!deal) return jr({ error: 'v32: Deal not found' }, 404);
 
     const { data: rep } = await sb.from('profiles').select('active_coach_id, org_id, full_name, initials, email').eq('id', deal.rep_id).single();
     const cid = rep?.active_coach_id;
@@ -243,7 +255,7 @@ Deno.serve(async (req: Request) => {
     const { data: log } = await sb.from('ai_response_log').insert({ deal_id, response_type: 'transcript_analysis', coach_id: cid, ai_model_used: model, temperature: temp, status: 'processing', triggered_by: deal.rep_id }).select('id').single();
 
     const cr = await callClaude({ model, max_tokens: 8000, temperature: temp, system: sysPrompt, messages: [{ role: 'user', content: prompt }] });
-    if (!cr.ok) { const e = await cr.text(); await ulog(sb, log?.id, 'failed', `v31: ${e}`, t0); return jr({ error: `v31: Claude ${cr.status}` }, 500); }
+    if (!cr.ok) { const e = await cr.text(); await ulog(sb, log?.id, 'failed', `v32: ${e}`, t0); return jr({ error: `v32: Claude ${cr.status}` }, 500); }
 
     const cd = await cr.json();
     const usage = cd.usage || {};
@@ -255,7 +267,7 @@ Deno.serve(async (req: Request) => {
       const match = cleaned.match(/\{[\s\S]*\}/);
       if (!match) throw new Error('No JSON');
       p = JSON.parse(match[0]);
-    } catch (e: any) { await ulog(sb, log?.id, 'partial', `v31: ${e.message}`, t0, usage); return jr({ success: true, status: 'partial', error: e.message }); }
+    } catch (e: any) { await ulog(sb, log?.id, 'partial', `v32: ${e.message}`, t0, usage); return jr({ success: true, status: 'partial', error: e.message }); }
 
     await sb.from('conversations').update({ ai_summary: p.summary || null, ai_coaching_notes: p.coaching_notes || null, ai_raw_response: cd, processed: true }).eq('id', conversation_id);
 
@@ -309,15 +321,35 @@ Deno.serve(async (req: Request) => {
 
     // ── FLAGS ──
     if (p.flags?.length) {
-      let ct = 0;
+      let ct = 0, confirmed = 0, contradicted = 0;
+      // Load existing active flags for reconciliation
+      const { data: existingFlags } = await sb.from('deal_flags').select('id, flag_type, description, resolved').eq('deal_id', deal_id).eq('resolved', false);
+      const existing = existingFlags || [];
+
       for (const f of p.flags) {
         if (!f.description) continue;
-        const { data: ex } = await sb.from('deal_flags').select('id').eq('deal_id', deal_id).ilike('description', `%${f.description.substring(0,40)}%`).limit(1);
-        if (ex?.length) continue;
-        await safeInsertNoReturn(sb, 'deal_flags', { deal_id, flag_type: f.flag_type === 'green' ? 'green' : 'red', description: f.description, category: VF.includes(f.category) ? f.category : 'custom', source: 'ai_transcript', source_conversation_id: conversation_id });
+        // Check for existing match
+        const match = existing.find((e: any) =>
+          e.description.substring(0, 40).toLowerCase() === f.description.substring(0, 40).toLowerCase() ||
+          f.description.toLowerCase().includes(e.description.substring(0, 30).toLowerCase())
+        );
+        if (match) {
+          // Same flag type → confirm it; opposite type → contradict
+          if (match.flag_type === (f.flag_type === 'green' ? 'green' : 'red')) {
+            await sb.from('deal_flags').update({ last_confirmed_at: new Date().toISOString() }).eq('id', match.id);
+            confirmed++;
+          } else {
+            await sb.from('deal_flags').update({ resolved: true, resolved_reason: `Contradicted by ${conv.call_type || 'transcript'} on ${conv.call_date || new Date().toISOString().substring(0, 10)}` }).eq('id', match.id);
+            contradicted++;
+          }
+          continue;
+        }
+        await safeInsertNoReturn(sb, 'deal_flags', { deal_id, flag_type: f.flag_type === 'green' ? 'green' : 'red', description: f.description, category: VF.includes(f.category) ? f.category : 'custom', source: 'ai_transcript', source_conversation_id: conversation_id, last_confirmed_at: new Date().toISOString() });
         ct++;
       }
       sum.flags = ct;
+      if (confirmed) sum.flags_confirmed = confirmed;
+      if (contradicted) sum.flags_contradicted = contradicted;
     }
 
     // ── COMPELLING EVENTS (with source linkage) ──
@@ -548,11 +580,11 @@ Deno.serve(async (req: Request) => {
     } catch (e) {}
 
     await ulog(sb, log?.id, 'completed', null, t0, usage, sum);
-    return jr({ success: true, version: 'v31', summary: sum, commitments_created: sum.commitments || 0, contacts_found: sum.contacts || 0, memories_created: sum.memories_created || 0, icp_score: sum.icp_score || null });
+    return jr({ success: true, version: 'v32', summary: sum, commitments_created: sum.commitments || 0, contacts_found: sum.contacts || 0, memories_created: sum.memories_created || 0, icp_score: sum.icp_score || null });
 
   } catch (e: any) {
-    console.error('process-transcript v31 error:', e);
-    return jr({ error: `v31: ${e.message}` }, 500);
+    console.error('process-transcript v32 error:', e);
+    return jr({ error: `v32: ${e.message}` }, 500);
   }
 });
 

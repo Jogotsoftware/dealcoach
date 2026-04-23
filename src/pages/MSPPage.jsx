@@ -5,7 +5,14 @@ import { useAuth } from '../hooks/useAuth'
 import { theme as T, formatDate, formatDateLong, daysUntil } from '../lib/theme'
 import { Card, Badge, Button, EmptyState, Spinner, TabBar, inputStyle, labelStyle } from '../components/Shared'
 
-const STATUS_COLORS = { pending: T.border, in_progress: T.primary, completed: T.success, blocked: T.error }
+const STATUS_COLORS = { pending: T.textMuted, in_progress: T.primary, completed: T.success, blocked: T.error, at_risk: T.warning }
+const STATUS_OPTIONS = [
+  { key: 'pending', label: 'Pending' },
+  { key: 'in_progress', label: 'In Progress' },
+  { key: 'completed', label: 'Complete' },
+  { key: 'blocked', label: 'Blocked' },
+  { key: 'at_risk', label: 'At Risk' },
+]
 
 export default function MSPPage() {
   const { dealId } = useParams()
@@ -115,14 +122,24 @@ export default function MSPPage() {
   }
 
   async function cycleStatus(step) {
-    const cycle = { pending: 'in_progress', in_progress: 'completed', completed: 'blocked', blocked: 'pending' }
+    // Most common path: pending -> in_progress -> completed
+    const cycle = { pending: 'in_progress', in_progress: 'completed', completed: 'pending' }
     const next = cycle[step.status] || 'pending'
+    await setStatus(step, next)
+  }
+
+  async function setStatus(step, next) {
     const isCompleted = next === 'completed'
     const updates = { status: next, is_completed: isCompleted }
-    if (isCompleted) updates.completion_date = new Date().toISOString()
-    else { updates.completion_date = null }
+    updates.completion_date = isCompleted ? new Date().toISOString() : null
     await supabase.from('msp_stages').update(updates).eq('id', step.id)
     setSteps(prev => prev.map(s => s.id === step.id ? { ...s, ...updates } : s))
+  }
+
+  async function updateAssignedContacts(stepId, side, list) {
+    const field = side === 'client' ? 'assigned_client_contacts' : 'assigned_team_contacts'
+    await supabase.from('msp_stages').update({ [field]: list }).eq('id', stepId)
+    setSteps(prev => prev.map(s => s.id === stepId ? { ...s, [field]: list } : s))
   }
 
   async function saveNameInline(stepId) {
@@ -313,8 +330,8 @@ export default function MSPPage() {
                               )}
                             </div>
 
-                            {/* Status badge */}
-                            <Badge color={statusColor}>{step.status}</Badge>
+                            {/* Status pill with cycle-on-click + dropdown picker */}
+                            <StatusPicker step={step} onCycle={() => cycleStatus(step)} onSet={(s) => setStatus(step, s)} />
 
                             {/* Due date */}
                             <input type="date" value={step.due_date?.split('T')[0] || ''}
@@ -344,6 +361,17 @@ export default function MSPPage() {
                               onMouseLeave={e => e.currentTarget.style.color = T.textMuted}
                             >&times;</button>
                           </div>
+
+                          {/* Contact chips */}
+                          <ContactChips
+                            stepId={step.id}
+                            clients={step.assigned_client_contacts || []}
+                            team={step.assigned_team_contacts || []}
+                            dealId={dealId}
+                            userId={profile?.id}
+                            onChangeClients={(list) => updateAssignedContacts(step.id, 'client', list)}
+                            onChangeTeam={(list) => updateAssignedContacts(step.id, 'team', list)}
+                          />
 
                           {/* Notes */}
                           {showNotes[step.id] && (
@@ -462,6 +490,119 @@ export default function MSPPage() {
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+// Status pill with cycle-on-click + dropdown for all 5 options
+function StatusPicker({ step, onCycle, onSet }) {
+  const [open, setOpen] = useState(false)
+  const color = STATUS_COLORS[step.status] || T.textMuted
+  const label = STATUS_OPTIONS.find(o => o.key === step.status)?.label || step.status
+  return (
+    <div style={{ position: 'relative', display: 'inline-flex' }}>
+      <button onClick={onCycle} title="Click to cycle (pending → in progress → complete)"
+        style={{ padding: '3px 10px', borderRadius: 10, fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
+          background: color + '18', color, border: `1px solid ${color}40`, cursor: 'pointer', fontFamily: T.font }}>
+        {label}
+      </button>
+      <button onClick={() => setOpen(o => !o)} title="Pick any status"
+        style={{ padding: '3px 6px', marginLeft: -1, borderRadius: 10, fontSize: 10, border: `1px solid ${color}40`, background: color + '18', color, cursor: 'pointer', fontFamily: T.font }}>▾</button>
+      {open && (
+        <>
+          <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 500 }} />
+          <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, boxShadow: T.shadow, zIndex: 501, minWidth: 140 }}>
+            {STATUS_OPTIONS.map(o => {
+              const c = STATUS_COLORS[o.key] || T.textMuted
+              return (
+                <button key={o.key} onClick={() => { onSet(o.key); setOpen(false) }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '6px 10px', background: step.status === o.key ? T.surfaceAlt : 'transparent', border: 'none', cursor: 'pointer', fontFamily: T.font, textAlign: 'left' }}
+                  onMouseEnter={e => e.currentTarget.style.background = T.surfaceAlt}
+                  onMouseLeave={e => e.currentTarget.style.background = step.status === o.key ? T.surfaceAlt : 'transparent'}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: c }} />
+                  <span style={{ fontSize: 12, color: T.text }}>{o.label}</span>
+                </button>
+              )
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+function ContactChips({ stepId, clients, team, dealId, userId, onChangeClients, onChangeTeam }) {
+  const [pickerSide, setPickerSide] = useState(null) // 'client' | 'team'
+  const [options, setOptions] = useState([])
+
+  async function openPicker(side) {
+    setPickerSide(side)
+    if (side === 'client') {
+      const { data } = await supabase.from('contacts').select('id, name, title, role_in_deal').eq('deal_id', dealId).order('name')
+      setOptions(data || [])
+    } else {
+      const { data } = await supabase.from('user_team_members').select('id, name, title, member_type').eq('user_id', userId).order('name')
+      setOptions(data || [])
+    }
+  }
+
+  function add(side, contact) {
+    const entry = { id: contact.id, name: contact.name, title: contact.title || null }
+    if (side === 'client') {
+      const exists = clients.some(c => c.id === entry.id)
+      if (!exists) onChangeClients([...clients, entry])
+    } else {
+      const exists = team.some(c => c.id === entry.id)
+      if (!exists) onChangeTeam([...team, entry])
+    }
+    setPickerSide(null)
+  }
+
+  function remove(side, id) {
+    if (side === 'client') onChangeClients(clients.filter(c => c.id !== id))
+    else onChangeTeam(team.filter(c => c.id !== id))
+  }
+
+  const Chip = ({ c, side }) => (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 10, background: side === 'client' ? T.primaryLight || 'rgba(93,173,226,0.1)' : T.surfaceAlt, border: `1px solid ${side === 'client' ? T.primary + '40' : T.borderLight}`, fontSize: 10, color: side === 'client' ? T.primary : T.textSecondary, fontFamily: T.font, cursor: 'pointer' }}
+      onClick={() => remove(side, c.id)} title={c.title ? `${c.title} — click to remove` : 'Click to remove'}>
+      {c.name}
+    </span>
+  )
+
+  return (
+    <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 6, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', marginRight: 2 }}>Client:</span>
+        {clients.map(c => <Chip key={c.id} c={c} side="client" />)}
+        <button onClick={() => openPicker('client')} style={{ fontSize: 10, padding: '2px 6px', border: `1px dashed ${T.border}`, background: 'transparent', borderRadius: 10, cursor: 'pointer', color: T.textMuted, fontFamily: T.font }}>+ add</button>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', marginRight: 2 }}>Team:</span>
+        {team.map(c => <Chip key={c.id} c={c} side="team" />)}
+        <button onClick={() => openPicker('team')} style={{ fontSize: 10, padding: '2px 6px', border: `1px dashed ${T.border}`, background: 'transparent', borderRadius: 10, cursor: 'pointer', color: T.textMuted, fontFamily: T.font }}>+ add</button>
+      </div>
+
+      {pickerSide && (
+        <>
+          <div onClick={() => setPickerSide(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.2)', zIndex: 600 }} />
+          <div style={{ position: 'fixed', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, boxShadow: '0 10px 40px rgba(0,0,0,0.2)', zIndex: 601, width: 360, maxHeight: 400, overflow: 'auto' }}>
+            <div style={{ padding: 10, borderBottom: `1px solid ${T.border}`, fontWeight: 700, fontSize: 13, color: T.text }}>
+              Add {pickerSide === 'client' ? 'client' : 'team'} contact
+            </div>
+            {options.length === 0 ? (
+              <div style={{ padding: 20, textAlign: 'center', color: T.textMuted, fontSize: 12 }}>No {pickerSide === 'client' ? 'deal contacts' : 'team members'} yet.</div>
+            ) : options.map(o => (
+              <button key={o.id} onClick={() => add(pickerSide, o)} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2, width: '100%', padding: '8px 12px', border: 'none', borderBottom: `1px solid ${T.borderLight}`, background: 'transparent', cursor: 'pointer', fontFamily: T.font, textAlign: 'left' }}
+                onMouseEnter={e => e.currentTarget.style.background = T.surfaceAlt}
+                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{o.name}</span>
+                {o.title && <span style={{ fontSize: 11, color: T.textMuted }}>{o.title}</span>}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   )
 }

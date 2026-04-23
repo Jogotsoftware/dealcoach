@@ -689,22 +689,9 @@ export default function CoachAdmin() {
                           {tplStages.length === 0 ? (
                             <div style={{ color: T.textMuted, fontSize: 13, textAlign: 'center', padding: 16 }}>No stages. Click "+ Stage" to add one.</div>
                           ) : tplStages.map((s, si) => (
-                              <div key={s.id} style={{
-                                display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
-                                background: T.surfaceAlt, borderRadius: 6, border: `1px solid ${T.borderLight}`, marginBottom: 4,
-                              }}>
-                                <span style={{ width: 24, height: 24, borderRadius: '50%', background: T.primary, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{si + 1}</span>
-                                <input style={{ ...inputStyle, flex: 1, padding: '4px 8px', fontSize: 13, fontWeight: 600 }}
-                                  defaultValue={s.stage_name} onBlur={e => updateTemplateStage(s.id, 'stage_name', e.target.value)} />
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                                  <input type="number" style={{ ...inputStyle, width: 60, padding: '4px 6px', fontSize: 12, textAlign: 'center' }}
-                                    defaultValue={s.due_date_offset || s.default_duration_days || 0}
-                                    onBlur={e => { updateTemplateStage(s.id, 'due_date_offset', Number(e.target.value) || 0); updateTemplateStage(s.id, 'default_duration_days', Number(e.target.value) || 0) }} />
-                                  <span style={{ fontSize: 11, color: T.textMuted }}>days offset</span>
-                                </div>
-                                <button onClick={() => deleteTemplateStage(s.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, fontSize: 14 }}
-                                  onMouseEnter={e => e.currentTarget.style.color = T.error} onMouseLeave={e => e.currentTarget.style.color = T.textMuted}>&#10005;</button>
-                              </div>
+                              <TemplateStageRow key={s.id} stage={s} index={si}
+                                onUpdate={(field, val) => updateTemplateStage(s.id, field, val)}
+                                onDelete={() => deleteTemplateStage(s.id)} />
                             ))}
                         </div>
                       )}
@@ -1402,6 +1389,86 @@ function ExtractionRulesEditor({ coach, onSaved }) {
         )
       })}
     </Card>
+  )
+}
+
+const MSP_CALL_TYPES = ['qdc', 'functional_discovery', 'demo', 'scoping', 'proposal', 'negotiation', 'sync', 'custom']
+const MSP_ATTENDEE_ROLES = ['AE', 'SC', 'Champion', 'Economic Buyer', 'Technical Evaluator', 'Executive Sponsor', 'Legal', 'Procurement']
+
+function TemplateStageRow({ stage, index, onUpdate, onDelete }) {
+  const [expanded, setExpanded] = useState(false)
+  const [callType, setCallType] = useState(stage.call_type || '')
+  const [purpose, setPurpose] = useState(stage.purpose || '')
+  const [notes, setNotes] = useState(stage.notes || '')
+  const [attendees, setAttendees] = useState(stage.attendee_roles || [])
+
+  function toggleRole(r) {
+    const next = attendees.includes(r) ? attendees.filter(x => x !== r) : [...attendees, r]
+    setAttendees(next)
+    onUpdate('attendee_roles', next)
+  }
+
+  return (
+    <div style={{ background: T.surfaceAlt, borderRadius: 6, border: `1px solid ${T.borderLight}`, marginBottom: 4, overflow: 'hidden' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px' }}>
+        <span style={{ width: 24, height: 24, borderRadius: '50%', background: T.primary, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{index + 1}</span>
+        <input style={{ ...inputStyle, flex: 1, padding: '4px 8px', fontSize: 13, fontWeight: 600 }}
+          defaultValue={stage.stage_name} onBlur={e => onUpdate('stage_name', e.target.value)} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <input type="number" style={{ ...inputStyle, width: 60, padding: '4px 6px', fontSize: 12, textAlign: 'center' }}
+            defaultValue={stage.due_date_offset || stage.default_duration_days || 0}
+            onBlur={e => { onUpdate('due_date_offset', Number(e.target.value) || 0); onUpdate('default_duration_days', Number(e.target.value) || 0) }} />
+          <span style={{ fontSize: 11, color: T.textMuted }}>days</span>
+        </div>
+        <button onClick={() => setExpanded(e => !e)} style={{ fontSize: 10, padding: '3px 8px', border: `1px solid ${T.border}`, background: expanded ? T.primary : 'transparent', color: expanded ? '#fff' : T.textSecondary, borderRadius: 4, cursor: 'pointer', fontFamily: T.font }}>
+          {expanded ? 'Hide' : 'More'}
+        </button>
+        <button onClick={onDelete} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, fontSize: 14 }}
+          onMouseEnter={e => e.currentTarget.style.color = T.error} onMouseLeave={e => e.currentTarget.style.color = T.textMuted}>×</button>
+      </div>
+      {expanded && (
+        <div style={{ padding: '10px 14px', borderTop: `1px solid ${T.borderLight}`, background: T.surface }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 10, marginBottom: 8 }}>
+            <div>
+              <label style={labelStyle}>Call Type</label>
+              <select style={{ ...inputStyle, cursor: 'pointer', padding: '4px 8px', fontSize: 12 }}
+                value={callType} onChange={e => { setCallType(e.target.value); onUpdate('call_type', e.target.value || null) }}>
+                <option value="">(none)</option>
+                {MSP_CALL_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>Purpose</label>
+              <input style={{ ...inputStyle, padding: '4px 8px', fontSize: 12 }}
+                value={purpose} onChange={e => setPurpose(e.target.value)}
+                onBlur={e => onUpdate('purpose', e.target.value || null)}
+                placeholder="What is this stage for?" />
+            </div>
+          </div>
+          <div style={{ marginBottom: 8 }}>
+            <label style={labelStyle}>Notes / Instructions</label>
+            <textarea style={{ ...inputStyle, minHeight: 50, resize: 'vertical', fontSize: 12 }}
+              value={notes} onChange={e => setNotes(e.target.value)}
+              onBlur={e => onUpdate('notes', e.target.value || null)}
+              placeholder="Rep-facing notes for running this stage..." />
+          </div>
+          <div>
+            <label style={labelStyle}>Attendee Roles</label>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+              {MSP_ATTENDEE_ROLES.map(r => {
+                const on = attendees.includes(r)
+                return (
+                  <button key={r} onClick={() => toggleRole(r)}
+                    style={{ fontSize: 10, padding: '3px 8px', borderRadius: 10, border: `1px solid ${on ? T.primary : T.border}`, background: on ? T.primary : 'transparent', color: on ? '#fff' : T.textSecondary, cursor: 'pointer', fontFamily: T.font }}>
+                    {r}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 
