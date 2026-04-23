@@ -116,19 +116,21 @@ serve(async (req) => {
     }
     if (!sendError) updatePayload.email_sent_at = now
     await admin.from('invitations').update(updatePayload).eq('id', invitation.id)
-    await admin.from('email_log').insert({
-      email_type: isNewInstance ? 'invitation_new_instance' : (isResend ? 'invitation_resend' : 'invitation_teammate'),
-      recipient_email: invitation.email,
-      recipient_name: invitation.invited_name,
-      subject,
-      related_invitation_id: invitation.id,
-      status: newEmailStatus,
-      provider: 'resend',
-      provider_message_id: resendMessageId,
-      error_message: sendError,
-      sent_by: callerId,
-      sent_at: sendError ? null : now,
-    })
+    try {
+      await admin.from('email_log').insert({
+        email_type: isNewInstance ? 'invitation_new_instance' : (isResend ? 'invitation_resend' : 'invitation_teammate'),
+        recipient_email: invitation.email,
+        recipient_name: invitation.invited_name,
+        subject,
+        related_invitation_id: invitation.id,
+        status: newEmailStatus,
+        provider: 'resend',
+        provider_message_id: resendMessageId,
+        error_message: sendError,
+        sent_by: callerId,
+        sent_at: sendError ? null : now,
+      })
+    } catch (_) { /* email_log is best-effort */ }
 
     if (sendError) return jsonError(500, `${FUNCTION_VERSION}: ${sendError}`)
     return new Response(JSON.stringify({

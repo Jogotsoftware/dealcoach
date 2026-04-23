@@ -24,7 +24,7 @@ export default function AcceptInvite() {
 
     let inv = null
     if (!rpcErr && data) {
-      inv = data
+      inv = Array.isArray(data) ? data[0] : data
     } else {
       // Fallback: direct query
       const { data: directData } = await supabase.from('invitations')
@@ -36,6 +36,12 @@ export default function AcceptInvite() {
     if (!inv) { setState('not_found'); setLoading(false); return }
 
     setInvitation(inv)
+
+    // Pre-populate form with invited_name if available
+    if (inv.invited_name) {
+      const initials = inv.invited_name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
+      setForm(p => ({ ...p, full_name: inv.invited_name, initials }))
+    }
 
     if (inv.status === 'revoked') { setState('revoked'); setLoading(false); return }
     if (inv.status === 'accepted') { setState('already_accepted'); setLoading(false); return }
