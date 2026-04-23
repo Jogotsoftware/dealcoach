@@ -1890,8 +1890,27 @@ export default function DealDetail() {
             {selectedTasks.size > 0 && (
               <div style={{ display: 'flex', gap: 8, marginBottom: 12, padding: '8px 12px', background: T.primaryLight, borderRadius: 6, border: `1px solid ${T.primaryBorder}`, alignItems: 'center' }}>
                 <span style={{ fontSize: 12, fontWeight: 600, color: T.primary }}>{selectedTasks.size} selected</span>
-                <Button onClick={async () => { for (const tid of selectedTasks) { await supabase.from('tasks').update({ completed: true, completed_at: new Date().toISOString() }).eq('id', tid) } setSelectedTasks(new Set()); loadDeal() }} style={{ padding: '3px 10px', fontSize: 10 }}>Complete All</Button>
-                <Button onClick={async () => { if (!confirm(`Delete ${selectedTasks.size} tasks?`)) return; for (const tid of selectedTasks) { await supabase.from('tasks').delete().eq('id', tid) } setSelectedTasks(new Set()); loadDeal() }} style={{ padding: '3px 10px', fontSize: 10, color: T.error }}>Delete All</Button>
+                <Button onClick={async () => {
+                  const targetTasks = tasks.filter(t => selectedTasks.has(t.id))
+                  for (const t of targetTasks) {
+                    await supabase.from('tasks').update({ completed: true, completed_at: new Date().toISOString() }).eq('id', t.id)
+                    if (t.auto_generated && !t.completed) {
+                      trackSuggestion({ orgId: profile?.org_id, dealId: id, userId: profile?.id, targetType: 'task', targetId: t.id, action: 'accepted', createdAt: t.created_at })
+                    }
+                  }
+                  setSelectedTasks(new Set()); loadDeal()
+                }} style={{ padding: '3px 10px', fontSize: 10 }}>Complete All</Button>
+                <Button onClick={async () => {
+                  if (!confirm(`Delete ${selectedTasks.size} tasks?`)) return
+                  const targetTasks = tasks.filter(t => selectedTasks.has(t.id))
+                  for (const t of targetTasks) {
+                    await supabase.from('tasks').delete().eq('id', t.id)
+                    if (t.auto_generated) {
+                      trackSuggestion({ orgId: profile?.org_id, dealId: id, userId: profile?.id, targetType: 'task', targetId: t.id, action: 'rejected', before: { title: t.title, priority: t.priority, due_date: t.due_date }, createdAt: t.created_at })
+                    }
+                  }
+                  setSelectedTasks(new Set()); loadDeal()
+                }} style={{ padding: '3px 10px', fontSize: 10, color: T.error }}>Delete All</Button>
                 <Button onClick={() => setSelectedTasks(new Set())} style={{ padding: '3px 10px', fontSize: 10 }}>Clear</Button>
               </div>
             )}
