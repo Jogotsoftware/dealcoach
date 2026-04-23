@@ -11,6 +11,7 @@
   "dependencies": {
     "@sentry/react": "^10.50.0",
     "@supabase/supabase-js": "^2.49.0",
+    "papaparse": "^5.5.3",
     "posthog-js": "^1.371.2",
     "pptxgenjs": "^4.0.1",
     "react": "^18.3.1",

@@ -4,6 +4,7 @@ import { useAuth } from '../hooks/useAuth'
 import { theme as T, formatCurrency, getFiscalPeriods } from '../lib/theme'
 import { useOrg } from '../contexts/OrgContext'
 import { Card, Badge, Button, Spinner, inputStyle, labelStyle } from '../components/Shared'
+import Papa from 'papaparse'
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December']
@@ -35,6 +36,14 @@ export default function Settings() {
   // Coach selection
   const [coaches, setCoaches] = useState([])
   const [activeCoachId, setActiveCoachId] = useState(null)
+  const [orgCoach, setOrgCoach] = useState(null)
+  const [builtCoaches, setBuiltCoaches] = useState([])
+  const [sharedCoaches, setSharedCoaches] = useState([])
+  const [tokenInput, setTokenInput] = useState('')
+  const [tokenStatus, setTokenStatus] = useState(null)
+
+  // Quota upload
+  const [quotaUpload, setQuotaUpload] = useState({ previewing: false, rows: [], error: null })
 
   // Profile editing
   const [profileData, setProfileData] = useState({ full_name: '', title: '', phone: '', team: '' })
@@ -107,6 +116,106 @@ export default function Settings() {
     }
     setCoaches(coachesRes.data || [])
     setTeamMembers(teamRes.data || [])
+
+    // Load 3-section coach layout
+    await loadCoachSections()
+  }
+
+  async function loadCoachSections() {
+    if (!profile) return
+    // 1. Org's coach (org_id matches, is_template false, most recent)
+    let orgC = null
+    if (profile.org_id) {
+      const { data } = await supabase.from('coaches').select('id, name, description')
+        .eq('org_id', profile.org_id).eq('is_template', false).eq('active', true)
+        .order('created_at', { ascending: true }).limit(1).maybeSingle()
+      orgC = data || null
+    }
+    setOrgCoach(orgC)
+
+    // 2. Coaches I've built (created_by = me, active)
+    const { data: mine } = await supabase.from('coaches').select('id, name, description')
+      .eq('created_by', profile.id).eq('active', true).order('name')
+    setBuiltCoaches(mine || [])
+
+    // 3. Shared coaches (redeemed via token)
+    const { data: redemptions } = await supabase.from('coach_user_tokens').select('coach_id').eq('user_id', profile.id)
+    const redeemedIds = (redemptions || []).map(r => r.coach_id)
+    let shared = []
+    if (redeemedIds.length) {
+      const { data } = await supabase.from('coaches').select('id, name, description').in('id', redeemedIds).eq('active', true)
+      shared = data || []
+    }
+    setSharedCoaches(shared)
+  }
+
+  function downloadQuotaTemplate() {
+    const header = 'Month,Quota,Closed\n'
+    const rows = MONTH_NAMES.map(m => `${m},0,0`).join('\n')
+    const csv = header + rows
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `quota-template-fy${fp.fy}.csv`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  function handleQuotaFile(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: (result) => {
+        try {
+          const parsed = result.data.map(row => {
+            const monthName = String(row.Month || row.month || '').trim()
+            let monthNumber = MONTH_NAMES.findIndex(m => m.toLowerCase() === monthName.toLowerCase()) + 1
+            if (!monthNumber) monthNumber = Number(monthName) || null
+            if (!monthNumber || monthNumber < 1 || monthNumber > 12) return null
+            const quota = Number(String(row.Quota || row.quota || '0').replace(/[^0-9.\-]/g, '')) || 0
+            const closed = Number(String(row.Closed || row.closed || '0').replace(/[^0-9.\-]/g, '')) || 0
+            return { month_number: monthNumber, quota_amount: quota, closed_amount: closed }
+          }).filter(Boolean)
+          if (parsed.length === 0) {
+            setQuotaUpload({ previewing: false, rows: [], error: 'No valid rows found. Template: Month, Quota, Closed' })
+            return
+          }
+          setQuotaUpload({ previewing: true, rows: parsed, error: null })
+        } catch (err) {
+          setQuotaUpload({ previewing: false, rows: [], error: err.message })
+        }
+      },
+      error: (err) => setQuotaUpload({ previewing: false, rows: [], error: err.message }),
+    })
+    e.target.value = ''
+  }
+
+  async function applyQuotaUpload() {
+    if (!quotaUpload.rows.length) return
+    setMonths(prev => prev.map(m => {
+      const found = quotaUpload.rows.find(r => r.month_number === m.month_number)
+      return found ? { ...m, quota_amount: found.quota_amount, closed_amount: found.closed_amount } : m
+    }))
+    setQuotaUpload({ previewing: false, rows: [], error: null })
+  }
+
+  async function redeemToken() {
+    if (!tokenInput.trim()) return
+    setTokenStatus(null)
+    const { data, error } = await supabase.rpc('redeem_coach_token', { p_token: tokenInput.trim() })
+    if (error) { setTokenStatus({ error: error.message }); return }
+    if (data?.success) {
+      setTokenStatus({ success: `Added "${data.coach_name}"` })
+      setTokenInput('')
+      loadCoachSections()
+    } else {
+      setTokenStatus({ error: data?.error || 'Unknown error' })
+    }
   }
 
   function getMonthLabel(fiscalMonthNum) {
@@ -229,28 +338,20 @@ export default function Settings() {
 
       <div style={{ padding: '16px 24px' }}>
 
-        {/* My Coach */}
+        {/* My Coach — 3 sections */}
         <Card title="My Coach">
-          <div style={{ marginBottom: 8 }}>
-            <label style={labelStyle}>Active Coach</label>
-            <select style={{ ...inputStyle, cursor: 'pointer' }} value={activeCoachId || ''}
-              onChange={e => selectCoach(e.target.value || null)}>
-              <option value="">-- Select a Coach --</option>
-              {coaches.map(c => (
-                <option key={c.id} value={c.id}>{c.name}{c.description ? ` - ${c.description.substring(0, 60)}` : ''}</option>
-              ))}
-            </select>
-          </div>
-          {selectedCoach && (
-            <div style={{ padding: 12, background: T.surfaceAlt, borderRadius: 6, border: `1px solid ${T.borderLight}`, marginBottom: 8 }}>
-              <div style={{ fontSize: 14, fontWeight: 600, color: T.text, marginBottom: 2 }}>{selectedCoach.name}</div>
-              {selectedCoach.description && (
-                <div style={{ fontSize: 12, color: T.textSecondary, lineHeight: 1.5 }}>{selectedCoach.description}</div>
-              )}
+          <CoachSection title="Your Organization's Coach" coaches={orgCoach ? [orgCoach] : []} activeId={activeCoachId} onSelect={selectCoach} emptyText="No org coach yet — your admin can set one up in /coach" />
+          <CoachSection title="Coaches You've Built" coaches={builtCoaches} activeId={activeCoachId} onSelect={selectCoach} emptyText="You haven't built any coaches yet — go to /coach/builder" />
+          <CoachSection title="Shared Coaches" coaches={sharedCoaches} activeId={activeCoachId} onSelect={selectCoach} emptyText="No shared coaches. Paste a share token below to add one." />
+
+          <div style={{ marginTop: 14, padding: 12, background: T.surfaceAlt, borderRadius: 6, border: `1px solid ${T.borderLight}` }}>
+            <label style={labelStyle}>Add a coach via share token</label>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input style={inputStyle} value={tokenInput} onChange={e => setTokenInput(e.target.value)} placeholder="Paste token..." />
+              <Button primary onClick={redeemToken} disabled={!tokenInput.trim()}>Redeem</Button>
             </div>
-          )}
-          <div style={{ fontSize: 11, color: T.textMuted, fontStyle: 'italic' }}>
-            Coach customization is a premium feature
+            {tokenStatus?.success && <div style={{ color: T.success, fontSize: 12, marginTop: 6 }}>{tokenStatus.success}</div>}
+            {tokenStatus?.error && <div style={{ color: T.error, fontSize: 12, marginTop: 6 }}>{tokenStatus.error}</div>}
           </div>
         </Card>
 
@@ -464,6 +565,47 @@ export default function Settings() {
 
         {/* Quota */}
         <Card title={`Quota -- FY${fp.fy} (Oct ${fp.fy - 1} - Sep ${fp.fy})`}>
+          {/* CSV upload */}
+          <div style={{ marginBottom: 16, padding: 12, background: T.surfaceAlt, borderRadius: 6, border: `1px solid ${T.borderLight}` }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: T.text }}>Bulk upload</span>
+              <Button onClick={downloadQuotaTemplate} style={{ padding: '4px 10px', fontSize: 11 }}>Download CSV template</Button>
+              <label style={{ cursor: 'pointer' }}>
+                <span style={{ padding: '4px 10px', fontSize: 11, fontWeight: 600, border: `1px solid ${T.border}`, borderRadius: 6, background: T.surface, color: T.primary, fontFamily: T.font }}>Upload CSV</span>
+                <input type="file" accept=".csv" style={{ display: 'none' }} onChange={handleQuotaFile} />
+              </label>
+              <span style={{ fontSize: 10, color: T.textMuted }}>Columns: Month, Quota, Closed</span>
+            </div>
+            {quotaUpload.error && <div style={{ marginTop: 8, fontSize: 12, color: T.error }}>{quotaUpload.error}</div>}
+            {quotaUpload.previewing && (
+              <div style={{ marginTop: 10 }}>
+                <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 4 }}>Preview ({quotaUpload.rows.length} rows):</div>
+                <div style={{ maxHeight: 140, overflow: 'auto', border: `1px solid ${T.borderLight}`, borderRadius: 4, background: T.surface }}>
+                  <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
+                    <thead><tr style={{ background: T.surfaceAlt }}>
+                      <th style={{ textAlign: 'left', padding: '4px 8px' }}>Month</th>
+                      <th style={{ textAlign: 'right', padding: '4px 8px' }}>Quota</th>
+                      <th style={{ textAlign: 'right', padding: '4px 8px' }}>Closed</th>
+                    </tr></thead>
+                    <tbody>
+                      {quotaUpload.rows.map((r, i) => (
+                        <tr key={i}>
+                          <td style={{ padding: '3px 8px' }}>{MONTH_NAMES[r.month_number - 1] || `Month ${r.month_number}`}</td>
+                          <td style={{ padding: '3px 8px', textAlign: 'right', fontFeatureSettings: '"tnum"' }}>{formatCurrency(r.quota_amount)}</td>
+                          <td style={{ padding: '3px 8px', textAlign: 'right', fontFeatureSettings: '"tnum"' }}>{formatCurrency(r.closed_amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                  <Button primary onClick={applyQuotaUpload} style={{ padding: '5px 12px', fontSize: 11 }}>Apply to quota</Button>
+                  <Button onClick={() => setQuotaUpload({ previewing: false, rows: [], error: null })} style={{ padding: '5px 12px', fontSize: 11 }}>Cancel</Button>
+                </div>
+              </div>
+            )}
+          </div>
+
           {totalQuota > 0 && (
             <div style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, borderRadius: 6, padding: 16, marginBottom: 16 }}>
               <div style={{ display: 'flex', gap: 24 }}>
@@ -571,6 +713,40 @@ export default function Settings() {
           ))}
         </Card>
       </div>
+    </div>
+  )
+}
+
+function CoachSection({ title, coaches, activeId, onSelect, emptyText }) {
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>{title}</div>
+      {coaches.length === 0 ? (
+        <div style={{ fontSize: 12, color: T.textMuted, padding: '6px 10px', fontStyle: 'italic' }}>{emptyText}</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {coaches.map(c => {
+            const isActive = c.id === activeId
+            return (
+              <button key={c.id} onClick={() => onSelect(isActive ? null : c.id)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px',
+                  borderRadius: 6, cursor: 'pointer', textAlign: 'left',
+                  border: `1px solid ${isActive ? T.primary : T.border}`,
+                  background: isActive ? T.primaryLight || 'rgba(93,173,226,0.08)' : T.surfaceAlt,
+                  fontFamily: T.font,
+                }}>
+                <span style={{ width: 10, height: 10, borderRadius: '50%', background: isActive ? T.primary : T.borderLight, flexShrink: 0 }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{c.name}</div>
+                  {c.description && <div style={{ fontSize: 11, color: T.textSecondary, marginTop: 2, lineHeight: 1.4 }}>{c.description.substring(0, 120)}{c.description.length > 120 ? '...' : ''}</div>}
+                </div>
+                {isActive && <span style={{ fontSize: 10, fontWeight: 700, color: T.primary }}>ACTIVE</span>}
+              </button>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }

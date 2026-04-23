@@ -46,6 +46,13 @@ export default function CoachAdmin() {
   const [icpTestResult, setIcpTestResult] = useState(null)
   const [icpDeals, setIcpDeals] = useState([])
 
+  // Sharing tokens
+  const [shareTokens, setShareTokens] = useState([])
+  const [newTokenLabel, setNewTokenLabel] = useState('')
+  const [newTokenMaxUses, setNewTokenMaxUses] = useState('')
+  const [newTokenExpires, setNewTokenExpires] = useState('')
+  const [copiedToken, setCopiedToken] = useState(null)
+
   // Editing states
   const [editingCoach, setEditingCoach] = useState(false)
   const [editCoachData, setEditCoachData] = useState({})
@@ -144,6 +151,10 @@ export default function CoachAdmin() {
 
         const { data: dealsForIcp } = await supabase.from('deals').select('id, company_name').order('created_at', { ascending: false }).limit(20)
         setIcpDeals(dealsForIcp || [])
+
+        // Load share tokens for this coach
+        const { data: tokens } = await supabase.from('coach_share_tokens').select('*').eq('coach_id', coachId).order('created_at', { ascending: false })
+        setShareTokens(tokens || [])
 
         // Load template stages/milestones
         const tplIds = (templatesRes.data || []).map(t => t.id)
@@ -327,6 +338,7 @@ export default function CoachAdmin() {
     { key: 'research', label: 'Research' },
     { key: 'slides', label: 'Slides' },
     { key: 'icp', label: 'ICP' },
+    { key: 'sharing', label: 'Sharing' },
   ]
 
   const EMAIL_TYPES = ['sc_briefing', 'scoping_kt', 'exec_alignment', 'follow_up', 'internal_update', 'custom']
@@ -1197,6 +1209,69 @@ export default function CoachAdmin() {
             </>
           )
         })()}
+
+        {/* ═══ SHARING ═══ */}
+        {tab === 'sharing' && coach && (
+          <>
+            <Card title="Share This Coach">
+              <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 12 }}>
+                Generate a share token so other users can add this coach to their Settings. Tokens can be limited by use count and expiry.
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr auto', gap: 8, alignItems: 'flex-end', marginBottom: 14 }}>
+                <div>
+                  <label style={labelStyle}>Label (optional)</label>
+                  <input style={inputStyle} value={newTokenLabel} onChange={e => setNewTokenLabel(e.target.value)} placeholder="e.g. Partner network, Q1 beta cohort" />
+                </div>
+                <div>
+                  <label style={labelStyle}>Max uses</label>
+                  <input type="number" style={inputStyle} value={newTokenMaxUses} onChange={e => setNewTokenMaxUses(e.target.value)} placeholder="Unlimited" />
+                </div>
+                <div>
+                  <label style={labelStyle}>Expires</label>
+                  <input type="date" style={inputStyle} value={newTokenExpires} onChange={e => setNewTokenExpires(e.target.value)} />
+                </div>
+                <Button primary onClick={async () => {
+                  const { data, error } = await supabase.from('coach_share_tokens').insert({
+                    coach_id: coach.id, created_by: profile.id,
+                    label: newTokenLabel || null,
+                    max_uses: newTokenMaxUses ? Number(newTokenMaxUses) : null,
+                    expires_at: newTokenExpires ? new Date(newTokenExpires).toISOString() : null,
+                  }).select().single()
+                  if (!error && data) {
+                    setShareTokens(prev => [data, ...prev])
+                    setNewTokenLabel(''); setNewTokenMaxUses(''); setNewTokenExpires('')
+                  } else if (error) { alert('Failed: ' + error.message) }
+                }}>Generate</Button>
+              </div>
+
+              {shareTokens.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: 24, color: T.textMuted, fontSize: 13 }}>No tokens yet.</div>
+              ) : shareTokens.map(tk => (
+                <div key={tk.id} style={{ padding: 10, background: tk.active ? T.surfaceAlt : T.surface, opacity: tk.active ? 1 : 0.5, borderRadius: 6, border: `1px solid ${T.borderLight}`, marginBottom: 6 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{tk.label || 'Untitled token'}</div>
+                      <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>
+                        Uses: {tk.use_count}{tk.max_uses ? ` / ${tk.max_uses}` : ''} ·
+                        {tk.expires_at ? ` Expires ${new Date(tk.expires_at).toLocaleDateString()}` : ' No expiry'} ·
+                        Created {new Date(tk.created_at).toLocaleDateString()}
+                      </div>
+                    </div>
+                    <code style={{ fontFamily: T.mono, fontSize: 11, padding: '4px 8px', background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, color: T.text }}>{tk.token}</code>
+                    <Button onClick={async () => {
+                      try { await navigator.clipboard.writeText(tk.token); setCopiedToken(tk.id); setTimeout(() => setCopiedToken(null), 1500) } catch {}
+                    }} style={{ padding: '4px 10px', fontSize: 11 }}>{copiedToken === tk.id ? 'Copied!' : 'Copy'}</Button>
+                    <Button danger onClick={async () => {
+                      if (!window.confirm('Revoke this token? Existing users who already redeemed it keep access, but no new redemptions.')) return
+                      await supabase.from('coach_share_tokens').update({ active: false }).eq('id', tk.id)
+                      setShareTokens(prev => prev.map(t => t.id === tk.id ? { ...t, active: false } : t))
+                    }} style={{ padding: '4px 10px', fontSize: 11 }} disabled={!tk.active}>{tk.active ? 'Revoke' : 'Revoked'}</Button>
+                  </div>
+                </div>
+              ))}
+            </Card>
+          </>
+        )}
       </div>
     </div>
   )
