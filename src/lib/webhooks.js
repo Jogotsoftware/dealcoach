@@ -161,7 +161,7 @@ export async function callGenerateEmail(dealId, templateId, conversationId = nul
 /**
  * Call the Supabase Edge Function for deal chat (AI coaching).
  */
-export async function callDealChat(dealId, sessionId, message, userId) {
+export async function callDealChat(dealId, sessionId, message, userId, contextType = null) {
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) return { error: 'Not authenticated' }
 
@@ -170,6 +170,8 @@ export async function callDealChat(dealId, sessionId, message, userId) {
   if (!creditCheck.allowed) return { error: creditCheck.reason || 'Insufficient credits for coach chat' }
 
   try {
+    const body = { deal_id: dealId || null, session_id: sessionId, message, user_id: userId }
+    if (contextType) body.context_type = contextType
     const response = await fetch(
       `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/deal-chat`,
       {
@@ -179,7 +181,7 @@ export async function callDealChat(dealId, sessionId, message, userId) {
           'Authorization': `Bearer ${session.access_token}`,
           'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
         },
-        body: JSON.stringify({ deal_id: dealId, session_id: sessionId, message, user_id: userId }),
+        body: JSON.stringify(body),
       }
     )
     return await response.json()

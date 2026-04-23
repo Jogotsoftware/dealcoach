@@ -1,11 +1,17 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-// deal-chat v12
+// deal-chat v13
+// CHANGES FROM v12:
+// - Accepts optional context_type: 'deal' (default) | 'pipeline' | 'coaching' | 'help' | 'general'
+// - 'pipeline': no deal_id required. Loads rep's active deals as pipeline context.
+// - 'coaching': no deal/rep data. Pure methodology coaching with assembled prompt.
+// - 'help': help-mode system prompt, answers product-navigation questions.
+// - 'general': general sales discussion with methodology context only.
+// - Persists context_type on deal_chat_sessions for history filtering.
 // CHANGES FROM v11:
-// - Calls assemble_coach_prompt RPC (p_action='chat') and prepends the 4-layer assembled prompt
-//   to the hardcoded CHAT_SYSTEM_PROMPT so coach context / ICP / personas / flags are in scope.
-// - Upserts assembled_prompt_versions (dedup on SHA-256 hash, increments use_count).
+// - Calls assemble_coach_prompt RPC (p_action='chat') and prepends the 4-layer assembled prompt.
+// - Upserts assembled_prompt_versions.
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -50,105 +56,208 @@ const TOOLS = [
   { name: 'add_risk', description: 'Add a risk to this deal.', input_schema: { type: 'object', properties: { risk_description: { type: 'string' }, category: { type: 'string' }, severity: { type: 'string', enum: ['critical', 'high', 'medium', 'low'] } }, required: ['risk_description'] } },
 ];
 
-const CHAT_SYSTEM_PROMPT = `You are a deal intelligence assistant for an enterprise B2B sales team. You have access to EVERYTHING in the deal database. Your job is to give clear, direct, sourced answers to any question about this deal.
+const DEAL_SYSTEM_PROMPT = `You are a deal intelligence assistant for an enterprise B2B sales team. You have access to EVERYTHING in the deal database. Your job is to give clear, direct, sourced answers to any question about this deal.
 
 HOW YOU OPERATE:
-- When asked a question, answer it directly from the deal data provided. Be specific — use names, numbers, dates, exact quotes.
+- Answer directly from the deal data provided. Be specific — use names, numbers, dates, exact quotes.
 - When you cite information, tell the user WHERE it came from: which call, which research source, which contact said it.
-- If deal_sources data is available, reference the specific source (URL, speaker quote, call date).
-- If the data doesn't contain the answer, say so clearly: "We don't have that information yet. Here's what you could ask on the next call to find out."
-- Be concise. Don't pad responses with methodology lectures unless the user asks for coaching advice.
-- Use bullet points for lists. Bold key terms.
-- When asked for coaching guidance, draw from the methodology layers provided in your system prompt.
-- When asked to create tasks, update fields, add contacts, or log risks — use the tools provided.
+- If data doesn't contain the answer, say so clearly and suggest what to ask on the next call.
+- Be concise. Bullet points for lists. Bold key terms.
+- Draw from the methodology layers provided in your system prompt for coaching guidance.
+- When asked to create tasks, update fields, add contacts, or log risks — use the tools provided.`;
 
-QUERY PATTERNS YOU HANDLE:
-- "What do we know about their budget?" → Pull from deal_analysis.budget, any transcript sources where budget was discussed, research sources
-- "Who is the economic buyer?" → Pull from deal_analysis.economic_buyer, contacts with is_economic_buyer=true, source quotes
-- "What are the top risks?" → Pull from deal_risks, red flags, BANT gaps
-- "Summarize the last call" → Pull from most recent conversation ai_summary
-- "What's our competitive position?" → Pull from competitors, company_profile.competitive_landscape, competitive mentions in transcripts
-- "What should I ask on the next call?" → Identify BANT gaps, missing methodology elements, unvalidated compelling events
-- "What's the compelling event?" → Pull from compelling_events table, distinguish from catalysts
-- "Write my next steps update" → Generate in the proper format: (Initials) MM/DD — RED/GREEN (reasoning), next call + type, last call + type, RISK:
-- "What's changed since the last call?" → Compare current deal state with previous call summaries
-- "Where did we learn about [X]?" → Query deal_sources for the field_category, return the source URL or speaker quote`;
+const PIPELINE_SYSTEM_PROMPT = `You are a pipeline intelligence assistant. The user is a rep asking strategic questions about their full pipeline.
+
+HOW YOU OPERATE:
+- Answer based on the pipeline summary provided. Reference specific deals by name and stage.
+- Identify patterns: which deals need attention, which are at risk, which are hottest.
+- Be specific — reference deal values, close dates, next steps, scores.
+- Coach on pipeline prioritization using the methodology in your system prompt.
+- Short responses. Bullet points when listing deals.`;
+
+const COACHING_SYSTEM_PROMPT = `You are a sales coach. The user is asking for methodology guidance with no specific deal in context.
+
+HOW YOU OPERATE:
+- Answer based on the methodology layers in your system prompt.
+- When giving advice, be Socratic — lead the rep to the insight rather than lecturing.
+- Use examples from the framework (Revenue Instruments pillars, BANT/MEDDPICC if selected).
+- Short, direct, opinionated responses. The rep wants clarity, not a lecture.`;
+
+const HELP_SYSTEM_PROMPT = `You are a product help assistant for Revenue Instruments / DealCoach.
+
+HOW YOU OPERATE:
+- Answer questions about how to use the product. You know:
+  - Pipeline (/): kanban + table view, forecast summary, widgets, task list, scoreboard
+  - Deal Detail (/deal/:id): 6 tabs — Overview, Contacts, Transcripts, MSP, Proposal, Tasks
+  - Coach (/coach): admin for prompts, docs, scoring, ICP, email templates
+  - Coach Builder (/coach/builder): 11-step wizard for coach configuration
+  - Reports (/reports): prebuilt + custom reports
+  - Settings (/settings): profile, quota, coach selection
+- If asked about something not in the product, say "I don't think we have that yet — you can send feedback via the chatbot's Feedback topic"
+- Be concise. 1-3 sentence answers when possible.`;
+
+const GENERAL_SYSTEM_PROMPT = `You are a sales coaching assistant. The user is asking a general sales question.
+
+HOW YOU OPERATE:
+- Answer based on the methodology and coaching framework in your system prompt.
+- Stay grounded in public-source methodology (BANT, MEDDPICC, SPIN, Challenger, Solution Selling, Sandler, JOLT, Command of the Message).
+- Direct, concise, opinionated. Reference frameworks by name.`;
+
+function systemPromptFor(contextType: string): string {
+  switch (contextType) {
+    case 'pipeline': return PIPELINE_SYSTEM_PROMPT;
+    case 'coaching': return COACHING_SYSTEM_PROMPT;
+    case 'help': return HELP_SYSTEM_PROMPT;
+    case 'general': return GENERAL_SYSTEM_PROMPT;
+    case 'deal':
+    default: return DEAL_SYSTEM_PROMPT;
+  }
+}
+
+async function buildDealContext(sb: any, deal_id: string): Promise<{ context: string; deal: any; rep: any; cid: string | null; model: string }> {
+  const [dealRes, analysisRes, companyRes, contactsRes, competitorsRes, tasksRes, convsRes, painsRes, risksRes, eventsRes, catalystsRes, mspRes, flagsRes, sizingRes, sourcesRes, systemsRes] = await Promise.all([
+    sb.from('deals').select('*').eq('id', deal_id).single(),
+    sb.from('deal_analysis').select('*').eq('deal_id', deal_id).single(),
+    sb.from('company_profile').select('*').eq('deal_id', deal_id).single(),
+    sb.from('contacts').select('*').eq('deal_id', deal_id),
+    sb.from('deal_competitors').select('*').eq('deal_id', deal_id),
+    sb.from('tasks').select('*').eq('deal_id', deal_id).order('completed', { ascending: true }),
+    sb.from('conversations').select('id, title, call_type, call_date, ai_summary').eq('deal_id', deal_id).order('call_date', { ascending: false }).limit(15),
+    sb.from('deal_pain_points').select('*').eq('deal_id', deal_id),
+    sb.from('deal_risks').select('*').eq('deal_id', deal_id).eq('status', 'open'),
+    sb.from('compelling_events').select('*').eq('deal_id', deal_id),
+    sb.from('business_catalysts').select('*').eq('deal_id', deal_id),
+    sb.from('msp_stages').select('*').eq('deal_id', deal_id).order('stage_order'),
+    sb.from('deal_flags').select('*').eq('deal_id', deal_id),
+    sb.from('deal_sizing').select('*').eq('deal_id', deal_id).single(),
+    sb.from('deal_sources').select('*').eq('deal_id', deal_id).order('created_at', { ascending: false }).limit(50),
+    sb.from('company_systems').select('*').eq('deal_id', deal_id),
+  ]);
+
+  const deal = dealRes.data;
+  if (!deal) return { context: '', deal: null, rep: null, cid: null, model: 'claude-sonnet-4-20250514' };
+  const analysis = analysisRes.data, company = companyRes.data;
+  const contacts = contactsRes.data || [], competitors = competitorsRes.data || [], tasks = tasksRes.data || [];
+  const convs = convsRes.data || [], pains = painsRes.data || [], risks = risksRes.data || [];
+  const events = eventsRes.data || [], catalysts = catalystsRes.data || [], mspStages = mspRes.data || [];
+  const flags = flagsRes.data || [], sizing = sizingRes.data, sources = sourcesRes.data || [], systems = systemsRes.data || [];
+
+  const { data: rep } = await sb.from('profiles').select('active_coach_id, full_name, initials').eq('id', deal.rep_id).single();
+  let model = 'claude-sonnet-4-20250514';
+  const cid = rep?.active_coach_id || null;
+  if (cid) {
+    const { data: coach } = await sb.from('coaches').select('model').eq('id', cid).single();
+    if (coach?.model) model = coach.model;
+  }
+
+  const redFlags = flags.filter((f: any) => f.flag_type === 'red');
+  const greenFlags = flags.filter((f: any) => f.flag_type === 'green');
+  const transcriptSources = sources.filter((s: any) => s.source_origin === 'transcript');
+  const researchSources = sources.filter((s: any) => s.source_origin === 'research');
+
+  const context = `DEAL: ${deal.company_name}\n` +
+    `Stage: ${deal.stage} | Forecast: ${deal.forecast_category} | Value: $${deal.deal_value || 0} | CMRR: $${deal.cmrr || 0}\n` +
+    `Close: ${deal.target_close_date || 'TBD'} | Fit: ${deal.fit_score || '?'}/10 | Health: ${deal.deal_health_score || '?'}/10 | ICP: ${deal.icp_fit_score || '?'}/100\n` +
+    `Next Steps: ${deal.next_steps || 'None'}\n\n` +
+    `COMPANY:\n${clean(company?.overview)}\nIndustry: ${clean(company?.industry)} | Revenue: ${clean(company?.revenue)} | Employees: ${clean(company?.employee_count)}\n` +
+    `Tech Stack: ${clean(company?.tech_stack)}\nBusiness Goals: ${clean(company?.business_goals)}\nBusiness Priorities: ${clean(company?.business_priorities)}\nCompetitive Landscape: ${clean(company?.competitive_landscape)}\n\n` +
+    `CURRENT SYSTEMS (${systems.length}):\n${systems.map((s: any) => `- ${s.system_name} [${s.system_category}]${s.confirmed ? ' CONFIRMED' : ''}`).join('\n') || 'None'}\n\n` +
+    `SIZING: ${sizing ? `Users: ${sizing.full_users || '?'} | Entities: ${sizing.entity_count || '?'}` : 'Not captured'}\n\n` +
+    `ANALYSIS:\nPains: ${clean(analysis?.pain_points)}\nQuantified: ${clean(analysis?.quantified_pain)}\nBudget: ${clean(analysis?.budget)}\nChampion: ${clean(analysis?.champion)} | EB: ${clean(analysis?.economic_buyer)}\nDecision Criteria: ${clean(analysis?.decision_criteria)}\nProcess: ${clean(analysis?.decision_process)}\nTimeline: ${clean(analysis?.timeline_drivers)}\n\n` +
+    `CONTACTS (${contacts.length}):\n${contacts.map((c: any) => `- ${c.name} | ${c.title || '?'} | ${c.role_in_deal || '?'}${c.is_champion ? ' [CHAMP]' : ''}${c.is_economic_buyer ? ' [EB]' : ''}`).join('\n') || 'None'}\n\n` +
+    `COMPETITORS (${competitors.length}):\n${competitors.map((c: any) => `- ${c.competitor_name}: ${clean(c.strengths)} / ${clean(c.weaknesses)}`).join('\n') || 'None'}\n\n` +
+    `PAIN POINTS (${pains.length}):\n${pains.map((p: any) => `- ${p.pain_description}${p.annual_cost ? ' ($' + p.annual_cost + '/yr)' : ''} [${p.category}]`).join('\n') || 'None'}\n\n` +
+    `COMPELLING EVENTS (${events.length}):\n${events.map((e: any) => `- ${e.event_description} [${e.strength}]${e.event_date ? ' by ' + e.event_date : ''}`).join('\n') || 'None'}\n\n` +
+    `CATALYSTS (${catalysts.length}):\n${catalysts.map((c: any) => `- ${c.catalyst} [${c.category}]`).join('\n') || 'None'}\n\n` +
+    `RISKS (${risks.length}):\n${risks.map((r: any) => `- [${r.severity}] ${r.risk_description}`).join('\n') || 'None'}\n\n` +
+    `RED FLAGS:\n${redFlags.map((f: any) => `- ${f.description}`).join('\n') || 'None'}\n\n` +
+    `GREEN FLAGS:\n${greenFlags.map((f: any) => `- ${f.description}`).join('\n') || 'None'}\n\n` +
+    `TASKS (${tasks.length}):\n${tasks.map((t: any) => `- [${t.completed ? 'DONE' : t.priority}] ${t.title}`).join('\n') || 'None'}\n\n` +
+    `CALL HISTORY (${convs.length}):\n${convs.map((c: any) => `- ${c.call_date || '?'} [${c.call_type}]: ${(c.ai_summary || '').substring(0, 200)}`).join('\n') || 'None'}\n\n` +
+    `MSP (${mspStages.length} steps):\n${mspStages.map((s: any) => `- [${s.status}] ${s.stage_name}`).join('\n') || 'None'}\n\n` +
+    `EVIDENCE (${sources.length}): ${researchSources.length} research, ${transcriptSources.length} transcript\n` +
+    `Transcripts:\n${transcriptSources.slice(0, 15).map((s: any) => `- [${s.field_category}] ${s.speaker || '?'}: "${(s.quote || '').substring(0, 100)}"`).join('\n') || 'None'}`;
+
+  return { context, deal, rep, cid, model };
+}
+
+async function buildPipelineContext(sb: any, user_id: string): Promise<{ context: string; orgId: string | null; cid: string | null; model: string }> {
+  const { data: profile } = await sb.from('profiles').select('active_coach_id, org_id, full_name, initials').eq('id', user_id).single();
+  const cid = profile?.active_coach_id || null;
+  const orgId = profile?.org_id || null;
+  let model = 'claude-sonnet-4-20250514';
+  if (cid) {
+    const { data: coach } = await sb.from('coaches').select('model').eq('id', cid).single();
+    if (coach?.model) model = coach.model;
+  }
+
+  const { data: deals } = await sb.from('deals').select('id, company_name, stage, forecast_category, deal_value, cmrr, target_close_date, next_steps, fit_score, deal_health_score').eq('rep_id', user_id).not('stage', 'in', '(closed_won,closed_lost,disqualified)').order('target_close_date', { ascending: true }).limit(50);
+
+  const { data: tasks } = await sb.from('tasks').select('title, priority, due_date, deals(company_name)').eq('completed', false).order('due_date', { ascending: true }).limit(30);
+
+  const dealLines = (deals || []).map((d: any) => `- ${d.company_name} | ${d.stage} | ${d.forecast_category} | $${d.deal_value || 0} | Close: ${d.target_close_date || 'TBD'} | Fit: ${d.fit_score || '?'}/10 | Health: ${d.deal_health_score || '?'}/10\n    Next: ${d.next_steps || 'None'}`);
+  const taskLines = (tasks || []).map((t: any) => `- [${t.priority}] ${t.title}${t.deals?.company_name ? ' (' + t.deals.company_name + ')' : ''}${t.due_date ? ' due ' + t.due_date.substring(0, 10) : ''}`);
+
+  const context = `REP: ${profile?.full_name || 'Unknown'} (${profile?.initials || '??'})\n\n` +
+    `ACTIVE DEALS (${(deals || []).length}):\n${dealLines.join('\n') || 'None'}\n\n` +
+    `OPEN TASKS (${(tasks || []).length}):\n${taskLines.join('\n') || 'None'}`;
+
+  return { context, orgId, cid, model };
+}
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders() });
   const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
   try {
-    if (!ANTHROPIC_API_KEY) return jsonResponse({ error: 'v12: ANTHROPIC_API_KEY not configured' }, 500);
-    const { deal_id, session_id, message, user_id } = await req.json();
-    if (!deal_id || !message) return jsonResponse({ error: 'v12: deal_id and message required' }, 400);
+    if (!ANTHROPIC_API_KEY) return jsonResponse({ error: 'v13: ANTHROPIC_API_KEY not configured' }, 500);
+    const { deal_id, session_id, message, user_id, context_type } = await req.json();
+    const ctxType = context_type || (deal_id ? 'deal' : 'general');
+    if (!message) return jsonResponse({ error: 'v13: message required' }, 400);
+    if (ctxType === 'deal' && !deal_id) return jsonResponse({ error: 'v13: deal_id required for context_type=deal' }, 400);
+    if ((ctxType === 'pipeline' || ctxType === 'coaching' || ctxType === 'help' || ctxType === 'general') && !user_id) return jsonResponse({ error: 'v13: user_id required for this context_type' }, 400);
 
+    // Resolve or create session
     let activeSessionId = session_id;
     if (!activeSessionId) {
-      const { data: newSession } = await sb.from('deal_chat_sessions').insert({ deal_id, user_id, title: message.substring(0, 60) }).select('id').single();
+      const { data: newSession } = await sb.from('deal_chat_sessions').insert({
+        deal_id: ctxType === 'deal' ? deal_id : null,
+        user_id, title: message.substring(0, 60),
+        context_type: ctxType,
+      }).select('id').single();
       activeSessionId = newSession?.id;
     }
 
-    await sb.from('deal_chat_messages').insert({ session_id: activeSessionId, deal_id, role: 'user', content: message });
+    await sb.from('deal_chat_messages').insert({ session_id: activeSessionId, deal_id: ctxType === 'deal' ? deal_id : null, role: 'user', content: message });
 
     const { data: history } = await sb.from('deal_chat_messages').select('role, content').eq('session_id', activeSessionId).order('created_at').limit(20);
 
-    // Load ALL deal data
-    const [dealRes, analysisRes, companyRes, contactsRes, competitorsRes, tasksRes, convsRes, painsRes, risksRes, eventsRes, catalystsRes, mspRes, flagsRes, sizingRes, sourcesRes, scoresRes, systemsRes] = await Promise.all([
-      sb.from('deals').select('*').eq('id', deal_id).single(),
-      sb.from('deal_analysis').select('*').eq('deal_id', deal_id).single(),
-      sb.from('company_profile').select('*').eq('deal_id', deal_id).single(),
-      sb.from('contacts').select('*').eq('deal_id', deal_id),
-      sb.from('deal_competitors').select('*').eq('deal_id', deal_id),
-      sb.from('tasks').select('*').eq('deal_id', deal_id).order('completed', { ascending: true }),
-      sb.from('conversations').select('id, title, call_type, call_date, ai_summary, ai_coaching_notes').eq('deal_id', deal_id).order('call_date', { ascending: false }).limit(15),
-      sb.from('deal_pain_points').select('*').eq('deal_id', deal_id),
-      sb.from('deal_risks').select('*').eq('deal_id', deal_id).eq('status', 'open'),
-      sb.from('compelling_events').select('*').eq('deal_id', deal_id),
-      sb.from('business_catalysts').select('*').eq('deal_id', deal_id),
-      sb.from('msp_stages').select('*').eq('deal_id', deal_id).order('stage_order'),
-      sb.from('deal_flags').select('*').eq('deal_id', deal_id),
-      sb.from('deal_sizing').select('*').eq('deal_id', deal_id).single(),
-      sb.from('deal_sources').select('*').eq('deal_id', deal_id).order('created_at', { ascending: false }).limit(50),
-      sb.from('deal_scores').select('*').eq('deal_id', deal_id).order('scored_at', { ascending: false }),
-      sb.from('company_systems').select('*').eq('deal_id', deal_id),
-    ]);
+    let dealContext = '', model = 'claude-sonnet-4-20250514', cid: string | null = null, deal: any = null, rep: any = null, orgId: string | null = null;
 
-    const deal = dealRes.data;
-    if (!deal) return jsonResponse({ error: 'v12: Deal not found' }, 404);
-    const analysis = analysisRes.data;
-    const company = companyRes.data;
-    const contacts = contactsRes.data || [];
-    const competitors = competitorsRes.data || [];
-    const tasks = tasksRes.data || [];
-    const convs = convsRes.data || [];
-    const pains = painsRes.data || [];
-    const risks = risksRes.data || [];
-    const events = eventsRes.data || [];
-    const catalysts = catalystsRes.data || [];
-    const mspStages = mspRes.data || [];
-    const flags = flagsRes.data || [];
-    const sizing = sizingRes.data;
-    const sources = sourcesRes.data || [];
-    const systems = systemsRes.data || [];
-
-    const { data: rep } = await sb.from('profiles').select('active_coach_id, full_name, initials').eq('id', deal.rep_id).single();
-    let model = 'claude-sonnet-4-20250514';
-    const cid = rep?.active_coach_id || null;
-    if (cid) {
-      const { data: coach } = await sb.from('coaches').select('model').eq('id', cid).single();
-      if (coach?.model) model = coach.model;
+    if (ctxType === 'deal') {
+      const built = await buildDealContext(sb, deal_id);
+      if (!built.deal) return jsonResponse({ error: 'v13: Deal not found' }, 404);
+      dealContext = built.context; model = built.model; cid = built.cid; deal = built.deal; rep = built.rep;
+      const { data: repProfile } = await sb.from('profiles').select('org_id').eq('id', deal.rep_id).single();
+      orgId = repProfile?.org_id || null;
+    } else if (ctxType === 'pipeline') {
+      const built = await buildPipelineContext(sb, user_id);
+      dealContext = built.context; model = built.model; cid = built.cid; orgId = built.orgId;
+    } else {
+      // coaching, help, general — no deal/pipeline context, just coach config
+      const { data: profile } = await sb.from('profiles').select('active_coach_id, org_id').eq('id', user_id).single();
+      cid = profile?.active_coach_id || null;
+      orgId = profile?.org_id || null;
+      if (cid) {
+        const { data: coach } = await sb.from('coaches').select('model').eq('id', cid).single();
+        if (coach?.model) model = coach.model;
+      }
     }
 
-    // ── Assemble coach-layer prompt (platform core + methodology + coach + ICP) ──
     let assembledCoachPrompt = '';
     if (cid) {
       try {
-        const { data: assembled } = await sb.rpc('assemble_coach_prompt', {
-          p_coach_id: cid,
-          p_call_type: null,
-          p_action: 'chat',
-        });
+        const { data: assembled } = await sb.rpc('assemble_coach_prompt', { p_coach_id: cid, p_call_type: null, p_action: 'chat' });
         if (assembled && typeof assembled === 'string' && assembled.length > 0) {
           assembledCoachPrompt = assembled;
           await recordAssembledPrompt(sb, cid, null, 'chat', assembled);
@@ -156,98 +265,26 @@ Deno.serve(async (req: Request) => {
       } catch (e) { console.log('assemble_coach_prompt error (chat, non-fatal):', e); }
     }
 
-    const redFlags = flags.filter((f: any) => f.flag_type === 'red');
-    const greenFlags = flags.filter((f: any) => f.flag_type === 'green');
-    const researchSources = sources.filter((s: any) => s.source_origin === 'research');
-    const transcriptSources = sources.filter((s: any) => s.source_origin === 'transcript');
-
-    const dealContext = `DEAL DATA FOR: ${deal.company_name}\n` +
-      `════════════════════════════════\n` +
-      `DEAL CORE:\n` +
-      `Stage: ${deal.stage} | Forecast: ${deal.forecast_category} | Value: $${deal.deal_value || 0} | CMRR: $${deal.cmrr || 0}\n` +
-      `Close Date: ${deal.target_close_date || 'TBD'} | Fit: ${deal.fit_score || '?'}/10 | Health: ${deal.deal_health_score || '?'}/10 | ICP: ${deal.icp_fit_score || '?'}/100\n` +
-      `Next Steps: ${deal.next_steps || 'None'}\n` +
-      `Rep: ${rep?.full_name || 'Unknown'} (${rep?.initials || '??'})\n\n` +
-
-      `COMPANY PROFILE:\n` +
-      `Overview: ${clean(company?.overview)}\n` +
-      `Industry: ${clean(company?.industry)} | Revenue: ${clean(company?.revenue)} | Employees: ${clean(company?.employee_count)}\n` +
-      `HQ: ${clean(company?.headquarters)} | Founded: ${clean(company?.founded)}\n` +
-      `Revenue Streams: ${clean(company?.revenue_streams)}\n` +
-      `Tech Stack: ${clean(company?.tech_stack)}\n` +
-      `Business Goals: ${clean(company?.business_goals)}\n` +
-      `Business Priorities: ${clean(company?.business_priorities)}\n` +
-      `Growth Plans: ${clean(company?.growth_plans)}\n` +
-      `Leadership: ${clean(company?.leadership)}\n` +
-      `PE/VC/Investors: ${clean(company?.pe_vc_investors)}\n` +
-      `Competitive Landscape: ${clean(company?.competitive_landscape)}\n` +
-      `Events Attended: ${clean(company?.events_attended)}\n` +
-      `Hiring Signals: ${clean(company?.hiring_signals)}\n` +
-      `International: ${clean(company?.international_operations)}\n` +
-      `Other Initiatives: ${clean(company?.other_initiatives)}\n\n` +
-
-      `CURRENT SYSTEMS (${systems.length}):\n${systems.map((s: any) => `- ${s.system_name} [${s.system_category}]${s.confirmed ? ' CONFIRMED' : ''} (${s.confidence})`).join('\n') || 'None'}\n\n` +
-
-      `SIZING: ${sizing ? `Users: ${sizing.full_users || '?'} | View-Only: ${sizing.view_only_users || '?'} | Entities: ${sizing.entity_count || '?'} | AP/mo: ${sizing.ap_invoices_monthly || '?'} | AR/mo: ${sizing.ar_invoices_monthly || '?'} | Assets: ${sizing.fixed_assets || '?'} | Payroll: ${sizing.employee_count_payroll || '?'}` : 'Not captured yet'}\n\n` +
-
-      `DEAL ANALYSIS:\n` +
-      `Pain Points: ${clean(analysis?.pain_points)}\n` +
-      `Quantified Pain: ${clean(analysis?.quantified_pain)}\n` +
-      `Business Impact: ${clean(analysis?.business_impact)}\n` +
-      `Budget: ${clean(analysis?.budget)} | Allocated: ${analysis?.budget_allocated ? 'Yes' : 'Unknown'} | Current Spend: ${clean(analysis?.current_spend)}\n` +
-      `Champion: ${clean(analysis?.champion)}\n` +
-      `Economic Buyer: ${clean(analysis?.economic_buyer)}\n` +
-      `Decision Criteria: ${clean(analysis?.decision_criteria)}\n` +
-      `Decision Process: ${clean(analysis?.decision_process)}\n` +
-      `Decision Method: ${clean(analysis?.decision_method)}\n` +
-      `Timeline Drivers: ${clean(analysis?.timeline_drivers)}\n` +
-      `Decision Date: ${analysis?.decision_date || 'Unknown'} | Signature: ${analysis?.signature_date || 'Unknown'} | Kickoff: ${analysis?.kickoff_date || 'Unknown'} | Go-Live: ${analysis?.go_live_date || 'Unknown'}\n` +
-      `Driving Factors: ${clean(analysis?.driving_factors)}\n` +
-      `Integrations: ${clean(analysis?.integrations_needed)} | Impact: ${clean(analysis?.integration_impact)}\n` +
-      `Exec Alignment: ${clean(analysis?.exec_alignment)}\n` +
-      `Ideal Solution: ${clean(analysis?.ideal_solution)}\n` +
-      `Has RFP: ${analysis?.has_rfp ? 'Yes' : 'No'} | Consultant: ${analysis?.has_consultant ? `Yes - ${analysis?.consultant_name || '?'}` : 'No'}\n\n` +
-
-      `CONTACTS (${contacts.length}):\n${contacts.map((c: any) => `- ${c.name} | ${c.title || '?'} | ${c.role_in_deal || '?'} | Influence: ${c.influence_level || '?'}${c.is_champion ? ' [CHAMPION]' : ''}${c.is_economic_buyer ? ' [EB]' : ''}${c.is_signer ? ' [SIGNER]' : ''}\n  Priorities: ${c.priorities || '?'} | Pain Points: ${c.pain_points || '?'}`).join('\n') || 'None'}\n\n` +
-
-      `COMPETITORS (${competitors.length}):\n${competitors.map((c: any) => `- ${c.competitor_name}${c.competitor_type ? ' [' + c.competitor_type + ']' : ''}: Strengths: ${c.strengths || '?'} | Weaknesses: ${c.weaknesses || '?'} | Where: ${c.where_in_process || '?'} | Pricing: ${c.received_pricing ? 'Yes' : '?'} | Strategy: ${c.strategy || '?'}`).join('\n') || 'None'}\n\n` +
-
-      `PAIN POINTS (${pains.length}):\n${pains.map((p: any) => `- ${p.pain_description}${p.annual_cost ? ' ($' + p.annual_cost + '/yr)' : ''}${p.annual_hours ? ' (' + p.annual_hours + ' hrs/yr)' : ''} [${p.category}] ${p.verified ? 'VERIFIED' : ''} ${p.speaker_name ? '(said by: ' + p.speaker_name + ')' : ''}`).join('\n') || 'None'}\n\n` +
-
-      `COMPELLING EVENTS (${events.length}):\n${events.map((e: any) => `- ${e.event_description} [${e.strength}]${e.event_date ? ' by ' + e.event_date : ''} ${e.verified ? 'VERIFIED' : ''}`).join('\n') || 'None'}\n\n` +
-
-      `CATALYSTS (${catalysts.length}):\n${catalysts.map((c: any) => `- ${c.catalyst} [${c.category}] Urgency: ${c.urgency}`).join('\n') || 'None'}\n\n` +
-
-      `RISKS (${risks.length} open):\n${risks.map((r: any) => `- [${r.severity}] ${r.risk_description} [${r.category}]`).join('\n') || 'None'}\n\n` +
-
-      `RED FLAGS (${redFlags.length}):\n${redFlags.map((f: any) => `- [${f.severity || '?'}] ${f.description} [${f.category}]`).join('\n') || 'None'}\n\n` +
-
-      `GREEN FLAGS (${greenFlags.length}):\n${greenFlags.map((f: any) => `- ${f.description} [${f.category}]`).join('\n') || 'None'}\n\n` +
-
-      `TASKS (${tasks.length}):\n${tasks.map((t: any) => `- [${t.completed ? 'DONE' : t.priority}] ${t.title}${t.due_date ? ' (due ' + t.due_date.substring(0, 10) + ')' : ''}${t.is_blocking ? ' BLOCKING' : ''}`).join('\n') || 'None'}\n\n` +
-
-      `CALL HISTORY (${convs.length}):\n${convs.map((c: any) => `- ${c.call_date || '?'} [${c.call_type}] "${c.title || 'Untitled'}": ${(c.ai_summary || 'No summary').substring(0, 200)}`).join('\n') || 'None'}\n\n` +
-
-      `MSP (${mspStages.length} steps):\n${mspStages.map((s: any) => `- Step ${s.stage_order}: [${s.status}] ${s.stage_name}${s.target_date ? ' (target: ' + s.target_date + ')' : ''}`).join('\n') || 'None'}\n\n` +
-
-      `EVIDENCE / SOURCES (${sources.length} total — ${researchSources.length} research, ${transcriptSources.length} transcript):\n` +
-      `Research Sources:\n${researchSources.slice(0, 25).map((s: any) => `- [${s.field_category}] ${s.summary || ''}${s.source_url ? ' → ' + s.source_url : ''}`).join('\n') || 'None'}\n` +
-      `Transcript Sources:\n${transcriptSources.slice(0, 25).map((s: any) => `- [${s.field_category}] ${s.speaker || '?'}: "${(s.quote || '').substring(0, 120)}" (${s.call_type} ${s.call_date || ''})`).join('\n') || 'None'}`;
-
-    // Build final system prompt: assembled coach layer FIRST, then chat mode rules, then deal context
     const systemPromptParts: string[] = [];
     if (assembledCoachPrompt) systemPromptParts.push(assembledCoachPrompt);
-    systemPromptParts.push(CHAT_SYSTEM_PROMPT);
-    systemPromptParts.push(dealContext);
+    systemPromptParts.push(systemPromptFor(ctxType));
+    if (dealContext) systemPromptParts.push(dealContext);
     const finalSystem = systemPromptParts.join('\n\n');
 
     const messages = (history || []).map((m: any) => ({ role: m.role, content: m.content }));
 
-    const claudeRes = await callClaudeWithRetry({ model, max_tokens: 4000, temperature: 0.3, system: finalSystem, tools: TOOLS, messages });
+    // Tools only available in deal context (mutations target the deal)
+    const useTools = ctxType === 'deal';
+
+    const claudeRes = await callClaudeWithRetry({
+      model, max_tokens: 4000, temperature: 0.3, system: finalSystem,
+      ...(useTools ? { tools: TOOLS } : {}),
+      messages,
+    });
 
     if (!claudeRes.ok) {
       const errText = await claudeRes.text();
-      return jsonResponse({ error: `v12: Claude API error: ${claudeRes.status}`, details: errText }, 500);
+      return jsonResponse({ error: `v13: Claude API error: ${claudeRes.status}`, details: errText }, 500);
     }
 
     const claudeData = await claudeRes.json();
@@ -257,13 +294,13 @@ Deno.serve(async (req: Request) => {
 
     for (const block of (claudeData.content || [])) {
       if (block.type === 'text') responseText += block.text;
-      else if (block.type === 'tool_use') {
+      else if (block.type === 'tool_use' && useTools && deal) {
         const toolResult = await executeTool(sb, deal_id, rep?.full_name || '', block.name, block.input);
         actionsTaken.push({ type: block.name, input: block.input, result: toolResult });
       }
     }
 
-    if (actionsTaken.length > 0 && claudeData.stop_reason === 'tool_use') {
+    if (useTools && actionsTaken.length > 0 && claudeData.stop_reason === 'tool_use') {
       const toolResultMessages = [...messages];
       toolResultMessages.push({ role: 'assistant', content: claudeData.content });
       const toolResults: any[] = [];
@@ -295,19 +332,17 @@ Deno.serve(async (req: Request) => {
       }).join('. ');
     }
 
-    await sb.from('deal_chat_messages').insert({ session_id: activeSessionId, deal_id, role: 'assistant', content: responseText, actions_taken: actionsTaken.length > 0 ? actionsTaken : [], ai_model_used: model, prompt_tokens: usage.input_tokens, completion_tokens: usage.output_tokens });
+    await sb.from('deal_chat_messages').insert({ session_id: activeSessionId, deal_id: ctxType === 'deal' ? deal_id : null, role: 'assistant', content: responseText, actions_taken: actionsTaken.length > 0 ? actionsTaken : [], ai_model_used: model, prompt_tokens: usage.input_tokens, completion_tokens: usage.output_tokens });
 
-    // Credits
     try {
-      const { data: repData } = await sb.from('profiles').select('org_id').eq('id', deal.rep_id).single();
-      if (repData?.org_id) { await sb.rpc('deduct_credits', { p_org_id: repData.org_id, p_user_id: deal.rep_id, p_amount: 1, p_type: 'chat', p_description: `Chat: ${deal.company_name}`, p_reference_id: null }); }
+      if (orgId) await sb.rpc('deduct_credits', { p_org_id: orgId, p_user_id: user_id || deal?.rep_id, p_amount: 1, p_type: 'chat', p_description: `Chat (${ctxType}): ${deal?.company_name || ctxType}`, p_reference_id: null });
     } catch (e) { console.log('Credit deduction failed:', e); }
 
-    return jsonResponse({ success: true, version: 'v12', session_id: activeSessionId, message: responseText, actions_taken: actionsTaken, tokens: { input: usage.input_tokens, output: usage.output_tokens } });
+    return jsonResponse({ success: true, version: 'v13', session_id: activeSessionId, context_type: ctxType, message: responseText, actions_taken: actionsTaken, tokens: { input: usage.input_tokens, output: usage.output_tokens } });
 
   } catch (err: any) {
-    console.error('deal-chat v12 error:', err);
-    return jsonResponse({ error: `v12: ${err.message}`, success: false }, 500);
+    console.error('deal-chat v13 error:', err);
+    return jsonResponse({ error: `v13: ${err.message}`, success: false }, 500);
   }
 });
 

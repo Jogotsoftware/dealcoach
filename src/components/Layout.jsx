@@ -5,7 +5,7 @@ import { useModules } from '../hooks/useModules'
 import { useOrg } from '../contexts/OrgContext'
 import { supabase } from '../lib/supabase'
 import { theme as T } from '../lib/theme'
-import BetaFeedbackButton from './BetaFeedbackButton'
+import GlobalChatbot from './GlobalChatbot'
 
 export default function Layout() {
   const { profile, signOut } = useAuth()
@@ -185,7 +185,7 @@ export default function Layout() {
         )}
         <Outlet />
       </div>
-      <BetaFeedbackButton />
+      <GlobalChatbot />
     </div>
   )
 }
