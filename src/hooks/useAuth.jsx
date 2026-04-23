@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { identify, reset as analyticsReset } from '../lib/analytics'
 
 const AuthContext = createContext({})
 
@@ -55,9 +56,13 @@ export function AuthProvider({ children }) {
           .select()
           .single()
 
-        if (!insertErr) setProfile(newProfile)
+        if (!insertErr) {
+          setProfile(newProfile)
+          identify(newProfile.id, { email: newProfile.email, org_id: newProfile.org_id, role: newProfile.role })
+        }
       } else if (data) {
         setProfile(data)
+        identify(data.id, { email: data.email, org_id: data.org_id, role: data.role })
       }
     } catch (err) {
       console.error('Error loading profile:', err)
@@ -84,6 +89,7 @@ export function AuthProvider({ children }) {
     await supabase.auth.signOut()
     setUser(null)
     setProfile(null)
+    analyticsReset()
   }
 
   return (

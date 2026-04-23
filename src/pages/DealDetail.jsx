@@ -5,6 +5,7 @@ import { theme as T, formatCurrency, formatDate, formatDateLong, daysUntil, STAG
 import { Card, Badge, ForecastBadge, StageBadge, ScoreBar, Field, StatusDot, TabBar, Button, EmptyState, Spinner, inputStyle, labelStyle } from '../components/Shared'
 import TranscriptUpload from '../components/TranscriptUpload'
 import { callGenerateEmail, callResearchFunction, reprocessDeal } from '../lib/webhooks'
+import { track } from '../lib/analytics'
 import DealChat from '../components/DealChat'
 import CompanyLogo from '../components/CompanyLogo'
 import SlideGenerator from '../components/SlideGenerator'
@@ -2142,6 +2143,7 @@ export default function DealDetail() {
                   submitted_by: profile?.id,
                 }).catch(() => {})
                 await supabase.from('deals').update({ stage: pendingStage }).eq('id', id)
+                track('deal_closed', { outcome: pendingStage, primary_reason: closeOutForm.primary_reason, deal_value: deal?.deal_value || null, cmrr: deal?.cmrr || null })
                 setDeal(p => ({ ...p, stage: pendingStage }))
                 setShowCloseOutModal(false)
                 setPendingStage(null)

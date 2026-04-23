@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { callResearchFunction } from '../lib/webhooks'
+import { track } from '../lib/analytics'
 import { theme as T, STAGES, FORECAST_CATEGORIES } from '../lib/theme'
 import { Button, Card, inputStyle, labelStyle } from '../components/Shared'
 
@@ -63,6 +64,8 @@ export default function NewDeal() {
           influence_level: 'Unknown',
         })
       }
+
+      track('deal_created', { stage: form.stage, forecast_category: form.forecast_category, deal_value: Number(form.deal_value) || null, cmrr: Number(form.cmrr) || null })
 
       // The DB trigger auto-creates company_profile and deal_analysis
       // Show toast and kick off research

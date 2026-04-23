@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { callProcessTranscript } from '../lib/webhooks'
+import { track } from '../lib/analytics'
 import { theme as T, CALL_TYPES } from '../lib/theme'
 import { Button, Badge, inputStyle, labelStyle } from './Shared'
 
@@ -57,6 +58,8 @@ export default function TranscriptUpload({ deals, onClose, onUploaded }) {
 
       if (convErr) throw convErr
 
+      track('transcript_uploaded', { call_type: form.call_type, source: file ? 'upload' : 'paste', size_chars: form.transcript.length })
+
       if (onUploaded) onUploaded(conv)
 
       // 2. Show processing state and send to Edge Function
@@ -66,6 +69,10 @@ export default function TranscriptUpload({ deals, onClose, onUploaded }) {
 
       const res = await callProcessTranscript(conv.id)
       setProcessing(false)
+
+      if (!res.error) {
+        track('transcript_processed', { call_type: form.call_type, commitments_created: res.commitments_created || 0, contacts_found: res.contacts_found || 0, icp_score: res.icp_score || null })
+      }
 
       if (res.error) {
         setResult({

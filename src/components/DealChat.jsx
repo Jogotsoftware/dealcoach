@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { callDealChat } from '../lib/webhooks'
+import { track } from '../lib/analytics'
 import { theme as T } from '../lib/theme'
 
 const SUGGESTIONS = [
@@ -114,6 +115,7 @@ export default function DealChat({ dealId, userId, isOpen, onClose, onAction }) 
     if (!userMsg || sending) return
     setInput('')
     setSending(true)
+    track('chatbot_message_sent', { context_type: 'deal', deal_id: dealId, message_length: userMsg.length })
     setMessages(prev => [...prev, { role: 'user', content: userMsg, created_at: new Date().toISOString() }])
 
     const res = await callDealChat(dealId, sessionId, userMsg, userId)

@@ -66,6 +66,7 @@ export default function Pipeline() {
   const [deals, setDeals] = useState([])
   const [tasks, setTasks] = useState([])
   const [coachingSummary, setCoachingSummary] = useState(null)
+  const [orgBenchmarks, setOrgBenchmarks] = useState(null)
   const [activity, setActivity] = useState([])
   const [quota, setQuota] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -74,7 +75,13 @@ export default function Pipeline() {
   // Filters
   const [dealFilter, setDealFilter] = useState('my')
   const [forecastPeriod, setForecastPeriod] = useState('full')
-  const [pipelineView, setPipelineView] = useState('kanban')
+  const [pipelineView, setPipelineViewState] = useState(() => {
+    try { return localStorage.getItem('ri_pipeline_view') || 'kanban' } catch { return 'kanban' }
+  })
+  const setPipelineView = (v) => {
+    setPipelineViewState(v)
+    try { localStorage.setItem('ri_pipeline_view', v) } catch {}
+  }
   const [selectedForecast, setSelectedForecast] = useState(null)
   const [taskFilter, setTaskFilter] = useState('all')
   const [sort, setSort] = useState('deal_value')
@@ -112,7 +119,7 @@ export default function Pipeline() {
         supabase.from('tasks').select('*, deals(company_name)'),
         supabase.from('rep_quotas').select('*').eq('rep_id', profile.id).limit(1),
         supabase.from('rep_coaching_summary').select('*').eq('user_id', profile.id).single(),
-        supabase.from('ai_response_log').select('response_type, status, created_at, deal_id').eq('triggered_by', profile.id).order('created_at', { ascending: false }).limit(15),
+        supabase.from('ai_response_log').select('response_type, status, created_at, deal_id, conversation_id, conversations(call_type, call_date)').eq('triggered_by', profile.id).order('created_at', { ascending: false }).limit(15),
       ])
       setDeals(dealsRes.data || [])
       setTasks(tasksRes.data || [])
@@ -123,6 +130,34 @@ export default function Pipeline() {
       if (profile?.org_id) {
         const { data: cwds } = await supabase.from('custom_widget_definitions').select('*').eq('org_id', profile.org_id).eq('widget_type', 'pipeline').eq('active', true)
         setCustomWidgetDefs(cwds || [])
+
+        // Org-wide scoreboard benchmarks (only when org has >=2 reps)
+        const { data: orgReps } = await supabase.from('profiles').select('id').eq('org_id', profile.org_id)
+        if (orgReps && orgReps.length >= 2) {
+          const [{ data: orgDeals }, { data: orgSummaries }] = await Promise.all([
+            supabase.from('deals').select('fit_score, deal_health_score, stage').eq('org_id', profile.org_id),
+            supabase.from('rep_coaching_summary').select('score_averages').in('user_id', orgReps.map(r => r.id)),
+          ])
+          const activeOrgDeals = (orgDeals || []).filter(d => !TERMINAL_STAGES.includes(d.stage))
+          const avg = (arr, key) => {
+            const vals = arr.map(x => x[key]).filter(v => v != null && !isNaN(v))
+            return vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : null
+          }
+          const scoreKeys = ['discovery_depth_score', 'curiosity_score', 'challenger_score', 'value_articulation_score', 'next_steps_quality_score']
+          const coachingAvgs = {}
+          for (const k of scoreKeys) {
+            const vals = (orgSummaries || []).map(s => s.score_averages?.[k]).filter(v => v != null && !isNaN(v))
+            if (vals.length) coachingAvgs[k] = vals.reduce((s, v) => s + v, 0) / vals.length
+          }
+          setOrgBenchmarks({
+            fit: avg(activeOrgDeals, 'fit_score'),
+            health: avg(activeOrgDeals, 'deal_health_score'),
+            coaching: coachingAvgs,
+            repCount: orgReps.length,
+          })
+        } else {
+          setOrgBenchmarks(null)
+        }
       }
     } catch (err) { console.error('Error loading pipeline:', err) }
     finally { setLoading(false) }
@@ -440,37 +475,55 @@ export default function Pipeline() {
     const avgHealth = active.filter(d => d.deal_health_score).length ? active.reduce((s, d) => s + (d.deal_health_score || 0), 0) / active.filter(d => d.deal_health_score).length : 0
     const sa = coachingSummary?.score_averages || {}
     const st = coachingSummary?.score_trends || {}
-    function ScoreRow({ label, value, max, trend }) {
+    const bm = orgBenchmarks
+    function ScoreRow({ label, value, max, trend, orgAvg }) {
       if (value == null || isNaN(value)) return null
       const pct = Math.min(100, (value / max) * 100)
       const c = value / max >= 0.7 ? '#27ae60' : value / max >= 0.5 ? '#f39c12' : '#e74c3c'
       const arrow = trend?.direction === 'up' ? ' \u2191' : trend?.direction === 'down' ? ' \u2193' : ''
       const ac = trend?.direction === 'up' ? '#27ae60' : trend?.direction === 'down' ? '#e74c3c' : T.textMuted
+      const delta = orgAvg != null && !isNaN(orgAvg) ? value - orgAvg : null
+      const deltaColor = delta == null ? T.textMuted : delta > 0.5 ? '#27ae60' : delta < -0.5 ? '#e74c3c' : T.textMuted
+      const orgPct = orgAvg != null ? Math.min(100, (orgAvg / max) * 100) : null
       return (
         <div style={{ marginBottom: 6 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 2 }}>
             <span style={{ fontWeight: 600 }}>{label}</span>
-            <span style={{ fontWeight: 800, color: c }}>{(Math.round(value * 10) / 10)}/{max}{arrow && <span style={{ color: ac, marginLeft: 4 }}>{arrow}</span>}</span>
+            <span>
+              <span style={{ fontWeight: 800, color: c }}>{(Math.round(value * 10) / 10)}/{max}</span>
+              {arrow && <span style={{ color: ac, marginLeft: 4 }}>{arrow}</span>}
+              {delta != null && (
+                <span style={{ color: deltaColor, fontSize: 10, marginLeft: 6 }}>
+                  {delta > 0 ? '+' : ''}{(Math.round(delta * 10) / 10)} vs org
+                </span>
+              )}
+            </span>
           </div>
-          <div style={{ background: T.border, borderRadius: 4, height: 6, overflow: 'hidden' }}>
+          <div style={{ background: T.border, borderRadius: 4, height: 6, overflow: 'hidden', position: 'relative' }}>
             <div style={{ width: pct + '%', height: '100%', background: c, borderRadius: 4 }} />
+            {orgPct != null && (
+              <div title={`Org avg: ${(Math.round(orgAvg * 10) / 10)}/${max}`} style={{ position: 'absolute', left: orgPct + '%', top: -1, bottom: -1, width: 2, background: T.textMuted }} />
+            )}
           </div>
         </div>
       )
     }
     return (
       <div>
-        <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', marginBottom: 8 }}>Deal Averages</div>
-        <ScoreRow label="Fit Score" value={avgFit} max={10} />
-        <ScoreRow label="Deal Health" value={avgHealth} max={10} />
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase' }}>Deal Averages</div>
+          {bm && <div style={{ fontSize: 9, color: T.textMuted }}>| tick = org avg ({bm.repCount} reps)</div>}
+        </div>
+        <ScoreRow label="Fit Score" value={avgFit} max={10} orgAvg={bm?.fit} />
+        <ScoreRow label="Deal Health" value={avgHealth} max={10} orgAvg={bm?.health} />
         {Object.keys(sa).length > 0 && (
           <>
             <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', marginTop: 12, marginBottom: 8 }}>Coaching Averages</div>
-            <ScoreRow label="Discovery Depth" value={sa.discovery_depth_score} max={10} trend={st?.discovery_depth_score} />
-            <ScoreRow label="Curiosity" value={sa.curiosity_score} max={10} trend={st?.curiosity_score} />
-            <ScoreRow label="Challenger" value={sa.challenger_score} max={10} trend={st?.challenger_score} />
-            <ScoreRow label="Value Articulation" value={sa.value_articulation_score} max={10} trend={st?.value_articulation_score} />
-            <ScoreRow label="Next Steps Quality" value={sa.next_steps_quality_score} max={10} trend={st?.next_steps_quality_score} />
+            <ScoreRow label="Discovery Depth" value={sa.discovery_depth_score} max={10} trend={st?.discovery_depth_score} orgAvg={bm?.coaching?.discovery_depth_score} />
+            <ScoreRow label="Curiosity" value={sa.curiosity_score} max={10} trend={st?.curiosity_score} orgAvg={bm?.coaching?.curiosity_score} />
+            <ScoreRow label="Challenger" value={sa.challenger_score} max={10} trend={st?.challenger_score} orgAvg={bm?.coaching?.challenger_score} />
+            <ScoreRow label="Value Articulation" value={sa.value_articulation_score} max={10} trend={st?.value_articulation_score} orgAvg={bm?.coaching?.value_articulation_score} />
+            <ScoreRow label="Next Steps Quality" value={sa.next_steps_quality_score} max={10} trend={st?.next_steps_quality_score} orgAvg={bm?.coaching?.next_steps_quality_score} />
           </>
         )}
       </div>
@@ -554,7 +607,14 @@ export default function Pipeline() {
           return (
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', borderBottom: '1px solid ' + T.borderLight, fontSize: 12 }}>
               <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 3, whiteSpace: 'nowrap', background: (typeColors[a.response_type] || '#8899aa') + '20', color: typeColors[a.response_type] || '#8899aa' }}>{typeLabels[a.response_type] || a.response_type}</span>
-              <span style={{ flex: 1, color: T.text }}>{deal?.company_name || 'Unknown deal'}</span>
+              <span style={{ flex: 1, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {deal?.company_name || 'Unknown deal'}
+                {a.response_type === 'transcript_analysis' && a.conversations?.call_type && (
+                  <span style={{ fontSize: 10, color: T.textMuted, marginLeft: 6 }}>
+                    &middot; {a.conversations.call_type}{a.conversations.call_date ? ' ' + new Date(a.conversations.call_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''}
+                  </span>
+                )}
+              </span>
               <span style={{ fontSize: 10, color: T.textMuted, whiteSpace: 'nowrap' }}>{timeStr}</span>
             </div>
           )
