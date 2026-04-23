@@ -14,6 +14,7 @@ export default function Layout() {
   const navigate = useNavigate()
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false)
   const [sidebarExpanded, setSidebarExpanded] = useState(false)
+  const [showUserMenu, setShowUserMenu] = useState(false)
 
   useEffect(() => {
     if (profile?.id) {
@@ -117,42 +118,56 @@ export default function Layout() {
         </div>
 
         {/* User footer */}
-        <div style={{
-          padding: sidebarExpanded ? '12px 16px' : '12px 12px',
-          borderTop: '1px solid #1a1f2e',
-          display: 'flex', alignItems: 'center', gap: 10,
-          overflow: 'hidden', whiteSpace: 'nowrap',
-        }}>
-          <div style={{
-            width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
-            background: 'rgba(93,173,226,0.15)', border: '1px solid rgba(93,173,226,0.25)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 12, fontWeight: 700, color: T.primary,
-          }}>
-            {initials}
-          </div>
-          {sidebarExpanded && (
+        <div style={{ position: 'relative' }}>
+          {showUserMenu && (
             <>
+              <div style={{ position: 'fixed', inset: 0, zIndex: 998 }} onClick={() => setShowUserMenu(false)} />
+              <div style={{
+                position: 'absolute', bottom: '100%', left: 8, right: 8, marginBottom: 4, zIndex: 999,
+                background: '#1a1f2e', border: '1px solid #2a3040', borderRadius: 8,
+                boxShadow: '0 -4px 16px rgba(0,0,0,0.4)', padding: 4,
+              }}>
+                <button onClick={() => { navigate('/settings'); setShowUserMenu(false) }} style={{
+                  display: 'block', width: '100%', padding: '8px 12px', textAlign: 'left',
+                  background: 'none', border: 'none', borderRadius: 4, cursor: 'pointer',
+                  fontSize: 12, color: '#ccc', fontFamily: T.font,
+                }} onMouseEnter={e => e.currentTarget.style.background = '#252a3a'} onMouseLeave={e => e.currentTarget.style.background = 'none'}>Settings</button>
+                <button onClick={handleSignOut} style={{
+                  display: 'block', width: '100%', padding: '8px 12px', textAlign: 'left',
+                  background: 'none', border: 'none', borderRadius: 4, cursor: 'pointer',
+                  fontSize: 12, color: '#e74c3c', fontFamily: T.font,
+                }} onMouseEnter={e => e.currentTarget.style.background = '#252a3a'} onMouseLeave={e => e.currentTarget.style.background = 'none'}>Sign out</button>
+              </div>
+            </>
+          )}
+          <div
+            onClick={() => setShowUserMenu(!showUserMenu)}
+            style={{
+              padding: sidebarExpanded ? '12px 16px' : '12px 12px',
+              borderTop: '1px solid #1a1f2e',
+              display: 'flex', alignItems: 'center', gap: 10,
+              overflow: 'hidden', whiteSpace: 'nowrap',
+              cursor: 'pointer', transition: 'background 0.15s',
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = '#151820'}
+            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+          >
+            <div style={{
+              width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
+              background: 'rgba(93,173,226,0.15)', border: '1px solid rgba(93,173,226,0.25)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 12, fontWeight: 700, color: T.primary,
+            }}>
+              {initials}
+            </div>
+            {sidebarExpanded && (
               <div style={{ flex: 1, overflow: 'hidden' }}>
                 <div style={{ fontSize: 12, fontWeight: 600, color: '#e0e0e0', overflow: 'hidden', textOverflow: 'ellipsis' }}>{profile?.full_name || 'Loading...'}</div>
                 <div style={{ fontSize: 10, color: '#667788', overflow: 'hidden', textOverflow: 'ellipsis' }}>{profile?.email || ''}</div>
                 {credits && <div style={{ fontSize: 10, color: '#667788', marginTop: 2 }}>{credits.balance ?? 0} credits</div>}
               </div>
-              <button
-                onClick={handleSignOut}
-                title="Sign out"
-                style={{
-                  background: 'none', border: 'none', cursor: 'pointer',
-                  fontSize: 14, color: '#667788', padding: 4, lineHeight: 1,
-                  flexShrink: 0,
-                }}
-                onMouseEnter={e => e.currentTarget.style.color = '#e74c3c'}
-                onMouseLeave={e => e.currentTarget.style.color = '#667788'}
-              >
-                &#x2715;
-              </button>
-            </>
-          )}
+            )}
+          </div>
         </div>
       </aside>
 
