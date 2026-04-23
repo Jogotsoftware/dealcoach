@@ -142,6 +142,50 @@ export default function ProposalBuilder() {
     setProblems(prev => [...prev, ...imported])
   }
 
+  const [generating, setGenerating] = useState(false)
+  async function generateFromDeal() {
+    setGenerating(true)
+    try {
+      // Pull coach value_propositions + outcome benefits to synthesize solutions
+      const coachId = deal?.coach_id
+      let valueProps = ''
+      if (coachId) {
+        const { data: coach } = await supabase.from('coaches').select('value_propositions').eq('id', coachId).single()
+        valueProps = coach?.value_propositions || ''
+      }
+      const propBullets = valueProps.split(/\n+|[•\-]\s+/).map(s => s.trim()).filter(Boolean)
+
+      // Build problems from pain_points (ordered by annual_cost desc)
+      const newProblems = painPoints.map(p => ({
+        problem: p.pain_description || '',
+        impact: p.business_impact || '',
+        annual_cost: Number(p.annual_cost) || 0,
+      }))
+
+      // Build solutions — one per problem; round-robin through coach value props
+      const newSolutions = newProblems.map((p, i) => ({
+        solution: propBullets[i % Math.max(propBullets.length, 1)] || 'Address this with our platform',
+        benefit: p.impact ? `Eliminates: ${p.impact}` : '',
+        mapped_problem_idx: i,
+      }))
+
+      setProblems(newProblems)
+      setSolutions(newSolutions)
+
+      // Seed executive summary from deal context if empty
+      if (!execSummary) {
+        const co = deal?.company_name || 'The company'
+        const painsSummary = newProblems.slice(0, 3).map(p => p.problem).filter(Boolean).join('; ')
+        const summaryText = painsSummary
+          ? `${co} is addressing: ${painsSummary}. This proposal outlines how ${vendorName} resolves these challenges and delivers measurable outcomes.`
+          : `${co} has engaged ${vendorName} to modernize their operations. This proposal outlines the solutions, outcomes, and investment.`
+        setExecSummary(summaryText)
+      }
+    } finally {
+      setGenerating(false)
+    }
+  }
+
   // ── Calculations ──
   const autoTotalImpact = useMemo(() =>
     problems.reduce((s, p) => s + (Number(p.annual_cost) || 0), 0),
@@ -315,6 +359,7 @@ export default function ProposalBuilder() {
                 <div style={{ padding: '12px 18px', borderBottom: `1px solid ${T.border}`, background: T.surfaceAlt, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>Problems / Challenges</span>
                   <div style={{ display: 'flex', gap: 4 }}>
+                    <Button primary style={{ padding: '3px 8px', fontSize: 10 }} onClick={generateFromDeal} disabled={generating}>{generating ? 'Generating...' : 'Generate from deal'}</Button>
                     <Button style={{ padding: '3px 8px', fontSize: 10 }} onClick={importFromPainPoints}>Import Pain Points</Button>
                     <Button style={{ padding: '3px 8px', fontSize: 10 }} onClick={importFromInsights}>Import Insights</Button>
                     <Button style={{ padding: '3px 8px', fontSize: 10 }} onClick={addProblem}>+ Add</Button>
@@ -414,6 +459,40 @@ export default function ProposalBuilder() {
               </div>
             </div>
 
+            {/* Primary Quote — inline preview */}
+            {primaryQuote && quoteLineItems.length > 0 && (
+              <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.radius, boxShadow: T.shadow, marginBottom: 16, overflow: 'hidden' }}>
+                <div style={{ padding: '12px 18px', borderBottom: `1px solid ${T.border}`, background: T.surfaceAlt, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>Primary Quote — {primaryQuote.name || 'Quote'}</span>
+                  <Button style={{ padding: '3px 10px', fontSize: 10 }} onClick={() => navigate(`/deal/${dealId}/quote/${primaryQuote.id}`)}>Open quote</Button>
+                </div>
+                <div style={{ padding: 14 }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                    <thead>
+                      <tr style={{ borderBottom: `1px solid ${T.border}` }}>
+                        <th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 10, color: T.textMuted, textTransform: 'uppercase' }}>Product</th>
+                        <th style={{ textAlign: 'right', padding: '6px 8px', fontSize: 10, color: T.textMuted, textTransform: 'uppercase' }}>Qty</th>
+                        <th style={{ textAlign: 'right', padding: '6px 8px', fontSize: 10, color: T.textMuted, textTransform: 'uppercase' }}>Net Price</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {quoteLineItems.map(li => (
+                        <tr key={li.id} style={{ borderBottom: `1px solid ${T.borderLight}` }}>
+                          <td style={{ padding: '6px 8px', fontWeight: 600 }}>{li.products?.product_name || li.product_name || '—'}</td>
+                          <td style={{ padding: '6px 8px', textAlign: 'right', fontFeatureSettings: '"tnum"' }}>{li.quantity}</td>
+                          <td style={{ padding: '6px 8px', textAlign: 'right', fontFeatureSettings: '"tnum"' }}>{formatCurrency(li.net_price || 0)}</td>
+                        </tr>
+                      ))}
+                      <tr style={{ background: T.surfaceAlt }}>
+                        <td style={{ padding: '6px 8px', fontWeight: 700 }} colSpan={2}>ARR</td>
+                        <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700, fontFeatureSettings: '"tnum"', color: T.primary }}>{formatCurrency(primaryQuote.arr || quoteInvestment)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
             {/* Financial Summary */}
             <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.radius, boxShadow: T.shadow, marginBottom: 16, overflow: 'hidden' }}>
               <div style={{ padding: '12px 18px', borderBottom: `1px solid ${T.border}`, background: T.surfaceAlt }}>
@@ -454,6 +533,60 @@ export default function ProposalBuilder() {
                 </div>
               </div>
             </div>
+
+            {/* TCO / Payback Clarity */}
+            {(tcoBreakdown.length > 0 || (autoTotalImpact > 0 && quoteInvestment > 0)) && (
+              <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.radius, boxShadow: T.shadow, marginBottom: 16, overflow: 'hidden' }}>
+                <div style={{ padding: '12px 18px', borderBottom: `1px solid ${T.border}`, background: T.surfaceAlt }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>TCO & Payback</span>
+                </div>
+                <div style={{ padding: 18, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
+                  {(() => {
+                    const tcoTotal = tcoBreakdown.reduce((s, r) => s + (Number(r.total_cost) || 0), 0)
+                    const paybackMonths = (autoTotalImpact > 0 && quoteInvestment > 0) ? Math.ceil((quoteInvestment / autoTotalImpact) * 12) : null
+                    const netValue3yr = autoTotalImpact > 0 ? (autoTotalImpact * 3) - (tcoTotal || quoteInvestment * 3) : null
+                    return (
+                      <>
+                        <div>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', marginBottom: 4 }}>3-Year TCO</div>
+                          <div style={{ fontSize: 18, fontWeight: 800, color: T.text, fontFeatureSettings: '"tnum"' }}>{tcoTotal > 0 ? formatCurrency(tcoTotal) : (quoteInvestment > 0 ? formatCurrency(quoteInvestment * 3) + ' est.' : '—')}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', marginBottom: 4 }}>Payback Period</div>
+                          <div style={{ fontSize: 18, fontWeight: 800, color: paybackMonths && paybackMonths <= 12 ? T.success : T.text, fontFeatureSettings: '"tnum"' }}>{paybackMonths ? `${paybackMonths} month${paybackMonths === 1 ? '' : 's'}` : '—'}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', marginBottom: 4 }}>3-Year Net Value</div>
+                          <div style={{ fontSize: 18, fontWeight: 800, color: netValue3yr && netValue3yr > 0 ? T.success : T.error, fontFeatureSettings: '"tnum"' }}>{netValue3yr != null ? formatCurrency(netValue3yr) : '—'}</div>
+                        </div>
+                      </>
+                    )
+                  })()}
+                </div>
+                {tcoBreakdown.length > 0 && (
+                  <div style={{ padding: '0 18px 14px' }}>
+                    <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr style={{ borderBottom: `1px solid ${T.border}` }}>
+                          <th style={{ textAlign: 'left', padding: '4px 8px', color: T.textMuted, textTransform: 'uppercase' }}>Year</th>
+                          <th style={{ textAlign: 'left', padding: '4px 8px', color: T.textMuted, textTransform: 'uppercase' }}>Cost Category</th>
+                          <th style={{ textAlign: 'right', padding: '4px 8px', color: T.textMuted, textTransform: 'uppercase' }}>Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {tcoBreakdown.map(r => (
+                          <tr key={r.id} style={{ borderBottom: `1px solid ${T.borderLight}` }}>
+                            <td style={{ padding: '4px 8px' }}>Y{r.year_number}</td>
+                            <td style={{ padding: '4px 8px' }}>{r.cost_category || '—'}</td>
+                            <td style={{ padding: '4px 8px', textAlign: 'right', fontFeatureSettings: '"tnum"' }}>{formatCurrency(Number(r.total_cost) || 0)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 

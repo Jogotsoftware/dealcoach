@@ -350,25 +350,34 @@ function OrganizationsTab() {
 function UsersTab() {
   const [users, setUsers] = useState([])
   const [orgs, setOrgs] = useState([])
+  const [moduleOverrides, setModuleOverrides] = useState({})
   const [loading, setLoading] = useState(true)
   const [editingId, setEditingId] = useState(null)
   const [editData, setEditData] = useState({})
   const [showInvite, setShowInvite] = useState(false)
   const [invite, setInvite] = useState({ email: '', name: '', org_id: '', role: 'rep', message: '' })
   const [invitations, setInvitations] = useState([])
+  const [sortCol, setSortCol] = useState('created_at')
+  const [sortDir, setSortDir] = useState('desc')
 
   useEffect(() => { loadUsers() }, [])
 
   async function loadUsers() {
     setLoading(true)
-    const [usersRes, orgsRes, invRes] = await Promise.all([
+    const [usersRes, orgsRes, invRes, modRes] = await Promise.all([
       supabase.from('profiles').select('*'),
       supabase.from('organizations').select('id, name'),
       supabase.from('invitations').select('*, organizations(name)').eq('status', 'pending').order('created_at', { ascending: false }),
+      supabase.from('user_module_access').select('user_id'),
     ])
     setUsers(usersRes.data || [])
     setOrgs(orgsRes.data || [])
     setInvitations(invRes.data || [])
+    const overrides = {}
+    for (const m of (modRes.data || [])) {
+      overrides[m.user_id] = (overrides[m.user_id] || 0) + 1
+    }
+    setModuleOverrides(overrides)
     setLoading(false)
   }
 
@@ -377,6 +386,33 @@ function UsersTab() {
     setEditingId(null)
     loadUsers()
   }
+
+  async function updateRole(userId, role) {
+    await supabase.from('profiles').update({ role }).eq('id', userId)
+    loadUsers()
+  }
+
+  function toggleSort(col) {
+    if (sortCol === col) setSortDir(sortDir === 'asc' ? 'desc' : 'asc')
+    else { setSortCol(col); setSortDir('asc') }
+  }
+
+  const sortedUsers = [...users].sort((a, b) => {
+    let av, bv
+    if (sortCol === 'org') {
+      av = (orgs.find(o => o.id === a.org_id)?.name || '').toLowerCase()
+      bv = (orgs.find(o => o.id === b.org_id)?.name || '').toLowerCase()
+    } else if (sortCol === 'modules') {
+      av = moduleOverrides[a.id] || 0
+      bv = moduleOverrides[b.id] || 0
+    } else {
+      av = (a[sortCol] || '').toString().toLowerCase()
+      bv = (b[sortCol] || '').toString().toLowerCase()
+    }
+    if (av < bv) return sortDir === 'asc' ? -1 : 1
+    if (av > bv) return sortDir === 'asc' ? 1 : -1
+    return 0
+  })
 
   async function sendInvite() {
     if (!invite.email.trim()) return
@@ -443,15 +479,26 @@ function UsersTab() {
       <table style={{ width: '100%', borderCollapse: 'collapse', background: T.surface, border: `1px solid ${T.border}` }}>
         <thead>
           <tr>
-            {['Name', 'Email', 'Organization', 'Role', 'Created', ''].map(h => (
-              <th key={h} style={thStyle}>{h}</th>
+            {[
+              { key: 'full_name', label: 'Name' },
+              { key: 'email', label: 'Email' },
+              { key: 'org', label: 'Company' },
+              { key: 'role', label: 'Role' },
+              { key: 'modules', label: 'Modules' },
+              { key: 'created_at', label: 'Created' },
+              { key: null, label: '' },
+            ].map(h => (
+              <th key={h.label} style={{ ...thStyle, cursor: h.key ? 'pointer' : 'default', userSelect: 'none' }} onClick={() => h.key && toggleSort(h.key)}>
+                {h.label}{h.key && sortCol === h.key ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
+              </th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {users.map(u => {
+          {sortedUsers.map(u => {
             const org = orgs.find(o => o.id === u.org_id)
             const isEditing = editingId === u.id
+            const modCount = moduleOverrides[u.id] || 0
 
             return isEditing ? (
               <tr key={u.id} style={{ background: T.primaryLight }}>
@@ -468,6 +515,7 @@ function UsersTab() {
                     {['rep', 'manager', 'admin', 'system_admin'].map(r => <option key={r} value={r}>{r}</option>)}
                   </select>
                 </td>
+                <td style={cellStyle}>{modCount > 0 ? `${modCount} override${modCount === 1 ? '' : 's'}` : <span style={{ color: T.textMuted, fontSize: 11 }}>Plan default</span>}</td>
                 <td style={cellStyle}></td>
                 <td style={cellStyle}>
                   <Button primary onClick={saveEdit} style={{ padding: '4px 10px', fontSize: 11 }}>Save</Button>
@@ -475,12 +523,24 @@ function UsersTab() {
                 </td>
               </tr>
             ) : (
-              <tr key={u.id} onClick={() => { setEditingId(u.id); setEditData({ role: u.role || 'rep', org_id: u.org_id || '' }) }} style={{ cursor: 'pointer' }}>
-                <td style={cellStyle}><span style={{ fontWeight: 600 }}>{u.full_name}</span></td>
-                <td style={{ ...cellStyle, color: T.textMuted }}>{u.email}</td>
-                <td style={cellStyle}>{org?.name || <span style={{ color: T.textMuted }}>--</span>}</td>
-                <td style={cellStyle}><Badge color={u.role === 'system_admin' ? T.error : u.role === 'admin' ? T.warning : T.primary}>{u.role || 'rep'}</Badge></td>
-                <td style={{ ...cellStyle, color: T.textMuted, fontSize: 11 }}>{formatDate(u.created_at?.split('T')[0])}</td>
+              <tr key={u.id} style={{ cursor: 'pointer' }}>
+                <td style={cellStyle} onClick={() => { setEditingId(u.id); setEditData({ role: u.role || 'rep', org_id: u.org_id || '' }) }}><span style={{ fontWeight: 600 }}>{u.full_name}</span></td>
+                <td style={{ ...cellStyle, color: T.textMuted }} onClick={() => { setEditingId(u.id); setEditData({ role: u.role || 'rep', org_id: u.org_id || '' }) }}>{u.email}</td>
+                <td style={cellStyle} onClick={() => { setEditingId(u.id); setEditData({ role: u.role || 'rep', org_id: u.org_id || '' }) }}>{org?.name || <span style={{ color: T.textMuted }}>--</span>}</td>
+                <td style={cellStyle}>
+                  <select
+                    value={u.role || 'rep'}
+                    onClick={e => e.stopPropagation()}
+                    onChange={e => updateRole(u.id, e.target.value)}
+                    style={{ ...smallInput, padding: '3px 6px', fontSize: 11, width: 'auto' }}
+                  >
+                    {['rep', 'manager', 'admin', 'system_admin'].map(r => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                </td>
+                <td style={cellStyle} onClick={() => { setEditingId(u.id); setEditData({ role: u.role || 'rep', org_id: u.org_id || '' }) }}>
+                  {modCount > 0 ? <Badge color={T.primary}>{modCount} override{modCount === 1 ? '' : 's'}</Badge> : <span style={{ color: T.textMuted, fontSize: 11 }}>Plan default</span>}
+                </td>
+                <td style={{ ...cellStyle, color: T.textMuted, fontSize: 11 }} onClick={() => { setEditingId(u.id); setEditData({ role: u.role || 'rep', org_id: u.org_id || '' }) }}>{formatDate(u.created_at?.split('T')[0])}</td>
                 <td style={cellStyle}></td>
               </tr>
             )
@@ -899,21 +959,50 @@ function ModulesTab() {
 // ==================== TAB 7: USAGE ====================
 function UsageTab() {
   const [logs, setLogs] = useState([])
+  const [orgs, setOrgs] = useState([])
   const [loading, setLoading] = useState(true)
+  const [range, setRange] = useState('30d')
+  const [sortCol, setSortCol] = useState('total_tokens')
 
-  useEffect(() => { loadUsage() }, [])
+  useEffect(() => { loadUsage() }, [range])
 
   async function loadUsage() {
     setLoading(true)
-    const { data } = await supabase.from('ai_response_log')
-      .select('response_type, status, created_at')
-      .order('created_at', { ascending: false })
-      .limit(500)
-    setLogs(data || [])
+    let since = null
+    if (range === '7d') since = new Date(Date.now() - 7 * 86400000).toISOString()
+    else if (range === '30d') since = new Date(Date.now() - 30 * 86400000).toISOString()
+    const [logsRes, orgsRes] = await Promise.all([
+      (since
+        ? supabase.from('ai_response_log').select('response_type, status, created_at, prompt_tokens, completion_tokens, deal_id').gte('created_at', since).order('created_at', { ascending: false })
+        : supabase.from('ai_response_log').select('response_type, status, created_at, prompt_tokens, completion_tokens, deal_id').order('created_at', { ascending: false }).limit(5000)),
+      supabase.from('deals').select('id, org_id, organizations(name)'),
+    ])
+    setLogs(logsRes.data || [])
+    setOrgs(orgsRes.data || [])
     setLoading(false)
   }
 
   if (loading) return <Spinner />
+
+  // Build deal_id → org_name map
+  const dealToOrg = {}
+  orgs.forEach(d => { dealToOrg[d.id] = d.organizations?.name || 'Unknown' })
+
+  // Group by org × response_type × status
+  const grouped = {}
+  logs.forEach(l => {
+    const org = dealToOrg[l.deal_id] || 'Unknown'
+    const key = `${org}|${l.response_type || 'unknown'}`
+    if (!grouped[key]) grouped[key] = { org, response_type: l.response_type || 'unknown', count: 0, prompt_tokens: 0, completion_tokens: 0, completed: 0, failed: 0, processing: 0 }
+    grouped[key].count++
+    grouped[key].prompt_tokens += Number(l.prompt_tokens) || 0
+    grouped[key].completion_tokens += Number(l.completion_tokens) || 0
+    if (l.status === 'completed' || l.status === 'success') grouped[key].completed++
+    else if (l.status === 'failed' || l.status === 'error') grouped[key].failed++
+    else grouped[key].processing++
+  })
+  const rows = Object.values(grouped).map(r => ({ ...r, total_tokens: r.prompt_tokens + r.completion_tokens }))
+    .sort((a, b) => (b[sortCol] || 0) - (a[sortCol] || 0))
 
   const byType = {}
   const byStatus = { success: 0, failed: 0, pending: 0 }
@@ -926,6 +1015,58 @@ function UsageTab() {
 
   return (
     <div>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+        {['7d', '30d', 'all'].map(r => (
+          <button key={r} onClick={() => setRange(r)}
+            style={{ padding: '4px 12px', fontSize: 11, fontWeight: 600, borderRadius: 4, border: `1px solid ${range === r ? T.primary : T.border}`, background: range === r ? T.primary : T.surface, color: range === r ? '#fff' : T.textSecondary, cursor: 'pointer', fontFamily: T.font }}>
+            {r === '7d' ? 'Last 7 days' : r === '30d' ? 'Last 30 days' : 'All time'}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.radius, padding: 16, marginBottom: 24 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>By Org × Response Type</div>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+          <thead>
+            <tr style={{ borderBottom: `2px solid ${T.border}` }}>
+              {[
+                { key: 'org', label: 'Org' },
+                { key: 'response_type', label: 'Type' },
+                { key: 'count', label: 'Calls', align: 'right' },
+                { key: 'prompt_tokens', label: 'Prompt tok.', align: 'right' },
+                { key: 'completion_tokens', label: 'Comp. tok.', align: 'right' },
+                { key: 'total_tokens', label: 'Total tok.', align: 'right' },
+                { key: 'completed', label: '✓', align: 'right' },
+                { key: 'failed', label: '✗', align: 'right' },
+                { key: 'processing', label: '⋯', align: 'right' },
+              ].map(c => (
+                <th key={c.key} onClick={() => setSortCol(c.key)}
+                  style={{ textAlign: c.align || 'left', padding: '6px 8px', fontSize: 10, fontWeight: 700, color: sortCol === c.key ? T.primary : T.textMuted, textTransform: 'uppercase', cursor: 'pointer' }}>
+                  {c.label}{sortCol === c.key ? ' ↓' : ''}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr><td colSpan={9} style={{ textAlign: 'center', padding: 20, color: T.textMuted }}>No usage in range</td></tr>
+            ) : rows.map((r, i) => (
+              <tr key={i} style={{ borderBottom: `1px solid ${T.borderLight}` }}>
+                <td style={{ padding: '6px 8px', fontWeight: 600 }}>{r.org}</td>
+                <td style={{ padding: '6px 8px' }}>{r.response_type}</td>
+                <td style={{ padding: '6px 8px', textAlign: 'right', fontFeatureSettings: '"tnum"' }}>{r.count.toLocaleString()}</td>
+                <td style={{ padding: '6px 8px', textAlign: 'right', fontFeatureSettings: '"tnum"' }}>{r.prompt_tokens.toLocaleString()}</td>
+                <td style={{ padding: '6px 8px', textAlign: 'right', fontFeatureSettings: '"tnum"' }}>{r.completion_tokens.toLocaleString()}</td>
+                <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700, fontFeatureSettings: '"tnum"', color: T.primary }}>{r.total_tokens.toLocaleString()}</td>
+                <td style={{ padding: '6px 8px', textAlign: 'right', color: T.success }}>{r.completed}</td>
+                <td style={{ padding: '6px 8px', textAlign: 'right', color: T.error }}>{r.failed}</td>
+                <td style={{ padding: '6px 8px', textAlign: 'right', color: T.warning }}>{r.processing}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
         {/* By type */}
         <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.radius, padding: 20 }}>

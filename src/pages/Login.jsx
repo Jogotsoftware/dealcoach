@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { theme as T } from '../lib/theme'
+import { track, identify } from '../lib/analytics'
 
 export default function Login() {
   const [email, setEmail] = useState('')
@@ -23,6 +24,8 @@ export default function Login() {
     try {
       const { error } = await signIn(email, password)
       if (error) throw error
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) { identify(user.id, { email: user.email }); track('user_signed_in', { email: user.email }) }
       navigate('/')
     } catch (err) {
       setError(err.message)

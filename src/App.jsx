@@ -77,10 +77,10 @@ export default function App() {
                 <Route path="/deal/:id/retrospective" element={<DealRetrospective />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/admin" element={<AdminConsole />} />
+                <Route path="/settings/team" element={<TeamManagement />} />
 
                 {/* Admin-only settings */}
                 <Route element={<RequireAdmin />}>
-                  <Route path="/settings/team" element={<TeamManagement />} />
                   <Route path="/settings/organization" element={<OrgSettings />} />
                   <Route path="/admin/widgets" element={<WidgetBuilder />} />
                   <Route path="/admin/feedback" element={<BetaFeedbackAdmin />} />

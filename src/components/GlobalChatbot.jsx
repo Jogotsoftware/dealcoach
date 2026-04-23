@@ -162,20 +162,19 @@ export default function GlobalChatbot() {
 
   async function submitThumbs(msg, sentiment, reasonKey, notes) {
     if (!msg.id) return
-    try {
-      await supabase.from('ai_output_feedback').insert({
-        org_id: profile?.org_id || null,
-        user_id: profile?.id,
-        deal_id: selectedDealId || null,
-        sentiment,
-        target_type: 'chat_response',
-        target_id: msg.id,
-        reason: reasonKey || null,
-        notes: notes || null,
-      })
-      setFeedbackState(s => ({ ...s, [msg.id]: { ...s[msg.id], sentiment, submitted: true, showPicker: false } }))
-      if (sentiment === 'thumbs_down') track('chatbot_thumbs_down', { context_type: topic, reason: reasonKey })
-    } catch (e) { console.log('feedback error:', e) }
+    const { error } = await supabase.from('ai_output_feedback').insert({
+      org_id: profile?.org_id || null,
+      user_id: profile?.id,
+      deal_id: selectedDealId || null,
+      sentiment,
+      target_type: 'chat_response',
+      target_id: msg.id,
+      reason: reasonKey || null,
+      notes: notes || null,
+    })
+    if (error) { console.error('ai_output_feedback insert failed:', error); return }
+    setFeedbackState(s => ({ ...s, [msg.id]: { ...s[msg.id], sentiment, submitted: true, showPicker: false } }))
+    if (sentiment === 'thumbs_down') track('chatbot_thumbs_down', { context_type: topic, reason: reasonKey })
   }
 
   function handleKeyDown(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }

@@ -117,7 +117,8 @@ export default function OrgSettings() {
           )}
         </Card>
 
-        {allPlans.length > 0 && (
+        {plan && <UpgradeSection plan={plan} allPlans={allPlans} />}
+        {false && (
           <Card title="Available Plans">
             <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(allPlans.length, 4)}, 1fr)`, gap: 12 }}>
               {allPlans.map(p => {
@@ -158,5 +159,56 @@ export default function OrgSettings() {
         )}
       </div>
     </div>
+  )
+}
+
+function UpgradeSection({ plan, allPlans }) {
+  const [showAllPlans, setShowAllPlans] = useState(false)
+  return (
+    <>
+      <Card title="Your Plan">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 18, fontWeight: 800, color: T.primary }}>{plan.name}</div>
+            <div style={{ fontSize: 11, color: T.textMuted, marginTop: 4 }}>
+              {plan.credits_monthly || 0} credits/month · {plan.max_users || 'unlimited'} users · {plan.max_deals || 'unlimited'} deals
+            </div>
+          </div>
+          <Button disabled onClick={() => alert('Contact us at hello@revenueinstruments.com to upgrade.')}
+            style={{ padding: '8px 18px', fontSize: 12 }}>
+            Upgrade Plan
+          </Button>
+        </div>
+        <div style={{ marginTop: 10, fontSize: 11 }}>
+          <a onClick={() => setShowAllPlans(s => !s)} style={{ color: T.primary, cursor: 'pointer', textDecoration: 'none', fontWeight: 600 }}>
+            {showAllPlans ? 'Hide' : 'View'} all plans
+          </a>
+        </div>
+      </Card>
+
+      {showAllPlans && allPlans.length > 0 && (
+        <Card title="Available Plans">
+          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(allPlans.length, 4)}, 1fr)`, gap: 10 }}>
+            {allPlans.map(p => {
+              const isCurrent = p.id === plan.id
+              return (
+                <div key={p.id} style={{ padding: 12, borderRadius: 8, textAlign: 'center', background: isCurrent ? T.primaryLight : T.surfaceAlt, border: isCurrent ? `2px solid ${T.primary}` : `1px solid ${T.border}` }}>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: T.text }}>{p.name}</div>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: T.primary, marginTop: 4 }}>
+                    {p.monthly_price ? `$${p.monthly_price}/mo` : 'Free'}
+                  </div>
+                  <div style={{ fontSize: 10, color: T.textMuted, marginTop: 4, lineHeight: 1.6 }}>
+                    {p.credits_monthly || 0} credits/mo<br />
+                    {p.max_users || 'unlimited'} users<br />
+                    {p.max_deals || 'unlimited'} deals
+                  </div>
+                  {isCurrent && <div style={{ marginTop: 6, fontSize: 10, fontWeight: 700, color: T.primary }}>Current</div>}
+                </div>
+              )
+            })}
+          </div>
+        </Card>
+      )}
+    </>
   )
 }

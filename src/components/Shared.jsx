@@ -42,7 +42,7 @@ export function Card({ children, title, action, style: s, className }) {
           {action}
         </div>
       )}
-      <div style={{ padding: 10 }}>{children}</div>
+      <div style={{ padding: 10 }}>{children}</div>{/* ws6a: kept at 10 for density */}
     </div>
   )
 }

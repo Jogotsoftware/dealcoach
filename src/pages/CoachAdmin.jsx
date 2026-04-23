@@ -571,18 +571,10 @@ export default function CoachAdmin() {
 
             {/* ══════════ SCORING ══════════ */}
             {tab === 'scoring' && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 {scoringConfigs.map(s => (
-                  <Card key={s.id} title={s.label}>
-                    <div style={{ fontSize: 12, color: T.textSecondary, marginBottom: 10 }}>{s.description}</div>
-                    {Array.isArray(s.criteria) && s.criteria.map((c, i) => (
-                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: T.surfaceAlt, borderRadius: 4, marginBottom: 4 }}>
-                        <span style={{ fontSize: 13, color: T.text }}>{c.name || c.label}</span>
-                        <span style={{ fontSize: 12, fontWeight: 600, color: T.primary }}>{c.weight}%</span>
-                      </div>
-                    ))}
-                    <div style={{ marginTop: 8, fontSize: 11, color: T.textMuted }}>Max score: {s.max_score}</div>
-                  </Card>
+                  <ScoringConfigEditor key={s.id} config={s}
+                    onSaved={(patch) => setScoringConfigs(prev => prev.map(x => x.id === s.id ? { ...x, ...patch } : x))} />
                 ))}
               </div>
             )}
@@ -758,7 +750,7 @@ export default function CoachAdmin() {
                             <input style={inputStyle} defaultValue={tpl.subject_template || ''} onBlur={e => updateEmailTemplate(tpl.id, 'subject_template', e.target.value)} placeholder="e.g. {{company_name}} - Follow Up from {{call_type}}" />
                             <div style={{ fontSize: 10, color: T.textMuted, marginTop: 4 }}>Tokens: {'{{company_name}} {{deal_value}} {{forecast_category}} {{call_type}} {{call_date}}'}</div>
                           </div>
-                          <div style={{ marginBottom: 12 }}><label style={labelStyle}>Body Template (tell AI what to generate)</label><textarea style={{ ...inputStyle, fontFamily: T.mono, fontSize: 12, minHeight: 150, resize: 'vertical' }} defaultValue={tpl.body_template || ''} onBlur={e => updateEmailTemplate(tpl.id, 'body_template', e.target.value)} placeholder="Describe the email content, structure, and key points to include..." /></div>
+                          <EmailBodyTemplateEditor tpl={tpl} onSave={(val) => updateEmailTemplate(tpl.id, 'body_template', val)} />
                           <div style={{ marginBottom: 12 }}><label style={labelStyle}>AI Instructions (tone, format, rules)</label><textarea style={{ ...inputStyle, fontSize: 12, minHeight: 80, resize: 'vertical' }} defaultValue={tpl.ai_instructions || ''} onBlur={e => updateEmailTemplate(tpl.id, 'ai_instructions', e.target.value)} placeholder="e.g. Professional tone, bullet points for action items, max 300 words" /></div>
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
                             <div><label style={labelStyle}>Recipient Type</label><select style={{ ...inputStyle, cursor: 'pointer' }} defaultValue={tpl.recipient_type || 'internal'} onChange={e => updateEmailTemplate(tpl.id, 'recipient_type', e.target.value)}>
@@ -1392,8 +1384,128 @@ function ExtractionRulesEditor({ coach, onSaved }) {
   )
 }
 
+const EMAIL_TOKENS = ['{Company Name}', '{Contact Name}', '{Rep Name}', '{SC Name}', '{Deal Value}', '{Close Date}', '{Stage}', '{Next Steps}']
+
+function EmailBodyTemplateEditor({ tpl, onSave }) {
+  const [value, setValue] = useState(tpl.body_template || '')
+  const [showTokens, setShowTokens] = useState(false)
+  const taRef = useRef(null)
+
+  function insertToken(token) {
+    const ta = taRef.current
+    if (!ta) { setValue(v => v + token); setShowTokens(false); return }
+    const start = ta.selectionStart, end = ta.selectionEnd
+    const next = value.substring(0, start) + token + value.substring(end)
+    setValue(next)
+    setShowTokens(false)
+    setTimeout(() => { ta.focus(); ta.selectionStart = ta.selectionEnd = start + token.length }, 0)
+  }
+
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+        <label style={{ ...labelStyle, marginBottom: 0 }}>Email Body Template</label>
+        <div style={{ position: 'relative' }}>
+          <button onClick={() => setShowTokens(s => !s)} style={{ fontSize: 10, padding: '3px 8px', border: `1px solid ${T.border}`, borderRadius: 4, background: showTokens ? T.primary : T.surface, color: showTokens ? '#fff' : T.primary, cursor: 'pointer', fontFamily: T.font }}>
+            Insert variable ▾
+          </button>
+          {showTokens && (
+            <>
+              <div onClick={() => setShowTokens(false)} style={{ position: 'fixed', inset: 0, zIndex: 100 }} />
+              <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: 4, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, boxShadow: T.shadow, zIndex: 101, minWidth: 180 }}>
+                {EMAIL_TOKENS.map(t => (
+                  <button key={t} onClick={() => insertToken(t)}
+                    style={{ display: 'block', width: '100%', padding: '6px 12px', fontSize: 11, fontFamily: T.mono, border: 'none', background: 'transparent', textAlign: 'left', cursor: 'pointer', color: T.text }}
+                    onMouseEnter={e => e.currentTarget.style.background = T.surfaceAlt}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>{t}</button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+        <span style={{ fontSize: 10, color: T.textMuted }}>Use {'{Variable}'} tokens for personalization. The AI fills these in from deal context when generating.</span>
+      </div>
+      <textarea ref={taRef} style={{ ...inputStyle, fontFamily: T.mono, fontSize: 12, minHeight: 150, resize: 'vertical' }}
+        value={value} onChange={e => setValue(e.target.value)}
+        onBlur={e => onSave(e.target.value)}
+        placeholder="Describe the email content, structure, and key points to include..." />
+    </div>
+  )
+}
+
 const MSP_CALL_TYPES = ['qdc', 'functional_discovery', 'demo', 'scoping', 'proposal', 'negotiation', 'sync', 'custom']
 const MSP_ATTENDEE_ROLES = ['AE', 'SC', 'Champion', 'Economic Buyer', 'Technical Evaluator', 'Executive Sponsor', 'Legal', 'Procurement']
+
+const SCORE_TYPE_TOOLTIPS = {
+  fit: 'Product Fit — how well the prospect matches your ICP (industry, size, systems, signals)',
+  deal_health: 'Deal Health — qualification strength, stakeholder access, timeline clarity',
+  champion: 'Champion Strength — evidence of internal advocacy + access to power',
+  power: 'Access to Power — whether the rep has reached or can reach the economic buyer',
+  icp_fit: 'ICP Fit — computed score against the Ideal Customer Profile',
+  custom: 'Custom scoring dimension',
+}
+
+function ScoringConfigEditor({ config, onSaved }) {
+  const [criteria, setCriteria] = useState(Array.isArray(config.criteria) ? config.criteria : [])
+  const [saving, setSaving] = useState(false)
+  const [savedMsg, setSavedMsg] = useState(false)
+  const [showTip, setShowTip] = useState(false)
+
+  function updateField(i, field, value) {
+    setCriteria(prev => prev.map((c, idx) => idx === i ? { ...c, [field]: value } : c))
+  }
+  function addCriterion() { setCriteria(prev => [...prev, { name: 'New Criterion', weight: 0, description: '' }]) }
+  function removeCriterion(i) { setCriteria(prev => prev.filter((_, idx) => idx !== i)) }
+
+  async function save() {
+    setSaving(true)
+    const { error } = await supabase.from('scoring_configs').update({ criteria }).eq('id', config.id)
+    setSaving(false)
+    if (!error) {
+      setSavedMsg(true)
+      setTimeout(() => setSavedMsg(false), 1500)
+      if (onSaved) onSaved({ criteria })
+    }
+  }
+
+  const total = criteria.reduce((s, c) => s + (Number(c.weight) || 0), 0)
+  const tooltipText = SCORE_TYPE_TOOLTIPS[config.score_type] || SCORE_TYPE_TOOLTIPS.custom
+
+  return (
+    <Card title={
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+        {config.label}
+        <span onMouseEnter={() => setShowTip(true)} onMouseLeave={() => setShowTip(false)}
+          style={{ cursor: 'help', fontSize: 10, color: T.textMuted, border: `1px solid ${T.border}`, borderRadius: '50%', width: 14, height: 14, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+          ?
+          {showTip && (
+            <span style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, width: 240, padding: 8, background: T.text, color: T.surface, borderRadius: 4, fontSize: 11, fontWeight: 400, zIndex: 10, lineHeight: 1.4 }}>{tooltipText}</span>
+          )}
+        </span>
+      </span>
+    } action={
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        {savedMsg && <span style={{ fontSize: 11, color: T.success, fontWeight: 600 }}>Saved</span>}
+        <Button primary onClick={save} disabled={saving} style={{ padding: '4px 10px', fontSize: 11 }}>{saving ? 'Saving...' : 'Save'}</Button>
+      </div>
+    }>
+      <div style={{ fontSize: 11, color: T.textSecondary, marginBottom: 8 }}>{config.description}</div>
+      {criteria.map((c, i) => (
+        <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.3fr 60px 2fr 20px', gap: 6, alignItems: 'center', marginBottom: 4, padding: 6, background: T.surfaceAlt, borderRadius: 4 }}>
+          <input style={{ ...inputStyle, padding: '4px 8px', fontSize: 12, fontWeight: 600 }} value={c.name || c.label || ''} onChange={e => updateField(i, 'name', e.target.value)} />
+          <input type="number" style={{ ...inputStyle, padding: '4px 6px', fontSize: 12, textAlign: 'center' }} value={c.weight ?? 0} onChange={e => updateField(i, 'weight', Number(e.target.value) || 0)} min={0} max={100} />
+          <input style={{ ...inputStyle, padding: '4px 8px', fontSize: 11 }} value={c.description || ''} onChange={e => updateField(i, 'description', e.target.value)} placeholder="What this scores..." />
+          <button onClick={() => removeCriterion(i)} style={{ background: 'none', border: 'none', color: T.textMuted, cursor: 'pointer', fontSize: 14, padding: 0 }}>×</button>
+        </div>
+      ))}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
+        <button onClick={addCriterion} style={{ background: 'none', border: `1px dashed ${T.border}`, borderRadius: 4, padding: '4px 8px', fontSize: 11, color: T.primary, cursor: 'pointer', fontFamily: T.font }}>+ Add criterion</button>
+        <span style={{ fontSize: 11, fontWeight: 700, color: total === 100 ? T.success : T.error }}>Total: {total}%</span>
+      </div>
+      <div style={{ marginTop: 6, fontSize: 10, color: T.textMuted }}>Max score: {config.max_score}</div>
+    </Card>
+  )
+}
 
 function TemplateStageRow({ stage, index, onUpdate, onDelete }) {
   const [expanded, setExpanded] = useState(false)

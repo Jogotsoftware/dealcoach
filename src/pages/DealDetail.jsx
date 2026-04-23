@@ -10,21 +10,20 @@ import { track } from '../lib/analytics'
 // AI suggestion tracking helper — silently records user actions on AI-generated entities
 async function trackSuggestion({ orgId, dealId, userId, targetType, targetId, action, before, after, createdAt }) {
   if (!targetId) return
-  try {
-    const timeToAction = createdAt ? Math.max(0, Math.round((Date.now() - new Date(createdAt).getTime()) / 1000)) : null
-    await supabase.from('ai_suggestion_tracking').insert({
-      org_id: orgId || null,
-      deal_id: dealId || null,
-      user_id: userId || null,
-      target_type: targetType,
-      target_id: targetId,
-      action,
-      action_at: new Date().toISOString(),
-      time_to_action_seconds: timeToAction,
-      original_value: before || null,
-      final_value: after || null,
-    })
-  } catch (e) { console.log('trackSuggestion error:', e) }
+  const timeToAction = createdAt ? Math.max(0, Math.round((Date.now() - new Date(createdAt).getTime()) / 1000)) : null
+  const { error } = await supabase.from('ai_suggestion_tracking').insert({
+    org_id: orgId || null,
+    deal_id: dealId || null,
+    user_id: userId || null,
+    target_type: targetType,
+    target_id: targetId,
+    action,
+    action_at: new Date().toISOString(),
+    time_to_action_seconds: timeToAction,
+    original_value: before || null,
+    final_value: after || null,
+  })
+  if (error) console.error('ai_suggestion_tracking insert failed:', error)
 }
 import DealChat from '../components/DealChat'
 import CompanyLogo from '../components/CompanyLogo'
@@ -41,13 +40,30 @@ const ResponsiveGridLayout = WidthProvider(Responsive)
 const ddLabelStyle = { fontSize: 11, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2, display: 'block' }
 const unknownStyle = { color: '#e8a0a0', fontStyle: 'italic', fontWeight: 400 }
 
+// === Linkify inline URLs ===
+function Linkify({ text }) {
+  if (!text) return null
+  const urlRegex = /(https?:\/\/[^\s<>"']+)/g
+  const parts = String(text).split(urlRegex)
+  return parts.map((p, i) => {
+    if (urlRegex.test(p)) {
+      urlRegex.lastIndex = 0
+      let host = p
+      try { host = new URL(p).hostname.replace(/^www\./, '') } catch {}
+      return <a key={i} href={p} target="_blank" rel="noopener noreferrer" style={{ color: T.primary, textDecoration: 'none', fontWeight: 500 }}>{host} ↗</a>
+    }
+    urlRegex.lastIndex = 0
+    return <span key={i}>{p}</span>
+  })
+}
+
 // === BULLET ITEM with bold colon prefix ===
 function BulletText({ text }) {
-  if (text.includes(':')) {
+  if (text && text.includes(':')) {
     const colonIdx = text.indexOf(':')
-    return <><span style={{ fontWeight: 700, color: T.text }}>{text.substring(0, colonIdx)}:</span>{text.substring(colonIdx + 1)}</>
+    return <><span style={{ fontWeight: 700, color: T.text }}>{text.substring(0, colonIdx)}:</span><Linkify text={text.substring(colonIdx + 1)} /></>
   }
-  return text
+  return <Linkify text={text} />
 }
 
 // === EDITABLE FIELD COMPONENT ===
@@ -300,7 +316,8 @@ const DEFAULT_LAYOUT = [
 const DEFAULT_WIDGETS = [
   { id: 'call_history', title: 'Call History & Analysis', visible: true },
   { id: 'company_profile', title: 'Company Profile', visible: true },
-  { id: 'scores', title: 'Scores & Deal Info', visible: true },
+  { id: 'scores', title: 'Scores', visible: true },
+  { id: 'deal_info', title: 'Deal Info', visible: true },
   { id: 'contacts', title: 'Key Contacts', visible: true },
   { id: 'dates', title: 'Key Dates', visible: true },
   { id: 'analysis', title: 'Deal Analysis', visible: true },
@@ -913,34 +930,70 @@ export default function DealDetail() {
   const totalPainCost = painPoints.reduce((s, p) => s + (p.annual_cost || 0), 0)
 
   function ScoresWidget() {
+    // Build breakdown map (icp_fit_breakdown is on deals; other scores don't have breakdowns wired up yet)
+    const scoreBreakdownMap = {}
+    if (deal.icp_fit_breakdown) scoreBreakdownMap['icp_fit'] = deal.icp_fit_breakdown
+
+    const ScoreWithTooltip = ({ label, score, max = 10, breakdown, colorOverride }) => {
+      const [showTip, setShowTip] = useState(false)
+      return (
+        <div style={{ marginBottom: 8, position: 'relative' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase', letterSpacing: '0.04em', flex: 1 }}>{label}</span>
+            {breakdown && (
+              <span onMouseEnter={() => setShowTip(true)} onMouseLeave={() => setShowTip(false)}
+                style={{ cursor: 'help', fontSize: 10, color: T.textMuted, border: `1px solid ${T.border}`, borderRadius: '50%', width: 14, height: 14, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>?</span>
+            )}
+          </div>
+          {max <= 10 ? <ScoreBar score={score || 0} label="" /> : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 22, fontWeight: 800, fontFeatureSettings: '"tnum"', color: colorOverride || (score >= 70 ? T.success : score >= 40 ? T.warning : T.error) }}>{score}</span>
+              <span style={{ fontSize: 11, color: T.textMuted }}>/{max}</span>
+            </div>
+          )}
+          {showTip && breakdown && (
+            <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, boxShadow: '0 4px 12px rgba(0,0,0,0.1)', padding: 10, fontSize: 11, zIndex: 100, width: 260, color: T.text }}>
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>Top score drivers</div>
+              {Object.entries(breakdown).slice(0, 3).map(([k, v]) => (
+                <div key={k} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                  <span style={{ color: T.textMuted }}>{k.replace(/_/g, ' ')}</span>
+                  <span style={{ fontWeight: 600 }}>{typeof v === 'number' ? v : typeof v === 'object' ? (v?.score != null ? `${v.score}/${v.max || '?'}` : JSON.stringify(v).substring(0, 30)) : String(v).substring(0, 30)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )
+    }
+
+    const icpBreakdown = deal.icp_fit_breakdown || scoreBreakdownMap['icp_fit']
     return (
       <>
-        <ScoreBar score={deal.fit_score || 0} label="Fit" />
-        <ScoreBar score={deal.deal_health_score || 0} label="Health" />
+        <ScoreWithTooltip label="Fit" score={deal.fit_score || 0} max={10} breakdown={scoreBreakdownMap['fit']} />
+        <ScoreWithTooltip label="Health" score={deal.deal_health_score || 0} max={10} breakdown={scoreBreakdownMap['deal_health']} />
         {deal.icp_fit_score != null && (
-          <div style={{ marginBottom: 8 }}>
-            <div style={ddLabelStyle}>ICP Fit</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ fontSize: 22, fontWeight: 800, fontFeatureSettings: '"tnum"', color: deal.icp_fit_score >= 70 ? T.success : deal.icp_fit_score >= 40 ? T.warning : T.error }}>{deal.icp_fit_score}</span>
-              <span style={{ fontSize: 11, color: T.textMuted }}>/100</span>
-            </div>
-          </div>
+          <ScoreWithTooltip label="ICP Fit" score={deal.icp_fit_score} max={100} breakdown={icpBreakdown} />
         )}
-        <div style={{ marginTop: 12 }}>
-          <EditableField label="Stage" value={deal.stage} field="stage" table="deals" recordId={deal.id} type="select" options={allStageOptions} onSaved={(f, v) => {
-            const terminalStages = ['closed_won', 'closed_lost', 'disqualified']
-            if (terminalStages.includes(v) && !terminalStages.includes(deal.stage)) {
-              setPendingStage(v)
-              setShowCloseOutModal(true)
-            } else {
-              setDeal(p => ({ ...p, [f]: v }))
-            }
-          }} />
-          <EditableField label="Forecast" value={deal.forecast_category} field="forecast_category" table="deals" recordId={deal.id} type="select" options={FORECAST_CATEGORIES} onSaved={(f, v) => setDeal(p => ({ ...p, [f]: v }))} />
-          <EditableField label="Deal Value" value={deal.deal_value} field="deal_value" table="deals" recordId={deal.id} type="number" onSaved={(f, v) => setDeal(p => ({ ...p, [f]: v }))} />
-          <EditableField label="CMRR" value={deal.cmrr} field="cmrr" table="deals" recordId={deal.id} type="number" onSaved={(f, v) => setDeal(p => ({ ...p, [f]: v }))} />
-          <EditableField label="Target Close" value={deal.target_close_date} field="target_close_date" table="deals" recordId={deal.id} type="date" onSaved={(f, v) => setDeal(p => ({ ...p, [f]: v }))} />
-        </div>
+      </>
+    )
+  }
+
+  function DealInfoWidget() {
+    return (
+      <>
+        <EditableField label="Stage" value={deal.stage} field="stage" table="deals" recordId={deal.id} type="select" options={allStageOptions} onSaved={(f, v) => {
+          const terminalStages = ['closed_won', 'closed_lost', 'disqualified']
+          if (terminalStages.includes(v) && v !== deal.stage) {
+            setPendingStage(v)
+            setShowCloseOutModal(true)
+          } else {
+            setDeal(p => ({ ...p, [f]: v }))
+          }
+        }} />
+        <EditableField label="Forecast" value={deal.forecast_category} field="forecast_category" table="deals" recordId={deal.id} type="select" options={FORECAST_CATEGORIES} onSaved={(f, v) => setDeal(p => ({ ...p, [f]: v }))} />
+        <EditableField label="Deal Value" value={deal.deal_value} field="deal_value" table="deals" recordId={deal.id} type="number" onSaved={(f, v) => setDeal(p => ({ ...p, [f]: v }))} />
+        <EditableField label="CMRR" value={deal.cmrr} field="cmrr" table="deals" recordId={deal.id} type="number" onSaved={(f, v) => setDeal(p => ({ ...p, [f]: v }))} />
+        <EditableField label="Target Close" value={deal.target_close_date} field="target_close_date" table="deals" recordId={deal.id} type="date" onSaved={(f, v) => setDeal(p => ({ ...p, [f]: v }))} />
       </>
     )
   }
@@ -1029,16 +1082,18 @@ export default function DealDetail() {
             <span style={{ fontSize: 14, fontWeight: 700 }}>{analysis?.running_problem_cost_hours ? Number(analysis.running_problem_cost_hours).toLocaleString() + ' hrs' : '0 hrs'}</span>
           </div>
         </div>
-        {fields.map(f => {
-          const val = analysis?.[f.field]
-          const hasData = val && val !== 'Unknown'
-          return (
-            <div key={f.field} style={{ marginBottom: 4 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: hasData ? '#8899aa' : '#e74c3c', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{f.label}</div>
-              <EditableField value={val} field={f.field} table="deal_analysis" recordId={analysis?.id} type="textarea" displayAs="list" onSaved={(fld, v) => setAnalysis(p => ({ ...p, [fld]: v }))} />
-            </div>
-          )
-        })}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          {fields.map(f => {
+            const val = analysis?.[f.field]
+            const hasData = val && val !== 'Unknown'
+            return (
+              <div key={f.field} style={{ padding: '8px 10px', background: T.surfaceAlt, borderRadius: 6, border: `1px solid ${T.borderLight}` }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: hasData ? '#8899aa' : '#e74c3c', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 3 }}>{f.label}</div>
+                <EditableField value={val} field={f.field} table="deal_analysis" recordId={analysis?.id} type="textarea" displayAs="list" onSaved={(fld, v) => setAnalysis(p => ({ ...p, [fld]: v }))} />
+              </div>
+            )
+          })}
+        </div>
       </>
     )
   }
@@ -1248,80 +1303,69 @@ export default function DealDetail() {
 
   // === NEW WIDGETS ===
 
-  function RedFlagsWidget() {
-    const redFlags = dealFlags.filter(f => f.flag_type === 'red')
+  function RedFlagsWidget() { return <FlagsList flagType="red" /> }
+  function GreenFlagsWidget() { return <FlagsList flagType="green" /> }
+
+  function FlagsList({ flagType }) {
     const sevColors = { critical: '#dc3545', high: '#e67e22', medium: '#f39c12', low: '#95a5a6' }
-    const [addingRedFlag, setAddingRedFlag] = useState(false)
-    const [newRedFlagDesc, setNewRedFlagDesc] = useState('')
-    async function addRedFlag() {
-      if (!newRedFlagDesc.trim()) return
-      const { data, error } = await supabase.from('deal_flags').insert({ deal_id: id, flag_type: 'red', description: newRedFlagDesc, source: 'manual', category: 'custom', severity: 'medium' }).select().single()
+    const color = flagType === 'red' ? '#e74c3c' : '#27ae60'
+    const allFlags = dealFlags.filter(f => f.flag_type === flagType)
+    const active = allFlags.filter(f => !f.resolved)
+    const resolved = allFlags.filter(f => f.resolved)
+    const [showResolved, setShowResolved] = useState(false)
+    const [adding, setAdding] = useState(false)
+    const [newDesc, setNewDesc] = useState('')
+
+    async function add() {
+      if (!newDesc.trim()) return
+      const { data, error } = await supabase.from('deal_flags').insert({ deal_id: id, flag_type: flagType, description: newDesc, source: 'manual', category: 'custom', severity: flagType === 'red' ? 'medium' : null, last_confirmed_at: new Date().toISOString() }).select().single()
       if (!error && data) setDealFlags(prev => [...prev, data])
-      setNewRedFlagDesc(''); setAddingRedFlag(false)
+      setNewDesc(''); setAdding(false)
     }
     async function toggleResolved(flagId, current) {
-      await supabase.from('deal_flags').update({ resolved: !current }).eq('id', flagId)
-      setDealFlags(prev => prev.map(f => f.id === flagId ? { ...f, resolved: !current } : f))
+      const patch = { resolved: !current, resolved_reason: !current ? 'Manually resolved' : null }
+      await supabase.from('deal_flags').update(patch).eq('id', flagId)
+      setDealFlags(prev => prev.map(f => f.id === flagId ? { ...f, ...patch } : f))
     }
-    async function deleteFlag(flagId) { await supabase.from('deal_flags').delete().eq('id', flagId); setDealFlags(prev => prev.filter(f => f.id !== flagId)) }
-    return (
-      <div>
-        {redFlags.map(f => (
-          <div key={f.id} style={{ padding: '6px 0', borderBottom: '1px solid ' + T.borderLight, opacity: f.resolved ? 0.5 : 1, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <input type="checkbox" checked={!!f.resolved} onChange={() => toggleResolved(f.id, f.resolved)} />
-            {f.severity && <span style={{ width: 8, height: 8, borderRadius: '50%', background: sevColors[f.severity] || '#95a5a6', flexShrink: 0 }} />}
-            <span style={{ fontSize: 12, fontWeight: 600, flex: 1, textDecoration: f.resolved ? 'line-through' : 'none', color: f.resolved ? T.textMuted : '#e74c3c' }}>{f.description}</span>
-            {f.category && f.category !== 'custom' && <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 3, background: T.surfaceAlt, color: T.textMuted }}>{f.category}</span>}
-            <SourceBadge source={f.source} sourceUrl={f.source_url} />
-            <span style={{ cursor: 'pointer', color: T.textMuted, fontSize: 14 }} onClick={() => deleteFlag(f.id)}>&times;</span>
+    async function del(flagId) { await supabase.from('deal_flags').delete().eq('id', flagId); setDealFlags(prev => prev.filter(f => f.id !== flagId)) }
+
+    const render = (f) => (
+      <div key={f.id} style={{ padding: '6px 0', borderBottom: '1px solid ' + T.borderLight, opacity: f.resolved ? 0.55 : 1, display: 'flex', alignItems: 'center', gap: 6 }}>
+        <input type="checkbox" checked={!!f.resolved} onChange={() => toggleResolved(f.id, f.resolved)} title="Mark resolved" />
+        {flagType === 'red' && f.severity && <span style={{ width: 8, height: 8, borderRadius: '50%', background: sevColors[f.severity] || '#95a5a6', flexShrink: 0 }} />}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <span style={{ fontSize: 12, fontWeight: 600, textDecoration: f.resolved ? 'line-through' : 'none', color: f.resolved ? T.textMuted : color }}>{f.description}</span>
+          <div style={{ fontSize: 9, color: T.textMuted, marginTop: 1 }}>
+            {f.resolved && f.resolved_reason && <span>{f.resolved_reason}</span>}
+            {!f.resolved && f.last_confirmed_at && <span>Confirmed {new Date(f.last_confirmed_at).toLocaleDateString()}</span>}
           </div>
-        ))}
-        {redFlags.length === 0 && !addingRedFlag && <div style={{ color: T.textMuted, fontSize: 11, fontStyle: 'italic', padding: '4px 0' }}>No flags yet. Flags are created from research and call analysis, or add manually.</div>}
-        {addingRedFlag ? (
-          <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
-            <input value={newRedFlagDesc} onChange={e => setNewRedFlagDesc(e.target.value)} onKeyDown={e => e.key === 'Enter' && addRedFlag()} placeholder="Describe the flag..."
-              style={{ flex: 1, padding: '4px 8px', fontSize: 12, border: '1px solid ' + T.border, borderRadius: 4, background: T.surface, color: T.text, fontFamily: T.font }} autoFocus />
-            <button onClick={addRedFlag} style={{ background: T.primary, color: '#fff', border: 'none', borderRadius: 4, padding: '4px 10px', fontSize: 11, cursor: 'pointer' }}>Add</button>
-            <button onClick={() => setAddingRedFlag(false)} style={{ background: 'none', border: '1px solid ' + T.border, borderRadius: 4, padding: '4px 8px', fontSize: 11, cursor: 'pointer', color: T.textMuted }}>Cancel</button>
-          </div>
-        ) : (
-          <button onClick={() => setAddingRedFlag(true)} style={{ background: 'none', border: 'none', color: '#e74c3c', fontSize: 11, fontWeight: 600, cursor: 'pointer', padding: '6px 0' }}>+ Add Red Flag</button>
-        )}
+        </div>
+        {f.category && f.category !== 'custom' && <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 3, background: T.surfaceAlt, color: T.textMuted }}>{f.category}</span>}
+        {f.resolved && <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 3, background: T.borderLight, color: T.textMuted, fontWeight: 700, textTransform: 'uppercase' }}>Resolved</span>}
+        <SourceBadge source={f.source} sourceUrl={f.source_url} />
+        <span style={{ cursor: 'pointer', color: T.textMuted, fontSize: 14 }} onClick={() => del(f.id)}>×</span>
       </div>
     )
-  }
 
-  function GreenFlagsWidget() {
-    const greenFlags = dealFlags.filter(f => f.flag_type === 'green')
-    const [addingGreenFlag, setAddingGreenFlag] = useState(false)
-    const [newGreenFlagDesc, setNewGreenFlagDesc] = useState('')
-    async function addGreenFlag() {
-      if (!newGreenFlagDesc.trim()) return
-      const { data, error } = await supabase.from('deal_flags').insert({ deal_id: id, flag_type: 'green', description: newGreenFlagDesc, source: 'manual', category: 'custom' }).select().single()
-      if (!error && data) setDealFlags(prev => [...prev, data])
-      setNewGreenFlagDesc(''); setAddingGreenFlag(false)
-    }
-    async function deleteFlag(flagId) { await supabase.from('deal_flags').delete().eq('id', flagId); setDealFlags(prev => prev.filter(f => f.id !== flagId)) }
     return (
       <div>
-        {greenFlags.map(f => (
-          <div key={f.id} style={{ padding: '6px 0', borderBottom: '1px solid ' + T.borderLight, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 12, fontWeight: 600, flex: 1, color: '#27ae60' }}>{f.description}</span>
-            {f.category && f.category !== 'custom' && <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 3, background: T.surfaceAlt, color: T.textMuted }}>{f.category}</span>}
-            <SourceBadge source={f.source} sourceUrl={f.source_url} />
-            <span style={{ cursor: 'pointer', color: T.textMuted, fontSize: 14 }} onClick={() => deleteFlag(f.id)}>&times;</span>
-          </div>
-        ))}
-        {greenFlags.length === 0 && !addingGreenFlag && <div style={{ color: T.textMuted, fontSize: 11, fontStyle: 'italic', padding: '4px 0' }}>No flags yet. Flags are created from research and call analysis, or add manually.</div>}
-        {addingGreenFlag ? (
+        {active.map(render)}
+        {active.length === 0 && !adding && <div style={{ color: T.textMuted, fontSize: 11, fontStyle: 'italic', padding: '4px 0' }}>No active flags.</div>}
+        {resolved.length > 0 && (
+          <button onClick={() => setShowResolved(s => !s)} style={{ background: 'none', border: 'none', color: T.textMuted, fontSize: 10, cursor: 'pointer', padding: '6px 0', fontFamily: T.font }}>
+            {showResolved ? 'Hide' : 'Show'} resolved ({resolved.length})
+          </button>
+        )}
+        {showResolved && resolved.map(render)}
+        {adding ? (
           <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
-            <input value={newGreenFlagDesc} onChange={e => setNewGreenFlagDesc(e.target.value)} onKeyDown={e => e.key === 'Enter' && addGreenFlag()} placeholder="Describe the flag..."
+            <input value={newDesc} onChange={e => setNewDesc(e.target.value)} onKeyDown={e => e.key === 'Enter' && add()} placeholder="Describe the flag..."
               style={{ flex: 1, padding: '4px 8px', fontSize: 12, border: '1px solid ' + T.border, borderRadius: 4, background: T.surface, color: T.text, fontFamily: T.font }} autoFocus />
-            <button onClick={addGreenFlag} style={{ background: T.primary, color: '#fff', border: 'none', borderRadius: 4, padding: '4px 10px', fontSize: 11, cursor: 'pointer' }}>Add</button>
-            <button onClick={() => setAddingGreenFlag(false)} style={{ background: 'none', border: '1px solid ' + T.border, borderRadius: 4, padding: '4px 8px', fontSize: 11, cursor: 'pointer', color: T.textMuted }}>Cancel</button>
+            <button onClick={add} style={{ background: T.primary, color: '#fff', border: 'none', borderRadius: 4, padding: '4px 10px', fontSize: 11, cursor: 'pointer' }}>Add</button>
+            <button onClick={() => setAdding(false)} style={{ background: 'none', border: '1px solid ' + T.border, borderRadius: 4, padding: '4px 8px', fontSize: 11, cursor: 'pointer', color: T.textMuted }}>Cancel</button>
           </div>
         ) : (
-          <button onClick={() => setAddingGreenFlag(true)} style={{ background: 'none', border: 'none', color: '#27ae60', fontSize: 11, fontWeight: 600, cursor: 'pointer', padding: '6px 0' }}>+ Add Green Flag</button>
+          <button onClick={() => setAdding(true)} style={{ background: 'none', border: 'none', color, fontSize: 11, fontWeight: 600, cursor: 'pointer', padding: '6px 0' }}>+ Add {flagType === 'red' ? 'Red' : 'Green'} Flag</button>
         )}
       </div>
     )
@@ -1417,6 +1461,7 @@ export default function DealDetail() {
       case 'call_history': return <CallHistoryWidget />
       case 'company_profile': return <CompanyProfileWidget />
       case 'scores': return <ScoresWidget />
+      case 'deal_info': return <DealInfoWidget />
       case 'contacts': return <ContactsWidget />
       case 'dates': return <DatesWidget />
       case 'analysis': return <AnalysisWidget />
@@ -1484,7 +1529,7 @@ export default function DealDetail() {
             fontWeight: 600, fontFamily: T.font,
           }}>&larr; Pipeline</button>
           <CompanyLogo logoUrl={companyProfile?.logo_url} companyName={deal.company_name} size="lg" />
-          <div style={{ flex: 1 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 20, fontWeight: 700, color: T.text }}>{deal.company_name}</div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>
               <StageBadge stage={deal.stage} />
@@ -1494,6 +1539,16 @@ export default function DealDetail() {
                   {deal.website.replace(/^https?:\/\//, '').replace(/\/$/, '')} {'\u2197'}
                 </a>
               )}
+            </div>
+            {/* Next Steps inline in header */}
+            <div style={{ marginTop: 6, display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap', paddingTop: 3 }}>Next:</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <EditableField label="" value={deal.next_steps} field="next_steps" table="deals" recordId={deal.id} type="textarea" onSaved={(f, v) => setDeal(p => ({ ...p, [f]: v }))} />
+                {deal.updated_at && (
+                  <div style={{ fontSize: 10, color: T.textMuted, marginTop: 2 }}>Last updated {new Date(deal.updated_at).toLocaleDateString()}</div>
+                )}
+              </div>
             </div>
           </div>
           <div style={{ textAlign: 'right' }}>
@@ -1602,13 +1657,7 @@ export default function DealDetail() {
               </div>
             )}
 
-            {/* Next Steps (always visible above grid) */}
-            <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 14px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontSize: 10, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase', whiteSpace: 'nowrap', letterSpacing: '0.05em' }}>Next Steps:</span>
-              <div style={{ flex: 1 }}>
-                <EditableField label="" value={deal.next_steps} field="next_steps" table="deals" recordId={deal.id} type="textarea" onSaved={(f, v) => setDeal(p => ({ ...p, [f]: v }))} />
-              </div>
-            </div>
+
 
             {editMode && (
               <style>{`
@@ -1764,7 +1813,7 @@ export default function DealDetail() {
               {hasModule('transcript_analysis') ? <Button primary onClick={() => setShowTranscriptUpload(true)}>Upload Transcript</Button> : <Button disabled title="Upgrade your plan">Upload Transcript</Button>}
             </div>
             {conversations.length === 0 ? <EmptyState message="No transcripts yet. Upload a call transcript for AI analysis and auto-extracted tasks." /> : conversations.map(cv => {
-              const isStuck = !cv.processed && (Date.now() - new Date(cv.created_at).getTime() > 5 * 60 * 1000)
+              const isStuck = !cv.processed && (Date.now() - new Date(cv.created_at).getTime() > 10 * 60 * 1000)
               return (
                 <div key={cv.id} style={{ position: 'relative' }}>
                   <div onClick={() => navigate(`/deal/${id}/call/${cv.id}`)} style={{ cursor: 'pointer' }}>
@@ -1779,6 +1828,7 @@ export default function DealDetail() {
                         </div>
                         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                           {cv.processed && <Badge color={T.success}>Processed</Badge>}
+                          {isStuck && <Badge color={T.error}>Processing failed</Badge>}
                           {isStuck && (
                             <button onClick={async (e) => { e.stopPropagation(); const { callProcessTranscript } = await import('../lib/webhooks'); await callProcessTranscript(cv.id); loadDeal() }} style={{ background: T.warning, color: '#fff', border: 'none', borderRadius: 4, padding: '3px 10px', fontSize: 10, fontWeight: 600, cursor: 'pointer', fontFamily: T.font }}>Retry</button>
                           )}
@@ -2196,15 +2246,14 @@ export default function DealDetail() {
             <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between', alignItems: 'center' }}>
               <Button onClick={async () => {
                 // Skip — still close the deal, but log that the user dismissed the form
-                try {
-                  await supabase.from('deal_outcome_factors').insert({
-                    deal_id: id, org_id: profile?.org_id || null, rep_id: profile?.id || null,
-                    outcome: pendingStage, primary_reason: 'dismissed',
-                    what_helped_or_hurt: null, key_lesson: null,
-                    filled_by: profile?.id || null,
-                    structured_factors: { dismissed: true },
-                  })
-                } catch (e) {}
+                const { error: skipErr } = await supabase.from('deal_outcome_factors').insert({
+                  deal_id: id, org_id: profile?.org_id || null, rep_id: profile?.id || null,
+                  outcome: pendingStage, primary_reason: 'dismissed',
+                  what_helped_or_hurt: null, key_lesson: null,
+                  filled_by: profile?.id || null,
+                  structured_factors: { dismissed: true },
+                })
+                if (skipErr) console.error('deal_outcome_factors (dismissed) insert failed:', skipErr)
                 await supabase.from('deals').update({ stage: pendingStage }).eq('id', id)
                 track('deal_closed', { outcome: pendingStage, primary_reason: 'dismissed', skipped: true, deal_value: deal?.deal_value || null })
                 setDeal(p => ({ ...p, stage: pendingStage }))
@@ -2214,16 +2263,15 @@ export default function DealDetail() {
               <div style={{ display: 'flex', gap: 8 }}>
                 <Button onClick={() => { setShowCloseOutModal(false); setPendingStage(null) }}>Cancel</Button>
                 <Button primary disabled={!closeOutForm.primary_reason || !closeOutForm.what_helped || !closeOutForm.key_lesson} onClick={async () => {
-                  try {
-                    await supabase.from('deal_outcome_factors').insert({
-                      deal_id: id, org_id: profile?.org_id || null, rep_id: profile?.id || null,
-                      outcome: pendingStage,
-                      primary_reason: closeOutForm.primary_reason,
-                      what_helped_or_hurt: closeOutForm.what_helped,
-                      key_lesson: closeOutForm.key_lesson,
-                      filled_by: profile?.id || null,
-                    })
-                  } catch (e) { console.log('outcome_factors insert error:', e) }
+                  const { error: submitErr } = await supabase.from('deal_outcome_factors').insert({
+                    deal_id: id, org_id: profile?.org_id || null, rep_id: profile?.id || null,
+                    outcome: pendingStage,
+                    primary_reason: closeOutForm.primary_reason,
+                    what_helped_or_hurt: closeOutForm.what_helped,
+                    key_lesson: closeOutForm.key_lesson,
+                    filled_by: profile?.id || null,
+                  })
+                  if (submitErr) console.error('deal_outcome_factors insert failed:', submitErr)
                   await supabase.from('deals').update({ stage: pendingStage }).eq('id', id)
                   track('deal_closed', { outcome: pendingStage, primary_reason: closeOutForm.primary_reason, deal_value: deal?.deal_value || null, cmrr: deal?.cmrr || null })
                   setDeal(p => ({ ...p, stage: pendingStage }))

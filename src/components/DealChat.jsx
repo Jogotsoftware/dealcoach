@@ -159,38 +159,36 @@ export default function DealChat({ dealId, userId, isOpen, onClose, onAction, or
 
   async function submitThumbs(message, sentiment, reasonKey, notes) {
     if (!message.id) return
-    try {
-      await supabase.from('ai_output_feedback').insert({
-        org_id: orgId || null,
-        user_id: userId,
-        deal_id: dealId,
-        sentiment,
-        target_type: 'chat_response',
-        target_id: message.id,
-        reason: reasonKey || null,
-        notes: notes || null,
-      })
-      setFeedbackState(s => ({ ...s, [message.id]: { ...s[message.id], sentiment, showPicker: false, submitted: true } }))
-    } catch (e) { console.log('feedback insert error:', e) }
+    const { error } = await supabase.from('ai_output_feedback').insert({
+      org_id: orgId || null,
+      user_id: userId,
+      deal_id: dealId,
+      sentiment,
+      target_type: 'chat_response',
+      target_id: message.id,
+      reason: reasonKey || null,
+      notes: notes || null,
+    })
+    if (error) { console.error('ai_output_feedback insert failed:', error); return }
+    setFeedbackState(s => ({ ...s, [message.id]: { ...s[message.id], sentiment, showPicker: false, submitted: true } }))
   }
 
   async function submitSatisfaction(score) {
     setSatisfactionRating(score)
     if (!sessionId) return
-    try {
-      const thumbsUp = Object.values(feedbackState).filter((f) => f?.sentiment === 'thumbs_up').length
-      const thumbsDown = Object.values(feedbackState).filter((f) => f?.sentiment === 'thumbs_down').length
-      await supabase.from('chatbot_session_feedback').insert({
-        session_id: sessionId,
-        org_id: orgId || null,
-        user_id: userId,
-        deal_id: dealId,
-        message_count: messages.length,
-        thumbs_up_count: thumbsUp,
-        thumbs_down_count: thumbsDown,
-        satisfaction_score: score,
-      })
-    } catch (e) { console.log('satisfaction insert error:', e) }
+    const thumbsUp = Object.values(feedbackState).filter((f) => f?.sentiment === 'thumbs_up').length
+    const thumbsDown = Object.values(feedbackState).filter((f) => f?.sentiment === 'thumbs_down').length
+    const { error } = await supabase.from('chatbot_session_feedback').insert({
+      session_id: sessionId,
+      org_id: orgId || null,
+      user_id: userId,
+      deal_id: dealId,
+      message_count: messages.length,
+      thumbs_up_count: thumbsUp,
+      thumbs_down_count: thumbsDown,
+      satisfaction_score: score,
+    })
+    if (error) console.error('chatbot_session_feedback insert failed:', error)
   }
 
   function handleClose() {

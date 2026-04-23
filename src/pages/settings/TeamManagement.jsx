@@ -85,10 +85,10 @@ export default function TeamManagement() {
   return (
     <div>
       <div style={{ padding: '14px 24px', borderBottom: '1px solid ' + T.border, background: T.surface, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2 style={{ fontSize: 18, fontWeight: 700, color: T.text, margin: 0 }}>Team Management</h2>
+        <h2 style={{ fontSize: 18, fontWeight: 700, color: T.text, margin: 0 }}>{isAdmin ? 'Team Management' : 'Teammates'}</h2>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <span style={{ fontSize: 12, color: T.textMuted }}>{members.length}{plan?.max_users ? ` / ${plan.max_users}` : ''} members</span>
-          <Button primary onClick={() => setShowInvite(true)}>Invite Member</Button>
+          {isAdmin && <Button primary onClick={() => setShowInvite(true)}>Invite Member</Button>}
         </div>
       </div>
       {toast && (
@@ -97,7 +97,7 @@ export default function TeamManagement() {
         </div>
       )}
       <div style={{ padding: '16px 24px' }}>
-        {showInvite && (
+        {isAdmin && showInvite && (
           <Card style={{ marginBottom: 16 }}>
             <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
               <div style={{ flex: 1 }}><label style={labelStyle}>Email</label><input style={inputStyle} value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="name@company.com" onKeyDown={e => e.key === 'Enter' && sendInvite()} /></div>
@@ -143,7 +143,7 @@ export default function TeamManagement() {
           </table>
         </Card>
 
-        {pendingInvites.length > 0 && (
+        {isAdmin && pendingInvites.length > 0 && (
           <Card title={`Pending Invitations (${pendingInvites.length})`}>
             {pendingInvites.map(inv => (
               <div key={inv.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid ' + T.borderLight }}>
