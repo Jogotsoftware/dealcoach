@@ -34,18 +34,18 @@ export default function Layout() {
   const sections = [
     { label: 'Workspace', items: [
       { to: '/', icon: '\u25A6', label: 'Pipeline', show: hasModule('pipeline') },
+      { to: '/coach', icon: '\u25CE', label: 'Coach', show: hasModule('coach_customization') },
       { to: '/settings', icon: '\u2699', label: 'Settings', show: true },
     ]},
-    { label: 'Org Admin', show: isAdmin, items: [
+    { label: 'Admin', show: isAdmin, items: [
       { to: '/settings/team', icon: '\u2630', label: 'Users', show: true },
       { to: '/settings/organization', icon: '\u2302', label: 'Organization', show: true },
-      { to: '/coach', icon: '\u25CE', label: 'Coach', show: hasModule('coach_customization') },
+      { to: '/admin/widgets', icon: '\u2637', label: 'Widgets', show: hasModule('coach_customization') },
     ]},
-    { label: 'Platform Admin', show: isPlatformAdmin, items: [
+    { label: 'Super Admin', show: isPlatformAdmin, items: [
       { to: '/admin', icon: '\u2691', label: 'Organizations', show: true },
       { to: '/admin/invitations', icon: '\u2709', label: 'Invitations', show: true },
       { to: '/admin/feedback', icon: '\u2690', label: 'Feedback', show: true },
-      { to: '/admin/widgets', icon: '\u2637', label: 'Widgets', show: true },
     ]},
   ]
 
