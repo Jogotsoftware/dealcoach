@@ -36,6 +36,7 @@ export default function Layout() {
     { label: 'Workspace', items: [
       { to: '/', icon: '\u25A6', label: 'Pipeline', show: hasModule('pipeline') },
       { to: '/coach', icon: '\u25CE', label: 'Coach', show: hasModule('coach_customization') },
+      { to: '/reports', icon: '\u2261', label: 'Reports', show: hasModule('reports') },
       { to: '/settings', icon: '\u2699', label: 'Settings', show: true },
     ]},
     { label: 'Admin', show: isAdmin, items: [

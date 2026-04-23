@@ -1415,6 +1415,7 @@ export default function DealDetail() {
     { key: 'tasks', label: `Tasks (${openTasks.length})` },
     { key: 'documents', label: `Documents (${documents.length})` },
     hasModule('coaching') && { key: 'emails', label: `Emails (${generatedEmails.length})` },
+    ['closed_won', 'closed_lost', 'disqualified'].includes(deal.stage) && { key: 'retrospective', label: 'Retrospective' },
   ].filter(Boolean)
 
   return (
@@ -1909,6 +1910,13 @@ export default function DealDetail() {
                 </>
               )
             })()}
+          </div>
+        )}
+
+        {/* ===== RETROSPECTIVE TAB ===== */}
+        {tab === 'retrospective' && (
+          <div style={{ textAlign: 'center', padding: 24 }}>
+            <Button primary onClick={() => navigate(`/deal/${id}/retrospective`)}>View Full Retrospective</Button>
           </div>
         )}
 

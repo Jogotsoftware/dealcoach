@@ -27,6 +27,8 @@ import PlatformAdminDashboard from './pages/admin/PlatformAdminDashboard'
 import OrgDetail from './pages/admin/OrgDetail'
 import ExtractionDefinitions from './pages/admin/ExtractionDefinitions'
 import CoachBuilder from './pages/CoachBuilder'
+import Reports from './pages/Reports'
+import DealRetrospective from './pages/DealRetrospective'
 import PlatformAdminGuard from './components/guards/PlatformAdminGuard'
 import { Spinner } from './components/Shared'
 
@@ -71,6 +73,8 @@ export default function App() {
                 <Route path="/deal/:dealId/proposal" element={<ProposalBuilder />} />
                 <Route path="/coach" element={<CoachAdmin />} />
                 <Route path="/coach/builder" element={<CoachBuilder />} />
+                <Route path="/reports" element={<Reports />} />
+                <Route path="/deal/:id/retrospective" element={<DealRetrospective />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/admin" element={<AdminConsole />} />
 
