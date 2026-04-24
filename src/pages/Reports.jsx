@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { useModules } from '../hooks/useModules'
@@ -43,10 +43,14 @@ const AGGREGATES = [
 
 function emptyConfig() {
   return {
+    // Report shape — 'tabular' (flat), 'summary' (grouped rows), 'matrix' (row x col pivot)
+    report_type: 'tabular',
     base_entity: 'deals',
     // Fields can be: 'field_name' (base table), {join, field, label} (joined table),
     // or {formula, label, key} (calculated column)
     fields: [],
+    // Per-column widths keyed by column id — persisted across sessions
+    column_widths: {},
     // Flat list of filters (numbered 1, 2, 3…). Logic is expressed via filter_expression.
     filters: [],
     // Filter expression — e.g. "1 AND 2 AND (3 OR 4)". Defaults to AND-of-all.
@@ -54,8 +58,12 @@ function emptyConfig() {
     cross_filters: [],         // [{ type, report_id, local_field, remote_field }]
     order_by: null, order_dir: 'desc', limit: 500,
     aggregate: { type: 'none', field: null, group_by: null, group_aggs: [] },
-    // Groups — for pivot-style grouping in the Outline tab
-    groups: [], // ['field_name']
+    // Row groups (ordered). Summary = groups[0+]; Matrix = groups[0] rows.
+    groups: [],
+    // Matrix column-pivot field (single). Only used when report_type = 'matrix'.
+    pivot_column: null,
+    // Summary/matrix cell aggregate — { type: 'count' | 'sum' | 'avg' | 'min' | 'max', field }
+    summary_aggregate: { type: 'count', field: null },
   }
 }
 
@@ -1183,15 +1191,63 @@ function BuildViewV2({ form, setForm, editingId, baseFields, reports, saving, sa
         <div style={{ flex: 1, overflow: 'auto', padding: 12 }}>
           {sidebar === 'outline' && (
             <>
-              <Section title="Groups" subtitle="Group rows (pivot)">
-                {cfg.groups.length === 0 && <div style={{ fontSize: 11, color: T.textMuted, fontStyle: 'italic', padding: '4px 0' }}>No groups. Reports run flat.</div>}
-                {cfg.groups.map((g, i) => <Chip key={i} label={baseFields[g]?.label || g} onRemove={() => setCfg({ groups: cfg.groups.filter((_, j) => j !== i) })} />)}
-                <select value="" onChange={e => { if (e.target.value) setCfg({ groups: [...cfg.groups, e.target.value] }) }}
-                  style={{ ...inputStyle, padding: '5px 8px', fontSize: 11, marginTop: 6 }}>
+              <Section title={cfg.report_type === 'matrix' ? 'Row Groups' : 'Groups'} subtitle={
+                cfg.report_type === 'tabular' ? 'Adding a group auto-switches to Summary.' :
+                cfg.report_type === 'matrix' ? 'Rows in the matrix pivot.' :
+                'Drag a column header to the "Drop to group by" bar on the preview, or pick here.'
+              }>
+                {cfg.groups.length === 0 && <div style={{ fontSize: 11, color: T.textMuted, fontStyle: 'italic', padding: '4px 0' }}>No groups.</div>}
+                {cfg.groups.map((g, i) => (
+                  <Chip key={i} label={baseFields[g]?.label || g} onRemove={() => {
+                    const next = cfg.groups.filter((_, j) => j !== i)
+                    // If removing last group from a summary/matrix, drop back to tabular
+                    const patch = { groups: next }
+                    if (!next.length && cfg.report_type !== 'matrix') patch.report_type = 'tabular'
+                    setCfg(patch)
+                  }} />
+                ))}
+                <select value="" onChange={e => {
+                  if (!e.target.value) return
+                  const patch = { groups: [...cfg.groups, e.target.value] }
+                  if (cfg.report_type === 'tabular') patch.report_type = 'summary'
+                  setCfg(patch)
+                }} style={{ ...inputStyle, padding: '5px 8px', fontSize: 11, marginTop: 6 }}>
                   <option value="">+ Add group…</option>
                   {Object.entries(baseFields).filter(([k]) => !cfg.groups.includes(k)).map(([k, m]) => <option key={k} value={k}>{m.label || k}</option>)}
                 </select>
               </Section>
+
+              {cfg.report_type === 'matrix' && (
+                <Section title="Column Pivot" subtitle="One field whose unique values become the matrix columns.">
+                  <select value={cfg.pivot_column || ''} onChange={e => setCfg({ pivot_column: e.target.value || null })}
+                    style={{ ...inputStyle, padding: '5px 8px', fontSize: 11 }}>
+                    <option value="">— pick field —</option>
+                    {Object.entries(baseFields).map(([k, m]) => <option key={k} value={k}>{m.label || k}</option>)}
+                  </select>
+                </Section>
+              )}
+
+              {(cfg.report_type === 'summary' || cfg.report_type === 'matrix') && (
+                <Section title="Cell Aggregate" subtitle={cfg.report_type === 'matrix' ? 'Value shown in each matrix cell.' : 'Value shown on each group row.'}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                    <select value={cfg.summary_aggregate?.type || 'count'} onChange={e => setCfg({ summary_aggregate: { ...cfg.summary_aggregate, type: e.target.value } })}
+                      style={{ ...inputStyle, padding: '5px 8px', fontSize: 11 }}>
+                      <option value="count">Count</option>
+                      <option value="sum">Sum</option>
+                      <option value="avg">Average</option>
+                      <option value="min">Min</option>
+                      <option value="max">Max</option>
+                    </select>
+                    {cfg.summary_aggregate?.type !== 'count' && (
+                      <select value={cfg.summary_aggregate?.field || ''} onChange={e => setCfg({ summary_aggregate: { ...cfg.summary_aggregate, field: e.target.value || null } })}
+                        style={{ ...inputStyle, padding: '5px 8px', fontSize: 11 }}>
+                        <option value="">— field —</option>
+                        {Object.entries(baseFields).filter(([, m]) => ['number', 'currency', 'score', 'percentage'].includes(m.type)).map(([k, m]) => <option key={k} value={k}>{m.label || k}</option>)}
+                      </select>
+                    )}
+                  </div>
+                </Section>
+              )}
 
               <Section title="Columns" subtitle="Click or drag fields to add. Drag chips to reorder.">
                 <input value={fieldSearch} onChange={e => setFieldSearch(e.target.value)} placeholder="Search fields…" style={{ ...inputStyle, padding: '6px 8px', fontSize: 11, marginBottom: 8 }} />
@@ -1303,6 +1359,20 @@ function BuildViewV2({ form, setForm, editingId, baseFields, reports, saving, sa
               style={{ ...inputStyle, padding: '4px 8px', fontSize: 15, fontWeight: 700, border: '1px solid transparent', background: 'transparent' }} />
           </div>
           <div style={{ padding: '4px 10px', background: T.surfaceAlt, borderRadius: 4, fontSize: 11, fontWeight: 600, color: T.text, border: `1px solid ${T.border}` }}>{TABLES[cfg.base_entity]?.label || cfg.base_entity}</div>
+          {/* Report type selector */}
+          <div style={{ display: 'flex', border: `1px solid ${T.border}`, borderRadius: 4, overflow: 'hidden' }}>
+            {[
+              { k: 'tabular', label: 'Tabular', hint: 'Flat rows' },
+              { k: 'summary', label: 'Summary', hint: 'Grouped rows + subtotals' },
+              { k: 'matrix', label: 'Matrix', hint: 'Rows × columns pivot' },
+            ].map(t => (
+              <button key={t.k} onClick={() => setCfg({ report_type: t.k })}
+                title={t.hint}
+                style={{ padding: '4px 10px', fontSize: 10, fontWeight: 700, border: 'none', cursor: 'pointer', background: cfg.report_type === t.k ? T.primary : T.surface, color: cfg.report_type === t.k ? '#fff' : T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                {t.label}
+              </button>
+            ))}
+          </div>
           <label style={{ fontSize: 10, color: T.textMuted, display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', userSelect: 'none' }}>
             <input type="checkbox" checked={autoPreview} onChange={e => setAutoPreview(e.target.checked)} />
             Update Preview Automatically
@@ -1324,34 +1394,12 @@ function BuildViewV2({ form, setForm, editingId, baseFields, reports, saving, sa
           )}
           {liveError && <div style={{ padding: 14, background: T.errorLight, color: T.error, borderRadius: 6, border: `1px solid ${T.error}40`, fontSize: 12 }}>{liveError}</div>}
           {livePreview && (
-            <Card>
-              <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 8 }}>
-                Previewing a limited number of records. Run the report to see everything. {livePreview.rows.length} {livePreview.aggregate ? 'result' : 'row' + (livePreview.rows.length === 1 ? '' : 's')}.
-              </div>
-              <div style={{ overflow: 'auto', maxHeight: 540, border: `1px solid ${T.borderLight}`, borderRadius: 6 }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                  <thead style={{ position: 'sticky', top: 0, background: T.surfaceAlt, zIndex: 1 }}>
-                    <tr style={{ borderBottom: `1px solid ${T.border}` }}>
-                      <th style={{ padding: '6px 8px', fontSize: 9, fontWeight: 700, color: T.textMuted, width: 32, textAlign: 'right' }}>#</th>
-                      {livePreview.columns.map(c => <th key={c} style={{ textAlign: 'left', padding: '6px 8px', fontSize: 10, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{c.replace(/_/g, ' ')}</th>)}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {livePreview.rows.slice(0, 200).map((row, i) => (
-                      <tr key={i} style={{ borderBottom: `1px solid ${T.borderLight}` }}>
-                        <td style={{ padding: '5px 8px', color: T.textMuted, textAlign: 'right', fontFamily: T.mono }}>{i + 1}</td>
-                        {livePreview.columns.map(c => {
-                          const val = row[c]
-                          const disp = val == null ? '—' : typeof val === 'object' ? JSON.stringify(val).substring(0, 80) : String(val).substring(0, 120)
-                          return <td key={c} style={{ padding: '5px 8px', color: T.text, fontFeatureSettings: '"tnum"', whiteSpace: 'nowrap' }}>{disp}</td>
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {livePreview.rows.length > 200 && <div style={{ fontSize: 10, color: T.textMuted, marginTop: 6, textAlign: 'center' }}>Showing first 200 of {livePreview.rows.length} rows.</div>}
-            </Card>
+            <PreviewTable
+              data={livePreview}
+              cfg={cfg}
+              setCfg={setCfg}
+              baseFields={baseFields}
+            />
           )}
         </div>
       </div>
@@ -1450,6 +1498,376 @@ function FilterCard({ index, filter, baseFields, joinableTables, onUpdate, onRem
         )
       )}
     </div>
+  )
+}
+
+// ────────────────────────────────────────────────────────
+// PreviewTable — handles tabular / summary / matrix rendering with
+// column reorder, column resize, and drop-header-to-group behaviour.
+function PreviewTable({ data, cfg, setCfg, baseFields }) {
+  const rows = data?.rows || []
+  const columns = data?.columns || []
+  const [dragCol, setDragCol] = useState(null)              // column id being dragged in header
+  const [dropOverTop, setDropOverTop] = useState(false)     // hover state on group drop zone
+  const [collapsed, setCollapsed] = useState(new Set())     // collapsed group keys
+  const widthsRef = useRef(cfg.column_widths || {})
+  useEffect(() => { widthsRef.current = cfg.column_widths || {} }, [cfg.column_widths])
+
+  // Resolve a column id → label for display
+  function colLabel(id) {
+    if (baseFields[id]?.label) return baseFields[id].label
+    // joined-table column like deal_analysis_champion
+    const parts = id.split('_')
+    if (parts.length >= 2) {
+      // try table/field match
+      for (let i = parts.length - 1; i > 0; i--) {
+        const tKey = parts.slice(0, i).join('_')
+        const fKey = parts.slice(i).join('_')
+        const jt = TABLES[tKey]
+        if (jt?.fields?.[fKey]) return `${jt.label} · ${jt.fields[fKey].label || fKey}`
+      }
+    }
+    // formula or custom label
+    const f = (cfg.fields || []).find(x => typeof x === 'object' && (x.key === id || x.label === id))
+    if (f) return f.label || id
+    return id.replace(/_/g, ' ')
+  }
+
+  function setColumnWidth(id, w) {
+    const next = { ...(cfg.column_widths || {}), [id]: w }
+    setCfg({ column_widths: next })
+  }
+
+  // Drag column → reorder in cfg.fields
+  function reorderFields(draggedId, targetId) {
+    if (!draggedId || draggedId === targetId) return
+    const fields = [...(cfg.fields || [])]
+    const idOf = (f) => typeof f === 'string' ? f : (f.formula !== undefined ? (f.key || f.label) : `${f.join}_${f.field}`)
+    const fromIdx = fields.findIndex(f => idOf(f) === draggedId)
+    const toIdx = fields.findIndex(f => idOf(f) === targetId)
+    if (fromIdx < 0 || toIdx < 0) return
+    const [moved] = fields.splice(fromIdx, 1)
+    fields.splice(toIdx, 0, moved)
+    setCfg({ fields })
+  }
+
+  // Drop header onto top bar → add as a group (Salesforce summary pattern)
+  function groupByColumn(colId) {
+    // Only works for base-table fields right now
+    if (!baseFields[colId]) return
+    if ((cfg.groups || []).includes(colId)) return
+    const patch = { groups: [...(cfg.groups || []), colId] }
+    if (cfg.report_type === 'tabular') patch.report_type = 'summary'
+    setCfg(patch)
+  }
+
+  function toggleGroupCollapsed(key) {
+    setCollapsed(s => { const n = new Set(s); n.has(key) ? n.delete(key) : n.add(key); return n })
+  }
+
+  // ── Shared header ──
+  function HeaderCell({ id, label, width, last }) {
+    const [resizing, setResizing] = useState(false)
+    function onResizeStart(e) {
+      e.preventDefault(); e.stopPropagation()
+      setResizing(true)
+      const startX = e.clientX
+      const startW = width
+      const onMove = (ev) => {
+        const w = Math.max(60, startW + (ev.clientX - startX))
+        widthsRef.current = { ...widthsRef.current, [id]: w }
+        // Update inline style directly for 60fps feel
+        const th = document.querySelector(`[data-rcol="${id}"]`)
+        if (th) { th.style.width = w + 'px'; th.style.minWidth = w + 'px'; th.style.maxWidth = w + 'px' }
+      }
+      const onUp = () => {
+        window.removeEventListener('mousemove', onMove)
+        window.removeEventListener('mouseup', onUp)
+        setResizing(false)
+        setColumnWidth(id, widthsRef.current[id])
+      }
+      window.addEventListener('mousemove', onMove)
+      window.addEventListener('mouseup', onUp)
+    }
+    return (
+      <th data-rcol={id}
+        draggable
+        onDragStart={e => { setDragCol(id); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', id) }}
+        onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move' }}
+        onDrop={e => { e.preventDefault(); reorderFields(dragCol, id); setDragCol(null) }}
+        onDragEnd={() => setDragCol(null)}
+        style={{
+          textAlign: 'left', padding: '6px 8px', fontSize: 10, fontWeight: 700,
+          color: '#8899aa', textTransform: 'uppercase', whiteSpace: 'nowrap',
+          width, minWidth: width, maxWidth: width, position: 'relative',
+          cursor: 'grab', userSelect: 'none',
+          background: dragCol === id ? T.primaryLight : T.surfaceAlt,
+          borderRight: `1px solid ${T.borderLight}`,
+        }}>
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', display: 'inline-block', maxWidth: width - 16 }}>{label}</span>
+        {!last && (
+          <span onMouseDown={onResizeStart}
+            style={{
+              position: 'absolute', right: -3, top: 0, bottom: 0, width: 6,
+              cursor: 'col-resize', background: resizing ? T.primary : 'transparent', zIndex: 2,
+            }} />
+        )}
+      </th>
+    )
+  }
+
+  const defaultW = 140
+  const widthFor = (id) => cfg.column_widths?.[id] || defaultW
+  const totalWidth = columns.reduce((s, id) => s + widthFor(id), 40)
+
+  // ── Aggregate helpers ──
+  function aggVal(items, agg) {
+    const t = agg?.type || 'count'
+    if (t === 'count') return items.length
+    const vals = items.map(r => Number(r[agg.field])).filter(n => !isNaN(n))
+    if (!vals.length) return 0
+    if (t === 'sum') return vals.reduce((s, n) => s + n, 0)
+    if (t === 'avg') return Math.round((vals.reduce((s, n) => s + n, 0) / vals.length) * 100) / 100
+    if (t === 'min') return Math.min(...vals)
+    if (t === 'max') return Math.max(...vals)
+    return items.length
+  }
+  function aggLabel(agg) {
+    if (!agg || agg.type === 'count') return 'Count'
+    return `${agg.type[0].toUpperCase()}${agg.type.slice(1)} of ${agg.field}`
+  }
+
+  // ── Tabular render ──
+  function renderTabular() {
+    return (
+      <div style={{ overflow: 'auto', maxHeight: 540, border: `1px solid ${T.borderLight}`, borderRadius: 6 }}>
+        <table style={{ width: totalWidth, borderCollapse: 'collapse', fontSize: 12, tableLayout: 'fixed' }}>
+          <thead style={{ position: 'sticky', top: 0, background: T.surfaceAlt, zIndex: 1 }}>
+            <tr style={{ borderBottom: `1px solid ${T.border}` }}>
+              <th style={{ padding: '6px 8px', fontSize: 9, fontWeight: 700, color: T.textMuted, width: 40, minWidth: 40, maxWidth: 40, textAlign: 'right' }}>#</th>
+              {columns.map((c, i) => <HeaderCell key={c} id={c} label={colLabel(c)} width={widthFor(c)} last={i === columns.length - 1} />)}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.slice(0, 200).map((row, i) => (
+              <tr key={i} style={{ borderBottom: `1px solid ${T.borderLight}` }}>
+                <td style={{ padding: '5px 8px', color: T.textMuted, textAlign: 'right', fontFamily: T.mono, width: 40, minWidth: 40, maxWidth: 40 }}>{i + 1}</td>
+                {columns.map(c => {
+                  const val = row[c]
+                  const disp = val == null ? '—' : typeof val === 'object' ? JSON.stringify(val).substring(0, 80) : String(val).substring(0, 140)
+                  const w = widthFor(c)
+                  return <td key={c} style={{ padding: '5px 8px', color: T.text, fontFeatureSettings: '"tnum"', width: w, minWidth: w, maxWidth: w, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{disp}</td>
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )
+  }
+
+  // ── Summary render: group rows by cfg.groups (nested) with subtotals ──
+  function renderSummary() {
+    const groups = cfg.groups || []
+    const agg = cfg.summary_aggregate || { type: 'count' }
+    if (!groups.length) return renderTabular()
+    // Build nested structure
+    function groupRows(items, depth = 0) {
+      if (depth >= groups.length) return { leaves: items }
+      const field = groups[depth]
+      const buckets = new Map()
+      for (const r of items) {
+        const k = r[field] ?? '(blank)'
+        if (!buckets.has(k)) buckets.set(k, [])
+        buckets.get(k).push(r)
+      }
+      const out = []
+      for (const [k, items2] of [...buckets.entries()].sort((a, b) => String(a[0]).localeCompare(String(b[0])))) {
+        out.push({ key: `${depth}:${k}`, field, value: k, items: items2, children: groupRows(items2, depth + 1) })
+      }
+      return out
+    }
+    const tree = groupRows(rows, 0)
+    const totalAggForAll = aggVal(rows, agg)
+
+    function renderLevel(nodes, depth) {
+      return nodes.map(node => {
+        const isLeaf = depth === groups.length - 1
+        const isCollapsed = collapsed.has(node.key)
+        const nodeAgg = aggVal(node.items, agg)
+        return (
+          <React.Fragment key={node.key}>
+            <tr style={{ background: depth === 0 ? T.primaryLight : T.surfaceAlt, borderBottom: `1px solid ${T.border}` }}>
+              <td colSpan={columns.length + 1} style={{ padding: '5px 8px', fontSize: 12, fontWeight: 700, color: T.text, paddingLeft: 8 + depth * 16 }}>
+                <button onClick={() => toggleGroupCollapsed(node.key)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, padding: '0 6px 0 0', fontSize: 11 }}>{isCollapsed ? '▸' : '▾'}</button>
+                <span style={{ color: T.textMuted, fontSize: 10, fontWeight: 800, textTransform: 'uppercase', marginRight: 8 }}>{colLabel(node.field)}:</span>
+                <span>{String(node.value)}</span>
+                <span style={{ marginLeft: 12, color: T.primary, fontWeight: 800, fontFeatureSettings: '"tnum"' }}>
+                  {aggLabel(agg)}: {typeof nodeAgg === 'number' ? nodeAgg.toLocaleString() : nodeAgg}
+                </span>
+                <span style={{ marginLeft: 8, color: T.textMuted, fontSize: 10 }}>({node.items.length} row{node.items.length === 1 ? '' : 's'})</span>
+              </td>
+            </tr>
+            {!isCollapsed && (isLeaf
+              ? node.items.map((row, i) => (
+                  <tr key={`${node.key}-${i}`} style={{ borderBottom: `1px solid ${T.borderLight}` }}>
+                    <td style={{ padding: '5px 8px', color: T.textMuted, textAlign: 'right', width: 40, minWidth: 40, maxWidth: 40, paddingLeft: 8 + (depth + 1) * 16, fontFamily: T.mono }}>{i + 1}</td>
+                    {columns.map(c => {
+                      const val = row[c]
+                      const disp = val == null ? '—' : typeof val === 'object' ? JSON.stringify(val).substring(0, 80) : String(val).substring(0, 140)
+                      const w = widthFor(c)
+                      return <td key={c} style={{ padding: '5px 8px', color: T.text, fontFeatureSettings: '"tnum"', width: w, minWidth: w, maxWidth: w, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{disp}</td>
+                    })}
+                  </tr>
+                ))
+              : renderLevel(node.children, depth + 1))}
+          </React.Fragment>
+        )
+      })
+    }
+
+    return (
+      <div style={{ overflow: 'auto', maxHeight: 540, border: `1px solid ${T.borderLight}`, borderRadius: 6 }}>
+        <table style={{ width: totalWidth, borderCollapse: 'collapse', fontSize: 12, tableLayout: 'fixed' }}>
+          <thead style={{ position: 'sticky', top: 0, background: T.surfaceAlt, zIndex: 1 }}>
+            <tr style={{ borderBottom: `1px solid ${T.border}` }}>
+              <th style={{ padding: '6px 8px', fontSize: 9, fontWeight: 700, color: T.textMuted, width: 40, minWidth: 40, maxWidth: 40, textAlign: 'right' }}>#</th>
+              {columns.map((c, i) => <HeaderCell key={c} id={c} label={colLabel(c)} width={widthFor(c)} last={i === columns.length - 1} />)}
+            </tr>
+          </thead>
+          <tbody>
+            {renderLevel(tree, 0)}
+            <tr style={{ background: T.primaryLight, borderTop: `2px solid ${T.primary}`, fontWeight: 700 }}>
+              <td colSpan={columns.length + 1} style={{ padding: '7px 10px', fontSize: 12, color: T.primary }}>
+                Grand {aggLabel(agg)}:{' '}
+                <span style={{ fontFeatureSettings: '"tnum"', fontWeight: 900 }}>{typeof totalAggForAll === 'number' ? totalAggForAll.toLocaleString() : totalAggForAll}</span>
+                <span style={{ marginLeft: 8, color: T.textMuted, fontSize: 10, fontWeight: 600 }}>({rows.length} rows)</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    )
+  }
+
+  // ── Matrix render: rows × cols pivot ──
+  function renderMatrix() {
+    const rowGroup = (cfg.groups || [])[0]
+    const colGroup = cfg.pivot_column
+    const agg = cfg.summary_aggregate || { type: 'count' }
+    if (!rowGroup || !colGroup) {
+      return (
+        <div style={{ padding: 40, textAlign: 'center', color: T.textMuted, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>Matrix needs a Row Group and a Column Pivot</div>
+          <div style={{ fontSize: 12 }}>Pick one of each in the Outline sidebar. The cell value will be {aggLabel(agg).toLowerCase()}.</div>
+        </div>
+      )
+    }
+    const rowKeys = [...new Set(rows.map(r => r[rowGroup] ?? '(blank)'))].sort((a, b) => String(a).localeCompare(String(b)))
+    const colKeys = [...new Set(rows.map(r => r[colGroup] ?? '(blank)'))].sort((a, b) => String(a).localeCompare(String(b)))
+    const cellW = 100
+    const firstW = widthFor(rowGroup) || 160
+    const rowTotals = {}
+    const colTotals = {}
+    const grandItems = []
+    const matrix = {}
+    for (const rk of rowKeys) {
+      matrix[rk] = {}
+      const rItems = rows.filter(r => (r[rowGroup] ?? '(blank)') === rk)
+      for (const ck of colKeys) {
+        const items = rItems.filter(r => (r[colGroup] ?? '(blank)') === ck)
+        matrix[rk][ck] = aggVal(items, agg)
+        grandItems.push(...items)
+      }
+      rowTotals[rk] = aggVal(rItems, agg)
+    }
+    for (const ck of colKeys) {
+      const items = rows.filter(r => (r[colGroup] ?? '(blank)') === ck)
+      colTotals[ck] = aggVal(items, agg)
+    }
+    const grand = aggVal(rows, agg)
+
+    return (
+      <div style={{ overflow: 'auto', maxHeight: 540, border: `1px solid ${T.borderLight}`, borderRadius: 6 }}>
+        <table style={{ borderCollapse: 'collapse', fontSize: 12, tableLayout: 'fixed' }}>
+          <thead style={{ position: 'sticky', top: 0, background: T.surfaceAlt, zIndex: 1 }}>
+            <tr style={{ borderBottom: `1px solid ${T.border}` }}>
+              <th style={{ padding: '6px 8px', fontSize: 10, fontWeight: 800, color: T.text, width: firstW, minWidth: firstW, background: T.surface, borderRight: `1px solid ${T.borderLight}`, textAlign: 'left' }}>
+                {colLabel(rowGroup)} <span style={{ color: T.textMuted, fontWeight: 400, fontSize: 9, marginLeft: 4 }}>▾</span>
+              </th>
+              {colKeys.map(ck => (
+                <th key={ck} style={{ padding: '6px 8px', fontSize: 10, fontWeight: 700, color: T.text, width: cellW, minWidth: cellW, textAlign: 'right', whiteSpace: 'nowrap', borderRight: `1px solid ${T.borderLight}` }}>{String(ck)}</th>
+              ))}
+              <th style={{ padding: '6px 8px', fontSize: 10, fontWeight: 800, color: T.primary, width: cellW, minWidth: cellW, textAlign: 'right', background: T.primaryLight }}>Row total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rowKeys.map(rk => (
+              <tr key={rk} style={{ borderBottom: `1px solid ${T.borderLight}` }}>
+                <td style={{ padding: '5px 8px', fontWeight: 700, color: T.text, background: T.surface, borderRight: `1px solid ${T.borderLight}`, width: firstW, minWidth: firstW }}>{String(rk)}</td>
+                {colKeys.map(ck => (
+                  <td key={ck} style={{ padding: '5px 8px', textAlign: 'right', fontFeatureSettings: '"tnum"', color: T.text, borderRight: `1px solid ${T.borderLight}` }}>
+                    {typeof matrix[rk][ck] === 'number' ? matrix[rk][ck].toLocaleString() : matrix[rk][ck]}
+                  </td>
+                ))}
+                <td style={{ padding: '5px 8px', textAlign: 'right', fontWeight: 800, color: T.primary, background: T.primaryLight, fontFeatureSettings: '"tnum"' }}>
+                  {typeof rowTotals[rk] === 'number' ? rowTotals[rk].toLocaleString() : rowTotals[rk]}
+                </td>
+              </tr>
+            ))}
+            <tr style={{ borderTop: `2px solid ${T.primary}`, background: T.primaryLight, fontWeight: 800 }}>
+              <td style={{ padding: '7px 10px', color: T.primary, borderRight: `1px solid ${T.border}` }}>Column total</td>
+              {colKeys.map(ck => (
+                <td key={ck} style={{ padding: '7px 10px', textAlign: 'right', fontFeatureSettings: '"tnum"', color: T.primary, borderRight: `1px solid ${T.border}` }}>
+                  {typeof colTotals[ck] === 'number' ? colTotals[ck].toLocaleString() : colTotals[ck]}
+                </td>
+              ))}
+              <td style={{ padding: '7px 10px', textAlign: 'right', color: T.primary, fontFeatureSettings: '"tnum"', fontWeight: 900 }}>
+                {typeof grand === 'number' ? grand.toLocaleString() : grand}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    )
+  }
+
+  return (
+    <Card>
+      <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+        <div>
+          Previewing a limited number of records. Run the report to see everything. {rows.length} {data.aggregate ? 'result' : 'row' + (rows.length === 1 ? '' : 's')}.
+          {cfg.report_type !== 'tabular' && <span style={{ marginLeft: 8, fontWeight: 700, color: T.primary, textTransform: 'uppercase', fontSize: 10 }}>{cfg.report_type}</span>}
+        </div>
+      </div>
+
+      {/* Drop zone at top — drag a column header here to add it as a group */}
+      {cfg.report_type !== 'matrix' && (
+        <div
+          onDragOver={e => { if (dragCol && baseFields[dragCol]) { e.preventDefault(); setDropOverTop(true) } }}
+          onDragLeave={() => setDropOverTop(false)}
+          onDrop={e => { e.preventDefault(); setDropOverTop(false); if (dragCol) { groupByColumn(dragCol); setDragCol(null) } }}
+          style={{
+            padding: 8, marginBottom: 8, borderRadius: 6,
+            border: `1px dashed ${dropOverTop ? T.primary : T.borderLight}`,
+            background: dropOverTop ? T.primaryLight : T.surfaceAlt,
+            fontSize: 11, color: dropOverTop ? T.primary : T.textMuted,
+            textAlign: 'center', fontWeight: 600, transition: 'all 0.1s',
+          }}>
+          {(cfg.groups || []).length > 0
+            ? <><strong>Grouped by:</strong> {(cfg.groups || []).map(g => colLabel(g)).join(' → ')} — drop another column to group further</>
+            : <>Drop a column header here to group by it (switches to Summary)</>}
+        </div>
+      )}
+
+      {cfg.report_type === 'tabular' && renderTabular()}
+      {cfg.report_type === 'summary' && renderSummary()}
+      {cfg.report_type === 'matrix' && renderMatrix()}
+
+      {rows.length > 200 && cfg.report_type === 'tabular' && (
+        <div style={{ fontSize: 10, color: T.textMuted, marginTop: 6, textAlign: 'center' }}>Showing first 200 of {rows.length} rows.</div>
+      )}
+    </Card>
   )
 }
 
