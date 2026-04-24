@@ -44,24 +44,105 @@ const AGGREGATES = [
 function emptyConfig() {
   return {
     base_entity: 'deals',
-    fields: [],                // ['field_name'] or {formula, label, key}
-    filter_groups: [{ logic: 'and', conditions: [] }],
-    cross_filters: [],         // [{ type: 'in'|'not_in', report_id, local_field, remote_field }]
+    // Fields can be: 'field_name' (base table), {join, field, label} (joined table),
+    // or {formula, label, key} (calculated column)
+    fields: [],
+    // Flat list of filters (numbered 1, 2, 3…). Logic is expressed via filter_expression.
+    filters: [],
+    // Filter expression — e.g. "1 AND 2 AND (3 OR 4)". Defaults to AND-of-all.
+    filter_expression: '',
+    cross_filters: [],         // [{ type, report_id, local_field, remote_field }]
     order_by: null, order_dir: 'desc', limit: 500,
     aggregate: { type: 'none', field: null, group_by: null, group_aggs: [] },
+    // Groups — for pivot-style grouping in the Outline tab
+    groups: [], // ['field_name']
   }
 }
 
-// Back-compat: migrate legacy `filters: [...]` to a single AND filter group
+// Evaluate a boolean filter expression: "1 AND 2 AND (3 OR 4)" where each number
+// refers to a 1-indexed filter. Returns a function (pass: bool[]) => bool.
+// If expression is empty, defaults to ALL true (every filter must pass).
+function compileFilterExpression(expr, count) {
+  if (!expr || !expr.trim()) return (passes) => passes.every(Boolean)
+  // Tokenize: numbers, AND, OR, NOT, (, )
+  const tokens = expr.match(/\d+|\bAND\b|\bOR\b|\bNOT\b|\(|\)/gi)
+  if (!tokens) return () => true
+  // Validate — only digits, operators, parens
+  for (const t of tokens) {
+    if (/^\d+$/.test(t)) {
+      const n = Number(t)
+      if (n < 1 || n > count) throw new Error(`Filter ${n} doesn't exist (you have ${count} filter${count === 1 ? '' : 's'}).`)
+    }
+  }
+  return (passes) => {
+    // Translate tokens to JS-safe expression using passes[idx]
+    const js = tokens.map(t => {
+      if (/^\d+$/.test(t)) return String(Boolean(passes[Number(t) - 1]))
+      if (/^AND$/i.test(t)) return '&&'
+      if (/^OR$/i.test(t)) return '||'
+      if (/^NOT$/i.test(t)) return '!'
+      return t
+    }).join(' ')
+    // Safety: only allow true/false/&&/||/!/()
+    if (!/^[\s&|!()truefals]+$/.test(js.replace(/\s/g, ''))) return passes.every(Boolean)
+    try { /* eslint-disable no-new-func */ return Function(`"use strict";return (${js})`)() } catch { return passes.every(Boolean) }
+  }
+}
+
+// Evaluate a single filter condition against a row (client-side).
+function evalCondition(row, f, base) {
+  const fieldPath = f.join ? [f.join, f.field].join('.') : f.field
+  let val
+  if (f.join) {
+    const j = row[f.join]
+    val = Array.isArray(j) ? j[0]?.[f.field] : j?.[f.field]
+  } else {
+    val = row[f.field]
+  }
+  const v = f.value
+  switch (f.operator) {
+    case 'eq': return String(val ?? '') === String(v ?? '')
+    case 'neq': return String(val ?? '') !== String(v ?? '')
+    case 'gt': return Number(val) > Number(v)
+    case 'gte': return Number(val) >= Number(v)
+    case 'lt': return Number(val) < Number(v)
+    case 'lte': return Number(val) <= Number(v)
+    case 'like': return String(val ?? '').toLowerCase().includes(String(v ?? '').toLowerCase())
+    case 'not_like': return !String(val ?? '').toLowerCase().includes(String(v ?? '').toLowerCase())
+    case 'is_null': return val == null || val === ''
+    case 'not_null': return val != null && val !== ''
+    case 'in': return String(v ?? '').split(',').map(s => s.trim()).filter(Boolean).includes(String(val ?? ''))
+    case 'not_in': return !String(v ?? '').split(',').map(s => s.trim()).filter(Boolean).includes(String(val ?? ''))
+    default: return true
+  }
+}
+
+// Back-compat: migrate legacy configs (filter_groups / flat filters) to the new shape
+// where filters is a flat numbered list + filter_expression holds the boolean logic.
 function migrateConfig(cfg) {
   if (!cfg) return emptyConfig()
   const out = { ...emptyConfig(), ...cfg }
-  if (Array.isArray(cfg.filters) && (!cfg.filter_groups || !cfg.filter_groups.length)) {
-    out.filter_groups = [{ logic: 'and', conditions: cfg.filters }]
+  // Merge legacy filter_groups back into a flat filters[] + expression
+  if (Array.isArray(cfg.filter_groups) && cfg.filter_groups.length && (!cfg.filters || !cfg.filters.length)) {
+    const flat = []
+    const parts = []
+    for (const g of cfg.filter_groups) {
+      const startIdx = flat.length
+      for (const c of (g.conditions || [])) flat.push(c)
+      const endIdx = flat.length
+      if (endIdx === startIdx) continue
+      const nums = []
+      for (let i = startIdx + 1; i <= endIdx; i++) nums.push(String(i))
+      parts.push(nums.length > 1 ? `(${nums.join(' ' + (g.logic || 'AND').toUpperCase() + ' ')})` : nums[0])
+    }
+    out.filters = flat
+    out.filter_expression = parts.join(' AND ')
   }
-  if (!out.filter_groups?.length) out.filter_groups = [{ logic: 'and', conditions: [] }]
+  if (!Array.isArray(out.filters)) out.filters = []
   if (!out.cross_filters) out.cross_filters = []
   if (!out.aggregate) out.aggregate = { type: 'none', field: null }
+  if (!Array.isArray(out.groups)) out.groups = []
+  delete out.filter_groups
   return out
 }
 
@@ -116,8 +197,13 @@ async function executeReportQueryStandalone(report) {
   const cfg = migrateConfig(report.query_config)
   const base = cfg.base_entity || report.base_entity || 'deals'
   const rawFields = (cfg.fields || []).filter(f => typeof f === 'string')
+  const joinedFields = (cfg.fields || []).filter(f => typeof f === 'object' && f?.join && f?.field)
   const formulaFields = (cfg.fields || []).filter(f => typeof f === 'object' && f?.formula)
   const selectFields = rawFields.length ? rawFields : Object.keys(TABLES[base]?.fields || {}).slice(0, 8)
+
+  // Figure out which joined tables we need based on fields + filters
+  const joinTables = new Set(joinedFields.map(f => f.join))
+  for (const f of (cfg.filters || [])) if (f.join) joinTables.add(f.join)
 
   const allowSets = [], denySets = []
   for (const cf of (cfg.cross_filters || [])) {
@@ -131,21 +217,26 @@ async function executeReportQueryStandalone(report) {
     else allowSets.push({ field: cf.local_field, ids })
   }
 
-  const select = selectFields.join(', ') || '*'
+  // Build select clause with joined table expansions
+  const selectParts = [selectFields.join(', ') || '*']
+  for (const t of joinTables) selectParts.push(`${t}(*)`)
+  const select = selectParts.join(', ')
+
   let q = supabase.from(base).select(select)
   for (const a of allowSets) q = a.ids.length ? q.in(a.field, a.ids) : q.eq(a.field, '__no_match__')
   for (const d of denySets) if (d.ids.length) q = q.not(d.field, 'in', `(${d.ids.join(',')})`)
 
-  for (const grp of (cfg.filter_groups || [])) {
-    const conds = grp.conditions || []
-    if (!conds.length) continue
-    if ((grp.logic || 'and') === 'or') {
-      const parts = conds.map(filterToPgrest).filter(Boolean)
-      if (parts.length) q = q.or(parts.join(','))
-    } else {
-      for (const f of conds) q = applyFilter(q, f)
-    }
+  // Server-side filters: apply only the simple ones on the base table.
+  // Joined-table filters + compound boolean logic are evaluated client-side.
+  const baseFilters = (cfg.filters || []).filter(f => !f.join)
+  const joinFilters = (cfg.filters || []).filter(f => f.join)
+  const usesComplexLogic = !!cfg.filter_expression && cfg.filter_expression.trim().length > 0
+
+  if (!usesComplexLogic && baseFilters.length && !joinFilters.length) {
+    // Simple AND path — push filters to Postgres
+    for (const f of baseFilters) q = applyFilter(q, f)
   }
+  // Else we still need the base-table rows; filter in-memory below
 
   if (cfg.order_by) q = q.order(cfg.order_by, { ascending: cfg.order_dir === 'asc' })
   q = q.limit(Math.min(Math.max(Number(cfg.limit) || 500, 1), 5000))
@@ -153,11 +244,32 @@ async function executeReportQueryStandalone(report) {
   const { data, error } = await q
   if (error) throw error
 
-  const rows = (data || []).map(row => {
+  let rows = (data || []).map(row => {
     const out = { ...row }
+    // Flatten joined fields into namespaced columns: deal_analysis_champion
+    for (const jf of joinedFields) {
+      const j = row[jf.join]
+      const val = Array.isArray(j) ? j[0]?.[jf.field] : j?.[jf.field]
+      out[`${jf.join}_${jf.field}`] = val
+    }
     for (const ff of formulaFields) out[ff.key || ff.label] = evalFormula(ff.formula, row)
     return out
   })
+
+  // If we used complex logic OR have joined-table filters, evaluate the
+  // full expression in-memory against the loaded rows.
+  if (usesComplexLogic || joinFilters.length || baseFilters.length) {
+    const allFilters = cfg.filters || []
+    try {
+      const matcher = compileFilterExpression(cfg.filter_expression, allFilters.length)
+      rows = rows.filter(r => {
+        const passes = allFilters.map(f => evalCondition(r, f, base))
+        return matcher(passes)
+      })
+    } catch (e) {
+      throw new Error(e.message || 'Bad filter expression')
+    }
+  }
 
   const agg = cfg.aggregate || { type: 'none' }
   if (agg.type === 'count') return { columns: ['count'], rows: [{ count: rows.length }], aggregate: true, data: rows }
@@ -195,7 +307,11 @@ async function executeReportQueryStandalone(report) {
     const columns = [agg.group_by, 'count', ...aggList.filter(a => a.field).map(a => `${a.type}_${a.field}`)]
     return { columns, rows: groupRows.sort((a, b) => (b.count || 0) - (a.count || 0)), aggregate: true, data: rows }
   }
-  const columns = [...selectFields, ...formulaFields.map(f => f.key || f.label)]
+  const columns = [
+    ...selectFields,
+    ...joinedFields.map(f => `${f.join}_${f.field}`),
+    ...formulaFields.map(f => f.key || f.label),
+  ]
   return { columns, rows, aggregate: false, data: rows }
 }
 
@@ -267,8 +383,23 @@ export default function Reports() {
 
   async function deleteReport(id) {
     if (!window.confirm('Delete this report?')) return
-    await supabase.from('saved_reports').delete().eq('id', id)
+    const { error } = await supabase.from('saved_reports').delete().eq('id', id)
+    if (error) { alert('Delete failed: ' + error.message); return }
     loadReports()
+  }
+
+  // Open the builder with a prebuilt's config, but don't hold its id —
+  // saving creates a new org-owned editable report.
+  function duplicateReport(r) {
+    setEditingId(null)
+    const cfg = migrateConfig(r.query_config)
+    setForm({
+      name: `Copy of ${r.name || 'report'}`,
+      description: r.description || '',
+      category: r.category || 'custom',
+      config: cfg,
+    })
+    setMode('build')
   }
 
   async function toggleFavorite(r) {
@@ -332,30 +463,20 @@ export default function Reports() {
       </div>
 
       <div style={{ padding: '16px 24px' }}>
-        {mode === 'list' && <ListView reports={reports} runReport={runReport} startEdit={startEdit} deleteReport={deleteReport} startNew={startNew} toggleFavorite={toggleFavorite} moveToFolder={moveToFolder} />}
+        {mode === 'list' && <ListView reports={reports} runReport={runReport} startEdit={startEdit} deleteReport={deleteReport} duplicateReport={duplicateReport} startNew={startNew} toggleFavorite={toggleFavorite} moveToFolder={moveToFolder} />}
 
         {mode === 'build' && (
-          <>
-            {reports.length === 0 && (
-              <div style={{ background: T.primaryLight, border: `1px solid ${T.primary}40`, borderLeft: `4px solid ${T.primary}`, borderRadius: 6, padding: '12px 16px', marginBottom: 14 }}>
-                <div style={{ fontSize: 10, fontWeight: 800, color: T.primary, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Report writer</div>
-                <div style={{ fontSize: 13, color: T.text, lineHeight: 1.55 }}>
-                  Pick a base table, choose fields, stack filters with AND/OR, add calculated columns, cross-reference other reports, group + aggregate. Preview results before saving.
-                </div>
-              </div>
-            )}
-            <BuildView
-              form={form}
-              setForm={setForm}
-              editingId={editingId}
-              baseFields={baseFields}
-              reports={reports}
-              saving={saving}
-              saveReport={saveReport}
-              cancel={() => setMode('list')}
-              previewReport={() => runReport({ ...form, query_config: form.config, base_entity: form.config.base_entity })}
-            />
-          </>
+          <BuildViewV2
+            form={form}
+            setForm={setForm}
+            editingId={editingId}
+            baseFields={baseFields}
+            reports={reports}
+            saving={saving}
+            saveReport={saveReport}
+            cancel={() => setMode('list')}
+            previewReport={() => runReport({ ...form, query_config: form.config, base_entity: form.config.base_entity })}
+          />
         )}
 
         {mode === 'run' && (
@@ -367,7 +488,7 @@ export default function Reports() {
 }
 
 // ────────────────────────────────────────────────────────
-function ListView({ reports, runReport, startEdit, deleteReport, startNew, toggleFavorite, moveToFolder }) {
+function ListView({ reports, runReport, startEdit, deleteReport, duplicateReport, startNew, toggleFavorite, moveToFolder }) {
   const [activeFolder, setActiveFolder] = useState('__all__') // __all__ | __fav__ | __uncat__ | <folder name>
   const [search, setSearch] = useState('')
   const [newFolder, setNewFolder] = useState('')
@@ -451,46 +572,78 @@ function ListView({ reports, runReport, startEdit, deleteReport, startNew, toggl
                 : `"${activeFolder}" is empty. Drag reports onto it from the list.`}
             action={<Button primary onClick={startNew}>+ Build Report</Button>} />
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 10 }}>
-            {filtered.map(r => {
-              const cfg = r.query_config || {}
-              const filterCount = (cfg.filter_groups || []).reduce((s, g) => s + (g.conditions?.length || 0), 0) + (cfg.filters?.length || 0)
-              return (
-                <Card key={r.id}
-                  style={{ opacity: draggingId === r.id ? 0.4 : 1, cursor: r.is_prebuilt ? 'default' : 'grab' }}
-                >
-                  <div draggable={!r.is_prebuilt}
-                    onDragStart={e => { e.dataTransfer.setData('text/plain', r.id); e.dataTransfer.effectAllowed = 'move'; setDraggingId(r.id) }}
-                    onDragEnd={() => setDraggingId(null)}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6, gap: 8 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, flex: 1 }}>
+          <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: 'hidden' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: T.surfaceAlt, borderBottom: `1px solid ${T.border}` }}>
+                  {['', 'Name', 'Category', 'Base', 'Fields', 'Filters', 'Folder', 'Type', ''].map((h, i) => (
+                    <th key={i} style={{
+                      textAlign: i === 0 ? 'center' : i >= 4 && i <= 5 ? 'right' : 'left',
+                      padding: '8px 10px', fontSize: 10, fontWeight: 700,
+                      color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em',
+                    }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map(r => {
+                  const cfg = r.query_config || {}
+                  const filterCount = (cfg.filter_groups || []).reduce((s, g) => s + (g.conditions?.length || 0), 0) + (cfg.filters?.length || 0)
+                  const isDragging = draggingId === r.id
+                  return (
+                    <tr key={r.id}
+                      draggable={!r.is_prebuilt}
+                      onDragStart={e => { e.dataTransfer.setData('text/plain', r.id); e.dataTransfer.effectAllowed = 'move'; setDraggingId(r.id) }}
+                      onDragEnd={() => setDraggingId(null)}
+                      style={{
+                        borderBottom: `1px solid ${T.borderLight}`,
+                        opacity: isDragging ? 0.4 : 1,
+                        cursor: r.is_prebuilt ? 'default' : 'grab',
+                      }}
+                      onMouseEnter={e => { e.currentTarget.style.background = T.surfaceAlt }}
+                      onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+                    >
+                      <td style={{ padding: '6px 10px', textAlign: 'center' }}>
                         <button onClick={(e) => { e.stopPropagation(); toggleFavorite(r) }}
-                          style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, padding: 0, color: r.is_favorite ? T.warning : T.borderLight, lineHeight: 1 }}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 15, padding: 0, color: r.is_favorite ? T.warning : T.borderLight, lineHeight: 1 }}
                           title={r.is_favorite ? 'Unfavorite' : 'Favorite'}>★</button>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: T.text, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</div>
-                      </div>
-                      <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-                        {r.is_prebuilt && <Badge color={T.textMuted}>Prebuilt</Badge>}
-                        {r.category && <Badge color={CATEGORY_COLORS[r.category] || T.primary}>{r.category}</Badge>}
-                      </div>
-                    </div>
-                    {r.description && <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 8, lineHeight: 1.5 }}>{r.description}</div>}
-                    <div style={{ fontSize: 10, color: T.textMuted, marginBottom: 8, fontFamily: T.mono }}>
-                      {r.base_entity || 'deals'}
-                      {cfg.fields?.length ? ` · ${cfg.fields.length} fields` : ''}
-                      {filterCount ? ` · ${filterCount} filters` : ''}
-                      {cfg.cross_filters?.length ? ` · ${cfg.cross_filters.length} x-refs` : ''}
-                      {r.folder ? ` · ${r.folder}` : ''}
-                    </div>
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <Button primary onClick={() => runReport(r)} style={{ padding: '4px 10px', fontSize: 11 }}>Run</Button>
-                      {!r.is_prebuilt && <Button onClick={() => startEdit(r)} style={{ padding: '4px 10px', fontSize: 11 }}>Edit</Button>}
-                      {!r.is_prebuilt && <Button onClick={() => deleteReport(r.id)} style={{ padding: '4px 10px', fontSize: 11, color: T.error }}>Delete</Button>}
-                    </div>
-                  </div>
-                </Card>
-              )
-            })}
+                      </td>
+                      <td style={{ padding: '8px 10px', minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: T.text, cursor: 'pointer' }}
+                          onClick={() => runReport(r)}
+                          title="Run report">
+                          {r.name || '(untitled)'}
+                        </div>
+                        {r.description && <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2, lineHeight: 1.4 }}>{r.description}</div>}
+                      </td>
+                      <td style={{ padding: '8px 10px' }}>
+                        {r.category ? <Badge color={CATEGORY_COLORS[r.category] || T.primary}>{r.category}</Badge> : <span style={{ fontSize: 11, color: T.textMuted }}>—</span>}
+                      </td>
+                      <td style={{ padding: '8px 10px', fontSize: 11, color: T.textSecondary, fontFamily: T.mono }}>{r.base_entity || cfg.base_entity || 'deals'}</td>
+                      <td style={{ padding: '8px 10px', fontSize: 11, color: T.textSecondary, textAlign: 'right', fontFeatureSettings: '"tnum"' }}>{cfg.fields?.length || 0}</td>
+                      <td style={{ padding: '8px 10px', fontSize: 11, color: T.textSecondary, textAlign: 'right', fontFeatureSettings: '"tnum"' }}>{filterCount}{cfg.cross_filters?.length ? ` + ${cfg.cross_filters.length} xref` : ''}</td>
+                      <td style={{ padding: '8px 10px', fontSize: 11, color: T.textMuted }}>{r.folder || '—'}</td>
+                      <td style={{ padding: '8px 10px' }}>
+                        {r.is_prebuilt ? <Badge color={T.textMuted}>Prebuilt</Badge> : <span style={{ fontSize: 11, color: T.textMuted }}>Custom</span>}
+                      </td>
+                      <td style={{ padding: '6px 10px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        <div style={{ display: 'inline-flex', gap: 4 }}>
+                          <Button primary onClick={() => runReport(r)} style={{ padding: '3px 10px', fontSize: 11 }}>Run</Button>
+                          {r.is_prebuilt ? (
+                            <Button onClick={() => duplicateReport(r)} style={{ padding: '3px 10px', fontSize: 11 }} title="Create an editable copy">Duplicate</Button>
+                          ) : (
+                            <>
+                              <Button onClick={() => startEdit(r)} style={{ padding: '3px 10px', fontSize: 11 }}>Edit</Button>
+                              <Button onClick={() => deleteReport(r.id)} style={{ padding: '3px 10px', fontSize: 11, color: T.error }}>Delete</Button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
@@ -920,6 +1073,382 @@ function BuildView({ form, setForm, editingId, baseFields, reports, saving, save
         <Button onClick={cancel} style={{ padding: '6px 14px', fontSize: 12 }}>Cancel</Button>
         <Button primary onClick={saveReport} disabled={saving || !form.name.trim()} style={{ padding: '6px 14px', fontSize: 12 }}>{saving ? 'Saving...' : 'Save Report'}</Button>
       </div>
+    </div>
+  )
+}
+
+// ────────────────────────────────────────────────────────
+// BuildViewV2 — Salesforce-style report builder
+// Top bar: inline name + base table + Save / Save&Run / Run / Close + Auto-preview toggle
+// Left sidebar: Outline (Groups + Columns) | Filters (numbered cards + boolean expression)
+// Right: live preview table
+function BuildViewV2({ form, setForm, editingId, baseFields, reports, saving, saveReport, cancel, previewReport }) {
+  const cfg = form.config
+  const setCfg = (patch) => setForm(p => ({ ...p, config: { ...p.config, ...patch } }))
+
+  const [sidebar, setSidebar] = useState('outline')
+  const [autoPreview, setAutoPreview] = useState(() => {
+    try { return localStorage.getItem('ri_reports_autopreview') !== 'false' } catch { return true }
+  })
+  useEffect(() => { try { localStorage.setItem('ri_reports_autopreview', String(autoPreview)) } catch {} }, [autoPreview])
+
+  const [fieldSearch, setFieldSearch] = useState('')
+  const [livePreview, setLivePreview] = useState(null)
+  const [liveRunning, setLiveRunning] = useState(false)
+  const [liveError, setLiveError] = useState(null)
+
+  const joinableTables = useMemo(() => {
+    return Object.entries(TABLES)
+      .filter(([k, t]) => k !== cfg.base_entity && t.join === 'deal_id' && cfg.base_entity === 'deals')
+      .map(([k, t]) => ({ key: k, label: t.label, fields: t.fields, multi: !!t.multi }))
+  }, [cfg.base_entity])
+
+  async function runLive() {
+    setLiveRunning(true); setLiveError(null)
+    try {
+      const r = await executeReportQueryStandalone({ query_config: cfg, base_entity: cfg.base_entity })
+      setLivePreview(r)
+    } catch (e) { setLivePreview(null); setLiveError(e?.message || String(e)) }
+    finally { setLiveRunning(false) }
+  }
+
+  useEffect(() => {
+    if (!autoPreview) return
+    const h = setTimeout(runLive, 400)
+    return () => clearTimeout(h)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(cfg), autoPreview])
+
+  function addFilter(preset) { setCfg({ filters: [...cfg.filters, preset || { field: '', operator: 'eq', value: '' }] }); setSidebar('filters') }
+  function updateFilter(i, patch) { setCfg({ filters: cfg.filters.map((f, j) => j === i ? { ...f, ...patch } : f) }) }
+  function removeFilter(i) {
+    const next = cfg.filters.filter((_, j) => j !== i)
+    let expr = cfg.filter_expression || ''
+    if (expr) {
+      expr = expr.replace(/\d+/g, m => {
+        const n = Number(m)
+        if (n === i + 1) return 'TRUE'
+        if (n > i + 1) return String(n - 1)
+        return m
+      }).replace(/\bTRUE\b/g, '')
+        .replace(/\(\s*\)/g, '')
+        .replace(/\s+(AND|OR)\s+(AND|OR)/gi, ' $1 ')
+        .replace(/^\s*(AND|OR)\s+/i, '')
+        .replace(/\s+(AND|OR)\s*$/i, '')
+        .trim()
+    }
+    setCfg({ filters: next, filter_expression: expr })
+  }
+
+  function addFormulaField() {
+    const key = `calc_${Math.random().toString(36).slice(2, 6)}`
+    setCfg({ fields: [...cfg.fields, { key, label: 'Calculated', formula: '' }] })
+  }
+  function updateField(idx, patch) { setCfg({ fields: cfg.fields.map((f, i) => i === idx ? (typeof f === 'string' ? f : { ...f, ...patch }) : f) }) }
+  function removeField(idx) { setCfg({ fields: cfg.fields.filter((_, i) => i !== idx) }) }
+
+  function toggleField(key, join) {
+    const already = cfg.fields.some(f => (typeof f === 'string' ? f === key && !join : typeof f === 'object' && f.field === key && f.join === join))
+    if (already) setCfg({ fields: cfg.fields.filter(f => !(typeof f === 'string' ? f === key && !join : typeof f === 'object' && f.field === key && f.join === join)) })
+    else setCfg({ fields: [...cfg.fields, join ? { join, field: key, label: key } : key] })
+  }
+
+  function fieldChipLabel(f) {
+    if (typeof f === 'string') return baseFields[f]?.label || f
+    if (f.formula !== undefined) return f.label || 'Calculated'
+    if (f.join) return `${TABLES[f.join]?.label || f.join} · ${TABLES[f.join]?.fields?.[f.field]?.label || f.field}`
+    return f.label || f.field
+  }
+  function fieldChipType(f) {
+    if (typeof f === 'string') return baseFields[f]?.type || 'text'
+    if (f.formula !== undefined) return 'formula'
+    if (f.join) return TABLES[f.join]?.fields?.[f.field]?.type || 'text'
+    return 'text'
+  }
+
+  const filterCount = cfg.filters.length
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: 0, minHeight: 'calc(100vh - 110px)', border: `1px solid ${T.border}`, borderRadius: 8, overflow: 'hidden', background: T.surface }}>
+      {/* Left sidebar */}
+      <div style={{ borderRight: `1px solid ${T.border}`, display: 'flex', flexDirection: 'column', background: T.surface, overflow: 'hidden' }}>
+        <div style={{ display: 'flex', borderBottom: `1px solid ${T.border}`, background: T.surfaceAlt }}>
+          {[['outline', 'Outline', null], ['filters', 'Filters', filterCount]].map(([k, label, badge]) => (
+            <button key={k} onClick={() => setSidebar(k)}
+              style={{ flex: 1, padding: '10px 6px', background: 'transparent', border: 'none', borderBottom: sidebar === k ? `2px solid ${T.primary}` : '2px solid transparent', cursor: 'pointer', fontSize: 12, fontWeight: 700, color: sidebar === k ? T.primary : T.textMuted, fontFamily: T.font, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+              {label}{badge != null && <span style={{ background: T.primary, color: '#fff', fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 10 }}>{badge}</span>}
+            </button>
+          ))}
+        </div>
+        <div style={{ flex: 1, overflow: 'auto', padding: 12 }}>
+          {sidebar === 'outline' && (
+            <>
+              <Section title="Groups" subtitle="Group rows (pivot)">
+                {cfg.groups.length === 0 && <div style={{ fontSize: 11, color: T.textMuted, fontStyle: 'italic', padding: '4px 0' }}>No groups. Reports run flat.</div>}
+                {cfg.groups.map((g, i) => <Chip key={i} label={baseFields[g]?.label || g} onRemove={() => setCfg({ groups: cfg.groups.filter((_, j) => j !== i) })} />)}
+                <select value="" onChange={e => { if (e.target.value) setCfg({ groups: [...cfg.groups, e.target.value] }) }}
+                  style={{ ...inputStyle, padding: '5px 8px', fontSize: 11, marginTop: 6 }}>
+                  <option value="">+ Add group…</option>
+                  {Object.entries(baseFields).filter(([k]) => !cfg.groups.includes(k)).map(([k, m]) => <option key={k} value={k}>{m.label || k}</option>)}
+                </select>
+              </Section>
+
+              <Section title="Columns" subtitle="Click or drag fields to add. Drag chips to reorder.">
+                <input value={fieldSearch} onChange={e => setFieldSearch(e.target.value)} placeholder="Search fields…" style={{ ...inputStyle, padding: '6px 8px', fontSize: 11, marginBottom: 8 }} />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
+                  {cfg.fields.length === 0 && <div style={{ fontSize: 11, color: T.textMuted, fontStyle: 'italic', padding: 4 }}>No columns — first 8 shown by default.</div>}
+                  {cfg.fields.map((f, i) => {
+                    const isFormula = typeof f === 'object' && f.formula !== undefined
+                    return (
+                      <div key={i} draggable={!isFormula}
+                        onDragStart={e => { e.dataTransfer.setData('text/plain', JSON.stringify({ kind: 'reorder', fromIdx: i })); e.dataTransfer.effectAllowed = 'move' }}
+                        onDragOver={e => e.preventDefault()}
+                        onDrop={e => {
+                          e.preventDefault()
+                          try {
+                            const d = JSON.parse(e.dataTransfer.getData('text/plain'))
+                            if (d?.kind === 'reorder' && d.fromIdx !== i) {
+                              const arr = [...cfg.fields]
+                              const [moved] = arr.splice(d.fromIdx, 1)
+                              arr.splice(i, 0, moved)
+                              setCfg({ fields: arr })
+                            }
+                          } catch {}
+                        }}
+                        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 8px', borderRadius: 4, background: isFormula ? T.primaryLight : T.surfaceAlt, border: `1px solid ${isFormula ? T.primary + '55' : T.borderLight}`, cursor: isFormula ? 'default' : 'grab' }}>
+                        <span style={{ fontSize: 10, color: T.textMuted }}>⋮⋮</span>
+                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: TYPE_COLORS[fieldChipType(f)] || T.textMuted, flexShrink: 0 }} />
+                        {isFormula ? (
+                          <>
+                            <input style={{ ...inputStyle, padding: '2px 6px', fontSize: 11, width: 90 }} value={f.label} onChange={e => updateField(i, { label: e.target.value })} />
+                            <input style={{ ...inputStyle, padding: '2px 6px', fontSize: 11, flex: 1, fontFamily: 'ui-monospace, monospace' }} value={f.formula} onChange={e => updateField(i, { formula: e.target.value })} placeholder="fit_score + deal_health_score" />
+                          </>
+                        ) : (
+                          <span style={{ flex: 1, fontSize: 12, fontWeight: 600, color: T.text, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fieldChipLabel(f)}</span>
+                        )}
+                        <button onClick={() => removeField(i)} style={{ background: 'none', border: 'none', color: T.textMuted, fontSize: 13, cursor: 'pointer', padding: 0 }}>×</button>
+                      </div>
+                    )
+                  })}
+                </div>
+                <Button onClick={addFormulaField} style={{ padding: '4px 10px', fontSize: 11, marginBottom: 10 }}>+ Calculated column</Button>
+
+                <div style={{ fontSize: 9, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>{TABLES[cfg.base_entity]?.label || cfg.base_entity} fields</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginBottom: 10 }}>
+                  {Object.entries(baseFields)
+                    .filter(([k, m]) => !fieldSearch || (m.label || '').toLowerCase().includes(fieldSearch.toLowerCase()) || k.includes(fieldSearch.toLowerCase()))
+                    .map(([k, m]) => {
+                      const selected = cfg.fields.some(f => typeof f === 'string' && f === k)
+                      return (
+                        <div key={k} draggable onClick={() => toggleField(k, null)}
+                          onDragStart={e => { e.dataTransfer.setData('text/plain', JSON.stringify({ kind: 'add', field: k })); e.dataTransfer.effectAllowed = 'copy' }}
+                          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 6px', fontSize: 11, cursor: 'grab', borderRadius: 4, background: selected ? T.primaryLight : 'transparent' }}
+                          onMouseEnter={e => { if (!selected) e.currentTarget.style.background = T.surfaceAlt }}
+                          onMouseLeave={e => { if (!selected) e.currentTarget.style.background = 'transparent' }}>
+                          <span style={{ width: 6, height: 6, borderRadius: '50%', background: TYPE_COLORS[m.type] || T.textMuted, flexShrink: 0 }} />
+                          <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: T.text }}>{m.label || k}</span>
+                          {selected && <span style={{ fontSize: 10, color: T.primary, fontWeight: 700 }}>✓</span>}
+                        </div>
+                      )
+                    })}
+                </div>
+
+                {joinableTables.length > 0 && (
+                  <>
+                    <div style={{ fontSize: 9, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4, marginTop: 10 }}>Related objects</div>
+                    {joinableTables.map(jt => <JoinedGroup key={jt.key} table={jt} fieldSearch={fieldSearch} cfg={cfg} toggleField={toggleField} />)}
+                  </>
+                )}
+              </Section>
+            </>
+          )}
+
+          {sidebar === 'filters' && (
+            <>
+              <Section title="Show Me" subtitle={`All ${TABLES[cfg.base_entity]?.label || cfg.base_entity}`}>
+                <select value={cfg.base_entity}
+                  onChange={e => setCfg({ base_entity: e.target.value, fields: [], filters: [], filter_expression: '', order_by: null, aggregate: { type: 'none' } })}
+                  style={{ ...inputStyle, padding: '5px 8px', fontSize: 11 }}>
+                  {Object.entries(TABLES).map(([k, v]) => <option key={k} value={k}>{v.label || k}</option>)}
+                </select>
+              </Section>
+
+              <Section title="Include Rows Matching" subtitle="Combine filters with AND / OR / NOT and parentheses.">
+                <input value={cfg.filter_expression || ''} onChange={e => setCfg({ filter_expression: e.target.value })}
+                  placeholder={filterCount > 1 ? '1 AND 2 AND (3 OR 4)' : (filterCount === 1 ? '1' : 'Add a filter below…')}
+                  style={{ ...inputStyle, padding: '6px 10px', fontSize: 12, fontFamily: 'ui-monospace, monospace' }} />
+                <div style={{ fontSize: 10, color: T.textMuted, marginTop: 4 }}>Blank = every filter must pass (implicit AND).</div>
+              </Section>
+
+              <Section title={`Filters (${filterCount})`}>
+                {cfg.filters.length === 0 && <div style={{ fontSize: 11, color: T.textMuted, fontStyle: 'italic', padding: 4 }}>No filters yet.</div>}
+                {cfg.filters.map((f, i) => (
+                  <FilterCard key={i} index={i + 1} filter={f} baseFields={baseFields} joinableTables={joinableTables}
+                    onUpdate={patch => updateFilter(i, patch)} onRemove={() => removeFilter(i)} />
+                ))}
+                <Button onClick={() => addFilter()} style={{ padding: '4px 10px', fontSize: 11, marginTop: 6 }}>+ Add filter</Button>
+              </Section>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Right main area */}
+      <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, background: T.bg }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', borderBottom: `1px solid ${T.border}`, background: T.surface, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
+            <div style={{ fontSize: 10, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Report</div>
+            <input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
+              placeholder="Untitled report"
+              style={{ ...inputStyle, padding: '4px 8px', fontSize: 15, fontWeight: 700, border: '1px solid transparent', background: 'transparent' }} />
+          </div>
+          <div style={{ padding: '4px 10px', background: T.surfaceAlt, borderRadius: 4, fontSize: 11, fontWeight: 600, color: T.text, border: `1px solid ${T.border}` }}>{TABLES[cfg.base_entity]?.label || cfg.base_entity}</div>
+          <label style={{ fontSize: 10, color: T.textMuted, display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', userSelect: 'none' }}>
+            <input type="checkbox" checked={autoPreview} onChange={e => setAutoPreview(e.target.checked)} />
+            Update Preview Automatically
+          </label>
+          {!autoPreview && <Button onClick={runLive} style={{ padding: '5px 12px', fontSize: 11 }}>Preview</Button>}
+          <Button onClick={saveReport} disabled={saving || !form.name.trim()} style={{ padding: '5px 12px', fontSize: 11 }}>{saving ? 'Saving…' : 'Save'}</Button>
+          <Button onClick={async () => { await saveReport(); previewReport() }} disabled={saving || !form.name.trim()} style={{ padding: '5px 12px', fontSize: 11 }}>Save &amp; Run</Button>
+          <Button onClick={cancel} style={{ padding: '5px 12px', fontSize: 11 }}>Close</Button>
+          <Button primary onClick={previewReport} style={{ padding: '5px 14px', fontSize: 12 }}>Run</Button>
+        </div>
+
+        <div style={{ flex: 1, overflow: 'auto', padding: 14 }}>
+          {liveRunning && (
+            <div style={{ fontSize: 11, color: T.textMuted, padding: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ display: 'inline-block', width: 10, height: 10, border: `2px solid ${T.primary}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'ri-spin 0.8s linear infinite' }} />
+              Running preview…
+              <style>{`@keyframes ri-spin { to { transform: rotate(360deg) } }`}</style>
+            </div>
+          )}
+          {liveError && <div style={{ padding: 14, background: T.errorLight, color: T.error, borderRadius: 6, border: `1px solid ${T.error}40`, fontSize: 12 }}>{liveError}</div>}
+          {livePreview && (
+            <Card>
+              <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 8 }}>
+                Previewing a limited number of records. Run the report to see everything. {livePreview.rows.length} {livePreview.aggregate ? 'result' : 'row' + (livePreview.rows.length === 1 ? '' : 's')}.
+              </div>
+              <div style={{ overflow: 'auto', maxHeight: 540, border: `1px solid ${T.borderLight}`, borderRadius: 6 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead style={{ position: 'sticky', top: 0, background: T.surfaceAlt, zIndex: 1 }}>
+                    <tr style={{ borderBottom: `1px solid ${T.border}` }}>
+                      <th style={{ padding: '6px 8px', fontSize: 9, fontWeight: 700, color: T.textMuted, width: 32, textAlign: 'right' }}>#</th>
+                      {livePreview.columns.map(c => <th key={c} style={{ textAlign: 'left', padding: '6px 8px', fontSize: 10, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{c.replace(/_/g, ' ')}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {livePreview.rows.slice(0, 200).map((row, i) => (
+                      <tr key={i} style={{ borderBottom: `1px solid ${T.borderLight}` }}>
+                        <td style={{ padding: '5px 8px', color: T.textMuted, textAlign: 'right', fontFamily: T.mono }}>{i + 1}</td>
+                        {livePreview.columns.map(c => {
+                          const val = row[c]
+                          const disp = val == null ? '—' : typeof val === 'object' ? JSON.stringify(val).substring(0, 80) : String(val).substring(0, 120)
+                          return <td key={c} style={{ padding: '5px 8px', color: T.text, fontFeatureSettings: '"tnum"', whiteSpace: 'nowrap' }}>{disp}</td>
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {livePreview.rows.length > 200 && <div style={{ fontSize: 10, color: T.textMuted, marginTop: 6, textAlign: 'center' }}>Showing first 200 of {livePreview.rows.length} rows.</div>}
+            </Card>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function Section({ title, subtitle, children }) {
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: subtitle ? 2 : 6 }}>{title}</div>
+      {subtitle && <div style={{ fontSize: 10, color: T.textMuted, marginBottom: 6 }}>{subtitle}</div>}
+      {children}
+    </div>
+  )
+}
+function Chip({ label, onRemove }) {
+  return (
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 4, background: T.primaryLight, border: `1px solid ${T.primary}55`, fontSize: 11, marginRight: 4, marginBottom: 4 }}>
+      <span style={{ color: T.text, fontWeight: 600 }}>{label}</span>
+      <button onClick={onRemove} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, fontSize: 13, padding: 0 }}>×</button>
+    </div>
+  )
+}
+function JoinedGroup({ table, fieldSearch, cfg, toggleField }) {
+  const [expanded, setExpanded] = useState(false)
+  const fields = Object.entries(table.fields).filter(([k, m]) => !fieldSearch || (m.label || '').toLowerCase().includes(fieldSearch.toLowerCase()) || k.includes(fieldSearch.toLowerCase()))
+  if (fieldSearch && fields.length === 0) return null
+  return (
+    <div style={{ marginBottom: 4 }}>
+      <div onClick={() => setExpanded(e => !e)}
+        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 6px', fontSize: 11, fontWeight: 700, cursor: 'pointer', color: T.text, background: T.surfaceAlt, borderRadius: 4 }}>
+        <span style={{ fontSize: 10, color: T.textMuted }}>{expanded ? '▾' : '▸'}</span>
+        <span>{table.label}</span>
+        {table.multi && <span style={{ fontSize: 8, padding: '1px 5px', borderRadius: 3, background: T.warningLight, color: T.warning, fontWeight: 700 }}>MULTI</span>}
+      </div>
+      {expanded && fields.map(([k, m]) => {
+        const selected = cfg.fields.some(f => typeof f === 'object' && f.join === table.key && f.field === k)
+        return (
+          <div key={k} onClick={() => toggleField(k, table.key)} draggable
+            onDragStart={e => { e.dataTransfer.setData('text/plain', JSON.stringify({ kind: 'add', field: k, join: table.key })); e.dataTransfer.effectAllowed = 'copy' }}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 6px 3px 20px', fontSize: 11, cursor: 'grab', borderRadius: 4, background: selected ? T.primaryLight : 'transparent' }}
+            onMouseEnter={e => { if (!selected) e.currentTarget.style.background = T.surfaceAlt }}
+            onMouseLeave={e => { if (!selected) e.currentTarget.style.background = 'transparent' }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: TYPE_COLORS[m.type] || T.textMuted, flexShrink: 0 }} />
+            <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: T.text }}>{m.label || k}</span>
+            {selected && <span style={{ fontSize: 10, color: T.primary, fontWeight: 700 }}>✓</span>}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+function FilterCard({ index, filter, baseFields, joinableTables, onUpdate, onRemove }) {
+  const joinTable = filter.join ? TABLES[filter.join] : null
+  const fieldMeta = filter.join ? joinTable?.fields?.[filter.field] : baseFields[filter.field]
+  const options = fieldMeta?.options
+  const isBool = fieldMeta?.type === 'boolean'
+  const isNumeric = ['number', 'currency', 'score', 'percentage'].includes(fieldMeta?.type)
+  return (
+    <div style={{ border: `1px solid ${T.border}`, borderRadius: 6, padding: 8, marginBottom: 6, background: T.surface }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+        <span style={{ fontSize: 10, color: T.textMuted, fontWeight: 700 }}>Filter {index}</span>
+        <button onClick={onRemove} style={{ background: 'none', border: 'none', color: T.textMuted, fontSize: 13, cursor: 'pointer', padding: 0 }}>×</button>
+      </div>
+      <select value={`${filter.join || ''}|${filter.field || ''}`}
+        onChange={e => { const [j, f] = e.target.value.split('|'); onUpdate({ join: j || null, field: f || '', value: '' }) }}
+        style={{ ...inputStyle, padding: '4px 8px', fontSize: 11, marginBottom: 4 }}>
+        <option value="|">— field —</option>
+        <optgroup label="Base table">
+          {Object.entries(baseFields).map(([k, m]) => <option key={k} value={`|${k}`}>{m.label || k}</option>)}
+        </optgroup>
+        {joinableTables.map(jt => (
+          <optgroup key={jt.key} label={jt.label}>
+            {Object.entries(jt.fields).map(([k, m]) => <option key={k} value={`${jt.key}|${k}`}>{m.label || k}</option>)}
+          </optgroup>
+        ))}
+      </select>
+      <select value={filter.operator} onChange={e => onUpdate({ operator: e.target.value })} style={{ ...inputStyle, padding: '4px 8px', fontSize: 11, marginBottom: 4 }}>
+        {OPERATORS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+      </select>
+      {!['is_null', 'not_null'].includes(filter.operator) && (
+        options ? (
+          <select value={filter.value ?? ''} onChange={e => onUpdate({ value: e.target.value })} style={{ ...inputStyle, padding: '4px 8px', fontSize: 11 }}>
+            <option value="">— select —</option>
+            {options.map(o => <option key={o} value={o}>{o}</option>)}
+          </select>
+        ) : isBool ? (
+          <select value={String(filter.value ?? 'true')} onChange={e => onUpdate({ value: e.target.value === 'true' })} style={{ ...inputStyle, padding: '4px 8px', fontSize: 11 }}>
+            <option value="true">true</option><option value="false">false</option>
+          </select>
+        ) : (
+          <input value={filter.value ?? ''} onChange={e => onUpdate({ value: isNumeric ? Number(e.target.value) || 0 : e.target.value })}
+            type={isNumeric ? 'number' : 'text'} placeholder="value"
+            style={{ ...inputStyle, padding: '4px 8px', fontSize: 11 }} />
+        )
+      )}
     </div>
   )
 }
