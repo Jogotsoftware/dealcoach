@@ -1,7 +1,13 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-// process-transcript v32
+// process-transcript v33
+// CHANGES FROM v32:
+// - Catalyst vs pain_point prompt hardened: explicit "rejection test", explicit
+//   lists of always-pain examples, explicit "zero catalysts is fine" permission.
+//   Addresses BF c6905825 (AI still classifying operational pain as catalysts).
+// - RAG ingest wrapped in EdgeRuntime.waitUntil so it survives response return.
+//   Addresses BF/WS1 (deal_context_chunks=0 despite call being logged).
 // CHANGES FROM v31:
 // - Flags reconciliation: on each transcript, existing flags are either
 //   confirmed (last_confirmed_at updated), contradicted (resolved=true), or
@@ -71,13 +77,39 @@ For every pain_point, catalyst, and compelling_event you extract, you MUST inclu
 - quote: tight 5-15 word snippet for UI display
 If you cannot source a catalyst/event/pain to a specific transcript moment, DO NOT extract it. Empty arrays are preferred over fabricated entries.
 
-CATALYST vs PAIN POINT (strict separation):
-- CATALYST = high-level business force driving change: funding round, PE acquisition, new CFO/exec hire, M&A, regulatory change, system EOL, strategic initiative, growth plan, IPO prep, audit finding.
-  NOT operational pain. NOT workflow inefficiencies. NOT feature gaps.
-- PAIN POINT = operational/functional problem experienced day-to-day: slow close, manual reconciliation, AP errors, reporting delays, user frustration, integration pain.
-- COMPELLING EVENT = the specific bad thing that happens if they don't act. Has a deadline. Material consequence.
+CATALYST vs PAIN POINT (strict separation — HARD RULES, read carefully):
 
-If a single observation could be a pain OR a catalyst, prefer pain_point. Catalysts must be strategic/structural, not operational.
+CATALYST = a high-level force happening in the BUSINESS ENVIRONMENT that is driving the need for change.
+Always strategic, structural, or top-down. NEVER operational.
+Valid examples ONLY:
+  - Growth: rapid headcount growth, new market entry, new product line, geographic expansion, acquisition of another company
+  - Funding / ownership: funding round closed, PE acquisition, new majority owner, IPO prep, parent co spin-off
+  - Leadership: new CFO / COO / CIO / CEO, new VP Finance, new controller hired
+  - Regulatory / compliance: SOC 2 deadline, new tax regime, audit finding, legal mandate with a date
+  - Technology lifecycle: current system EOL announced, vendor sunset, contract renewal window
+  - Strategic initiatives: announced digital transformation program, board-level modernization mandate
+
+PAIN POINT = an operational / functional problem the buyer experiences day to day.
+Examples that are ALWAYS pain, NEVER catalyst:
+  - "our close takes 15 days"
+  - "manual reconciliation"
+  - "AP errors"
+  - "reporting delays"
+  - "user frustration"
+  - "integration headache"
+  - "too many spreadsheets"
+  - "can't scale"  (symptom, not cause)
+  - "process is broken"
+
+REJECTION TEST — before emitting a catalyst, ask:
+  1. Is this something that is HAPPENING TO or INSIDE the business right now (not something they wish was different)?
+  2. Does it have a clear strategic/structural name (funding, M&A, new exec, regulation, EOL, initiative)?
+  3. Is it materially distinct from operational pain?
+If any answer is no, emit it as a pain_point instead, or drop it entirely.
+
+IT IS COMPLETELY ACCEPTABLE to emit zero catalysts. Many calls have no true catalyst; forcing one is wrong. Empty array is better than a misclassified one.
+
+COMPELLING EVENT = the specific bad thing that happens if they don't act. Has a deadline. Material consequence.
 
 EXTRACT DOLLAR AMOUNTS:
 - "costs us $50K a year" -> annual_cost: 50000
@@ -154,22 +186,22 @@ Deno.serve(async (req: Request) => {
   const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
   try {
-    if (!ANTHROPIC_API_KEY) return jr({ error: 'v32: No API key' }, 500);
+    if (!ANTHROPIC_API_KEY) return jr({ error: 'v33: No API key' }, 500);
     const reqBody = await req.json();
-    console.log('process-transcript v32 keys:', Object.keys(reqBody));
+    console.log('process-transcript v33 keys:', Object.keys(reqBody));
 
     const conversation_id = reqBody.conversation_id || reqBody.conversationId || reqBody.id;
-    if (!conversation_id) return jr({ error: `v32: no conversation_id. Keys: ${Object.keys(reqBody).join(', ')}` }, 400);
+    if (!conversation_id) return jr({ error: `v33: no conversation_id. Keys: ${Object.keys(reqBody).join(', ')}` }, 400);
 
     const { data: conv } = await sb.from('conversations').select('*').eq('id', conversation_id).single();
-    if (!conv) return jr({ error: 'v32: Conversation not found' }, 404);
-    if (!conv.transcript) return jr({ error: 'v32: No transcript' }, 400);
+    if (!conv) return jr({ error: 'v33: Conversation not found' }, 404);
+    if (!conv.transcript) return jr({ error: 'v33: No transcript' }, 400);
 
     const deal_id = reqBody.deal_id || reqBody.dealId || conv.deal_id;
-    if (!deal_id) return jr({ error: 'v32: No deal_id' }, 400);
+    if (!deal_id) return jr({ error: 'v33: No deal_id' }, 400);
 
     const { data: deal } = await sb.from('deals').select('*').eq('id', deal_id).single();
-    if (!deal) return jr({ error: 'v32: Deal not found' }, 404);
+    if (!deal) return jr({ error: 'v33: Deal not found' }, 404);
 
     const { data: rep } = await sb.from('profiles').select('active_coach_id, org_id, full_name, initials, email').eq('id', deal.rep_id).single();
     const cid = rep?.active_coach_id;
@@ -255,7 +287,7 @@ Deno.serve(async (req: Request) => {
     const { data: log } = await sb.from('ai_response_log').insert({ deal_id, response_type: 'transcript_analysis', coach_id: cid, ai_model_used: model, temperature: temp, status: 'processing', triggered_by: deal.rep_id }).select('id').single();
 
     const cr = await callClaude({ model, max_tokens: 8000, temperature: temp, system: sysPrompt, messages: [{ role: 'user', content: prompt }] });
-    if (!cr.ok) { const e = await cr.text(); await ulog(sb, log?.id, 'failed', `v32: ${e}`, t0); return jr({ error: `v32: Claude ${cr.status}` }, 500); }
+    if (!cr.ok) { const e = await cr.text(); await ulog(sb, log?.id, 'failed', `v33: ${e}`, t0); return jr({ error: `v33: Claude ${cr.status}` }, 500); }
 
     const cd = await cr.json();
     const usage = cd.usage || {};
@@ -267,7 +299,7 @@ Deno.serve(async (req: Request) => {
       const match = cleaned.match(/\{[\s\S]*\}/);
       if (!match) throw new Error('No JSON');
       p = JSON.parse(match[0]);
-    } catch (e: any) { await ulog(sb, log?.id, 'partial', `v32: ${e.message}`, t0, usage); return jr({ success: true, status: 'partial', error: e.message }); }
+    } catch (e: any) { await ulog(sb, log?.id, 'partial', `v33: ${e.message}`, t0, usage); return jr({ success: true, status: 'partial', error: e.message }); }
 
     await sb.from('conversations').update({ ai_summary: p.summary || null, ai_coaching_notes: p.coaching_notes || null, ai_raw_response: cd, processed: true }).eq('id', conversation_id);
 
@@ -573,18 +605,31 @@ Deno.serve(async (req: Request) => {
       if (rep?.org_id) await sb.rpc('deduct_credits', { p_org_id: rep.org_id, p_user_id: deal.rep_id, p_amount: 3, p_type: 'transcript', p_description: `Transcript: ${deal.company_name} (${conv.call_type})`, p_reference_id: log?.id || null });
     } catch (e) { console.log('Credit error:', e); }
 
-    // ── TRIGGER EMBED-CHUNKS ──
+    // ── TRIGGER RAG INGEST ──
+    // v32 fix (WS1): use EdgeRuntime.waitUntil so the background fetch survives
+    // after we return the response. Unawaited fetches are cancelled on handler
+    // return in Supabase Edge Functions, which was the root cause of
+    // deal_context_chunks staying at 0 despite the ingest call appearing in logs.
     try {
-      // ingest-deal-knowledge: chunks this conversation + refreshes company_profile/deal_analysis chunks
-      fetch(`${SUPABASE_URL}/functions/v1/ingest-deal-knowledge`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, 'apikey': SUPABASE_SERVICE_ROLE_KEY }, body: JSON.stringify({ deal_id }) }).catch(e => console.log('ingest error:', e));
-    } catch (e) {}
+      const ingestPromise = fetch(`${SUPABASE_URL}/functions/v1/ingest-deal-knowledge`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, 'apikey': SUPABASE_SERVICE_ROLE_KEY },
+        body: JSON.stringify({ deal_id }),
+      }).then(async r => {
+        const body = await r.text().catch(() => '');
+        if (!r.ok) console.error('v32 ingest non-2xx:', r.status, body.substring(0, 200));
+        else console.log('v32 ingest ok:', body.substring(0, 200));
+      }).catch(e => console.error('v32 ingest error:', e?.message || e));
+      // @ts-ignore — EdgeRuntime is a Deno Deploy global
+      if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime.waitUntil) EdgeRuntime.waitUntil(ingestPromise);
+    } catch (e) { console.error('v32 ingest setup error:', e); }
 
     await ulog(sb, log?.id, 'completed', null, t0, usage, sum);
-    return jr({ success: true, version: 'v32', summary: sum, commitments_created: sum.commitments || 0, contacts_found: sum.contacts || 0, memories_created: sum.memories_created || 0, icp_score: sum.icp_score || null });
+    return jr({ success: true, version: 'v33', summary: sum, commitments_created: sum.commitments || 0, contacts_found: sum.contacts || 0, memories_created: sum.memories_created || 0, icp_score: sum.icp_score || null });
 
   } catch (e: any) {
-    console.error('process-transcript v32 error:', e);
-    return jr({ error: `v32: ${e.message}` }, 500);
+    console.error('process-transcript v33 error:', e);
+    return jr({ error: `v33: ${e.message}` }, 500);
   }
 });
 

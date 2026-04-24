@@ -1,9 +1,15 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { theme as T } from '../lib/theme'
 import { track, identify } from '../lib/analytics'
+
+const BENEFITS = [
+  'Transcripts turned into deal intelligence, automatically',
+  'AI coaching that compounds with every call',
+  'Pipeline context that never goes stale',
+]
 
 export default function Login() {
   const [email, setEmail] = useState('')
@@ -13,8 +19,17 @@ export default function Login() {
   const [loading, setLoading] = useState(false)
   const [resetSent, setResetSent] = useState(false)
   const [showReset, setShowReset] = useState(false)
+  const [mounted, setMounted] = useState(false)
+  const [isNarrow, setIsNarrow] = useState(typeof window !== 'undefined' ? window.innerWidth <= 768 : false)
   const { signIn } = useAuth()
   const navigate = useNavigate()
+
+  useEffect(() => {
+    const t = setTimeout(() => setMounted(true), 10)
+    const onResize = () => setIsNarrow(window.innerWidth <= 768)
+    window.addEventListener('resize', onResize)
+    return () => { clearTimeout(t); window.removeEventListener('resize', onResize) }
+  }, [])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -63,171 +78,165 @@ export default function Login() {
     letterSpacing: '0.06em', marginBottom: 6, display: 'block', fontWeight: 600,
   }
 
+  const cardAnimStyle = {
+    opacity: mounted ? 1 : 0,
+    transform: mounted ? 'translateY(0)' : 'translateY(8px)',
+    transition: 'opacity 320ms ease, transform 320ms ease',
+  }
+
   return (
     <div style={{
-      minHeight: '100vh', background: T.bg,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontFamily: T.font,
+      minHeight: '100vh', display: 'flex', flexDirection: isNarrow ? 'column' : 'row',
+      fontFamily: T.font, background: '#fff',
     }}>
+      {/* LEFT — brand panel */}
       <div style={{
-        width: 420, background: T.surface, borderRadius: 12,
-        border: `1px solid ${T.border}`, boxShadow: T.shadowMd,
+        flex: isNarrow ? 'unset' : '0 0 45%',
+        width: isNarrow ? '100%' : '45%',
+        background: '#f0f7fd',
+        borderRight: isNarrow ? 'none' : `1px solid ${T.border}`,
+        borderBottom: isNarrow ? `1px solid ${T.border}` : 'none',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: isNarrow ? '40px 24px' : '48px',
       }}>
-        {/* Header */}
-        <div style={{ padding: '36px 40px 0', textAlign: 'center' }}>
-          <div style={{
-            width: 52, height: 52, borderRadius: 12, background: T.primary,
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            fontWeight: 800, fontSize: 24, color: '#fff', marginBottom: 16,
-          }}>
-            R
-          </div>
-          <div style={{ fontSize: 24, fontWeight: 700, color: T.text, marginBottom: 4 }}>
+        <div style={{ maxWidth: 340, width: '100%' }}>
+          <div style={{ fontSize: 26, fontWeight: 700, color: T.text, letterSpacing: '-0.01em' }}>
             Revenue Instruments
           </div>
-          <div style={{ fontSize: 14, color: T.textSecondary, marginBottom: 28 }}>
-            {showReset ? 'Reset your password' : 'Sign in to your account'}
+          <div style={{ width: 40, height: 1, background: T.border, margin: '14px 0' }} />
+          <div style={{ fontSize: 14, color: T.textSecondary, maxWidth: 260, lineHeight: 1.55 }}>
+            AI-powered sales intelligence for enterprise B2B teams
+          </div>
+          <div style={{ height: 28 }} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {BENEFITS.map((b, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: T.primary, marginTop: 8, flexShrink: 0 }} />
+                <span style={{ fontSize: 13, color: T.text, lineHeight: 1.6 }}>{b}</span>
+              </div>
+            ))}
           </div>
         </div>
+      </div>
 
-        {showReset ? (
-          /* Reset password form */
-          <form onSubmit={handleResetPassword} style={{ padding: '0 40px 36px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {resetSent ? (
-              <div style={{ padding: '16px', borderRadius: 6, fontSize: 13, background: T.successLight, color: T.success, textAlign: 'center', lineHeight: 1.6 }}>
-                Password reset email sent. Check your inbox.
-              </div>
-            ) : (
-              <>
-                <div>
-                  <label style={labelStyle}>Email</label>
-                  <input
-                    style={inputStyle}
-                    type="email"
-                    value={email}
-                    onChange={e => setEmail(e.target.value)}
-                    placeholder="you@company.com"
-                    required
-                    autoFocus
-                    onFocus={e => { e.target.style.borderColor = T.primary }}
-                    onBlur={e => { e.target.style.borderColor = T.border }}
-                  />
+      {/* RIGHT — auth form */}
+      <div style={{
+        flex: 1, width: isNarrow ? '100%' : '55%',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: isNarrow ? '32px 20px' : '48px',
+        background: '#fff',
+      }}>
+        <div style={{ width: '100%', maxWidth: 380, ...cardAnimStyle }}>
+          <div style={{ fontSize: 22, fontWeight: 700, color: T.text, marginBottom: 4, letterSpacing: '-0.01em' }}>
+            {showReset ? 'Reset password' : 'Sign in'}
+          </div>
+          <div style={{ fontSize: 13, color: T.textMuted, marginBottom: 24 }}>
+            {showReset ? 'Enter your email and we’ll send you a reset link.' : 'Welcome back.'}
+          </div>
+
+          {showReset ? (
+            <form onSubmit={handleResetPassword} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {resetSent ? (
+                <div style={{ padding: 16, borderRadius: 6, fontSize: 13, background: T.successLight, color: T.success, textAlign: 'center', lineHeight: 1.6 }}>
+                  Password reset email sent. Check your inbox.
                 </div>
-
-                {error && (
-                  <div style={{ padding: '10px 14px', borderRadius: 6, fontSize: 13, background: T.errorLight, color: T.error, border: `1px solid ${T.error}25` }}>
-                    {error}
+              ) : (
+                <>
+                  <div>
+                    <label style={labelStyle}>Email</label>
+                    <input
+                      style={inputStyle}
+                      type="email"
+                      value={email}
+                      onChange={e => setEmail(e.target.value)}
+                      placeholder="you@company.com"
+                      required
+                      autoFocus
+                      onFocus={e => { e.target.style.borderColor = T.primary }}
+                      onBlur={e => { e.target.style.borderColor = T.border }}
+                    />
                   </div>
-                )}
-
-                <button
-                  type="submit"
-                  disabled={loading}
-                  style={{
+                  {error && (
+                    <div style={{ padding: '10px 14px', borderRadius: 6, fontSize: 13, background: T.errorLight, color: T.error, border: `1px solid ${T.error}25` }}>{error}</div>
+                  )}
+                  <button type="submit" disabled={loading} style={{
                     width: '100%', padding: 14, borderRadius: 6, border: 'none',
                     background: T.primary, color: '#fff', fontSize: 14, fontWeight: 600,
                     cursor: loading ? 'not-allowed' : 'pointer', fontFamily: T.font,
                     opacity: loading ? 0.7 : 1, marginTop: 4,
-                  }}
-                >
-                  {loading ? 'Sending...' : 'Send Reset Link'}
+                  }}>
+                    {loading ? 'Sending...' : 'Send reset link'}
+                  </button>
+                </>
+              )}
+              <div style={{ textAlign: 'center', fontSize: 13 }}>
+                <button type="button" onClick={() => { setShowReset(false); setResetSent(false); setError(null) }}
+                  style={{ background: 'none', border: 'none', color: T.primary, cursor: 'pointer', fontWeight: 600, fontFamily: T.font, fontSize: 13 }}>
+                  Back to sign in
                 </button>
-              </>
-            )}
-
-            <div style={{ textAlign: 'center', fontSize: 13, color: T.textSecondary }}>
-              <button
-                type="button"
-                onClick={() => { setShowReset(false); setResetSent(false); setError(null) }}
-                style={{ background: 'none', border: 'none', color: T.primary, cursor: 'pointer', fontWeight: 600, fontFamily: T.font, fontSize: 13 }}
-              >
-                Back to Sign In
-              </button>
-            </div>
-          </form>
-        ) : (
-          /* Sign in form */
-          <form onSubmit={handleSubmit} style={{ padding: '0 40px 36px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <div>
-              <label style={labelStyle}>Email</label>
-              <input
-                style={inputStyle}
-                type="email"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                placeholder="you@company.com"
-                required
-                onFocus={e => { e.target.style.borderColor = T.primary }}
-                onBlur={e => { e.target.style.borderColor = T.border }}
-              />
-            </div>
-
-            <div>
-              <label style={{ ...labelStyle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span>Password</span>
-                <button
-                  type="button"
-                  onClick={() => { setShowReset(true); setError(null) }}
-                  style={{ background: 'none', border: 'none', color: T.primary, cursor: 'pointer', fontFamily: T.font, fontSize: 11, fontWeight: 600, textTransform: 'none', letterSpacing: 'normal', padding: 0 }}
-                >
-                  Forgot password?
-                </button>
-              </label>
-              <div style={{ position: 'relative' }}>
+              </div>
+            </form>
+          ) : (
+            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div>
+                <label style={labelStyle}>Email</label>
                 <input
-                  style={{ ...inputStyle, paddingRight: 52 }}
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  placeholder="Enter password"
+                  style={inputStyle}
+                  type="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  placeholder="you@company.com"
                   required
-                  minLength={6}
                   onFocus={e => { e.target.style.borderColor = T.primary }}
                   onBlur={e => { e.target.style.borderColor = T.border }}
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(p => !p)}
-                  style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: T.textMuted, fontFamily: T.font, padding: '4px 6px' }}
-                >
-                  {showPassword ? 'Hide' : 'Show'}
-                </button>
               </div>
-            </div>
-
-            {error && (
-              <div style={{
-                padding: '10px 14px', borderRadius: 6, fontSize: 13,
-                background: T.errorLight, color: T.error, border: `1px solid ${T.error}25`,
-              }}>
-                {error}
+              <div>
+                <label style={{ ...labelStyle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Password</span>
+                  <button type="button" onClick={() => { setShowReset(true); setError(null) }}
+                    style={{ background: 'none', border: 'none', color: T.primary, cursor: 'pointer', fontFamily: T.font, fontSize: 11, fontWeight: 600, textTransform: 'none', letterSpacing: 'normal', padding: 0 }}>
+                    Forgot password?
+                  </button>
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    style={{ ...inputStyle, paddingRight: 52 }}
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    placeholder="Enter password"
+                    required
+                    minLength={6}
+                    onFocus={e => { e.target.style.borderColor = T.primary }}
+                    onBlur={e => { e.target.style.borderColor = T.border }}
+                  />
+                  <button type="button" onClick={() => setShowPassword(p => !p)}
+                    style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: T.textMuted, fontFamily: T.font, padding: '4px 6px' }}>
+                    {showPassword ? 'Hide' : 'Show'}
+                  </button>
+                </div>
               </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading}
-              style={{
+              {error && (
+                <div style={{
+                  padding: '10px 14px', borderRadius: 6, fontSize: 13,
+                  background: T.errorLight, color: T.error, border: `1px solid ${T.error}25`,
+                }}>{error}</div>
+              )}
+              <button type="submit" disabled={loading} style={{
                 width: '100%', padding: 14, borderRadius: 6, border: 'none',
                 background: T.primary, color: '#fff', fontSize: 14, fontWeight: 600,
                 cursor: loading ? 'not-allowed' : 'pointer', fontFamily: T.font,
                 opacity: loading ? 0.7 : 1, marginTop: 4,
-              }}
-            >
-              {loading ? 'Signing in...' : 'Sign In'}
-            </button>
-
-            <div style={{ textAlign: 'center', fontSize: 13, color: T.textSecondary }}>
-              {"Don't have an account? "}
-              <a
-                href="mailto:joe@revenueinstruments.com?subject=Request%20an%20Invitation&body=Hi%2C%20I'd%20like%20to%20request%20an%20invitation%20to%20Revenue%20Instruments."
-                style={{ color: T.primary, fontWeight: 600, textDecoration: 'none' }}
-              >
-                Request an invitation
-              </a>
-            </div>
-          </form>
-        )}
+              }}>
+                {loading ? 'Signing in...' : 'Sign In'}
+              </button>
+              <div style={{ textAlign: 'center', fontSize: 12, color: T.textMuted, marginTop: 4 }}>
+                Access is by invitation only.
+              </div>
+            </form>
+          )}
+        </div>
       </div>
     </div>
   )

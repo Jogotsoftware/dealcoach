@@ -155,26 +155,40 @@ export default function GlobalChatbot() {
     // Refetch with IDs so thumbs work
     const sid = res.session_id || sessionId
     if (sid) {
-      const { data } = await supabase.from('deal_chat_messages').select('*').eq('session_id', sid).order('created_at')
+      const { data, error: refetchErr } = await supabase.from('deal_chat_messages').select('*').eq('session_id', sid).order('created_at')
+      if (refetchErr) console.error('deal_chat_messages refetch failed:', refetchErr)
       if (data?.length) setMessages(data)
     }
   }
 
   async function submitThumbs(msg, sentiment, reasonKey, notes) {
-    if (!msg.id) return
+    let targetId = msg.id
+    if (!targetId && sessionId) {
+      // Fallback: look up the latest assistant message in this session
+      const { data: last } = await supabase
+        .from('deal_chat_messages')
+        .select('id')
+        .eq('session_id', sessionId)
+        .eq('role', 'assistant')
+        .order('created_at', { ascending: false })
+        .limit(1)
+      targetId = last?.[0]?.id
+    }
+    if (!targetId) { console.warn('submitThumbs: no message id available for feedback'); return }
     const { error } = await supabase.from('ai_output_feedback').insert({
       org_id: profile?.org_id || null,
       user_id: profile?.id,
       deal_id: selectedDealId || null,
       sentiment,
       target_type: 'chat_response',
-      target_id: msg.id,
+      target_id: targetId,
       reason: reasonKey || null,
       notes: notes || null,
     })
     if (error) { console.error('ai_output_feedback insert failed:', error); return }
-    setFeedbackState(s => ({ ...s, [msg.id]: { ...s[msg.id], sentiment, submitted: true, showPicker: false } }))
-    if (sentiment === 'thumbs_down') track('chatbot_thumbs_down', { context_type: topic, reason: reasonKey })
+    const key = msg.id || targetId
+    setFeedbackState(s => ({ ...s, [key]: { ...s[key], sentiment, submitted: true, showPicker: false } }))
+    track('chatbot_thumbs', { sentiment, context_type: topic, reason: reasonKey })
   }
 
   function handleKeyDown(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }

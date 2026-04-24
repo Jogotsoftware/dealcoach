@@ -19,27 +19,24 @@ export function OrgProvider({ children }) {
   }, [profile?.id, profile?.org_id])
 
   async function loadOrg() {
+    if (!profile?.org_id) { setLoading(false); return }
     setLoading(true)
     try {
-      const [orgRes, creditsRes] = await Promise.all([
+      const [orgRes, creditsRes, modulesRes] = await Promise.all([
         supabase.from('organizations').select('*, plans(*)').eq('id', profile.org_id).single(),
         supabase.from('org_credits').select('*').eq('org_id', profile.org_id).single(),
+        supabase.rpc('resolve_org_modules', { p_org_id: profile.org_id }),
       ])
       if (orgRes.data) {
         setOrg(orgRes.data)
         setPlan(orgRes.data.plans || null)
       }
       setCredits(creditsRes.data || null)
-
-      // Load resolved module access via RPC (respects plan + overrides)
-      if (profile.org_id) {
-        const { data: moduleRows } = await supabase.rpc('resolve_org_modules', { p_org_id: profile.org_id })
-        if (moduleRows) {
-          setEnabledModuleKeys(new Set(moduleRows.filter(m => m.enabled).map(m => m.module_key)))
-        } else {
-          // Fallback to plan modules if RPC not available
-          setEnabledModuleKeys(new Set(orgRes.data?.plans?.modules || []))
-        }
+      const moduleRows = modulesRes?.data
+      if (moduleRows) {
+        setEnabledModuleKeys(new Set(moduleRows.filter(m => m.enabled).map(m => m.module_key)))
+      } else {
+        setEnabledModuleKeys(new Set(orgRes.data?.plans?.modules || []))
       }
     } catch (err) {
       console.error('Error loading org:', err)

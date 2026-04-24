@@ -3,11 +3,12 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
 
 export function useModules() {
-  const { user } = useAuth()
+  const { user, loading: authLoading } = useAuth()
   const [modules, setModules] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    if (authLoading) return
     if (!user?.id) { setModules([]); setLoading(false); return }
     let cancelled = false
     supabase.rpc('resolve_user_modules', { p_user_id: user.id }).then(({ data, error }) => {

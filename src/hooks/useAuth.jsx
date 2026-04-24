@@ -13,14 +13,14 @@ export function AuthProvider({ children }) {
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null)
-      if (session?.user) loadProfile(session.user.id)
+      if (session?.user) loadProfile(session.user)
       else setLoading(false)
     })
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
-      if (session?.user) loadProfile(session.user.id)
+      if (session?.user) loadProfile(session.user)
       else {
         setProfile(null)
         setLoading(false)
@@ -30,7 +30,9 @@ export function AuthProvider({ children }) {
     return () => subscription.unsubscribe()
   }, [])
 
-  async function loadProfile(userId) {
+  async function loadProfile(authUser) {
+    const userId = typeof authUser === 'string' ? authUser : authUser?.id
+    if (!userId) { setLoading(false); return }
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -39,10 +41,10 @@ export function AuthProvider({ children }) {
         .single()
 
       if (error && error.code === 'PGRST116') {
-        // Profile doesn't exist yet — create it
-        const { data: authUser } = await supabase.auth.getUser()
-        const email = authUser?.user?.email || ''
-        const name = authUser?.user?.user_metadata?.full_name || email.split('@')[0]
+        // Profile doesn't exist yet — create it using session user data (no extra round trip)
+        const email = (typeof authUser === 'object' ? authUser?.email : '') || ''
+        const metaName = (typeof authUser === 'object' ? authUser?.user_metadata?.full_name : '') || ''
+        const name = metaName || email.split('@')[0]
         const initials = name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
 
         const { data: newProfile, error: insertErr } = await supabase
