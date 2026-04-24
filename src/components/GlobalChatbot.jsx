@@ -7,6 +7,22 @@ import { useOrg } from '../contexts/OrgContext'
 import { track } from '../lib/analytics'
 import { theme as T } from '../lib/theme'
 import BetaFeedbackModal from './BetaFeedbackModal'
+import { executeReportQueryStandalone } from '../pages/Reports'
+
+// Pull fenced ```report {json}``` blocks out of an assistant message.
+// Returns { displayText, drafts[] } — drafts array can have 0+ entries.
+function parseReportBlocks(content) {
+  if (!content) return { displayText: content || '', drafts: [] }
+  const drafts = []
+  const displayText = content.replace(/```report\s*([\s\S]*?)```/g, (_, raw) => {
+    try {
+      const cfg = JSON.parse(raw.trim())
+      drafts.push(cfg)
+      return '' // strip from prose
+    } catch { return '' } // malformed — drop
+  }).trim()
+  return { displayText, drafts }
+}
 
 const HIDDEN_ROUTES = ['/login']
 const HIDDEN_PREFIXES = ['/msp/shared/', '/partner']
@@ -402,9 +418,13 @@ export default function GlobalChatbot() {
                   </div>
                 )}
                 {messages.map((m, i) => (
-                  <div key={i} style={{ display: 'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start', marginBottom: 10 }}>
+                  <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: m.role === 'user' ? 'flex-end' : 'flex-start', marginBottom: 10 }}>
                     <div style={{ maxWidth: '85%', padding: '8px 12px', borderRadius: m.role === 'user' ? '10px 10px 2px 10px' : '10px 10px 10px 2px', background: m.role === 'user' ? T.primary : T.surfaceAlt, color: m.role === 'user' ? '#fff' : T.text, fontSize: 12, lineHeight: 1.5, border: m.role === 'user' ? 'none' : `1px solid ${T.borderLight}` }}>
-                      <div style={{ whiteSpace: 'pre-wrap' }}>{m.content}</div>
+                      {(() => {
+                        if (m.role !== 'assistant') return <div style={{ whiteSpace: 'pre-wrap' }}>{m.content}</div>
+                        const { displayText } = parseReportBlocks(m.content)
+                        return <div style={{ whiteSpace: 'pre-wrap' }}>{displayText || m.content}</div>
+                      })()}
                       {m.role === 'assistant' && m.id && (() => {
                         const fb = feedbackState[m.id] || {}
                         return (
@@ -437,6 +457,23 @@ export default function GlobalChatbot() {
                         </div>
                       )}
                     </div>
+                    {/* Report drafts emitted by the assistant */}
+                    {m.role === 'assistant' && (() => {
+                      const { drafts } = parseReportBlocks(m.content)
+                      if (!drafts.length) return null
+                      return (
+                        <div style={{ maxWidth: '85%', marginTop: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          {drafts.map((draft, di) => (
+                            <ReportCard key={di} draft={draft} onOpenInBuilder={() => {
+                              const payload = { name: draft.name, config: draft }
+                              const b64 = btoa(JSON.stringify(payload)).replace(/\+/g, '-').replace(/\//g, '_')
+                              navigate(`/reports?draft=${b64}`)
+                              setOpen(false)
+                            }} />
+                          ))}
+                        </div>
+                      )
+                    })()}
                   </div>
                 ))}
                 {sending && (
@@ -465,5 +502,85 @@ export default function GlobalChatbot() {
       {/* Beta feedback modal (rendered outside panel so it isn't clipped) */}
       {feedbackModalOpen && <BetaFeedbackModal onClose={() => setFeedbackModalOpen(false)} />}
     </>
+  )
+}
+
+// Inline report preview card rendered under assistant messages that emitted a
+// ```report``` block. Run button executes the draft against the DB and shows
+// the first 10 rows + total count inline. "Open in builder" deep-links to
+// /reports?draft=<base64> so the user can tweak + save.
+function ReportCard({ draft, onOpenInBuilder }) {
+  const [result, setResult] = useState(null)
+  const [running, setRunning] = useState(false)
+  const [error, setError] = useState(null)
+  const [expanded, setExpanded] = useState(false)
+
+  async function run() {
+    setRunning(true); setError(null)
+    try {
+      const r = await executeReportQueryStandalone({ query_config: draft, base_entity: draft.base_entity })
+      setResult(r)
+      setExpanded(true)
+    } catch (e) {
+      setError(e?.message || String(e))
+    } finally {
+      setRunning(false)
+    }
+  }
+
+  const baseLabel = (draft.base_entity || 'deals').replace(/_/g, ' ')
+  const joins = (draft.included_relations || []).join(' + ')
+  const typeLabel = (draft.report_type || 'tabular').toUpperCase()
+  const filterCount = (draft.filters || []).length
+
+  return (
+    <div style={{ border: `1px solid ${T.primary}40`, borderRadius: 10, background: T.surface, overflow: 'hidden' }}>
+      <div style={{ padding: '8px 12px', background: T.primaryLight, borderBottom: `1px solid ${T.primary}30`, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontSize: 14 }}>📊</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{draft.name || 'Report draft'}</div>
+          <div style={{ fontSize: 9, color: T.textMuted, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            {typeLabel} · {baseLabel}{joins ? ' + ' + joins : ''}{filterCount ? ` · ${filterCount} filter${filterCount === 1 ? '' : 's'}` : ''}
+          </div>
+        </div>
+      </div>
+      <div style={{ padding: '8px 12px', display: 'flex', gap: 6, alignItems: 'center' }}>
+        <button onClick={run} disabled={running}
+          style={{ padding: '5px 12px', fontSize: 11, fontWeight: 700, background: T.primary, color: '#fff', border: 'none', borderRadius: 4, cursor: running ? 'wait' : 'pointer', fontFamily: T.font }}>
+          {running ? 'Running…' : result ? 'Re-run' : 'Run'}
+        </button>
+        <button onClick={onOpenInBuilder}
+          style={{ padding: '5px 12px', fontSize: 11, fontWeight: 600, background: T.surface, color: T.primary, border: `1px solid ${T.primary}`, borderRadius: 4, cursor: 'pointer', fontFamily: T.font }}>
+          Open in builder
+        </button>
+        {result && <span style={{ fontSize: 10, color: T.textMuted, marginLeft: 'auto' }}>{result.rows.length} {result.aggregate ? 'result' : 'row' + (result.rows.length === 1 ? '' : 's')}</span>}
+      </div>
+      {error && <div style={{ padding: '6px 12px 10px', fontSize: 11, color: T.error }}>{error}</div>}
+      {result && expanded && (
+        <div style={{ padding: '0 10px 10px' }}>
+          <div style={{ overflow: 'auto', maxHeight: 240, border: `1px solid ${T.borderLight}`, borderRadius: 4 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+              <thead style={{ position: 'sticky', top: 0, background: T.surfaceAlt }}>
+                <tr>{result.columns.map(c => (
+                  <th key={c} style={{ textAlign: 'left', padding: '5px 7px', fontSize: 9, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase', borderBottom: `1px solid ${T.border}`, whiteSpace: 'nowrap' }}>{c.replace(/_/g, ' ')}</th>
+                ))}</tr>
+              </thead>
+              <tbody>
+                {result.rows.slice(0, 10).map((row, i) => (
+                  <tr key={i} style={{ borderBottom: `1px solid ${T.borderLight}` }}>
+                    {result.columns.map(c => {
+                      const v = row[c]
+                      const d = v == null ? '—' : typeof v === 'object' ? JSON.stringify(v).substring(0, 50) : String(v).substring(0, 80)
+                      return <td key={c} style={{ padding: '4px 7px', color: T.text, whiteSpace: 'nowrap', fontFeatureSettings: '"tnum"' }}>{d}</td>
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {result.rows.length > 10 && <div style={{ fontSize: 9, color: T.textMuted, marginTop: 4, textAlign: 'center' }}>Showing 10 of {result.rows.length}. Open in builder for the full view.</div>}
+        </div>
+      )}
+    </div>
   )
 }

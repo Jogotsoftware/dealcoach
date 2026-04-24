@@ -234,7 +234,7 @@ function filterToPgrest(f) {
 
 // Execute a saved-report config against the DB. Exported-shape fn (not a hook)
 // so BuildView can call it for live preview on debounced config changes.
-async function executeReportQueryStandalone(report) {
+export async function executeReportQueryStandalone(report) {
   const cfg = migrateConfig(report.query_config)
   const base = cfg.base_entity || report.base_entity || 'deals'
   const rawFields = (cfg.fields || []).filter(f => typeof f === 'string')
@@ -378,6 +378,27 @@ export default function Reports() {
     if (!loading && reports.length === 0 && mode === 'list') startNew()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, reports.length])
+
+  // Accept ?draft=<base64url JSON> from the chatbot's "Open in builder" link.
+  useEffect(() => {
+    if (loading) return
+    const params = new URLSearchParams(window.location.search)
+    const draftParam = params.get('draft')
+    if (!draftParam) return
+    try {
+      const decoded = JSON.parse(atob(draftParam.replace(/-/g, '+').replace(/_/g, '/')))
+      const cfg = migrateConfig(decoded.config || decoded.query_config || decoded)
+      setEditingId(null)
+      setForm({
+        name: decoded.name || 'Chatbot draft',
+        description: decoded.description || 'Drafted by the assistant',
+        category: decoded.category || 'custom',
+        config: cfg,
+      })
+      setMode('build')
+      window.history.replaceState({}, '', window.location.pathname)
+    } catch (e) { console.error('draft param parse failed:', e) }
+  }, [loading])
 
   if (modulesLoading) return <Spinner />
   if (!hasModule('reports')) return <Navigate to="/" replace />
