@@ -46,6 +46,10 @@ function emptyConfig() {
     // Report shape — 'tabular' (flat), 'summary' (grouped rows), 'matrix' (row x col pivot)
     report_type: 'tabular',
     base_entity: 'deals',
+    // Related tables to include in this report type — e.g. ['tasks','contacts'].
+    // Only tables listed here surface in the Outline sidebar's "Related objects".
+    // Query engine still auto-joins whenever a field references a table.
+    included_relations: [],
     // Fields can be: 'field_name' (base table), {join, field, label} (joined table),
     // or {formula, label, key} (calculated column)
     fields: [],
@@ -150,6 +154,13 @@ function migrateConfig(cfg) {
   if (!out.cross_filters) out.cross_filters = []
   if (!out.aggregate) out.aggregate = { type: 'none', field: null }
   if (!Array.isArray(out.groups)) out.groups = []
+  if (!Array.isArray(out.included_relations)) {
+    // Infer from existing joined fields + filters so old reports keep working
+    const rels = new Set()
+    for (const f of (out.fields || [])) if (typeof f === 'object' && f.join) rels.add(f.join)
+    for (const f of (out.filters || [])) if (f.join) rels.add(f.join)
+    out.included_relations = [...rels]
+  }
   delete out.filter_groups
   return out
 }
@@ -1105,11 +1116,17 @@ function BuildViewV2({ form, setForm, editingId, baseFields, reports, saving, sa
   const [liveRunning, setLiveRunning] = useState(false)
   const [liveError, setLiveError] = useState(null)
 
-  const joinableTables = useMemo(() => {
+  // All joinable tables for this base entity (full catalog)
+  const availableRelations = useMemo(() => {
     return Object.entries(TABLES)
       .filter(([k, t]) => k !== cfg.base_entity && t.join === 'deal_id' && cfg.base_entity === 'deals')
       .map(([k, t]) => ({ key: k, label: t.label, fields: t.fields, multi: !!t.multi }))
   }, [cfg.base_entity])
+  // Only the relations the user explicitly included in the report type
+  const joinableTables = useMemo(() => {
+    const included = new Set(cfg.included_relations || [])
+    return availableRelations.filter(r => included.has(r.key))
+  }, [availableRelations, cfg.included_relations])
 
   async function runLive() {
     setLiveRunning(true); setLiveError(null)
@@ -1191,6 +1208,59 @@ function BuildViewV2({ form, setForm, editingId, baseFields, reports, saving, sa
         <div style={{ flex: 1, overflow: 'auto', padding: 12 }}>
           {sidebar === 'outline' && (
             <>
+              <Section title="Report Type" subtitle="Which tables contribute fields to this report.">
+                <div style={{ padding: '6px 10px', background: T.primaryLight, border: `1px solid ${T.primary}55`, borderRadius: 4, fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 6 }}>
+                  {TABLES[cfg.base_entity]?.label || cfg.base_entity}
+                  {(cfg.included_relations || []).length > 0 && (
+                    <> + {(cfg.included_relations || []).map(k => TABLES[k]?.label || k).join(' + ')}</>
+                  )}
+                </div>
+                {availableRelations.length > 0 ? (
+                  <>
+                    <div style={{ fontSize: 10, color: T.textMuted, marginBottom: 4 }}>Include related objects:</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                      {availableRelations.map(rel => {
+                        const on = (cfg.included_relations || []).includes(rel.key)
+                        return (
+                          <button key={rel.key} onClick={() => {
+                            const set = new Set(cfg.included_relations || [])
+                            if (on) {
+                              set.delete(rel.key)
+                              // Also strip fields + filters that referenced it so they don't orphan
+                              setCfg({
+                                included_relations: [...set],
+                                fields: (cfg.fields || []).filter(f => !(typeof f === 'object' && f.join === rel.key)),
+                                filters: (cfg.filters || []).filter(f => f.join !== rel.key),
+                              })
+                            } else {
+                              set.add(rel.key)
+                              setCfg({ included_relations: [...set] })
+                            }
+                          }}
+                            style={{
+                              padding: '3px 10px', fontSize: 10, fontWeight: 700, borderRadius: 16,
+                              border: `1px solid ${on ? T.primary : T.border}`,
+                              background: on ? T.primary : T.surface,
+                              color: on ? '#fff' : T.textMuted,
+                              cursor: 'pointer', fontFamily: T.font,
+                            }}>
+                            {on ? '✓ ' : '+ '}{rel.label}
+                            {rel.multi && <span style={{ fontSize: 8, marginLeft: 4, opacity: 0.7 }}>multi</span>}
+                          </button>
+                        )
+                      })}
+                    </div>
+                    <div style={{ fontSize: 10, color: T.textMuted, marginTop: 6 }}>
+                      Add objects to report on them together. e.g. {TABLES[cfg.base_entity]?.label || cfg.base_entity} + Tasks + Contacts.
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ fontSize: 10, color: T.textMuted, fontStyle: 'italic' }}>
+                    No related objects mapped for this base table yet.
+                  </div>
+                )}
+              </Section>
+
               <Section title={cfg.report_type === 'matrix' ? 'Row Groups' : 'Groups'} subtitle={
                 cfg.report_type === 'tabular' ? 'Adding a group auto-switches to Summary.' :
                 cfg.report_type === 'matrix' ? 'Rows in the matrix pivot.' :
@@ -1358,7 +1428,10 @@ function BuildViewV2({ form, setForm, editingId, baseFields, reports, saving, sa
               placeholder="Untitled report"
               style={{ ...inputStyle, padding: '4px 8px', fontSize: 15, fontWeight: 700, border: '1px solid transparent', background: 'transparent' }} />
           </div>
-          <div style={{ padding: '4px 10px', background: T.surfaceAlt, borderRadius: 4, fontSize: 11, fontWeight: 600, color: T.text, border: `1px solid ${T.border}` }}>{TABLES[cfg.base_entity]?.label || cfg.base_entity}</div>
+          <div style={{ padding: '4px 10px', background: T.surfaceAlt, borderRadius: 4, fontSize: 11, fontWeight: 600, color: T.text, border: `1px solid ${T.border}` }}>
+            {TABLES[cfg.base_entity]?.label || cfg.base_entity}
+            {(cfg.included_relations || []).length > 0 && <span style={{ color: T.textMuted, fontWeight: 500 }}> + {(cfg.included_relations || []).map(k => TABLES[k]?.label || k).join(' + ')}</span>}
+          </div>
           {/* Report type selector */}
           <div style={{ display: 'flex', border: `1px solid ${T.border}`, borderRadius: 4, overflow: 'hidden' }}>
             {[
