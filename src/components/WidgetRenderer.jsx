@@ -212,10 +212,17 @@ function ListSection({ section, data, navigate }) {
 // Rendered when a custom_widget_definitions row has config.source = 'saved_report'.
 // Pulls the saved_report's data once and displays it per config.visualization.
 
-function ReportTableView({ rows, columns }) {
+function ReportTableView({ rows, columns, onColumnsChange }) {
   const navigate = useNavigate()
   if (!rows?.length) return <div style={{ padding: 16, textAlign: 'center', color: T.textMuted, fontSize: 11 }}>No data</div>
   const cols = columns?.length ? columns : Object.keys(rows[0]).filter(k => k !== 'id').slice(0, 6)
+  const editable = typeof onColumnsChange === 'function'
+  const removeCol = (c) => {
+    if (!editable) return
+    // If caller hasn't given us an explicit list yet, materialise the shown set then drop the column
+    const base = columns?.length ? columns : cols
+    onColumnsChange(base.filter(x => x !== c))
+  }
   return (
     <div style={{ overflow: 'auto', height: '100%' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
@@ -223,15 +230,27 @@ function ReportTableView({ rows, columns }) {
           <tr style={{ background: T.surfaceAlt }}>
             {cols.map(c => (
               <th key={c} style={{ textAlign: 'left', padding: '6px 8px', fontSize: 10, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase', borderBottom: `1px solid ${T.border}`, whiteSpace: 'nowrap' }}>
-                {c.replace(/_/g, ' ')}
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  {c.replace(/_/g, ' ')}
+                  {editable && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); removeCol(c) }}
+                      title={`Remove "${c.replace(/_/g, ' ')}" from widget`}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, fontSize: 14, lineHeight: 1, padding: 0, opacity: 0.4, transition: 'opacity 0.1s, color 0.1s' }}
+                      onMouseEnter={e => { e.currentTarget.style.opacity = 1; e.currentTarget.style.color = T.error }}
+                      onMouseLeave={e => { e.currentTarget.style.opacity = 0.4; e.currentTarget.style.color = T.textMuted }}>
+                      ×
+                    </button>
+                  )}
+                </span>
               </th>
             ))}
           </tr>
         </thead>
         <tbody>
           {rows.slice(0, 500).map((r, i) => (
-            <tr key={r.id || i} style={{ borderBottom: `1px solid ${T.borderLight}`, cursor: r.id && cols.includes('company_name') ? 'pointer' : 'default' }}
-              onClick={() => { if (r.id && cols.includes('company_name')) navigate('/deal/' + r.id) }}>
+            <tr key={r.id || i} style={{ borderBottom: `1px solid ${T.borderLight}`, cursor: r.id && cols.includes('company_name') && !editable ? 'pointer' : 'default' }}
+              onClick={() => { if (editable) return; if (r.id && cols.includes('company_name')) navigate('/deal/' + r.id) }}>
               {cols.map(c => {
                 const val = r[c]
                 const disp = val == null ? '—' : typeof val === 'object' ? JSON.stringify(val).substring(0, 40) : String(val)
@@ -327,7 +346,7 @@ function MetricTile({ value, label }) {
   )
 }
 
-function SavedReportWidget({ config }) {
+function SavedReportWidget({ config, onColumnsChange }) {
   const [state, setState] = useState({ loading: true, report: null, rows: [], error: null })
 
   useEffect(() => {
@@ -367,12 +386,12 @@ function SavedReportWidget({ config }) {
     return <BarChart data={data} horizontal={viz === 'hbar'} />
   }
   // Default: table
-  return <ReportTableView rows={rows} columns={config.columns} />
+  return <ReportTableView rows={rows} columns={config.columns} onColumnsChange={onColumnsChange} />
 }
 
 // === MAIN RENDERER ===
 
-export default function WidgetRenderer({ config, context }) {
+export default function WidgetRenderer({ config, context, onColumnsChange }) {
   const navigate = useNavigate()
   const [sectionData, setSectionData] = useState({})
   const [loading, setLoading] = useState(true)
@@ -395,7 +414,7 @@ export default function WidgetRenderer({ config, context }) {
     load()
   }, [config, context?.deal_id, isReportBacked])
 
-  if (isReportBacked) return <SavedReportWidget config={config} />
+  if (isReportBacked) return <SavedReportWidget config={config} onColumnsChange={onColumnsChange} />
 
   if (loading) return <div style={{ padding: 12, textAlign: 'center', color: T.textMuted, fontSize: 11 }}>Loading...</div>
 

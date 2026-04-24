@@ -1392,7 +1392,11 @@ function NewFromReportModal({ reports, onClose, onAdd }) {
                       <div style={{ padding: 20, color: T.error, fontSize: 12, fontFamily: T.mono }}>{previewError}</div>
                     ) : (
                       <div style={{ height: 260 }}>
-                        <WidgetRenderer config={previewConfig} context={{ user_id: null }} />
+                        <WidgetRenderer
+                          config={previewConfig}
+                          context={{ user_id: null }}
+                          onColumnsChange={viz === 'table' ? (next) => setColumns(next) : undefined}
+                        />
                       </div>
                     )}
                   </div>
