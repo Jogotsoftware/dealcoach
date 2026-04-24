@@ -11,16 +11,18 @@ import { evalFormula } from '../lib/widgetQuery'
 const CATEGORY_COLORS = { performance: T.primary, pipeline: T.success, forecast: T.warning, quality: '#8b5cf6', coaching: '#e67e22', custom: T.textMuted }
 
 const OPERATORS = [
-  { key: 'eq', label: '=' },
-  { key: 'neq', label: '≠' },
+  { key: 'eq', label: 'equals' },
+  { key: 'neq', label: 'does not equal' },
   { key: 'gt', label: '>' },
   { key: 'gte', label: '≥' },
   { key: 'lt', label: '<' },
   { key: 'lte', label: '≤' },
   { key: 'like', label: 'contains' },
+  { key: 'not_like', label: 'does not contain' },
   { key: 'is_null', label: 'is empty' },
   { key: 'not_null', label: 'is set' },
   { key: 'in', label: 'in list (,)' },
+  { key: 'not_in', label: 'not in list (,)' },
 ]
 
 const AGGREGATES = [
@@ -69,9 +71,14 @@ function applyFilter(q, f) {
     case 'lt': return q.lt(f.field, v)
     case 'lte': return q.lte(f.field, v)
     case 'like': return q.ilike(f.field, `%${v}%`)
+    case 'not_like': return q.not(f.field, 'ilike', `%${v}%`)
     case 'is_null': return q.is(f.field, null)
     case 'not_null': return q.not(f.field, 'is', null)
     case 'in': return q.in(f.field, String(v).split(',').map(s => s.trim()).filter(Boolean))
+    case 'not_in': {
+      const list = String(v).split(',').map(s => s.trim()).filter(Boolean)
+      return list.length ? q.not(f.field, 'in', `(${list.join(',')})`) : q
+    }
     default: return q
   }
 }
@@ -88,11 +95,102 @@ function filterToPgrest(f) {
     case 'lt': return `${f.field}.lt.${v}`
     case 'lte': return `${f.field}.lte.${v}`
     case 'like': return `${f.field}.ilike.*${v}*`
+    case 'not_like': return `${f.field}.not.ilike.*${v}*`
     case 'is_null': return `${f.field}.is.null`
     case 'not_null': return `${f.field}.not.is.null`
     case 'in': return `${f.field}.in.(${String(v).split(',').map(s => s.trim()).filter(Boolean).join(',')})`
+    case 'not_in': return `${f.field}.not.in.(${String(v).split(',').map(s => s.trim()).filter(Boolean).join(',')})`
     default: return null
   }
+}
+
+// Execute a saved-report config against the DB. Exported-shape fn (not a hook)
+// so BuildView can call it for live preview on debounced config changes.
+async function executeReportQueryStandalone(report) {
+  const cfg = migrateConfig(report.query_config)
+  const base = cfg.base_entity || report.base_entity || 'deals'
+  const rawFields = (cfg.fields || []).filter(f => typeof f === 'string')
+  const formulaFields = (cfg.fields || []).filter(f => typeof f === 'object' && f?.formula)
+  const selectFields = rawFields.length ? rawFields : Object.keys(TABLES[base]?.fields || {}).slice(0, 8)
+
+  const allowSets = [], denySets = []
+  for (const cf of (cfg.cross_filters || [])) {
+    if (!cf.report_id || !cf.local_field) continue
+    const { data: sourceRep } = await supabase.from('saved_reports').select('*').eq('id', cf.report_id).single()
+    if (!sourceRep) continue
+    const { rows: sourceRows } = await executeReportQueryStandalone(sourceRep)
+    const remote = cf.remote_field || cf.local_field
+    const ids = (sourceRows || []).map(r => r[remote]).filter(v => v != null)
+    if (cf.type === 'not_in') denySets.push({ field: cf.local_field, ids })
+    else allowSets.push({ field: cf.local_field, ids })
+  }
+
+  const select = selectFields.join(', ') || '*'
+  let q = supabase.from(base).select(select)
+  for (const a of allowSets) q = a.ids.length ? q.in(a.field, a.ids) : q.eq(a.field, '__no_match__')
+  for (const d of denySets) if (d.ids.length) q = q.not(d.field, 'in', `(${d.ids.join(',')})`)
+
+  for (const grp of (cfg.filter_groups || [])) {
+    const conds = grp.conditions || []
+    if (!conds.length) continue
+    if ((grp.logic || 'and') === 'or') {
+      const parts = conds.map(filterToPgrest).filter(Boolean)
+      if (parts.length) q = q.or(parts.join(','))
+    } else {
+      for (const f of conds) q = applyFilter(q, f)
+    }
+  }
+
+  if (cfg.order_by) q = q.order(cfg.order_by, { ascending: cfg.order_dir === 'asc' })
+  q = q.limit(Math.min(Math.max(Number(cfg.limit) || 500, 1), 5000))
+
+  const { data, error } = await q
+  if (error) throw error
+
+  const rows = (data || []).map(row => {
+    const out = { ...row }
+    for (const ff of formulaFields) out[ff.key || ff.label] = evalFormula(ff.formula, row)
+    return out
+  })
+
+  const agg = cfg.aggregate || { type: 'none' }
+  if (agg.type === 'count') return { columns: ['count'], rows: [{ count: rows.length }], aggregate: true, data: rows }
+  if (['sum', 'avg', 'min', 'max'].includes(agg.type) && agg.field) {
+    const vals = rows.map(r => Number(r[agg.field])).filter(n => !isNaN(n))
+    const v = agg.type === 'sum' ? vals.reduce((s, n) => s + n, 0)
+            : agg.type === 'avg' ? (vals.length ? vals.reduce((s, n) => s + n, 0) / vals.length : 0)
+            : agg.type === 'min' ? (vals.length ? Math.min(...vals) : 0)
+            : (vals.length ? Math.max(...vals) : 0)
+    const key = `${agg.field}_${agg.type}`
+    return { columns: [key], rows: [{ [key]: agg.type === 'avg' ? Math.round(v * 100) / 100 : v }], aggregate: true, data: rows }
+  }
+  if (agg.type === 'group_by' && agg.group_by) {
+    const groups = new Map()
+    for (const r of rows) {
+      const k = r[agg.group_by] ?? '(null)'
+      if (!groups.has(k)) groups.set(k, [])
+      groups.get(k).push(r)
+    }
+    const aggList = Array.isArray(agg.group_aggs) && agg.group_aggs.length ? agg.group_aggs : [{ type: 'count' }]
+    const groupRows = [...groups.entries()].map(([k, items]) => {
+      const out = { [agg.group_by]: k, count: items.length }
+      for (const a of aggList) {
+        if (!a.field) continue
+        const vals = items.map(r => Number(r[a.field])).filter(n => !isNaN(n))
+        const key = `${a.type}_${a.field}`
+        out[key] = a.type === 'sum' ? vals.reduce((s, n) => s + n, 0)
+                 : a.type === 'avg' ? (vals.length ? Math.round((vals.reduce((s, n) => s + n, 0) / vals.length) * 100) / 100 : 0)
+                 : a.type === 'min' ? (vals.length ? Math.min(...vals) : 0)
+                 : a.type === 'max' ? (vals.length ? Math.max(...vals) : 0)
+                 : items.length
+      }
+      return out
+    })
+    const columns = [agg.group_by, 'count', ...aggList.filter(a => a.field).map(a => `${a.type}_${a.field}`)]
+    return { columns, rows: groupRows.sort((a, b) => (b.count || 0) - (a.count || 0)), aggregate: true, data: rows }
+  }
+  const columns = [...selectFields, ...formulaFields.map(f => f.key || f.label)]
+  return { columns, rows, aggregate: false, data: rows }
 }
 
 export default function Reports() {
@@ -167,107 +265,6 @@ export default function Reports() {
     loadReports()
   }
 
-  // Run a saved report's query and return { columns, rows, data } — used standalone and as cross-filter source.
-  async function executeReportQuery(report) {
-    const cfg = migrateConfig(report.query_config)
-    const base = cfg.base_entity || report.base_entity || 'deals'
-    // Raw non-formula field names for the select clause
-    const rawFields = (cfg.fields || []).filter(f => typeof f === 'string')
-    const formulaFields = (cfg.fields || []).filter(f => typeof f === 'object' && f?.formula)
-    const selectFields = rawFields.length ? rawFields : Object.keys(TABLES[base]?.fields || {}).slice(0, 8)
-
-    // Evaluate cross-filters first — collect allow/deny id sets
-    const allowSets = []
-    const denySets = []
-    for (const cf of (cfg.cross_filters || [])) {
-      if (!cf.report_id || !cf.local_field) continue
-      const { data: sourceRep } = await supabase.from('saved_reports').select('*').eq('id', cf.report_id).single()
-      if (!sourceRep) continue
-      const { rows: sourceRows } = await executeReportQuery(sourceRep)
-      const remote = cf.remote_field || cf.local_field
-      const ids = (sourceRows || []).map(r => r[remote]).filter(v => v != null)
-      if (cf.type === 'not_in') denySets.push({ field: cf.local_field, ids })
-      else allowSets.push({ field: cf.local_field, ids })
-    }
-
-    const select = selectFields.join(', ') || '*'
-    let q = supabase.from(base).select(select)
-
-    // Apply cross-filter constraints
-    for (const a of allowSets) q = a.ids.length ? q.in(a.field, a.ids) : q.eq(a.field, '__no_match__')
-    for (const d of denySets) if (d.ids.length) q = q.not(d.field, 'in', `(${d.ids.join(',')})`)
-
-    // Apply filter groups
-    for (const grp of (cfg.filter_groups || [])) {
-      const conds = grp.conditions || []
-      if (!conds.length) continue
-      if ((grp.logic || 'and') === 'or') {
-        const parts = conds.map(filterToPgrest).filter(Boolean)
-        if (parts.length) q = q.or(parts.join(','))
-      } else {
-        for (const f of conds) q = applyFilter(q, f)
-      }
-    }
-
-    if (cfg.order_by) q = q.order(cfg.order_by, { ascending: cfg.order_dir === 'asc' })
-    q = q.limit(Math.min(Math.max(Number(cfg.limit) || 500, 1), 5000))
-
-    const { data, error } = await q
-    if (error) throw error
-
-    // Evaluate formula columns per row
-    const rows = (data || []).map(row => {
-      const out = { ...row }
-      for (const ff of formulaFields) {
-        out[ff.key || ff.label] = evalFormula(ff.formula, row)
-      }
-      return out
-    })
-
-    // Apply aggregate
-    const agg = cfg.aggregate || { type: 'none' }
-    if (agg.type === 'count') {
-      return { columns: ['count'], rows: [{ count: rows.length }], aggregate: true, data: rows }
-    }
-    if ((agg.type === 'sum' || agg.type === 'avg' || agg.type === 'min' || agg.type === 'max') && agg.field) {
-      const vals = rows.map(r => Number(r[agg.field])).filter(n => !isNaN(n))
-      const v = agg.type === 'sum' ? vals.reduce((s, n) => s + n, 0)
-              : agg.type === 'avg' ? (vals.length ? vals.reduce((s, n) => s + n, 0) / vals.length : 0)
-              : agg.type === 'min' ? (vals.length ? Math.min(...vals) : 0)
-              : (vals.length ? Math.max(...vals) : 0)
-      const key = `${agg.field}_${agg.type}`
-      return { columns: [key], rows: [{ [key]: agg.type === 'avg' ? Math.round(v * 100) / 100 : v }], aggregate: true, data: rows }
-    }
-    if (agg.type === 'group_by' && agg.group_by) {
-      const groups = new Map()
-      for (const r of rows) {
-        const k = r[agg.group_by] ?? '(null)'
-        if (!groups.has(k)) groups.set(k, [])
-        groups.get(k).push(r)
-      }
-      const aggList = Array.isArray(agg.group_aggs) && agg.group_aggs.length ? agg.group_aggs : [{ type: 'count' }]
-      const groupRows = [...groups.entries()].map(([k, items]) => {
-        const out = { [agg.group_by]: k, count: items.length }
-        for (const a of aggList) {
-          if (!a.field) continue
-          const vals = items.map(r => Number(r[a.field])).filter(n => !isNaN(n))
-          const key = `${a.type}_${a.field}`
-          out[key] = a.type === 'sum' ? vals.reduce((s, n) => s + n, 0)
-                   : a.type === 'avg' ? (vals.length ? Math.round((vals.reduce((s, n) => s + n, 0) / vals.length) * 100) / 100 : 0)
-                   : a.type === 'min' ? (vals.length ? Math.min(...vals) : 0)
-                   : a.type === 'max' ? (vals.length ? Math.max(...vals) : 0)
-                   : items.length
-        }
-        return out
-      })
-      const columns = [agg.group_by, 'count', ...aggList.filter(a => a.field).map(a => `${a.type}_${a.field}`)]
-      return { columns, rows: groupRows.sort((a, b) => (b.count || 0) - (a.count || 0)), aggregate: true, data: rows }
-    }
-    // Raw row list — columns = selectFields + formula keys
-    const columns = [...selectFields, ...formulaFields.map(f => f.key || f.label)]
-    return { columns, rows, aggregate: false, data: rows }
-  }
-
   async function runReport(report) {
     setMode('run')
     setSelectedReport(report)
@@ -275,7 +272,7 @@ export default function Reports() {
     setReportData(null)
     setRunError(null)
     try {
-      const result = await executeReportQuery(report)
+      const result = await executeReportQueryStandalone(report)
       setReportData(result)
     } catch (err) {
       console.error('Report run failed:', err)
@@ -405,6 +402,28 @@ function BuildView({ form, setForm, editingId, baseFields, reports, saving, save
   const cfg = form.config
   const setCfg = (patch) => setForm(p => ({ ...p, config: { ...p.config, ...patch } }))
 
+  // Live preview — debounced re-run whenever the config changes.
+  const [livePreview, setLivePreview] = useState(null)
+  const [liveRunning, setLiveRunning] = useState(false)
+  const [liveError, setLiveError] = useState(null)
+  useEffect(() => {
+    const handle = setTimeout(async () => {
+      setLiveRunning(true)
+      setLiveError(null)
+      try {
+        const result = await executeReportQueryStandalone({ query_config: cfg, base_entity: cfg.base_entity })
+        setLivePreview(result)
+      } catch (e) {
+        setLivePreview(null)
+        setLiveError(e?.message || String(e))
+      } finally {
+        setLiveRunning(false)
+      }
+    }, 400)
+    return () => clearTimeout(handle)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(cfg)])
+
   function updateGroup(gi, patch) {
     setCfg({ filter_groups: cfg.filter_groups.map((g, i) => i === gi ? { ...g, ...patch } : g) })
   }
@@ -511,14 +530,18 @@ function BuildView({ form, setForm, editingId, baseFields, reports, saving, save
         )}
       </Card>
 
-      <Card title="Filters" action={<Button onClick={addGroup} style={{ padding: '3px 10px', fontSize: 11 }}>+ Filter group (OR)</Button>}>
-        <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 10 }}>Conditions inside a group combine with AND or OR. Groups always AND together — classic <code>A AND (B OR C)</code>.</div>
+      <Card title="Filter Conditions" action={<Button onClick={addGroup} style={{ padding: '3px 10px', fontSize: 11 }}>+ Filter group</Button>}>
+        <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 10 }}>
+          Each <strong>condition</strong> is a field/operator/value. <strong>Filter logic</strong> — the AND/OR inside a group — controls how conditions combine.
+          Groups always AND together, so you can build <code>A AND (B OR C)</code>.
+        </div>
         {cfg.filter_groups.map((grp, gi) => (
           <div key={gi} style={{ border: `1px solid ${T.borderLight}`, borderRadius: 6, padding: 10, marginBottom: 8, background: T.surfaceAlt }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase' }}>Group {gi + 1}</span>
-                <div style={{ display: 'flex', border: `1px solid ${T.border}`, borderRadius: 4, overflow: 'hidden', marginLeft: 6 }}>
+                <span style={{ fontSize: 9, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Filter logic:</span>
+                <div style={{ display: 'flex', border: `1px solid ${T.border}`, borderRadius: 4, overflow: 'hidden' }}>
                   {['and', 'or'].map(l => (
                     <button key={l} onClick={() => updateGroup(gi, { logic: l })}
                       style={{ padding: '2px 10px', fontSize: 10, fontWeight: 700, border: 'none', cursor: 'pointer', background: (grp.logic || 'and') === l ? T.primary : T.surface, color: (grp.logic || 'and') === l ? '#fff' : T.textMuted, textTransform: 'uppercase' }}>
@@ -627,8 +650,56 @@ function BuildView({ form, setForm, editingId, baseFields, reports, saving, save
         </div>
       </Card>
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
-        <Button onClick={previewReport} style={{ padding: '6px 14px', fontSize: 12 }}>Preview Results</Button>
+      {/* Live Preview — auto-runs on every config change (debounced ~400ms) */}
+      <Card title="Live Preview" action={
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {liveRunning && <span style={{ fontSize: 10, color: T.textMuted, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ display: 'inline-block', width: 10, height: 10, border: `2px solid ${T.primary}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+            Running...
+          </span>}
+          {!liveRunning && livePreview && <span style={{ fontSize: 11, color: T.success, fontWeight: 600 }}>✓ Live</span>}
+        </div>
+      }>
+        <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+        {liveError ? (
+          <div style={{ color: T.error, fontSize: 12, padding: 8 }}>{liveError}</div>
+        ) : !livePreview ? (
+          <div style={{ fontSize: 12, color: T.textMuted, fontStyle: 'italic', padding: 8 }}>Pick fields or add a filter to see results.</div>
+        ) : (
+          <>
+            <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 6 }}>
+              {livePreview.rows.length} {livePreview.aggregate ? 'result' : 'row' + (livePreview.rows.length === 1 ? '' : 's')}
+              {livePreview.rows.length >= (cfg.limit || 500) && ` (hit row limit)`}
+            </div>
+            <div style={{ overflow: 'auto', maxHeight: 400, border: `1px solid ${T.borderLight}`, borderRadius: 6 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                <thead style={{ position: 'sticky', top: 0, background: T.surfaceAlt, zIndex: 1 }}>
+                  <tr style={{ borderBottom: `1px solid ${T.border}` }}>
+                    {livePreview.columns.map(c => (
+                      <th key={c} style={{ textAlign: 'left', padding: '6px 8px', fontSize: 10, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{c.replace(/_/g, ' ')}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {livePreview.rows.slice(0, 100).map((row, i) => (
+                    <tr key={i} style={{ borderBottom: `1px solid ${T.borderLight}` }}>
+                      {livePreview.columns.map(c => {
+                        const val = row[c]
+                        const disp = val == null ? '—' : typeof val === 'object' ? JSON.stringify(val).substring(0, 80) : String(val).substring(0, 120)
+                        return <td key={c} style={{ padding: '5px 8px', color: T.text, fontFeatureSettings: '"tnum"' }}>{disp}</td>
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {livePreview.rows.length > 100 && <div style={{ fontSize: 10, color: T.textMuted, marginTop: 6, textAlign: 'center' }}>Showing first 100 of {livePreview.rows.length} rows. Save + Run for full results.</div>}
+          </>
+        )}
+      </Card>
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12, position: 'sticky', bottom: 10 }}>
+        <Button onClick={cancel} style={{ padding: '6px 14px', fontSize: 12 }}>Cancel</Button>
         <Button primary onClick={saveReport} disabled={saving || !form.name.trim()} style={{ padding: '6px 14px', fontSize: 12 }}>{saving ? 'Saving...' : 'Save Report'}</Button>
       </div>
     </div>
