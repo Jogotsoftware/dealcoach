@@ -34,10 +34,9 @@ export default function Layout() {
 
   const sections = [
     { label: 'Workspace', items: [
-      { to: '/', icon: '\u25A6', label: 'Pipeline', show: hasModule('pipeline') },
+      { to: '/', icon: '\u25A6', label: 'Home', show: hasModule('pipeline') },
       { to: '/coach', icon: '\u25CE', label: 'Coach', show: hasModule('coach_customization') },
       { to: '/reports', icon: '\u2261', label: 'Reports', show: hasModule('reports') },
-      { to: '/dashboards', icon: '\u25a4', label: 'Dashboards', show: true },
       { to: '/settings/team', icon: '\u2630', label: 'Team', show: true },
       { to: '/settings', icon: '\u2699', label: 'Settings', show: true },
     ]},

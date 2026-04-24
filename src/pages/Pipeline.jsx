@@ -98,12 +98,56 @@ export default function Pipeline() {
   const [dashboardTab, setDashboardTab] = useState(() => {
     try { return localStorage.getItem('ri_home_tab') || '__pipeline__' } catch { return '__pipeline__' }
   })
+  // Per-user, per-device home-tab preferences (reorder + hide). Dashboard entity unaffected.
+  const [homeTabOrder, setHomeTabOrder] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('ri_home_tab_order') || '[]') } catch { return [] }
+  })
+  const [hiddenHomeTabs, setHiddenHomeTabs] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('ri_home_tab_hidden') || '[]') } catch { return [] }
+  })
+  const [dragOverTabId, setDragOverTabId] = useState(null)
+  const [showHiddenMenu, setShowHiddenMenu] = useState(false)
   useEffect(() => { try { localStorage.setItem('ri_home_tab', dashboardTab) } catch {} }, [dashboardTab])
+  useEffect(() => { try { localStorage.setItem('ri_home_tab_order', JSON.stringify(homeTabOrder)) } catch {} }, [homeTabOrder])
+  useEffect(() => { try { localStorage.setItem('ri_home_tab_hidden', JSON.stringify(hiddenHomeTabs)) } catch {} }, [hiddenHomeTabs])
   useEffect(() => {
     if (!profile?.org_id) return
     supabase.from('org_widget_layouts').select('id, name, dashboard_title, scope, scope_value, widgets, layout').eq('org_id', profile.org_id).neq('scope', 'deal').order('created_at', { ascending: false })
       .then(({ data }) => setDashboards(data || []))
   }, [profile?.org_id])
+
+  // Unified tab list — Pipeline is just another tab, fully draggable + closable.
+  const allTabs = [
+    { id: '__pipeline__', label: 'Pipeline' },
+    ...dashboards.map(d => ({ id: d.id, label: d.dashboard_title || d.name, scope: d.scope, _dash: d })),
+  ]
+  const visibleTabs = (() => {
+    const notHidden = allTabs.filter(t => !hiddenHomeTabs.includes(t.id))
+    const idx = id => { const i = homeTabOrder.indexOf(id); return i === -1 ? Infinity : i }
+    return [...notHidden].sort((a, b) => idx(a.id) - idx(b.id))
+  })()
+  const hiddenTabs = allTabs.filter(t => hiddenHomeTabs.includes(t.id))
+
+  function closeHomeTab(id) {
+    setHiddenHomeTabs(prev => prev.includes(id) ? prev : [...prev, id])
+    setHomeTabOrder(prev => prev.filter(x => x !== id))
+    if (dashboardTab === id) {
+      const fallback = visibleTabs.find(t => t.id !== id)
+      setDashboardTab(fallback ? fallback.id : '__pipeline__')
+    }
+  }
+  function restoreHomeTab(id) {
+    setHiddenHomeTabs(prev => prev.filter(x => x !== id))
+    setShowHiddenMenu(false)
+  }
+  function onTabDrop(targetId, draggedId) {
+    if (!draggedId || draggedId === targetId) return
+    const ids = visibleTabs.map(t => t.id).filter(x => x !== draggedId)
+    const targetIdx = ids.indexOf(targetId)
+    if (targetIdx === -1) return
+    ids.splice(targetIdx, 0, draggedId)
+    setHomeTabOrder(ids)
+  }
   const [showMoreMenu, setShowMoreMenu] = useState(false)
   const [customWidgetDefs, setCustomWidgetDefs] = useState([])
 
@@ -824,16 +868,48 @@ export default function Pipeline() {
           </div>
         </div>
         </div>
-        {/* Dashboard tabs */}
-        <div style={{ display: 'flex', gap: 0, marginTop: 12, alignItems: 'flex-end', overflow: 'auto' }}>
-          <DashboardTab label="Pipeline" active={dashboardTab === '__pipeline__'} onClick={() => setDashboardTab('__pipeline__')} />
-          {dashboards.map(d => (
-            <DashboardTab key={d.id}
-              label={d.dashboard_title || d.name}
-              scope={d.scope}
-              active={dashboardTab === d.id}
-              onClick={() => setDashboardTab(d.id)} />
+        {/* Home tabs — Pipeline and dashboards are all draggable + closable */}
+        <div style={{ display: 'flex', gap: 0, marginTop: 12, alignItems: 'flex-end', overflow: 'auto', position: 'relative' }}>
+          {visibleTabs.map(t => (
+            <DashboardTab key={t.id}
+              id={t.id}
+              label={t.label}
+              scope={t.scope}
+              active={dashboardTab === t.id}
+              dragOver={dragOverTabId === t.id}
+              onClick={() => setDashboardTab(t.id)}
+              onClose={() => closeHomeTab(t.id)}
+              onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/ri-tab', t.id) }}
+              onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverTabId(t.id) }}
+              onDragLeave={() => setDragOverTabId(prev => prev === t.id ? null : prev)}
+              onDrop={e => { e.preventDefault(); onTabDrop(t.id, e.dataTransfer.getData('text/ri-tab')); setDragOverTabId(null) }}
+            />
           ))}
+          {hiddenTabs.length > 0 && (
+            <div style={{ position: 'relative' }}>
+              <button onClick={() => setShowHiddenMenu(s => !s)}
+                style={{ background: 'none', border: 'none', color: T.textMuted, fontSize: 11, padding: '8px 10px', cursor: 'pointer', fontFamily: T.font, fontWeight: 600 }}
+                title="Tabs hidden from home (dashboards not deleted)">
+                +{hiddenTabs.length} hidden
+              </button>
+              {showHiddenMenu && (
+                <>
+                  <div style={{ position: 'fixed', inset: 0, zIndex: 500 }} onClick={() => setShowHiddenMenu(false)} />
+                  <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 501, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, boxShadow: '0 4px 12px rgba(0,0,0,0.12)', minWidth: 240, padding: 4 }}>
+                    <div style={{ padding: '6px 10px', fontSize: 10, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700 }}>Hidden from home</div>
+                    {hiddenTabs.map(t => (
+                      <button key={t.id} onClick={() => restoreHomeTab(t.id)}
+                        style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 10px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: T.text, fontFamily: T.font, borderRadius: 4 }}
+                        onMouseEnter={e => e.currentTarget.style.background = T.surfaceAlt}
+                        onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+                        + {t.label}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
           <button onClick={() => navigate('/dashboards')}
             style={{ background: 'none', border: 'none', color: T.textMuted, fontSize: 11, padding: '8px 14px', cursor: 'pointer', fontFamily: T.font, fontWeight: 600 }}
             title="Create or manage dashboards">+ Dashboard</button>
@@ -932,21 +1008,49 @@ export default function Pipeline() {
   )
 }
 
-function DashboardTab({ label, scope, active, onClick }) {
+function DashboardTab({ label, scope, active, dragOver, onClick, onClose, onDragStart, onDragOver, onDragLeave, onDrop }) {
+  const [hover, setHover] = useState(false)
+  const closable = typeof onClose === 'function'
+  const draggable = typeof onDragStart === 'function'
   return (
-    <button onClick={onClick}
+    <div
+      draggable={draggable}
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
       style={{
-        padding: '8px 16px', fontSize: 13, fontWeight: active ? 700 : 500,
-        border: 'none', cursor: 'pointer', fontFamily: T.font,
-        background: 'transparent',
+        padding: '8px 12px', fontSize: 13, fontWeight: active ? 700 : 500,
+        cursor: draggable ? 'grab' : 'pointer', fontFamily: T.font,
+        background: dragOver ? T.surfaceAlt : 'transparent',
         color: active ? T.primary : T.textMuted,
-        borderBottom: active ? `2px solid ${T.primary}` : '2px solid transparent',
+        borderBottom: active ? `2px solid ${T.primary}` : (dragOver ? `2px dashed ${T.primary}` : '2px solid transparent'),
         marginBottom: -1,
         display: 'inline-flex', alignItems: 'center', gap: 6,
+        userSelect: 'none', whiteSpace: 'nowrap',
       }}>
-      {label}
+      <span>{label}</span>
       {scope && <span style={{ fontSize: 9, padding: '1px 6px', borderRadius: 3, background: T.surfaceAlt, color: T.textMuted, fontWeight: 700, textTransform: 'uppercase' }}>{scope}</span>}
-    </button>
+      {closable && (
+        <span
+          onClick={e => { e.stopPropagation(); onClose() }}
+          onMouseDown={e => e.stopPropagation()}
+          title="Remove from home (dashboard is not deleted)"
+          style={{
+            marginLeft: 2, width: 16, height: 16, borderRadius: 3, fontSize: 14, lineHeight: '14px',
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            color: T.textMuted, opacity: hover || active ? 0.7 : 0,
+            transition: 'opacity 0.1s, background 0.1s, color 0.1s', cursor: 'pointer',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = T.borderLight; e.currentTarget.style.opacity = 1; e.currentTarget.style.color = T.text }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.opacity = hover || active ? 0.7 : 0; e.currentTarget.style.color = T.textMuted }}>
+          ×
+        </span>
+      )}
+    </div>
   )
 }
 
