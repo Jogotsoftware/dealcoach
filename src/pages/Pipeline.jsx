@@ -106,7 +106,6 @@ export default function Pipeline() {
     try { return JSON.parse(localStorage.getItem('ri_home_tab_hidden') || '[]') } catch { return [] }
   })
   const [dragOverTabId, setDragOverTabId] = useState(null)
-  const [showHiddenMenu, setShowHiddenMenu] = useState(false)
   useEffect(() => { try { localStorage.setItem('ri_home_tab', dashboardTab) } catch {} }, [dashboardTab])
   useEffect(() => { try { localStorage.setItem('ri_home_tab_order', JSON.stringify(homeTabOrder)) } catch {} }, [homeTabOrder])
   useEffect(() => { try { localStorage.setItem('ri_home_tab_hidden', JSON.stringify(hiddenHomeTabs)) } catch {} }, [hiddenHomeTabs])
@@ -126,8 +125,6 @@ export default function Pipeline() {
     const idx = id => { const i = homeTabOrder.indexOf(id); return i === -1 ? Infinity : i }
     return [...notHidden].sort((a, b) => idx(a.id) - idx(b.id))
   })()
-  const hiddenTabs = allTabs.filter(t => hiddenHomeTabs.includes(t.id))
-
   function closeHomeTab(id) {
     setHiddenHomeTabs(prev => prev.includes(id) ? prev : [...prev, id])
     setHomeTabOrder(prev => prev.filter(x => x !== id))
@@ -135,10 +132,6 @@ export default function Pipeline() {
       const fallback = visibleTabs.find(t => t.id !== id)
       setDashboardTab(fallback ? fallback.id : '__pipeline__')
     }
-  }
-  function restoreHomeTab(id) {
-    setHiddenHomeTabs(prev => prev.filter(x => x !== id))
-    setShowHiddenMenu(false)
   }
   function onTabDrop(targetId, draggedId) {
     if (!draggedId || draggedId === targetId) return
@@ -885,31 +878,6 @@ export default function Pipeline() {
               onDrop={e => { e.preventDefault(); onTabDrop(t.id, e.dataTransfer.getData('text/ri-tab')); setDragOverTabId(null) }}
             />
           ))}
-          {hiddenTabs.length > 0 && (
-            <div style={{ position: 'relative' }}>
-              <button onClick={() => setShowHiddenMenu(s => !s)}
-                style={{ background: 'none', border: 'none', color: T.textMuted, fontSize: 11, padding: '8px 10px', cursor: 'pointer', fontFamily: T.font, fontWeight: 600 }}
-                title="Tabs hidden from home (dashboards not deleted)">
-                +{hiddenTabs.length} hidden
-              </button>
-              {showHiddenMenu && (
-                <>
-                  <div style={{ position: 'fixed', inset: 0, zIndex: 500 }} onClick={() => setShowHiddenMenu(false)} />
-                  <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 501, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, boxShadow: '0 4px 12px rgba(0,0,0,0.12)', minWidth: 240, padding: 4 }}>
-                    <div style={{ padding: '6px 10px', fontSize: 10, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700 }}>Hidden from home</div>
-                    {hiddenTabs.map(t => (
-                      <button key={t.id} onClick={() => restoreHomeTab(t.id)}
-                        style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 10px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: T.text, fontFamily: T.font, borderRadius: 4 }}
-                        onMouseEnter={e => e.currentTarget.style.background = T.surfaceAlt}
-                        onMouseLeave={e => e.currentTarget.style.background = 'none'}>
-                        + {t.label}
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-          )}
           <button onClick={() => navigate('/dashboards')}
             style={{ background: 'none', border: 'none', color: T.textMuted, fontSize: 11, padding: '8px 14px', cursor: 'pointer', fontFamily: T.font, fontWeight: 600 }}
             title="Create or manage dashboards">+ Dashboard</button>

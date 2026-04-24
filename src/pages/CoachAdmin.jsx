@@ -78,7 +78,7 @@ export default function CoachAdmin() {
 
   // Prompt add
   const [showAddPrompt, setShowAddPrompt] = useState(false)
-  const [newPrompt, setNewPrompt] = useState({ call_type: 'qdc', label: '', prompt: '' })
+  const [newPrompt, setNewPrompt] = useState({ call_type: 'qdc', label: '', sections: [] })
 
   useEffect(() => { if (profile) loadAllCoaches() }, [profile])
   useEffect(() => { if (selectedCoachId) loadCoachData(selectedCoachId) }, [selectedCoachId])
@@ -197,8 +197,15 @@ export default function CoachAdmin() {
 
   // ── Prompt saves ──
   async function savePrompt(promptId) {
-    await supabase.from('call_type_prompts').update(editPromptData).eq('id', promptId)
-    setPrompts(prev => prev.map(p => p.id === promptId ? { ...p, ...editPromptData } : p))
+    // If the editor exposed sections, rebuild the flat prompt text from them
+    // so the edge functions keep reading a consistent string.
+    const hasSections = Array.isArray(editPromptData.sections)
+    const payload = hasSections
+      ? { label: editPromptData.label, prompt_sections: editPromptData.sections, prompt: flattenPromptSections(editPromptData.sections) }
+      : editPromptData
+    const { error } = await supabase.from('call_type_prompts').update(payload).eq('id', promptId)
+    if (error) { alert('Save failed: ' + error.message); return }
+    setPrompts(prev => prev.map(p => p.id === promptId ? { ...p, ...payload } : p))
     setEditingPrompt(null)
   }
 
@@ -322,11 +329,14 @@ export default function CoachAdmin() {
 
   async function addPrompt() {
     if (!newPrompt.label.trim() || !coach) return
+    const sections = Array.isArray(newPrompt.sections) ? newPrompt.sections : []
+    const flat = flattenPromptSections(sections)
     const { data, error } = await supabase.from('call_type_prompts').insert({
       coach_id: coach.id, call_type: newPrompt.call_type, label: newPrompt.label.trim(),
-      prompt: newPrompt.prompt || null, active: true,
+      prompt_sections: sections, prompt: flat || null, active: true,
     }).select().single()
-    if (!error && data) { setPrompts(prev => [...prev, data]); setShowAddPrompt(false); setNewPrompt({ call_type: 'qdc', label: '', prompt: '' }) }
+    if (error) { alert('Create failed: ' + error.message); return }
+    if (data) { setPrompts(prev => [...prev, data]); setShowAddPrompt(false); setNewPrompt({ call_type: 'qdc', label: '', sections: [] }) }
   }
 
   if (loading) return <Spinner />
@@ -488,7 +498,13 @@ export default function CoachAdmin() {
                         {CALL_TYPE_KEYS.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
                       <div><label style={labelStyle}>Label *</label><input style={inputStyle} value={newPrompt.label} onChange={e => setNewPrompt(p => ({ ...p, label: e.target.value }))} autoFocus /></div>
                     </div>
-                    <div style={{ marginBottom: 10 }}><label style={labelStyle}>Prompt</label><textarea style={{ ...inputStyle, fontFamily: T.mono, fontSize: 12, minHeight: 300, resize: 'vertical', width: '100%' }} value={newPrompt.prompt} onChange={e => setNewPrompt(p => ({ ...p, prompt: e.target.value }))} /></div>
+                    <div style={{ marginBottom: 10 }}>
+                      <label style={labelStyle}>Prompt sections</label>
+                      <PromptSectionsEditor
+                        sections={newPrompt.sections}
+                        onChange={sections => setNewPrompt(p => ({ ...p, sections }))}
+                      />
+                    </div>
                     <div style={{ display: 'flex', gap: 6 }}><Button primary onClick={addPrompt}>Add Prompt</Button><Button onClick={() => setShowAddPrompt(false)}>Cancel</Button></div>
                   </Card>
                 )}
@@ -498,7 +514,16 @@ export default function CoachAdmin() {
                     {editingPrompt === p.id ? (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                         <div><label style={labelStyle}>Label</label><input style={inputStyle} value={editPromptData.label || ''} onChange={e => setEditPromptData(prev => ({ ...prev, label: e.target.value }))} /></div>
-                        <div><label style={labelStyle}>Prompt</label><textarea style={{ ...inputStyle, fontFamily: T.mono, fontSize: 12, minHeight: 300, resize: 'vertical', width: '100%' }} value={editPromptData.prompt || ''} onChange={e => setEditPromptData(prev => ({ ...prev, prompt: e.target.value }))} /><div style={{ fontSize: 10, color: T.textMuted, marginTop: 2 }}>{(editPromptData.prompt || '').length} chars</div></div>
+                        <div>
+                          <label style={labelStyle}>Prompt sections</label>
+                          <PromptSectionsEditor
+                            sections={editPromptData.sections}
+                            onChange={sections => setEditPromptData(prev => ({ ...prev, sections }))}
+                          />
+                          <div style={{ fontSize: 10, color: T.textMuted, marginTop: 4 }}>
+                            Flat length: {flattenPromptSections(editPromptData.sections).length} chars. Enabled sections are joined with "## Name\n…" headers and passed to the AI as a single prompt.
+                          </div>
+                        </div>
                         <div style={{ display: 'flex', gap: 6 }}>
                           <Button primary onClick={() => savePrompt(p.id)}>Save</Button>
                           <Button onClick={() => setEditingPrompt(null)}>Cancel</Button>
@@ -513,7 +538,15 @@ export default function CoachAdmin() {
                           </div>
                           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                             {p.active && <Badge color={T.success}>Active</Badge>}
-                            <Button style={{ padding: '4px 12px', fontSize: 11 }} onClick={() => { setEditingPrompt(p.id); setEditPromptData({ label: p.label, prompt: p.prompt }) }}>Edit</Button>
+                            <Button style={{ padding: '4px 12px', fontSize: 11 }} onClick={() => {
+                              setEditingPrompt(p.id)
+                              // Prefer structured sections; fall back to wrapping the legacy flat prompt in a single section.
+                              const existing = Array.isArray(p.prompt_sections) ? p.prompt_sections : null
+                              setEditPromptData({
+                                label: p.label,
+                                sections: existing && existing.length ? existing : sectionsFromLegacyPrompt(p.prompt),
+                              })
+                            }}>Edit</Button>
                           </div>
                         </div>
                         {p.prompt && (
@@ -1677,6 +1710,120 @@ function ExtractionRulesEditor({ coach, onSaved }) {
         </div>
       )}
     </Card>
+  )
+}
+
+// Concatenate enabled sections into a single prompt string for edge-function
+// consumers that still read the flat `prompt` column.
+function flattenPromptSections(sections) {
+  if (!Array.isArray(sections)) return ''
+  return sections
+    .filter(s => s && s.enabled !== false && (s.content || '').trim())
+    .map(s => {
+      const header = (s.name || '').trim()
+      const body = (s.content || '').trim()
+      return header ? `## ${header}\n${body}` : body
+    })
+    .join('\n\n')
+}
+
+// Drop an existing flat prompt into a single section so the editor has
+// something to work with until the user splits it.
+function sectionsFromLegacyPrompt(text) {
+  if (!text || !text.trim()) return []
+  const id = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : String(Math.random())
+  return [{ id, name: 'Prompt', content: text, enabled: true }]
+}
+
+// Structured, card-based prompt editor. Each section is { id, name, content, enabled }.
+function PromptSectionsEditor({ sections, onChange }) {
+  const list = Array.isArray(sections) ? sections : []
+  const [expanded, setExpanded] = useState(() => {
+    // Auto-expand when there's only one section so editing is one click away.
+    return list.length === 1 ? { [list[0].id]: true } : {}
+  })
+
+  function newId() { return (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : String(Math.random()) }
+  function add() {
+    const id = newId()
+    const next = [...list, { id, name: 'New section', content: '', enabled: true }]
+    onChange(next)
+    setExpanded(e => ({ ...e, [id]: true }))
+  }
+  function update(id, patch) {
+    onChange(list.map(s => s.id === id ? { ...s, ...patch } : s))
+  }
+  function remove(id) {
+    onChange(list.filter(s => s.id !== id))
+    setExpanded(e => { const { [id]: _, ...rest } = e; return rest })
+  }
+  function move(id, dir) {
+    const idx = list.findIndex(s => s.id === id)
+    if (idx < 0) return
+    const t = idx + dir
+    if (t < 0 || t >= list.length) return
+    const copy = [...list]
+    const [item] = copy.splice(idx, 1)
+    copy.splice(t, 0, item)
+    onChange(copy)
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <span style={{ fontSize: 10, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+          Sections ({list.length})
+        </span>
+        <Button onClick={add} style={{ padding: '3px 10px', fontSize: 11 }}>+ Add section</Button>
+      </div>
+      {list.length === 0 && (
+        <div style={{ fontSize: 11, color: T.textMuted, fontStyle: 'italic', padding: '8px 10px', background: T.surfaceAlt, borderRadius: 6, marginBottom: 6 }}>
+          No sections yet. Add one for each part of this prompt (e.g. "Goal", "Key questions", "Output format", "Tone").
+        </div>
+      )}
+      {list.map((s, i) => {
+        const isExpanded = expanded[s.id]
+        const isOn = s.enabled !== false
+        return (
+          <div key={s.id} style={{ marginBottom: 6, border: `1px solid ${isOn ? T.primary + '40' : T.borderLight}`, borderRadius: 6, background: isOn ? T.surface : T.surfaceAlt, opacity: isOn ? 1 : 0.65 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', flexWrap: 'wrap' }}>
+              <div onClick={() => update(s.id, { enabled: !isOn })}
+                style={{ width: 32, height: 18, borderRadius: 9, cursor: 'pointer', background: isOn ? T.success : T.borderLight, position: 'relative', transition: 'background 0.2s', flexShrink: 0 }}
+                title={isOn ? 'Enabled — included in the final prompt' : 'Disabled — skipped when the prompt is built'}>
+                <div style={{ width: 14, height: 14, borderRadius: '50%', background: '#fff', position: 'absolute', top: 2, left: isOn ? 16 : 2, boxShadow: T.shadow, transition: 'left 0.2s' }} />
+              </div>
+              <input
+                value={s.name || ''}
+                onChange={e => update(s.id, { name: e.target.value })}
+                placeholder="Section name"
+                style={{ flex: 1, minWidth: 100, fontSize: 13, fontWeight: 600, border: 'none', outline: 'none', background: 'transparent', color: T.text, fontFamily: T.font, padding: 0 }}
+              />
+              <span style={{ fontSize: 10, color: T.textMuted }}>{(s.content || '').length} chars</span>
+              <button onClick={() => move(s.id, -1)} disabled={i === 0} title="Move up"
+                style={{ background: 'none', border: 'none', cursor: i === 0 ? 'default' : 'pointer', color: i === 0 ? T.borderLight : T.textMuted, fontSize: 12, padding: 2 }}>{'↑'}</button>
+              <button onClick={() => move(s.id, 1)} disabled={i === list.length - 1} title="Move down"
+                style={{ background: 'none', border: 'none', cursor: i === list.length - 1 ? 'default' : 'pointer', color: i === list.length - 1 ? T.borderLight : T.textMuted, fontSize: 12, padding: 2 }}>{'↓'}</button>
+              <button onClick={() => setExpanded(e => ({ ...e, [s.id]: !isExpanded }))}
+                style={{ fontSize: 10, padding: '2px 8px', background: 'transparent', border: `1px solid ${T.border}`, borderRadius: 4, cursor: 'pointer', color: T.textMuted, fontFamily: T.font }}>
+                {isExpanded ? 'Hide' : 'Edit'}
+              </button>
+              <button onClick={() => remove(s.id)} title="Remove section"
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, fontSize: 14, padding: '0 4px' }}
+                onMouseEnter={e => e.currentTarget.style.color = T.error}
+                onMouseLeave={e => e.currentTarget.style.color = T.textMuted}>&times;</button>
+            </div>
+            {isExpanded && (
+              <div style={{ padding: 10, borderTop: `1px solid ${T.borderLight}`, background: T.surfaceAlt }}>
+                <textarea
+                  placeholder="What should this section tell the AI to do? (e.g. key discovery goals, specific questions to ask, format rules...)"
+                  value={s.content || ''} onChange={e => update(s.id, { content: e.target.value })}
+                  style={{ ...inputStyle, fontFamily: T.font, fontSize: 12, minHeight: 120, maxHeight: 320, resize: 'vertical', width: '100%', lineHeight: 1.5 }} />
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
   )
 }
 
