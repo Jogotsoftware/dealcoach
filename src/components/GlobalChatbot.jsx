@@ -459,13 +459,22 @@ export default function GlobalChatbot() {
                     </div>
                     {/* Report drafts emitted by the assistant */}
                     {m.role === 'assistant' && (() => {
-                      const { drafts } = parseReportBlocks(m.content)
+                      // v15+: drafts arrive as tool_use results in actions_taken.
+                      // Pre-v15: fenced ```report``` blocks in the message body.
+                      const toolDrafts = (m.actions_taken || [])
+                        .filter(a => a.type === 'build_report' && a.result?.success !== false)
+                        .map(a => ({ config: a.input, preview: a.result }))
+                      const { drafts: legacyDrafts } = parseReportBlocks(m.content)
+                      const drafts = [
+                        ...toolDrafts,
+                        ...legacyDrafts.map(c => ({ config: c, preview: null })),
+                      ]
                       if (!drafts.length) return null
                       return (
                         <div style={{ maxWidth: '85%', marginTop: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                          {drafts.map((draft, di) => (
-                            <ReportCard key={di} draft={draft} onOpenInBuilder={() => {
-                              const payload = { name: draft.name, config: draft }
+                          {drafts.map((d, di) => (
+                            <ReportCard key={di} draft={d.config} preview={d.preview} onOpenInBuilder={() => {
+                              const payload = { name: d.config.name, config: d.config }
                               const b64 = btoa(JSON.stringify(payload)).replace(/\+/g, '-').replace(/\//g, '_')
                               navigate(`/reports?draft=${b64}`)
                               setOpen(false)
@@ -509,11 +518,16 @@ export default function GlobalChatbot() {
 // ```report``` block. Run button executes the draft against the DB and shows
 // the first 10 rows + total count inline. "Open in builder" deep-links to
 // /reports?draft=<base64> so the user can tweak + save.
-function ReportCard({ draft, onOpenInBuilder }) {
-  const [result, setResult] = useState(null)
+function ReportCard({ draft, preview, onOpenInBuilder }) {
+  // If Claude already ran it server-side (tool_use path), pre-populate result
+  // with the sample rows + total count so the card is instantly interactive.
+  const initialResult = preview?.success !== false && preview?.sample_rows
+    ? { rows: preview.sample_rows, columns: Object.keys(preview.sample_rows[0] || {}).slice(0, 6), aggregate: false, _serverTotal: preview.total_count }
+    : null
+  const [result, setResult] = useState(initialResult)
   const [running, setRunning] = useState(false)
   const [error, setError] = useState(null)
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(!!initialResult)
 
   async function run() {
     setRunning(true); setError(null)
@@ -553,7 +567,9 @@ function ReportCard({ draft, onOpenInBuilder }) {
           style={{ padding: '5px 12px', fontSize: 11, fontWeight: 600, background: T.surface, color: T.primary, border: `1px solid ${T.primary}`, borderRadius: 4, cursor: 'pointer', fontFamily: T.font }}>
           Open in builder
         </button>
-        {result && <span style={{ fontSize: 10, color: T.textMuted, marginLeft: 'auto' }}>{result.rows.length} {result.aggregate ? 'result' : 'row' + (result.rows.length === 1 ? '' : 's')}</span>}
+        {result && <span style={{ fontSize: 10, color: T.textMuted, marginLeft: 'auto' }}>
+          {result._serverTotal != null ? `${result._serverTotal.toLocaleString()} total` : `${result.rows.length} ${result.aggregate ? 'result' : 'row' + (result.rows.length === 1 ? '' : 's')}`}
+        </span>}
       </div>
       {error && <div style={{ padding: '6px 12px 10px', fontSize: 11, color: T.error }}>{error}</div>}
       {result && expanded && (
