@@ -68,8 +68,30 @@ function emptyConfig() {
     pivot_column: null,
     // Summary/matrix cell aggregate — { type: 'count' | 'sum' | 'avg' | 'min' | 'max', field }
     summary_aggregate: { type: 'count', field: null },
+    // Per-column footer aggregate: { [columnId]: 'sum' | 'avg' | 'min' | 'max' | 'count' | null }
+    // On new reports, numeric columns auto-default to 'sum'. null = hide total.
+    column_totals: {},
+    // Show the underlying detail rows inside Summary + Matrix reports
+    show_details: false,
   }
 }
+
+// For a column id, figure out its type so we can decide default total-agg
+function detectColumnType(id, baseFields, cfgFields) {
+  if (baseFields[id]) return baseFields[id].type
+  // Joined: deal_analysis_champion
+  for (let i = id.length - 1; i > 0; i--) {
+    const k = id.substring(0, i)
+    if (TABLES[k]) {
+      const fKey = id.substring(i + 1)
+      return TABLES[k].fields?.[fKey]?.type
+    }
+  }
+  const f = (cfgFields || []).find(x => typeof x === 'object' && (x.key === id || x.label === id))
+  if (f?.formula !== undefined) return 'number'
+  return null
+}
+const NUMERIC_TYPES = new Set(['number', 'currency', 'percentage', 'score'])
 
 // Evaluate a boolean filter expression: "1 AND 2 AND (3 OR 4)" where each number
 // refers to a 1-indexed filter. Returns a function (pass: bool[]) => bool.
@@ -1611,6 +1633,32 @@ function PreviewTable({ data, cfg, setCfg, baseFields }) {
     setCfg({ column_widths: next })
   }
 
+  // Footer total resolution — user-picked first, then auto-default to sum for numeric columns
+  function totalAggFor(id) {
+    const set = cfg.column_totals || {}
+    if (id in set) return set[id] // explicit user choice (incl. null = hide)
+    const t = detectColumnType(id, baseFields, cfg.fields)
+    return NUMERIC_TYPES.has(t) ? 'sum' : null
+  }
+  function setTotalAgg(id, agg) {
+    const next = { ...(cfg.column_totals || {}), [id]: agg }
+    setCfg({ column_totals: next })
+  }
+  function colTotal(id, items) {
+    const agg = totalAggFor(id)
+    if (!agg) return null
+    if (agg === 'count') return items.length
+    const vals = items.map(r => Number(r[id])).filter(n => !isNaN(n))
+    if (!vals.length) return 0
+    if (agg === 'sum') return vals.reduce((s, n) => s + n, 0)
+    if (agg === 'avg') return Math.round((vals.reduce((s, n) => s + n, 0) / vals.length) * 100) / 100
+    if (agg === 'min') return Math.min(...vals)
+    if (agg === 'max') return Math.max(...vals)
+    return null
+  }
+  function fmtNum(n) { return typeof n === 'number' ? n.toLocaleString() : (n ?? '') }
+  const hasAnyFooterTotal = columns.some(c => totalAggFor(c) != null)
+
   // Drag column → reorder in cfg.fields
   function reorderFields(draggedId, targetId) {
     if (!draggedId || draggedId === targetId) return
@@ -1675,6 +1723,10 @@ function PreviewTable({ data, cfg, setCfg, baseFields }) {
   // ── Shared header ──
   function HeaderCell({ id, label, width, last }) {
     const [resizing, setResizing] = useState(false)
+    const [menuOpen, setMenuOpen] = useState(false)
+    const currentAgg = totalAggFor(id)
+    const colType = detectColumnType(id, baseFields, cfg.fields)
+    const canTotal = NUMERIC_TYPES.has(colType) || colType === null // allow 'count' on non-numeric
     function onResizeStart(e) {
       e.preventDefault(); e.stopPropagation()
       setResizing(true)
@@ -1723,7 +1775,39 @@ function PreviewTable({ data, cfg, setCfg, baseFields }) {
           background: dragCol === id ? T.primaryLight : T.surfaceAlt,
           borderRight: `1px solid ${T.borderLight}`,
         }}>
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', display: 'inline-block', maxWidth: width - 16 }}>{label}</span>
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', display: 'inline-block', maxWidth: width - 40 }}>{label}</span>
+        {canTotal && (
+          <span onClick={e => { e.stopPropagation(); setMenuOpen(m => !m) }}
+            title={currentAgg ? `Footer: ${currentAgg}` : 'Set footer total'}
+            style={{
+              position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
+              fontSize: 10, fontWeight: 700, color: currentAgg ? T.primary : T.textMuted,
+              cursor: 'pointer', padding: '0 3px', borderRadius: 3,
+              background: currentAgg ? T.primaryLight : 'transparent',
+            }}>∑</span>
+        )}
+        {menuOpen && (
+          <>
+            <div onClick={() => setMenuOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 500 }} />
+            <div style={{ position: 'absolute', right: 0, top: '100%', zIndex: 501, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, boxShadow: '0 4px 14px rgba(0,0,0,0.15)', padding: 4, minWidth: 120 }}>
+              {[['sum', 'Sum'], ['avg', 'Average'], ['min', 'Min'], ['max', 'Max'], ['count', 'Count']].map(([k, lab]) => (
+                <button key={k} onClick={e => { e.stopPropagation(); setTotalAgg(id, k); setMenuOpen(false) }}
+                  style={{ display: 'block', width: '100%', textAlign: 'left', padding: '4px 10px', fontSize: 11, border: 'none', background: currentAgg === k ? T.primaryLight : 'transparent', color: T.text, cursor: 'pointer', fontFamily: T.font, borderRadius: 4 }}>
+                  {currentAgg === k && '✓ '}{lab}
+                </button>
+              ))}
+              {currentAgg && (
+                <>
+                  <div style={{ height: 1, background: T.borderLight, margin: '4px 0' }} />
+                  <button onClick={e => { e.stopPropagation(); setTotalAgg(id, null); setMenuOpen(false) }}
+                    style={{ display: 'block', width: '100%', textAlign: 'left', padding: '4px 10px', fontSize: 11, border: 'none', background: 'transparent', color: T.error, cursor: 'pointer', fontFamily: T.font, borderRadius: 4 }}>
+                    Hide total
+                  </button>
+                </>
+              )}
+            </div>
+          </>
+        )}
         {!last && (
           <span onMouseDown={onResizeStart}
             style={{
@@ -1779,6 +1863,23 @@ function PreviewTable({ data, cfg, setCfg, baseFields }) {
                 })}
               </tr>
             ))}
+            {hasAnyFooterTotal && (
+              <tr style={{ borderTop: `2px solid ${T.primary}`, background: T.primaryLight, fontWeight: 800 }}>
+                <td style={{ padding: '7px 8px', color: T.primary, textAlign: 'right', width: 40, minWidth: 40, maxWidth: 40, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Σ</td>
+                {columns.map(c => {
+                  const w = widthFor(c)
+                  const agg = totalAggFor(c)
+                  if (!agg) return <td key={c} style={{ padding: '7px 8px', width: w, minWidth: w, maxWidth: w }}></td>
+                  const v = colTotal(c, rows)
+                  return (
+                    <td key={c} style={{ padding: '7px 8px', color: T.primary, fontFeatureSettings: '"tnum"', width: w, minWidth: w, maxWidth: w, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 800 }} title={`${agg}`}>
+                      <span style={{ fontSize: 9, color: T.primary, opacity: 0.7, marginRight: 4, textTransform: 'uppercase' }}>{agg}</span>
+                      {fmtNum(v)}
+                    </td>
+                  )
+                })}
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -1828,7 +1929,7 @@ function PreviewTable({ data, cfg, setCfg, baseFields }) {
               </td>
             </tr>
             {!isCollapsed && (isLeaf
-              ? node.items.map((row, i) => (
+              ? (cfg.show_details !== false ? node.items.map((row, i) => (
                   <tr key={`${node.key}-${i}`} style={{ borderBottom: `1px solid ${T.borderLight}` }}>
                     <td style={{ padding: '5px 8px', color: T.textMuted, textAlign: 'right', width: 40, minWidth: 40, maxWidth: 40, paddingLeft: 8 + (depth + 1) * 16, fontFamily: T.mono }}>{i + 1}</td>
                     {columns.map(c => {
@@ -1838,7 +1939,7 @@ function PreviewTable({ data, cfg, setCfg, baseFields }) {
                       return <td key={c} style={{ padding: '5px 8px', color: T.text, fontFeatureSettings: '"tnum"', width: w, minWidth: w, maxWidth: w, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{disp}</td>
                     })}
                   </tr>
-                ))
+                )) : null)
               : renderLevel(node.children, depth + 1))}
           </React.Fragment>
         )
@@ -1856,7 +1957,24 @@ function PreviewTable({ data, cfg, setCfg, baseFields }) {
           </thead>
           <tbody>
             {renderLevel(tree, 0)}
-            <tr style={{ background: T.primaryLight, borderTop: `2px solid ${T.primary}`, fontWeight: 700 }}>
+            {hasAnyFooterTotal && (
+              <tr style={{ borderTop: `2px solid ${T.primary}`, background: T.primaryLight, fontWeight: 800 }}>
+                <td style={{ padding: '7px 8px', color: T.primary, textAlign: 'right', width: 40, fontSize: 10, textTransform: 'uppercase' }}>Σ</td>
+                {columns.map(c => {
+                  const w = widthFor(c)
+                  const a = totalAggFor(c)
+                  if (!a) return <td key={c} style={{ padding: '7px 8px', width: w, minWidth: w, maxWidth: w }}></td>
+                  const v = colTotal(c, rows)
+                  return (
+                    <td key={c} style={{ padding: '7px 8px', color: T.primary, fontFeatureSettings: '"tnum"', width: w, minWidth: w, maxWidth: w, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 800 }}>
+                      <span style={{ fontSize: 9, opacity: 0.7, marginRight: 4, textTransform: 'uppercase' }}>{a}</span>
+                      {fmtNum(v)}
+                    </td>
+                  )
+                })}
+              </tr>
+            )}
+            <tr style={{ background: T.primaryLight, borderTop: hasAnyFooterTotal ? `1px solid ${T.primary}40` : `2px solid ${T.primary}`, fontWeight: 700 }}>
               <td colSpan={columns.length + 1} style={{ padding: '7px 10px', fontSize: 12, color: T.primary }}>
                 Grand {aggLabel(agg)}:{' '}
                 <span style={{ fontFeatureSettings: '"tnum"', fontWeight: 900 }}>{typeof totalAggForAll === 'number' ? totalAggForAll.toLocaleString() : totalAggForAll}</span>
@@ -1947,16 +2065,71 @@ function PreviewTable({ data, cfg, setCfg, baseFields }) {
             </tr>
           </tbody>
         </table>
+        {/* Show details: underlying rows below the matrix */}
+        {cfg.show_details !== false && (
+          <div style={{ marginTop: 12, borderTop: `2px solid ${T.border}`, paddingTop: 10 }}>
+            <div style={{ fontSize: 10, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '0 8px 6px' }}>
+              Detail rows ({rows.length})
+            </div>
+            <table style={{ width: totalWidth, borderCollapse: 'collapse', fontSize: 12, tableLayout: 'fixed' }}>
+              <thead style={{ background: T.surfaceAlt }}>
+                <tr style={{ borderBottom: `1px solid ${T.border}` }}>
+                  <th style={{ padding: '6px 8px', fontSize: 9, fontWeight: 700, color: T.textMuted, width: 40, minWidth: 40, maxWidth: 40, textAlign: 'right' }}>#</th>
+                  {columns.map((c, i) => <HeaderCell key={c} id={c} label={colLabel(c)} width={widthFor(c)} last={i === columns.length - 1} />)}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.slice(0, 200).map((row, i) => (
+                  <tr key={i} style={{ borderBottom: `1px solid ${T.borderLight}` }}>
+                    <td style={{ padding: '5px 8px', color: T.textMuted, textAlign: 'right', fontFamily: T.mono, width: 40, minWidth: 40, maxWidth: 40 }}>{i + 1}</td>
+                    {columns.map(c => {
+                      const val = row[c]
+                      const disp = val == null ? '—' : typeof val === 'object' ? JSON.stringify(val).substring(0, 80) : String(val).substring(0, 140)
+                      const w = widthFor(c)
+                      return <td key={c} style={{ padding: '5px 8px', color: T.text, fontFeatureSettings: '"tnum"', width: w, minWidth: w, maxWidth: w, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{disp}</td>
+                    })}
+                  </tr>
+                ))}
+                {hasAnyFooterTotal && (
+                  <tr style={{ borderTop: `2px solid ${T.primary}`, background: T.primaryLight, fontWeight: 800 }}>
+                    <td style={{ padding: '7px 8px', color: T.primary, textAlign: 'right', width: 40, minWidth: 40, maxWidth: 40, fontSize: 10 }}>Σ</td>
+                    {columns.map(c => {
+                      const w = widthFor(c)
+                      const a = totalAggFor(c)
+                      if (!a) return <td key={c} style={{ padding: '7px 8px', width: w, minWidth: w, maxWidth: w }}></td>
+                      const v = colTotal(c, rows)
+                      return (
+                        <td key={c} style={{ padding: '7px 8px', color: T.primary, fontFeatureSettings: '"tnum"', width: w, minWidth: w, maxWidth: w, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 800 }}>
+                          <span style={{ fontSize: 9, opacity: 0.7, marginRight: 4, textTransform: 'uppercase' }}>{a}</span>
+                          {fmtNum(v)}
+                        </td>
+                      )
+                    })}
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     )
   }
 
   return (
     <Card>
-      <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+      <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <div>
           Previewing a limited number of records. Run the report to see everything. {rows.length} {data.aggregate ? 'result' : 'row' + (rows.length === 1 ? '' : 's')}.
           {cfg.report_type !== 'tabular' && <span style={{ marginLeft: 8, fontWeight: 700, color: T.primary, textTransform: 'uppercase', fontSize: 10 }}>{cfg.report_type}</span>}
+        </div>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          {cfg.report_type !== 'tabular' && (
+            <label style={{ fontSize: 11, color: T.textMuted, display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', userSelect: 'none' }}>
+              <input type="checkbox" checked={cfg.show_details !== false} onChange={e => setCfg({ show_details: e.target.checked })} />
+              Show details
+            </label>
+          )}
+          <span style={{ fontSize: 10, color: T.textMuted }}>Click <strong style={{ color: T.primary }}>Σ</strong> on any column header to add a footer total.</span>
         </div>
       </div>
 
