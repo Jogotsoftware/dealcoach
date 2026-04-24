@@ -717,6 +717,32 @@ export default function Pipeline() {
 
   if (loading) return <Spinner />
 
+  // Empty state — brand new user with zero deals: guide them to the first action.
+  if (!deals.length) return (
+    <div style={{ padding: '16px 24px' }}>
+      <div style={{ padding: '16px 24px', borderBottom: '1px solid ' + T.border, display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: T.surface, marginLeft: -24, marginRight: -24, marginTop: -16, marginBottom: 24 }}>
+        <h1 style={{ fontSize: 18, fontWeight: 800, margin: 0, color: T.text }}>Pipeline</h1>
+      </div>
+      <div style={{ maxWidth: 640, margin: '40px auto', background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: 32, boxShadow: T.shadow }}>
+        <div style={{ fontSize: 10, fontWeight: 800, color: T.primary, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Welcome</div>
+        <div style={{ fontSize: 22, fontWeight: 800, color: T.text, marginBottom: 8 }}>Let's get your first deal in</div>
+        <div style={{ fontSize: 13, color: T.textSecondary, lineHeight: 1.6, marginBottom: 20 }}>
+          DealCoach works best once a deal has a company name + website. We'll research the company in the background, and once you upload your first transcript, coaching insights, pain points, and tasks flow in automatically.
+        </div>
+        <ol style={{ margin: 0, paddingLeft: 20, fontSize: 13, color: T.text, lineHeight: 1.8 }}>
+          <li>Create your first deal (company name + website is enough)</li>
+          <li>We auto-research the company — usually 20–30 seconds</li>
+          <li>Upload a call transcript (.txt / .vtt / .srt, or paste text)</li>
+          <li>Coaching, scores, contacts, and tasks land on the deal page</li>
+        </ol>
+        <div style={{ display: 'flex', gap: 10, marginTop: 24 }}>
+          <button onClick={() => navigate('/deal/new')} style={{ padding: '10px 20px', background: T.primary, color: '#fff', border: 'none', borderRadius: 6, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: T.font }}>Create first deal →</button>
+          <button onClick={() => navigate('/coach')} style={{ padding: '10px 20px', background: T.surface, color: T.text, border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: T.font }}>Configure coach first</button>
+        </div>
+      </div>
+    </div>
+  )
+
   return (
     <div>
       <style>{`

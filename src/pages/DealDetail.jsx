@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { theme as T, formatCurrency, formatDate, formatDateLong, daysUntil, STAGES, FORECAST_CATEGORIES, CALL_TYPES, TASK_CATEGORIES } from '../lib/theme'
-import { Card, Badge, ForecastBadge, StageBadge, ScoreBar, Field, StatusDot, TabBar, Button, EmptyState, Spinner, inputStyle, labelStyle } from '../components/Shared'
+import { Card, Badge, ForecastBadge, StageBadge, ScoreBar, Field, StatusDot, TabBar, Button, EmptyState, Spinner, Skeleton, inputStyle, labelStyle } from '../components/Shared'
 import TranscriptUpload from '../components/TranscriptUpload'
 import { callGenerateEmail, callResearchFunction, reprocessDeal } from '../lib/webhooks'
 import { track } from '../lib/analytics'
@@ -791,8 +791,26 @@ export default function DealDetail() {
 
   // === CRUD HELPERS ===
   async function saveContact(contactId) {
+    const before = contacts.find(c => c.id === contactId) || {}
     const { error } = await supabase.from('contacts').update(editContactData).eq('id', contactId)
-    if (!error) { setContacts(prev => prev.map(c => c.id === contactId ? { ...c, ...editContactData } : c)); setEditingContact(null) }
+    if (!error) {
+      setContacts(prev => prev.map(c => c.id === contactId ? { ...c, ...editContactData } : c))
+      setEditingContact(null)
+      // Track AI suggestion edit if this was an AI-sourced contact
+      if (before?.notes && /^Source:/i.test(before.notes)) {
+        const fields = ['name', 'title', 'role_in_deal', 'department', 'email', 'influence_level']
+        const beforePayload = Object.fromEntries(fields.map(f => [f, before[f] ?? null]))
+        const afterPayload = Object.fromEntries(fields.map(f => [f, editContactData[f] ?? before[f] ?? null]))
+        const changed = fields.some(f => beforePayload[f] !== afterPayload[f])
+        if (changed) {
+          trackSuggestion({
+            orgId: profile?.org_id, dealId: id, userId: profile?.id,
+            targetType: 'contact', targetId: contactId, action: 'edited',
+            before: beforePayload, after: afterPayload, createdAt: before.created_at,
+          })
+        }
+      }
+    }
   }
   async function saveCompetitor(compId) {
     const { error } = await supabase.from('deal_competitors').update(editCompData).eq('id', compId)
@@ -942,6 +960,28 @@ export default function DealDetail() {
     const cp = companyProfile
     const cpSave = (f, v) => setCompanyProfile(p => ({ ...p, [f]: v }))
     const industryCompetitors = competitors.filter(c => c.competitor_type === 'industry')
+    // Show a skeleton while research is in progress (no overview yet + research queued/running)
+    const researchRunning = researchStatus && ['pending', 'in_progress', 'queued'].includes(researchStatus)
+    if (researchRunning && !cp?.overview) {
+      return (
+        <div>
+          <div style={{ fontSize: 11, color: T.primary, fontWeight: 600, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ display: 'inline-block', width: 10, height: 10, border: `2px solid ${T.primary}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+            Researching {deal.company_name}... (usually 20-30s)
+          </div>
+          <Skeleton h={14} w="40%" style={{ marginBottom: 10 }} />
+          <Skeleton h={10} w="100%" style={{ marginBottom: 6 }} />
+          <Skeleton h={10} w="92%" style={{ marginBottom: 6 }} />
+          <Skeleton h={10} w="80%" style={{ marginBottom: 14 }} />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 14 }}>
+            <Skeleton h={30} /><Skeleton h={30} /><Skeleton h={30} />
+          </div>
+          <Skeleton h={10} w="100%" style={{ marginBottom: 6 }} />
+          <Skeleton h={10} w="85%" />
+          <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+        </div>
+      )
+    }
     return (
       <>
         <EditableField label="Overview" value={cp?.overview} field="overview" table="company_profile" recordId={cp?.id} type="textarea" onSaved={cpSave} />
@@ -1866,7 +1906,7 @@ export default function DealDetail() {
                 <div style={{ display: 'flex', gap: 6 }}><Button primary onClick={addNewContact}>Add Contact</Button><Button onClick={() => setShowAddContact(false)}>Cancel</Button></div>
               </div>
             )}
-            {contacts.length === 0 ? <EmptyState message="No contacts yet. Add manually or upload a transcript to auto-extract." /> : (
+            {contacts.length === 0 ? <EmptyState icon="☺" title="No contacts yet" message="Add them manually, or upload a call transcript — the AI will extract decision-relevant contacts automatically." action={<Button primary onClick={() => setShowAddContact(true)} style={{ padding: '6px 14px', fontSize: 12 }}>+ Add contact</Button>} /> : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: 12 }}>
                 {contacts.map(c => (
                   <Card key={c.id}>
@@ -1944,7 +1984,7 @@ export default function DealDetail() {
               <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: T.text }}>Transcripts</h3>
               {hasModule('transcript_analysis') ? <Button primary onClick={() => setShowTranscriptUpload(true)}>Upload Transcript</Button> : <Button disabled title="Upgrade your plan">Upload Transcript</Button>}
             </div>
-            {conversations.length === 0 ? <EmptyState message="No transcripts yet. Upload a call transcript for AI analysis and auto-extracted tasks." /> : conversations.map(cv => {
+            {conversations.length === 0 ? <EmptyState icon="▶" title="No transcripts yet" message="Upload a call transcript (.txt / .vtt / .srt) or paste text. The AI analyses it and writes pain points, flags, contacts, tasks, and coaching scores into this deal." action={<Button primary onClick={() => setShowTranscriptUpload(true)} style={{ padding: '6px 14px', fontSize: 12 }}>Upload transcript</Button>} /> : conversations.map(cv => {
               const isStuck = !cv.processed && (Date.now() - new Date(cv.created_at).getTime() > 10 * 60 * 1000)
               return (
                 <div key={cv.id} style={{ position: 'relative' }}>

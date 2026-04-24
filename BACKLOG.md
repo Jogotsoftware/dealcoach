@@ -7,47 +7,27 @@
 
 ---
 
-## 🔴 CURRENT SPRINT (completed April 24, 2026)
+## 🔴 CURRENT SPRINT — April 25, 2026 (batch shipping)
 
-> Sprint #2. Regressions + new beta feedback. Build verified, all items shipped. See Done section.
+> Sprint #3 live. Everything below is what's left after the 4/25 batch. Build verified after each chunk.
 
-*(Items moved to Done below.)*
-
-### Carried over from previous queue
-- [ ] **Admin org-first navigation** — selecting an org in /admin should be top-level, then drill into tabs (Organizations, Users, Plans, etc.) scoped to that org. Currently all tabs are global. `[BF: 301911f7]`
-- [ ] **Coach Admin prompt UI overhaul** — system prompt needs visual sections with "managed by RI" badges for locked layers, editable coach context shown distinctly. Not just a textarea. `[BF: bccec18b]`
-- [ ] **Catalyst fix — ownership changes** — recent ownership/PE changes are a catalyst, not a compelling event. Add this explicitly to the locked catalyst definition in system_ai_rules and in the extraction prompt. `[BF: b09df111]`
-
-### High (from beta feedback)
-- [ ] **Global UI/UX density pass** — too much whitespace throughout the entire platform, not responsive enough. Needs a systematic pass across Pipeline, DealDetail, Settings, and Admin. `[BF: 648514a1]`
-- [ ] **Bulk task operations** — bulk select, complete, delete tasks from DealDetail tasks tab and Pipeline task widget. `[BF: e08dfbef]`
-- [ ] **Scoreboard benchmarks** — vs org average + avg call scores. Only show if org has 2+ reps. `[BF: 66b345b0]`
-- [ ] **Widget builder: Squarespace-level drag-and-drop** — full field picker from DB schema, drag columns to add, reorder by dragging, live preview large and central. `[BF: 5e82e06c, af192bb4, 3d2d7749]`
-- [ ] **Pipeline Salesforce-style dashboards** — create reports from DB fields, add to dashboards, clone widgets, create widgets directly on dashboard. `[BF: b3b93e03, a63eed1d]`
-- [ ] **Coach Admin template fields** — separate fields for tone, format, rules, instructions, custom context. No sort order. `[BF: 899d6564]`
-
-### Medium (from beta feedback)
-- [ ] **Widget filters from DB fields** — filter widgets by any DB field, support averages/sums/counts as calculated fields. `[BF: 49bc45fe]`
-- [ ] **Widget cross-reference + formulas** — cross-reference tables in reporting, Salesforce-style AND/OR logic, formulas. `[BF: 5cd000dc]`
-- [ ] **Chorus share link → transcript** — paste a Chorus shareable URL and import the transcript automatically. `[BF: 071402cc]`
-- [ ] **Quote sizing auto-populate** — include warehouse/inventory user types in quote builder, auto-populate from transcript data. `[BF: 849ca5f8]`
-- [ ] **Custom fields platform-wide** — create custom fields in coach admin that get extracted by AI and appear throughout platform. Big lift. `[BF: 819d85f4]`
-
----
-
-## 🟡 UPCOMING — Scoped but not yet queued
+### High — still open
+- [ ] **Proposal Builder full rewrite** — integrated quote generator, AI-generate quantified pains + outcomes + "why we're here", real ROI/TCO calculators, full quoting engine. Multi-session lift. `[BF: 1e76c5e2]`
+- [ ] **Custom fields platform-wide** — create custom fields in coach admin that get extracted by AI and appear throughout platform. `custom_field_definitions` table already wired into `assemble_coach_prompt`; needs UI across CoachAdmin/DealDetail/ExtractionDefinitions. `[BF: 819d85f4]`
+- [ ] **Reports engine — real cross-reference + AND/OR groups** — Reports engine foundation shipped, but user reports `/reports` still routes to pipeline in some contexts. Verify routing + extend with Salesforce-style report-of-reports cross-ref. `[BF: de4123bb, 4662ea9c]`
+- [ ] **DealDetail + Settings + Admin density sweep** — density pass so far hits Shared.jsx, Pipeline header cards, and the grid breakpoints. DealDetail + Settings + Admin still need a pass. `[BF: 648514a1]`
 
 ### Beta readiness (needed before inviting external beta users)
-- [ ] **Empty states** — every page needs a proper empty state: Pipeline with no deals, Transcripts tab with no uploads, Contacts tab, Tasks tab, etc. Not a blank page.
-- [ ] **Loading skeletons** — slow-loading widgets (company research, deal analysis, scores) should show skeletons not blank space
-- [ ] **Error boundaries** — every page needs an error boundary so one broken component doesn't crash the whole app
-- [ ] **First-deal guided walkthrough** — new user with no deals should see a step-by-step prompt: "Create your first deal → Add company website → Let us research → Upload a transcript"
-- [ ] **Beta welcome email sequence** — Day 0 (welcome), Day 1 (tips), Day 3 (check-in), Day 7 (feature highlight), Day 14 (feedback ask). Built in Resend, triggered on first login.
-- [ ] **Mobile responsive audit** — platform should be usable on tablet/mobile for field reps
+- [ ] **First-deal guided walkthrough** — step-by-step for new users after they land on the empty-state pipeline (CTA already present, walkthrough state machine not yet)
+- [ ] **Beta welcome email sequence** — Day 0 / 1 / 3 / 7 / 14 via Resend, triggered on first login
+- [ ] **Mobile responsive audit** — Pipeline widgets now re-layout on sm/xs; DealDetail + Settings + Coach + Admin still need explicit mobile sweep
+- [ ] **Remaining empty states** — Settings with no coach, MSP with no template, Quote Editor with no products, Reports with no saved reports
 
-### Learning loop (tables exist, UI not wired)
-- [ ] **End-of-session chatbot satisfaction** — when chatbot closes after 3+ messages, show 1-5 star prompt → chatbot_session_feedback
-- [ ] **AI suggestion tracking on contacts** — accept/edit/delete of AI-extracted contacts → ai_suggestion_tracking
+### Tests (before fundraising)
+- [ ] **Edge function smoke tests** — 5 functions: embed-chunks, build-deal-context, manage-ai-memory, process-transcript, generate-deal-retrospective
+- [ ] **E2E flow 1** — create deal → research fires → company_profile populated
+- [ ] **E2E flow 2** — upload transcript → tasks/insights inserted → assembled_prompt_versions row created
+- [ ] **E2E flow 3** — chatbot session → feedback captured → field updated
 
 ### Tests (before fundraising)
 - [ ] **Edge function smoke tests** — 5 functions: embed-chunks, build-deal-context, manage-ai-memory, process-transcript, generate-deal-retrospective
@@ -82,6 +62,28 @@
 ---
 
 ## ✅ DONE
+
+### April 25, 2026 sprint #3 — drag-drop dashboards, voice fields, tests-adjacent hygiene
+- [x] **Dashboards per scope** — `/dashboards` page with create/edit/clone/delete, drag-arrange widgets via react-grid-layout, per-scope (deal/rep/team/territory/industry/org). Widget library sidebar pulls from `custom_widget_definitions`. Each dashboard tile on the grid has a `⋯` menu with **Edit definition** (opens /admin/widgets in new tab), **Clone (creates new editable copy)** (duplicates the definition, swaps the dashboard widget to the clone), and **Remove from dashboard**. Migration: `org_widget_layouts.scope` + `scope_value` + `slug`, RLS locked to user's org.
+- [x] **Admin org-first navigation** — AdminConsole has an org scope selector + scoped banner + "Open full org page →" deep link. Users / Usage / Credits tabs filter their queries to the scoped org; Organizations-list tab hides when scoped. `[BF: 301911f7]`
+- [x] **Catalyst prompt hardened (v33 deployed)** — explicit ownership-change → CATALYST (not compelling event) negative-example block, warehouse/inventory quote-sizing hint added. RAG ingest wrapped in `EdgeRuntime.waitUntil`. `[BF: b09df111]`
+- [x] **Coach Voice & Behavior structured fields** — migration `coaches.tone` / `response_format` / `behavior_rules` / `custom_context`; CoachVoiceEditor card with 4 accent-coded boxes, edit-save-per-field, nice typography (not mono). `assemble_coach_prompt` RPC updated to splice all four into the coach context layer. `[BF: bccec18b, 899d6564]`
+- [x] **Coach Admin prompt UI polish** — Research Prompt display uses pretty left-accent card (not mono typewriter); Custom Research Instructions textarea switched from T.mono → T.font; email templates now have separate Tone / Format / Rules / Custom Instructions fields and `sort_order` field removed per feedback. Migration: `email_templates.tone` + `response_format` + `rules`. `[BF: 6c18bf, 899d6564]`
+- [x] **Coach Admin focus areas / anti-rules / custom instructions** — TagInput bubble pickers already land for Focus Areas + Anti-Rules; Custom Research Instructions stays as a textarea but with the correct font + sizing. Verified.
+- [x] **UI density pass (Shared components + Pipeline)** — Shared Card title 8/14→6/12, margin 12→10; Shared inputs 10/12→8/10; Field 12→8 margin; Pipeline forecast cards 14→8/10 padding + auto-fit grid; Pipeline responsive breakpoints add `sm` (6-col) + `xs` (4-col) tiers. `[BF: 648514a1]`
+- [x] **Bulk task operations on Pipeline task widget** — row-level checkboxes, Select all / N selected bar, bulk Complete (completed=true + completed_at), bulk Delete with confirm, Clear. `[BF: e08dfbef]`
+- [x] **Scoreboard benchmarks** — verified already shipped with vs-org deltas + orgAvg tick marks on each ScoreBar, gated on org ≥2 reps. `[BF: 66b345b0]`
+- [x] **Widget builder rebuild (preview-first + drag-drop)** — DB field tree with HTML5 drag source; drop onto section drop zones; drag field chips to reorder; filter field picker (no more raw text); value picker adapts to badge options / boolean / numeric; conditional formatting editor with field/operator/value + scope + color + bold; save toast + error surface; "+ formula" chip creates calculated columns; Properties panel shows formula editor with identifier hints. `[BF: 5e82e06c, af192bb4, 3d2d7749, 49bc45fe]`
+- [x] **Widget formulas + cross-reference filters** — `widgetQuery.js` supports `filter_logic: 'and'|'or'` + `filter_groups[]` (OR rendered via supabase `.or(pgrest-string)`). Formula fields: safe arithmetic evaluator, +-*/() and identifier substitution against row + joined tables. WidgetBuilder shows AND/OR toggle when 2+ filters. `[BF: 5cd000dc]`
+- [x] **URL transcript import** — `import-transcript-url` edge function v1 deployed. Accepts Chorus/Gong/Fathom/Zoom share URLs, server-side fetch, HTML scrape (gong JSON path / turn/utterance regex / plain-text fallback), inserts conversations row, kicks `process-transcript` via `waitUntil`. UI row in TranscriptUpload above the file uploader. Migration: `conversations.source_url`. `[BF: 071402cc]`
+- [x] **Quote sizing — warehouse/inventory + auto-populate** — migration `deal_sizing.warehouse_users / inventory_users / fulfillment_users / receiving_users / customer_count / order_volume_monthly` + `auto_populated_from_transcript` flag + timestamp. DealDetail QuoteSizingWidget: new "Warehouse / Inventory / Volume" section + "Auto-populate from transcripts" regex scan over conversations.transcript + pain_points. `[BF: 849ca5f8]`
+- [x] **Pipeline empty state** — zero-deal accounts now see a guided welcome card on `/` with a 4-step walkthrough and a "Create first deal →" CTA instead of an empty pipeline view.
+- [x] **DealDetail tab empty states upgraded** — Contacts / Transcripts tabs now use the new EmptyState with an icon, heading, body copy, and a direct action button (Add contact / Upload transcript). Tasks tab kept existing EmptyState (still works — back-compat).
+- [x] **Loading skeletons** — `Shared.Skeleton`, `SkeletonTable`, `SkeletonCards` components (shimmer animation). DealDetail CompanyProfileWidget now renders a typed skeleton + "Researching {company}..." header when `research_status` is pending/in_progress and no overview exists.
+- [x] **Error boundaries per route** — `components/ErrorBoundary.jsx`. Every route in App.jsx wrapped with a labelled ErrorBoundary; failure UI shows technical details + Try again / Reload / Back to pipeline. Sentry hook-up attempted via `window.Sentry`.
+- [x] **Chatbot end-of-session satisfaction** — when `closePanel` fires on a 3+ message session that hasn't been rated yet, show a 1-5 star + optional notes overlay. On submit, writes to `chatbot_session_feedback` with message_count, thumbs_up/down counts, satisfaction_score, satisfaction_notes. Tracks `chatbot_satisfaction_rated` analytics event. Skip closes without writing.
+- [x] **AI contact edit tracking** — `saveContact` now writes to `ai_suggestion_tracking` with `action='edited'` + before/after payload of name/title/role/department/email/influence when editing an AI-sourced contact (notes begins `Source:`). Delete tracking was already shipped.
+- [x] **Inline dashboard widget ⋯ menu** — Edit definition (opens /admin/widgets hash-link in new tab), Clone (inserts a new editable copy of the widget definition and swaps it into the dashboard), Remove from dashboard.
 
 ### April 24, 2026 sprint #2 — regressions + new feedback
 - [x] **RG1 — Settings My Coach: share + delete** — `CoachSection` now accepts `ownerActions`. "Coaches You've Built" row shows inline Share + Delete buttons. Share inserts a `coach_share_tokens` row and reveals a copy-to-clipboard panel. Delete soft-archives via `active=false` (scoped by `created_by`). `[BF: 32cae416]`
@@ -186,5 +188,5 @@
 
 ---
 
-*Last updated: April 23, 2026*
+*Last updated: April 25, 2026 sprint #3*
 *Next update: after next sprint completes*

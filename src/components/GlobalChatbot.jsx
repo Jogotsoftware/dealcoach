@@ -195,11 +195,51 @@ export default function GlobalChatbot() {
 
   const filteredDeals = deals.filter(d => d.company_name?.toLowerCase().includes(dealSearch.toLowerCase()))
 
-  // Close the whole panel
-  function closePanel() {
+  // Session satisfaction prompt — fires on close when the session has >=3 messages
+  // and no satisfaction has been captured yet for this session.
+  const [satPrompt, setSatPrompt] = useState(null) // session_id to rate
+  const [satSubmittedFor, setSatSubmittedFor] = useState(new Set())
+  const [satScore, setSatScore] = useState(0)
+  const [satNotes, setSatNotes] = useState('')
+
+  async function submitSatisfaction(score, notes) {
+    if (!satPrompt) return
+    const thumbsUp = Object.values(feedbackState).filter(f => f?.sentiment === 'thumbs_up').length
+    const thumbsDown = Object.values(feedbackState).filter(f => f?.sentiment === 'thumbs_down').length
+    const { error } = await supabase.from('chatbot_session_feedback').insert({
+      session_id: satPrompt,
+      org_id: profile?.org_id || null,
+      user_id: profile?.id,
+      deal_id: selectedDealId || null,
+      message_count: messages.length,
+      thumbs_up_count: thumbsUp,
+      thumbs_down_count: thumbsDown,
+      satisfaction_score: score,
+      satisfaction_notes: notes || null,
+    })
+    if (error) console.error('chatbot_session_feedback insert failed:', error)
+    track('chatbot_satisfaction_rated', { score, context_type: topic, message_count: messages.length })
+    setSatSubmittedFor(s => new Set(s).add(satPrompt))
+    setSatPrompt(null)
+    setSatScore(0)
+    setSatNotes('')
     setOpen(false)
     setDealPickerOpen(false)
     setSessionsOpen(false)
+  }
+
+  // Close the whole panel
+  function closePanel() {
+    // If the session has 3+ messages and hasn't been rated yet, surface the prompt
+    // before closing. Skipping just closes the panel.
+    if (sessionId && messages.length >= 3 && !satSubmittedFor.has(sessionId) && !satPrompt) {
+      setSatPrompt(sessionId)
+      return
+    }
+    setOpen(false)
+    setDealPickerOpen(false)
+    setSessionsOpen(false)
+    setSatPrompt(null)
   }
 
   return (
@@ -217,8 +257,39 @@ export default function GlobalChatbot() {
           }}>💬</button>
       )}
 
+      {/* Satisfaction prompt overlay (shown when closing a 3+ msg session) */}
+      {satPrompt && (
+        <div style={{
+          position: 'fixed', bottom: 20, right: 20, zIndex: 9100,
+          width: 340, background: T.surface, border: `1px solid ${T.primary}`,
+          borderRadius: 14, boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
+          padding: 18, fontFamily: T.font,
+        }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 6 }}>How was this session?</div>
+          <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 12 }}>Your feedback tunes future coaching.</div>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+            {[1, 2, 3, 4, 5].map(n => (
+              <button key={n} onClick={() => setSatScore(n)}
+                style={{ flex: 1, padding: '10px 0', background: satScore >= n ? T.primary : T.surfaceAlt, color: satScore >= n ? '#fff' : T.textMuted, border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 18, fontWeight: 700, fontFamily: T.font }}>
+                ★
+              </button>
+            ))}
+          </div>
+          <textarea value={satNotes} onChange={e => setSatNotes(e.target.value)}
+            placeholder="Optional — what worked or didn't?"
+            style={{ width: '100%', minHeight: 60, padding: '8px 10px', fontSize: 12, border: `1px solid ${T.border}`, borderRadius: 6, fontFamily: T.font, resize: 'vertical', outline: 'none', marginBottom: 10, color: T.text, background: T.surface, boxSizing: 'border-box' }} />
+          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+            <button onClick={() => { setSatPrompt(null); setOpen(false) }}
+              style={{ background: 'transparent', border: 'none', color: T.textMuted, fontSize: 12, cursor: 'pointer', padding: '6px 10px', fontFamily: T.font }}>Skip</button>
+            <button onClick={() => submitSatisfaction(satScore, satNotes)}
+              disabled={!satScore}
+              style={{ background: satScore ? T.primary : T.surfaceAlt, color: satScore ? '#fff' : T.textMuted, border: 'none', borderRadius: 6, padding: '6px 14px', fontSize: 12, fontWeight: 700, cursor: satScore ? 'pointer' : 'not-allowed', fontFamily: T.font }}>Submit</button>
+          </div>
+        </div>
+      )}
+
       {/* Panel */}
-      {open && (
+      {open && !satPrompt && (
         <div style={{
           position: 'fixed', bottom: 20, right: 20, zIndex: 9000,
           width: 360, height: '72vh', maxHeight: 720,
