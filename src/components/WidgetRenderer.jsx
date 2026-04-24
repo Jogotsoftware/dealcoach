@@ -3,6 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { theme as T, formatCurrency, formatDate } from '../lib/theme'
 import { Badge, ScoreBar } from './Shared'
 import { executeWidgetQuery, aggregate, resolveField } from '../lib/widgetQuery'
+import { executeSavedReport, fetchSavedReport, groupAndAggregate, scalarAggregate } from '../lib/reportQuery'
+
+const CHART_PALETTE = ['#5DADE2', '#28a745', '#f59e0b', '#8b5cf6', '#ef4444', '#0ea5e9', '#ec4899', '#14b8a6', '#f97316', '#6366f1']
 
 const BADGE_COLORS = {
   qualify: '#f59e0b', discovery: '#f97316', solution_validation: '#8b5cf6', confirming_value: '#0ea5e9', selection: '#10b981',
@@ -205,6 +208,168 @@ function ListSection({ section, data, navigate }) {
   )
 }
 
+// === SAVED-REPORT-BACKED WIDGET ===
+// Rendered when a custom_widget_definitions row has config.source = 'saved_report'.
+// Pulls the saved_report's data once and displays it per config.visualization.
+
+function ReportTableView({ rows, columns }) {
+  const navigate = useNavigate()
+  if (!rows?.length) return <div style={{ padding: 16, textAlign: 'center', color: T.textMuted, fontSize: 11 }}>No data</div>
+  const cols = columns?.length ? columns : Object.keys(rows[0]).filter(k => k !== 'id').slice(0, 6)
+  return (
+    <div style={{ overflow: 'auto', height: '100%' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+        <thead>
+          <tr style={{ background: T.surfaceAlt }}>
+            {cols.map(c => (
+              <th key={c} style={{ textAlign: 'left', padding: '6px 8px', fontSize: 10, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase', borderBottom: `1px solid ${T.border}`, whiteSpace: 'nowrap' }}>
+                {c.replace(/_/g, ' ')}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.slice(0, 500).map((r, i) => (
+            <tr key={r.id || i} style={{ borderBottom: `1px solid ${T.borderLight}`, cursor: r.id && cols.includes('company_name') ? 'pointer' : 'default' }}
+              onClick={() => { if (r.id && cols.includes('company_name')) navigate('/deal/' + r.id) }}>
+              {cols.map(c => {
+                const val = r[c]
+                const disp = val == null ? '—' : typeof val === 'object' ? JSON.stringify(val).substring(0, 40) : String(val)
+                return <td key={c} style={{ padding: '6px 8px', color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 200 }}>{disp}</td>
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function BarChart({ data, horizontal = false }) {
+  if (!data?.length) return <div style={{ padding: 16, textAlign: 'center', color: T.textMuted, fontSize: 11 }}>No data</div>
+  const max = Math.max(...data.map(d => Number(d.value) || 0), 1)
+  if (horizontal) {
+    return (
+      <div style={{ padding: '8px 4px', overflow: 'auto', height: '100%' }}>
+        {data.slice(0, 20).map((d, i) => (
+          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            <div style={{ fontSize: 11, color: T.text, width: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 }} title={d.label}>{d.label}</div>
+            <div style={{ flex: 1, height: 16, background: T.surfaceAlt, borderRadius: 3, position: 'relative' }}>
+              <div style={{ width: `${(d.value / max) * 100}%`, height: '100%', background: CHART_PALETTE[i % CHART_PALETTE.length], borderRadius: 3, transition: 'width 0.3s' }} />
+            </div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.text, minWidth: 40, textAlign: 'right', fontFeatureSettings: '"tnum"' }}>{typeof d.value === 'number' && !Number.isInteger(d.value) ? d.value.toFixed(1) : d.value.toLocaleString?.() ?? d.value}</div>
+          </div>
+        ))}
+      </div>
+    )
+  }
+  return (
+    <div style={{ height: '100%', display: 'flex', alignItems: 'flex-end', gap: 6, padding: '12px 8px 24px' }}>
+      {data.slice(0, 20).map((d, i) => (
+        <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, minWidth: 0 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: T.text, fontFeatureSettings: '"tnum"' }}>{typeof d.value === 'number' && !Number.isInteger(d.value) ? d.value.toFixed(1) : d.value.toLocaleString?.() ?? d.value}</div>
+          <div style={{ width: '100%', height: `${Math.max((d.value / max) * 100, 2)}%`, background: CHART_PALETTE[i % CHART_PALETTE.length], borderRadius: '3px 3px 0 0', transition: 'height 0.3s' }} />
+          <div style={{ fontSize: 9, color: T.textMuted, textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%' }} title={d.label}>{d.label}</div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function PieChart({ data }) {
+  if (!data?.length) return <div style={{ padding: 16, textAlign: 'center', color: T.textMuted, fontSize: 11 }}>No data</div>
+  const total = data.reduce((s, d) => s + (Number(d.value) || 0), 0)
+  if (total <= 0) return <div style={{ padding: 16, textAlign: 'center', color: T.textMuted, fontSize: 11 }}>No data</div>
+  let accum = 0
+  const slices = data.slice(0, 10).map((d, i) => {
+    const start = (accum / total) * 360
+    accum += Number(d.value) || 0
+    const end = (accum / total) * 360
+    return { ...d, start, end, color: CHART_PALETTE[i % CHART_PALETTE.length] }
+  })
+  // SVG pie using paths
+  const r = 60, cx = 70, cy = 70
+  function arcPath(start, end) {
+    const s = (start - 90) * Math.PI / 180
+    const e = (end - 90) * Math.PI / 180
+    const x1 = cx + r * Math.cos(s), y1 = cy + r * Math.sin(s)
+    const x2 = cx + r * Math.cos(e), y2 = cy + r * Math.sin(e)
+    const large = end - start > 180 ? 1 : 0
+    return `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`
+  }
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: 8, height: '100%' }}>
+      <svg width={140} height={140} viewBox="0 0 140 140" style={{ flexShrink: 0 }}>
+        {slices.map((s, i) => <path key={i} d={arcPath(s.start, s.end)} fill={s.color} stroke="#fff" strokeWidth="1" />)}
+      </svg>
+      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4, overflow: 'auto', maxHeight: 140 }}>
+        {slices.map((s, i) => (
+          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
+            <span style={{ width: 10, height: 10, background: s.color, borderRadius: 2, flexShrink: 0 }} />
+            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: T.text }} title={s.label}>{s.label}</span>
+            <span style={{ fontWeight: 700, color: T.textMuted, fontFeatureSettings: '"tnum"' }}>{Math.round((s.value / total) * 100)}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function MetricTile({ value, label }) {
+  const display = typeof value === 'number'
+    ? (Number.isInteger(value) ? value.toLocaleString() : value.toFixed(2))
+    : String(value ?? '—')
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 16, gap: 8 }}>
+      <div style={{ fontSize: 40, fontWeight: 800, color: T.primary, fontFeatureSettings: '"tnum"', lineHeight: 1 }}>{display}</div>
+      {label && <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', textAlign: 'center' }}>{label}</div>}
+    </div>
+  )
+}
+
+function SavedReportWidget({ config }) {
+  const [state, setState] = useState({ loading: true, report: null, rows: [], error: null })
+
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      setState(s => ({ ...s, loading: true, error: null }))
+      try {
+        const report = await fetchSavedReport(config.saved_report_id)
+        if (!report) throw new Error('Report not found')
+        const { rows } = await executeSavedReport(report, { limit: config.limit || 500 })
+        if (!cancelled) setState({ loading: false, report, rows, error: null })
+      } catch (err) {
+        if (!cancelled) setState({ loading: false, report: null, rows: [], error: err.message || String(err) })
+      }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [config.saved_report_id, config.limit])
+
+  if (state.loading) return <div style={{ padding: 12, textAlign: 'center', color: T.textMuted, fontSize: 11 }}>Loading...</div>
+  if (state.error) return <div style={{ padding: 12, fontSize: 11, color: T.error }}>{state.error}</div>
+
+  const viz = config.visualization || 'table'
+  const rows = state.rows
+  const groupBy = config.group_by
+  const valueField = config.value_field
+  const aggregate = config.aggregate || 'count'
+
+  if (viz === 'metric') {
+    const v = scalarAggregate(rows, valueField, aggregate)
+    const lbl = config.metric_label || state.report?.name || ''
+    return <MetricTile value={v} label={lbl} />
+  }
+  if (viz === 'bar' || viz === 'hbar' || viz === 'pie') {
+    const data = groupAndAggregate(rows, groupBy, valueField, aggregate)
+    if (viz === 'pie') return <PieChart data={data} />
+    return <BarChart data={data} horizontal={viz === 'hbar'} />
+  }
+  // Default: table
+  return <ReportTableView rows={rows} columns={config.columns} />
+}
+
 // === MAIN RENDERER ===
 
 export default function WidgetRenderer({ config, context }) {
@@ -212,7 +377,10 @@ export default function WidgetRenderer({ config, context }) {
   const [sectionData, setSectionData] = useState({})
   const [loading, setLoading] = useState(true)
 
+  const isReportBacked = config?.source === 'saved_report' && config?.saved_report_id
+
   useEffect(() => {
+    if (isReportBacked) return
     async function load() {
       setLoading(true)
       const results = {}
@@ -225,7 +393,9 @@ export default function WidgetRenderer({ config, context }) {
       setLoading(false)
     }
     load()
-  }, [config, context?.deal_id])
+  }, [config, context?.deal_id, isReportBacked])
+
+  if (isReportBacked) return <SavedReportWidget config={config} />
 
   if (loading) return <div style={{ padding: 12, textAlign: 'center', color: T.textMuted, fontSize: 11 }}>Loading...</div>
 

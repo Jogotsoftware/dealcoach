@@ -234,24 +234,30 @@ export default function CoachAdmin() {
   }
 
   async function updateTemplate(id, field, value) {
-    await supabase.from('msp_templates').update({ [field]: value }).eq('id', id)
+    const { error } = await supabase.from('msp_templates').update({ [field]: value }).eq('id', id)
+    if (error) { alert(`MSP template save failed (${field}): ${error.message}`); return }
     setMspTemplates(prev => prev.map(t => t.id === id ? { ...t, [field]: value } : t))
   }
 
   async function addTemplateStage(templateId) {
     if (!newTemplateStage.stage_name.trim()) return
+    const tpl = mspTemplates.find(t => t.id === templateId)
+    const defaultAtt = Array.isArray(tpl?.default_attendees) ? tpl.default_attendees : []
     const existing = templateStages.filter(s => s.template_id === templateId)
     const nextOrder = existing.length > 0 ? Math.max(...existing.map(s => s.stage_order)) + 1 : 1
     const { data, error } = await supabase.from('msp_template_stages').insert({
       template_id: templateId, stage_name: newTemplateStage.stage_name,
       stage_order: nextOrder, due_date_offset: Number(newTemplateStage.due_date_offset) || 0,
       default_duration_days: Number(newTemplateStage.due_date_offset) || 0,
+      attendee_roles: defaultAtt,
     }).select().single()
-    if (!error && data) { setTemplateStages(prev => [...prev, data]); setShowAddTemplateStage(null); setNewTemplateStage({ stage_name: '', due_date_offset: 0 }) }
+    if (error) { alert(`Add stage failed: ${error.message}`); return }
+    if (data) { setTemplateStages(prev => [...prev, data]); setShowAddTemplateStage(null); setNewTemplateStage({ stage_name: '', due_date_offset: 0 }) }
   }
 
   async function updateTemplateStage(id, field, value) {
-    await supabase.from('msp_template_stages').update({ [field]: value }).eq('id', id)
+    const { error } = await supabase.from('msp_template_stages').update({ [field]: value }).eq('id', id)
+    if (error) { alert(`MSP stage save failed (${field}): ${error.message}`); return }
     setTemplateStages(prev => prev.map(s => s.id === id ? { ...s, [field]: value } : s))
   }
 
@@ -294,7 +300,8 @@ export default function CoachAdmin() {
   }
 
   async function updateEmailTemplate(id, field, value) {
-    await supabase.from('email_templates').update({ [field]: value }).eq('id', id)
+    const { error } = await supabase.from('email_templates').update({ [field]: value }).eq('id', id)
+    if (error) { alert(`Email template save failed (${field}): ${error.message}`); return }
     setEmailTemplatesAdmin(prev => prev.map(t => t.id === id ? { ...t, [field]: value } : t))
   }
 
@@ -329,6 +336,7 @@ export default function CoachAdmin() {
 
   const tabs = [
     { key: 'overview', label: 'Overview' },
+    { key: 'rules', label: 'Rules' },
     { key: 'prompts', label: `Call Prompts (${prompts.length})` },
     { key: 'docs', label: `Documents (${docs.length})` },
     { key: 'scoring', label: `Scoring (${scoringConfigs.length})` },
@@ -438,45 +446,21 @@ export default function CoachAdmin() {
                   )}
                 </Card>
 
-                {/* System Prompt — layered 4-layer preview */}
+                {/* Coach Voice & Behavior — structured fields */}
+                <CoachVoiceEditor coach={coach} onSaved={(p) => setCoach(prev => ({ ...prev, ...p }))} />
+              </div>
+            )}
+
+            {/* ══════════ RULES ══════════ */}
+            {tab === 'rules' && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: 16, alignItems: 'start' }}>
+                <div style={{ gridColumn: '1 / -1', fontSize: 12, color: T.textMuted, marginBottom: 4 }}>
+                  Rules govern what your coach extracts from every transcript and how the system prompt is assembled. Research instructions live in the Research tab.
+                </div>
                 <AssembledPromptPreview coach={coach} editing={editingSystemPrompt}
                   onEdit={() => { setEditingSystemPrompt(true); setSystemPromptVal(coach.system_prompt || '') }}
                   onCancel={() => setEditingSystemPrompt(false)}
                   value={systemPromptVal} setValue={setSystemPromptVal} onSave={saveSystemPrompt} />
-
-                {/* Coach Voice & Behavior — structured fields */}
-                <CoachVoiceEditor coach={coach} onSaved={(p) => setCoach(prev => ({ ...prev, ...p }))} />
-
-                {/* Research Prompt */}
-                <Card title="Research Prompt" action={
-                  <Button style={{ padding: '4px 12px', fontSize: 11 }}
-                    onClick={() => {
-                      if (editingResearchPrompt) { setEditingResearchPrompt(false) }
-                      else { setEditingResearchPrompt(true); setResearchPromptVal(coach.research_prompt || '') }
-                    }}>
-                    {editingResearchPrompt ? 'Cancel' : 'Edit'}
-                  </Button>
-                }>
-                  {editingResearchPrompt ? (
-                    <div>
-                      <textarea style={{ ...inputStyle, fontSize: 13, minHeight: 240, resize: 'vertical', width: '100%', lineHeight: 1.55, fontFamily: T.font }}
-                        value={researchPromptVal} onChange={e => setResearchPromptVal(e.target.value)}
-                        placeholder="What should the AI investigate about each company? e.g. recent M&A, exec changes, tech stack, funding, busy-season patterns..." />
-                      <div style={{ fontSize: 10, color: T.textMuted, marginTop: 2 }}>{researchPromptVal.length} chars</div>
-                      <Button primary onClick={saveResearchPrompt} style={{ marginTop: 8 }}>Save</Button>
-                    </div>
-                  ) : coach.research_prompt ? (
-                    <div style={{ fontSize: 13, lineHeight: 1.55, color: T.text, background: T.surface, padding: 14, borderRadius: 6, border: `1px solid ${T.borderLight}`, borderLeft: `3px solid ${T.primary}`, fontFamily: T.font, whiteSpace: 'pre-wrap', maxHeight: 260, overflow: 'auto' }}>
-                      {coach.research_prompt}
-                    </div>
-                  ) : (
-                    <div style={{ fontSize: 12, color: T.textMuted, fontStyle: 'italic', padding: 10 }}>
-                      No research prompt configured. Click Edit to tell the AI what to investigate about each company.
-                    </div>
-                  )}
-                </Card>
-
-                {/* Extraction Rules — structured */}
                 <ExtractionRulesEditor coach={coach} onSaved={(newRules) => setCoach(prev => ({ ...prev, extraction_rules: newRules }))} />
               </div>
             )}
@@ -675,6 +659,28 @@ export default function CoachAdmin() {
                         <div style={{ padding: 18 }}>
                           {tpl.description && <div style={{ fontSize: 12, color: T.textSecondary, marginBottom: 12 }}>{tpl.description}</div>}
 
+                          {/* Default attendees — pre-applied to every new stage */}
+                          <div style={{ padding: 10, background: T.surfaceAlt, borderRadius: 6, border: `1px solid ${T.borderLight}`, marginBottom: 12 }}>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Default Attendees</div>
+                            <div style={{ fontSize: 11, color: T.textSecondary, marginBottom: 6 }}>Auto-applied to every new stage added below. You can still change per-stage.</div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                              {MSP_ATTENDEE_ROLES.map(r => {
+                                const current = Array.isArray(tpl.default_attendees) ? tpl.default_attendees : []
+                                const on = current.includes(r)
+                                return (
+                                  <button key={r}
+                                    onClick={() => {
+                                      const next = on ? current.filter(x => x !== r) : [...current, r]
+                                      updateTemplate(tpl.id, 'default_attendees', next)
+                                    }}
+                                    style={{ fontSize: 10, padding: '3px 8px', borderRadius: 10, border: `1px solid ${on ? T.primary : T.border}`, background: on ? T.primary : 'transparent', color: on ? '#fff' : T.textSecondary, cursor: 'pointer', fontFamily: T.font }}>
+                                    {r}
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          </div>
+
                           {/* Add stage form */}
                           {showAddTemplateStage === tpl.id && (
                             <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', padding: 12, background: T.surfaceAlt, borderRadius: 6, marginBottom: 12, border: `1px solid ${T.borderLight}` }}>
@@ -801,14 +807,11 @@ export default function CoachAdmin() {
                           <div style={{ marginBottom: 8 }}><label style={labelStyle}>Context to Include</label></div>
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
                             {CONTEXT_FIELDS.map(cf => {
-                              const current = tpl.context_include || []
-                              const checked = Array.isArray(current) ? current.includes(cf) : false
+                              const col = `include_${cf}`
+                              const checked = !!tpl[col]
                               return (
                                 <label key={cf} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: T.text, cursor: 'pointer' }}>
-                                  <input type="checkbox" checked={checked} onChange={() => {
-                                    const newVal = checked ? current.filter(x => x !== cf) : [...current, cf]
-                                    updateEmailTemplate(tpl.id, 'context_include', newVal)
-                                  }} />
+                                  <input type="checkbox" checked={checked} onChange={() => updateEmailTemplate(tpl.id, col, !checked)} />
                                   {cf.replace(/_/g, ' ')}
                                 </label>
                               )
@@ -827,6 +830,33 @@ export default function CoachAdmin() {
         {/* ===== RESEARCH TAB ===== */}
         {tab === 'research' && coach && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 14, alignItems: 'start' }}>
+            <Card title="Research Prompt" action={
+              <Button style={{ padding: '4px 12px', fontSize: 11 }}
+                onClick={() => {
+                  if (editingResearchPrompt) { setEditingResearchPrompt(false) }
+                  else { setEditingResearchPrompt(true); setResearchPromptVal(coach.research_prompt || '') }
+                }}>
+                {editingResearchPrompt ? 'Cancel' : 'Edit'}
+              </Button>
+            }>
+              {editingResearchPrompt ? (
+                <div>
+                  <textarea style={{ ...inputStyle, fontSize: 13, minHeight: 240, resize: 'vertical', width: '100%', lineHeight: 1.55, fontFamily: T.font }}
+                    value={researchPromptVal} onChange={e => setResearchPromptVal(e.target.value)}
+                    placeholder="What should the AI investigate about each company? e.g. recent M&A, exec changes, tech stack, funding, busy-season patterns..." />
+                  <div style={{ fontSize: 10, color: T.textMuted, marginTop: 2 }}>{researchPromptVal.length} chars</div>
+                  <Button primary onClick={saveResearchPrompt} style={{ marginTop: 8 }}>Save</Button>
+                </div>
+              ) : coach.research_prompt ? (
+                <div style={{ fontSize: 13, lineHeight: 1.55, color: T.text, background: T.surface, padding: 14, borderRadius: 6, border: `1px solid ${T.borderLight}`, borderLeft: `3px solid ${T.primary}`, fontFamily: T.font, whiteSpace: 'pre-wrap', maxHeight: 260, overflow: 'auto' }}>
+                  {coach.research_prompt}
+                </div>
+              ) : (
+                <div style={{ fontSize: 12, color: T.textMuted, fontStyle: 'italic', padding: 10 }}>
+                  No research prompt configured. Click Edit to tell the AI what to investigate about each company.
+                </div>
+              )}
+            </Card>
             <Card title="Perplexity Integration">
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
@@ -1621,14 +1651,22 @@ function ScoringConfigEditor({ config, onSaved }) {
       </div>
     }>
       <div style={{ fontSize: 11, color: T.textSecondary, marginBottom: 8 }}>{config.description}</div>
-      {criteria.map((c, i) => (
-        <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.3fr 60px 2fr 20px', gap: 6, alignItems: 'center', marginBottom: 4, padding: 6, background: T.surfaceAlt, borderRadius: 4 }}>
-          <input style={{ ...inputStyle, padding: '4px 8px', fontSize: 12, fontWeight: 600 }} value={c.name || c.label || ''} onChange={e => updateField(i, 'name', e.target.value)} />
-          <input type="number" style={{ ...inputStyle, padding: '4px 6px', fontSize: 12, textAlign: 'center' }} value={c.weight ?? 0} onChange={e => updateField(i, 'weight', Number(e.target.value) || 0)} min={0} max={100} />
-          <input style={{ ...inputStyle, padding: '4px 8px', fontSize: 11 }} value={c.description || ''} onChange={e => updateField(i, 'description', e.target.value)} placeholder="What this scores..." />
-          <button onClick={() => removeCriterion(i)} style={{ background: 'none', border: 'none', color: T.textMuted, cursor: 'pointer', fontSize: 14, padding: 0 }}>×</button>
-        </div>
-      ))}
+      {criteria.map((c, i) => {
+        const weight = Number(c.weight) || 0
+        return (
+          <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.3fr 2.2fr 2fr 20px', gap: 8, alignItems: 'center', marginBottom: 6, padding: 8, background: T.surfaceAlt, borderRadius: 4 }}>
+            <input style={{ ...inputStyle, padding: '4px 8px', fontSize: 12, fontWeight: 600 }} value={c.name || c.label || ''} onChange={e => updateField(i, 'name', e.target.value)} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input type="range" min={0} max={100} step={1} value={weight}
+                onChange={e => updateField(i, 'weight', Number(e.target.value))}
+                style={{ flex: 1, accentColor: T.primary, cursor: 'pointer' }} />
+              <span style={{ fontSize: 11, fontWeight: 700, color: T.primary, minWidth: 34, textAlign: 'right', fontFeatureSettings: '"tnum"' }}>{weight}%</span>
+            </div>
+            <input style={{ ...inputStyle, padding: '4px 8px', fontSize: 11 }} value={c.description || ''} onChange={e => updateField(i, 'description', e.target.value)} placeholder="What this scores..." />
+            <button onClick={() => removeCriterion(i)} style={{ background: 'none', border: 'none', color: T.textMuted, cursor: 'pointer', fontSize: 14, padding: 0 }}>×</button>
+          </div>
+        )
+      })}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
         <button onClick={addCriterion} style={{ background: 'none', border: `1px dashed ${T.border}`, borderRadius: 4, padding: '4px 8px', fontSize: 11, color: T.primary, cursor: 'pointer', fontFamily: T.font }}>+ Add criterion</button>
         <span style={{ fontSize: 11, fontWeight: 700, color: total === 100 ? T.success : T.error }}>Total: {total}%</span>

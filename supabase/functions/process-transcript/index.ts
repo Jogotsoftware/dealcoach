@@ -1,7 +1,14 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-// process-transcript v33
+// process-transcript v34
+// CHANGES FROM v33:
+// - Commitment extraction tightened: explicit bans on deal-risk-disguised-as-task
+//   items (validate compelling event / quantify pain / confirm budget / etc.),
+//   require a specific deliverable noun ("send demo video of X"), require a named
+//   person for committed_by_name. Backend post-filter rejects any surviving bad
+//   patterns and keeps them out of the tasks table.
+//   Addresses BF 59e25522.
 // CHANGES FROM v32:
 // - Catalyst vs pain_point prompt hardened: explicit "rejection test", explicit
 //   lists of always-pain examples, explicit "zero catalysts is fine" permission.
@@ -119,7 +126,24 @@ EXTRACT DOLLAR AMOUNTS:
 - impact_text = BUSINESS CONSEQUENCE (not restating the pain)
 - solution_component = specific product module
 
-COMMITMENTS: ONLY explicit commitments someone made on the call. committed_by = rep or prospect.
+COMMITMENTS (aka TASKS — HARD RULES, read carefully):
+- A commitment is an EXPLICIT ACTION someone agreed to DO. Past tense for the act of agreeing ("rep agreed to...", "prospect said they would..."), future tense for the work itself.
+- Every commitment MUST be a concrete action item: send X, schedule Y with Z, book time with name, introduce the rep to name, complete a specific task by a date.
+- Every commitment MUST name a specific deliverable. "Send demo video" is NOT enough — it must be "Send demo video of <feature>" or "Send demo video covering <topic>". Vague verbs without nouns = drop it.
+- Commitments MUST be attributable to a specific person by name (committed_by_name). If no name was said or implied, drop it.
+- committed_by = 'rep' OR 'prospect' ONLY. Never invent a third category.
+
+DO NOT emit these as commitments — these are deal RISKS or DISCOVERY GAPS, not action items:
+  - "Validate compelling event"
+  - "Quantify pain"
+  - "Confirm budget"
+  - "Identify economic buyer"
+  - "Build champion"
+  - "Verify decision criteria"
+  - "Establish next steps" (vague)
+  - Any variant of "confirm / validate / identify / verify / qualify" unless it names the specific artifact, person, and deadline
+
+If something feels like coaching advice ("the rep should follow up on budget") it belongs in memory_observations as coaching_observation — NOT in commitments.
 FLAGS vs RISKS: FLAGS = signals on THIS call. RISKS = strategic threats to DEAL closing.
 CONTACTS: Only extract PROSPECT-SIDE contacts who are DECISION-RELEVANT:
 - Economic Buyer, Champion, Technical Evaluator, Decision Maker, Influencer, End User with buying influence
@@ -186,22 +210,22 @@ Deno.serve(async (req: Request) => {
   const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
   try {
-    if (!ANTHROPIC_API_KEY) return jr({ error: 'v33: No API key' }, 500);
+    if (!ANTHROPIC_API_KEY) return jr({ error: 'v34: No API key' }, 500);
     const reqBody = await req.json();
-    console.log('process-transcript v33 keys:', Object.keys(reqBody));
+    console.log('process-transcript v34 keys:', Object.keys(reqBody));
 
     const conversation_id = reqBody.conversation_id || reqBody.conversationId || reqBody.id;
-    if (!conversation_id) return jr({ error: `v33: no conversation_id. Keys: ${Object.keys(reqBody).join(', ')}` }, 400);
+    if (!conversation_id) return jr({ error: `v34: no conversation_id. Keys: ${Object.keys(reqBody).join(', ')}` }, 400);
 
     const { data: conv } = await sb.from('conversations').select('*').eq('id', conversation_id).single();
-    if (!conv) return jr({ error: 'v33: Conversation not found' }, 404);
-    if (!conv.transcript) return jr({ error: 'v33: No transcript' }, 400);
+    if (!conv) return jr({ error: 'v34: Conversation not found' }, 404);
+    if (!conv.transcript) return jr({ error: 'v34: No transcript' }, 400);
 
     const deal_id = reqBody.deal_id || reqBody.dealId || conv.deal_id;
-    if (!deal_id) return jr({ error: 'v33: No deal_id' }, 400);
+    if (!deal_id) return jr({ error: 'v34: No deal_id' }, 400);
 
     const { data: deal } = await sb.from('deals').select('*').eq('id', deal_id).single();
-    if (!deal) return jr({ error: 'v33: Deal not found' }, 404);
+    if (!deal) return jr({ error: 'v34: Deal not found' }, 404);
 
     const { data: rep } = await sb.from('profiles').select('active_coach_id, org_id, full_name, initials, email').eq('id', deal.rep_id).single();
     const cid = rep?.active_coach_id;
@@ -287,7 +311,7 @@ Deno.serve(async (req: Request) => {
     const { data: log } = await sb.from('ai_response_log').insert({ deal_id, response_type: 'transcript_analysis', coach_id: cid, ai_model_used: model, temperature: temp, status: 'processing', triggered_by: deal.rep_id }).select('id').single();
 
     const cr = await callClaude({ model, max_tokens: 8000, temperature: temp, system: sysPrompt, messages: [{ role: 'user', content: prompt }] });
-    if (!cr.ok) { const e = await cr.text(); await ulog(sb, log?.id, 'failed', `v33: ${e}`, t0); return jr({ error: `v33: Claude ${cr.status}` }, 500); }
+    if (!cr.ok) { const e = await cr.text(); await ulog(sb, log?.id, 'failed', `v34: ${e}`, t0); return jr({ error: `v34: Claude ${cr.status}` }, 500); }
 
     const cd = await cr.json();
     const usage = cd.usage || {};
@@ -299,7 +323,7 @@ Deno.serve(async (req: Request) => {
       const match = cleaned.match(/\{[\s\S]*\}/);
       if (!match) throw new Error('No JSON');
       p = JSON.parse(match[0]);
-    } catch (e: any) { await ulog(sb, log?.id, 'partial', `v33: ${e.message}`, t0, usage); return jr({ success: true, status: 'partial', error: e.message }); }
+    } catch (e: any) { await ulog(sb, log?.id, 'partial', `v34: ${e.message}`, t0, usage); return jr({ success: true, status: 'partial', error: e.message }); }
 
     await sb.from('conversations').update({ ai_summary: p.summary || null, ai_coaching_notes: p.coaching_notes || null, ai_raw_response: cd, processed: true }).eq('id', conversation_id);
 
@@ -505,14 +529,50 @@ Deno.serve(async (req: Request) => {
     }
 
     // ── COMMITMENTS ──
+    // v34 post-filter: reject deal-risk / discovery-gap items that slipped past
+    // the prompt. These belong in memory_observations (coaching) not tasks.
+    const BAD_TASK_PATTERNS = [
+      /^\s*validate\b.*\b(compelling event|pain|budget|authority|timeline|champion|criteria|process|need)\b/i,
+      /^\s*quantify\b\s+(the\s+)?pain\b/i,
+      /^\s*confirm\b\s+(the\s+)?(budget|authority|champion|decision|timeline|economic buyer|need)\b/i,
+      /^\s*identify\b\s+(the\s+)?(economic buyer|champion|decision maker|criteria)\b/i,
+      /^\s*(build|develop|establish)\b\s+(a\s+)?(champion|rapport|trust)\b/i,
+      /^\s*verify\b\s+(budget|authority|timeline|criteria|process|decision)\b/i,
+      /^\s*establish\b\s+(next steps|rapport)\b/i,
+      /^\s*qualify\b\s+(the\s+)?(deal|opportunity|prospect)\b/i,
+    ];
+    function isNonActionTask(title: string): boolean {
+      if (!title) return true;
+      const t = title.trim();
+      if (t.length < 6) return true; // too vague
+      if (BAD_TASK_PATTERNS.some(rx => rx.test(t))) return true;
+      // Vague "Send X" without a noun after the object
+      if (/^\s*(send|share|provide)\s+\w+\s*$/i.test(t) && t.split(/\s+/).length <= 3) return true;
+      return false;
+    }
     if (p.commitments?.length) {
       const { data: cats } = await sb.from('categories').select('id,name');
+      let taskSkip = 0;
       for (const t of p.commitments) {
         if (!t.title) continue;
+        if (isNonActionTask(t.title)) {
+          taskSkip++;
+          // Re-route as a coaching observation so the rep still sees it surface as guidance
+          await safeInsertNoReturn(sb, 'ai_memory', {
+            deal_id, org_id: rep?.org_id || null,
+            memory_type: 'coaching_observation',
+            content: `Discovery gap from call: ${t.title}${t.notes ? ' — ' + t.notes : ''}`,
+            priority: t.priority === 'high' ? 'high' : 'medium',
+            source_type: 'transcript', source_conversation_id: conversation_id, source_ai_log_id: log?.id || null,
+            active: true, resolved: false,
+          });
+          continue;
+        }
         const cat = cats?.find((c: any) => c.name.toLowerCase() === (t.category||'').toLowerCase());
         await safeInsertNoReturn(sb, 'tasks', { deal_id, conversation_id, title: t.title, category_id: cat?.id || null, priority: t.priority || 'medium', notes: t.notes || null, committed_by: t.committed_by === 'prospect' ? 'prospect' : 'rep', committed_by_name: t.committed_by_name || null, owner: t.committed_by === 'prospect' ? (t.committed_by_name || 'Prospect') : (rep?.full_name || null), rep_email: rep?.email || null, rep_name: rep?.full_name || null, auto_generated: true });
       }
-      sum.commitments = p.commitments.length;
+      sum.commitments = p.commitments.length - taskSkip;
+      if (taskSkip) sum.commitments_skipped_nonaction = taskSkip;
     }
 
     // ── DEAL UPDATES ──
@@ -625,11 +685,11 @@ Deno.serve(async (req: Request) => {
     } catch (e) { console.error('v32 ingest setup error:', e); }
 
     await ulog(sb, log?.id, 'completed', null, t0, usage, sum);
-    return jr({ success: true, version: 'v33', summary: sum, commitments_created: sum.commitments || 0, contacts_found: sum.contacts || 0, memories_created: sum.memories_created || 0, icp_score: sum.icp_score || null });
+    return jr({ success: true, version: 'v34', summary: sum, commitments_created: sum.commitments || 0, contacts_found: sum.contacts || 0, memories_created: sum.memories_created || 0, icp_score: sum.icp_score || null });
 
   } catch (e: any) {
-    console.error('process-transcript v33 error:', e);
-    return jr({ error: `v33: ${e.message}` }, 500);
+    console.error('process-transcript v34 error:', e);
+    return jr({ error: `v34: ${e.message}` }, 500);
   }
 });
 
