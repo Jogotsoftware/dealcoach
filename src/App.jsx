@@ -22,6 +22,7 @@ import TeamManagement from './pages/settings/TeamManagement'
 import OrgSettings from './pages/settings/OrgSettings'
 import WidgetBuilder from './pages/WidgetBuilder'
 import Dashboards from './pages/Dashboards'
+import ErrorBoundary from './components/ErrorBoundary'
 import BetaFeedbackAdmin from './pages/admin/BetaFeedback'
 import InvitationsAdmin from './pages/admin/Invitations'
 import PlatformAdminDashboard from './pages/admin/PlatformAdminDashboard'
@@ -88,32 +89,32 @@ export default function App() {
             {/* Protected routes requiring org — inside Layout (sidebar) */}
             <Route element={<ProtectedRoute><RequireOrg /></ProtectedRoute>}>
               <Route element={<Layout />}>
-                <Route path="/" element={<Pipeline />} />
-                <Route path="/deal/new" element={<NewDeal />} />
-                <Route path="/deal/:id" element={<DealDetail />} />
-                <Route path="/deal/:dealId/call/:conversationId" element={<CallDetail />} />
-                <Route path="/deal/:dealId/msp" element={<MSPPage />} />
-                <Route path="/deal/:dealId/quote/new" element={<QuoteEditor />} />
-                <Route path="/deal/:dealId/quote/:quoteId" element={<QuoteEditor />} />
-                <Route path="/deal/:dealId/proposal" element={<ProposalBuilder />} />
-                <Route path="/coach" element={<CoachAdmin />} />
-                <Route path="/coach/builder" element={<CoachBuilder />} />
-                <Route path="/reports" element={<Reports />} />
-                <Route path="/dashboards" element={<Dashboards />} />
-                <Route path="/dashboards/:dashboardId" element={<Dashboards />} />
-                <Route path="/deal/:id/retrospective" element={<DealRetrospective />} />
-                <Route path="/settings" element={<Settings />} />
-                <Route path="/admin" element={<AdminConsole />} />
-                <Route path="/settings/team" element={<TeamManagement />} />
+                <Route path="/" element={<ErrorBoundary label="the pipeline"><Pipeline /></ErrorBoundary>} />
+                <Route path="/deal/new" element={<ErrorBoundary label="new deal"><NewDeal /></ErrorBoundary>} />
+                <Route path="/deal/:id" element={<ErrorBoundary label="this deal"><DealDetail /></ErrorBoundary>} />
+                <Route path="/deal/:dealId/call/:conversationId" element={<ErrorBoundary label="this call"><CallDetail /></ErrorBoundary>} />
+                <Route path="/deal/:dealId/msp" element={<ErrorBoundary label="the MSP"><MSPPage /></ErrorBoundary>} />
+                <Route path="/deal/:dealId/quote/new" element={<ErrorBoundary label="new quote"><QuoteEditor /></ErrorBoundary>} />
+                <Route path="/deal/:dealId/quote/:quoteId" element={<ErrorBoundary label="the quote"><QuoteEditor /></ErrorBoundary>} />
+                <Route path="/deal/:dealId/proposal" element={<ErrorBoundary label="the proposal"><ProposalBuilder /></ErrorBoundary>} />
+                <Route path="/coach" element={<ErrorBoundary label="coach admin"><CoachAdmin /></ErrorBoundary>} />
+                <Route path="/coach/builder" element={<ErrorBoundary label="coach builder"><CoachBuilder /></ErrorBoundary>} />
+                <Route path="/reports" element={<ErrorBoundary label="reports"><Reports /></ErrorBoundary>} />
+                <Route path="/dashboards" element={<ErrorBoundary label="dashboards"><Dashboards /></ErrorBoundary>} />
+                <Route path="/dashboards/:dashboardId" element={<ErrorBoundary label="this dashboard"><Dashboards /></ErrorBoundary>} />
+                <Route path="/deal/:id/retrospective" element={<ErrorBoundary label="retrospective"><DealRetrospective /></ErrorBoundary>} />
+                <Route path="/settings" element={<ErrorBoundary label="settings"><Settings /></ErrorBoundary>} />
+                <Route path="/admin" element={<ErrorBoundary label="admin console"><AdminConsole /></ErrorBoundary>} />
+                <Route path="/settings/team" element={<ErrorBoundary label="team"><TeamManagement /></ErrorBoundary>} />
 
                 {/* Admin-only settings */}
                 <Route element={<RequireAdmin />}>
-                  <Route path="/settings/organization" element={<OrgSettings />} />
-                  <Route path="/admin/widgets" element={<WidgetBuilder />} />
-                  <Route path="/admin/feedback" element={<BetaFeedbackAdmin />} />
-                  <Route path="/admin/invitations" element={<InvitationsAdmin />} />
-                  <Route path="/admin/orgs/:orgId" element={<OrgDetail />} />
-                  <Route path="/admin/extraction-definitions" element={<ExtractionDefinitions />} />
+                  <Route path="/settings/organization" element={<ErrorBoundary label="org settings"><OrgSettings /></ErrorBoundary>} />
+                  <Route path="/admin/widgets" element={<ErrorBoundary label="widget builder"><WidgetBuilder /></ErrorBoundary>} />
+                  <Route path="/admin/feedback" element={<ErrorBoundary label="feedback"><BetaFeedbackAdmin /></ErrorBoundary>} />
+                  <Route path="/admin/invitations" element={<ErrorBoundary label="invitations"><InvitationsAdmin /></ErrorBoundary>} />
+                  <Route path="/admin/orgs/:orgId" element={<ErrorBoundary label="this org"><OrgDetail /></ErrorBoundary>} />
+                  <Route path="/admin/extraction-definitions" element={<ErrorBoundary label="AI rules"><ExtractionDefinitions /></ErrorBoundary>} />
                 </Route>
               </Route>
             </Route>

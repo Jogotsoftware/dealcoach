@@ -178,7 +178,8 @@ export default function Dashboards() {
   )
 }
 
-function DashboardEditor({ dashboard, widgetDefs, onBack, onSaved, showToast, toast, profile }) {
+function DashboardEditor({ dashboard, widgetDefs: initialDefs, onBack, onSaved, showToast, toast, profile }) {
+  const [widgetDefs, setWidgetDefs] = useState(initialDefs)
   const [widgets, setWidgets] = useState(Array.isArray(dashboard.widgets) ? dashboard.widgets : [])
   const [layout, setLayout] = useState(Array.isArray(dashboard.layout) ? dashboard.layout : [])
   const [scope, setScope] = useState(dashboard.scope || 'org')
@@ -189,6 +190,37 @@ function DashboardEditor({ dashboard, widgetDefs, onBack, onSaved, showToast, to
   const [showLibrary, setShowLibrary] = useState(false)
   const [previewDealId, setPreviewDealId] = useState(null)
   const [previewDeals, setPreviewDeals] = useState([])
+  const [menuOpenFor, setMenuOpenFor] = useState(null)
+
+  async function cloneWidgetDef(def) {
+    const copy = {
+      org_id: profile.org_id, created_by: profile.id,
+      name: `${def.name} (copy)`, description: def.description, widget_type: def.widget_type,
+      default_w: def.default_w, default_h: def.default_h, min_w: def.min_w, min_h: def.min_h,
+      config: JSON.parse(JSON.stringify(def.config || {})), active: true,
+    }
+    const { data, error } = await supabase.from('custom_widget_definitions').insert(copy).select().single()
+    if (error) { showToast('Clone failed: ' + error.message, true); return null }
+    setWidgetDefs(prev => [...prev, data])
+    showToast(`Cloned "${def.name}" — edit via /admin/widgets`)
+    return data
+  }
+
+  async function cloneInPlace(w) {
+    const def = widgetDefs.find(d => d.id === w.widget_definition_id)
+    if (!def) return
+    const cloned = await cloneWidgetDef(def)
+    if (!cloned) return
+    const id = `${cloned.id}_${Math.random().toString(36).slice(2, 6)}`
+    setWidgets(prev => [...prev, { id, widget_definition_id: cloned.id, title: `${w.title || def.name} (copy)` }])
+    setDirty(true)
+    setMenuOpenFor(null)
+  }
+
+  function openInBuilder(w) {
+    window.open(`/admin/widgets#${w.widget_definition_id}`, '_blank')
+    setMenuOpenFor(null)
+  }
 
   useEffect(() => {
     if (scope === 'deal') {
@@ -315,11 +347,35 @@ function DashboardEditor({ dashboard, widgetDefs, onBack, onSaved, showToast, to
             >
               {widgets.map(w => {
                 const def = widgetDefs.find(d => d.id === w.widget_definition_id)
+                const isMenuOpen = menuOpenFor === w.id
                 return (
                   <div key={w.id} style={{ background: T.surface, border: '1px solid ' + T.border, borderRadius: 8, overflow: 'hidden', boxShadow: T.shadow, display: 'flex', flexDirection: 'column' }}>
-                    <div className="dash-widget-handle" style={{ padding: '6px 10px', background: def?.config?.header_color || T.surfaceAlt, color: def?.config?.header_color ? '#fff' : T.text, borderBottom: '1px solid ' + T.border, display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'move', flexShrink: 0 }}>
+                    <div className="dash-widget-handle" style={{ padding: '6px 10px', background: def?.config?.header_color || T.surfaceAlt, color: def?.config?.header_color ? '#fff' : T.text, borderBottom: '1px solid ' + T.border, display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'move', flexShrink: 0, position: 'relative' }}>
                       <span style={{ fontSize: 12, fontWeight: 700 }}>{w.title || def?.name || 'Widget'}</span>
-                      <button onClick={() => removeWidget(w.id)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'inherit', opacity: 0.6, fontSize: 14, padding: 0 }}>×</button>
+                      <div style={{ display: 'flex', gap: 4, alignItems: 'center' }} onMouseDown={e => e.stopPropagation()}>
+                        <button onClick={(e) => { e.stopPropagation(); setMenuOpenFor(isMenuOpen ? null : w.id) }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'inherit', opacity: 0.6, fontSize: 14, padding: '0 4px' }} title="Widget menu">⋯</button>
+                        <button onClick={(e) => { e.stopPropagation(); removeWidget(w.id) }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'inherit', opacity: 0.6, fontSize: 14, padding: 0 }} title="Remove from dashboard">×</button>
+                      </div>
+                      {isMenuOpen && (
+                        <>
+                          <div style={{ position: 'fixed', inset: 0, zIndex: 500 }} onClick={() => setMenuOpenFor(null)} />
+                          <div style={{ position: 'absolute', top: '100%', right: 4, zIndex: 501, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, boxShadow: '0 4px 12px rgba(0,0,0,0.12)', minWidth: 180, overflow: 'hidden' }}>
+                            {def && (
+                              <>
+                                <button onClick={() => openInBuilder(w)} style={{ display: 'block', width: '100%', padding: '8px 12px', textAlign: 'left', background: 'none', border: 'none', borderBottom: `1px solid ${T.borderLight}`, cursor: 'pointer', fontSize: 12, color: T.text, fontFamily: T.font }}
+                                  onMouseEnter={e => e.currentTarget.style.background = T.surfaceAlt}
+                                  onMouseLeave={e => e.currentTarget.style.background = 'none'}>Edit definition</button>
+                                <button onClick={() => cloneInPlace(w)} style={{ display: 'block', width: '100%', padding: '8px 12px', textAlign: 'left', background: 'none', border: 'none', borderBottom: `1px solid ${T.borderLight}`, cursor: 'pointer', fontSize: 12, color: T.text, fontFamily: T.font }}
+                                  onMouseEnter={e => e.currentTarget.style.background = T.surfaceAlt}
+                                  onMouseLeave={e => e.currentTarget.style.background = 'none'}>Clone (creates new editable copy)</button>
+                              </>
+                            )}
+                            <button onClick={() => { removeWidget(w.id); setMenuOpenFor(null) }} style={{ display: 'block', width: '100%', padding: '8px 12px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: T.error, fontFamily: T.font }}
+                              onMouseEnter={e => e.currentTarget.style.background = T.errorLight}
+                              onMouseLeave={e => e.currentTarget.style.background = 'none'}>Remove from dashboard</button>
+                          </div>
+                        </>
+                      )}
                     </div>
                     <div style={{ flex: 1, overflow: 'auto', padding: 10 }}>
                       {def ? (

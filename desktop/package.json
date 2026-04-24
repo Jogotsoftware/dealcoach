@@ -8,14 +8,18 @@
     "build-mac": "electron-builder --mac",
     "build-win": "electron-builder --win"
   },
-  "dependencies": {},
   "devDependencies": {
     "electron": "^33.0.0",
-    "electron-builder": "^25.0.0"
+    "electron-builder": "^25.0.0",
+    "sharp": "^0.34.5"
   },
   "build": {
     "appId": "com.dealcoach.desktop",
     "productName": "DealCoach",
-    "files": ["main.js", "preload.js", "index.html"]
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html"
+    ]
   }
 }

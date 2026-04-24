@@ -459,15 +459,19 @@ export default function CoachAdmin() {
                 }>
                   {editingResearchPrompt ? (
                     <div>
-                      <textarea style={{ ...inputStyle, fontFamily: T.mono, fontSize: 12, minHeight: 300, resize: 'vertical', width: '100%' }}
+                      <textarea style={{ ...inputStyle, fontSize: 13, minHeight: 240, resize: 'vertical', width: '100%', lineHeight: 1.55, fontFamily: T.font }}
                         value={researchPromptVal} onChange={e => setResearchPromptVal(e.target.value)}
-                        placeholder="Enter the research prompt for this coach..." />
+                        placeholder="What should the AI investigate about each company? e.g. recent M&A, exec changes, tech stack, funding, busy-season patterns..." />
                       <div style={{ fontSize: 10, color: T.textMuted, marginTop: 2 }}>{researchPromptVal.length} chars</div>
                       <Button primary onClick={saveResearchPrompt} style={{ marginTop: 8 }}>Save</Button>
                     </div>
+                  ) : coach.research_prompt ? (
+                    <div style={{ fontSize: 13, lineHeight: 1.55, color: T.text, background: T.surface, padding: 14, borderRadius: 6, border: `1px solid ${T.borderLight}`, borderLeft: `3px solid ${T.primary}`, fontFamily: T.font, whiteSpace: 'pre-wrap', maxHeight: 260, overflow: 'auto' }}>
+                      {coach.research_prompt}
+                    </div>
                   ) : (
-                    <div style={{ fontFamily: T.mono, fontSize: 12, lineHeight: 1.6, color: T.text, background: T.surfaceAlt, padding: 14, borderRadius: 6, maxHeight: 200, overflow: 'auto', whiteSpace: 'pre-wrap' }}>
-                      {coach.research_prompt || 'No research prompt configured'}
+                    <div style={{ fontSize: 12, color: T.textMuted, fontStyle: 'italic', padding: 10 }}>
+                      No research prompt configured. Click Edit to tell the AI what to investigate about each company.
                     </div>
                   )}
                 </Card>
@@ -754,12 +758,28 @@ export default function CoachAdmin() {
                             <div style={{ fontSize: 10, color: T.textMuted, marginTop: 4 }}>Tokens: {'{{company_name}} {{deal_value}} {{forecast_category}} {{call_type}} {{call_date}}'}</div>
                           </div>
                           <EmailBodyTemplateEditor tpl={tpl} onSave={(val) => updateEmailTemplate(tpl.id, 'body_template', val)} />
-                          <div style={{ marginBottom: 12 }}><label style={labelStyle}>AI Instructions (tone, format, rules)</label><textarea style={{ ...inputStyle, fontSize: 12, minHeight: 80, resize: 'vertical' }} defaultValue={tpl.ai_instructions || ''} onBlur={e => updateEmailTemplate(tpl.id, 'ai_instructions', e.target.value)} placeholder="e.g. Professional tone, bullet points for action items, max 300 words" /></div>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+                            <div>
+                              <label style={labelStyle}>Tone & Voice</label>
+                              <input style={inputStyle} defaultValue={tpl.tone || ''} onBlur={e => updateEmailTemplate(tpl.id, 'tone', e.target.value)} placeholder="e.g. Professional, direct" />
+                            </div>
+                            <div>
+                              <label style={labelStyle}>Format</label>
+                              <input style={inputStyle} defaultValue={tpl.response_format || ''} onBlur={e => updateEmailTemplate(tpl.id, 'response_format', e.target.value)} placeholder="e.g. Bullets, max 300 words" />
+                            </div>
+                            <div>
+                              <label style={labelStyle}>Rules (dos/don'ts)</label>
+                              <input style={inputStyle} defaultValue={tpl.rules || ''} onBlur={e => updateEmailTemplate(tpl.id, 'rules', e.target.value)} placeholder="e.g. Never promise pricing" />
+                            </div>
+                            <div>
+                              <label style={labelStyle}>Custom Instructions</label>
+                              <input style={inputStyle} defaultValue={tpl.ai_instructions || ''} onBlur={e => updateEmailTemplate(tpl.id, 'ai_instructions', e.target.value)} placeholder="Extra instructions..." />
+                            </div>
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
                             <div><label style={labelStyle}>Recipient Type</label><select style={{ ...inputStyle, cursor: 'pointer' }} defaultValue={tpl.recipient_type || 'internal'} onChange={e => updateEmailTemplate(tpl.id, 'recipient_type', e.target.value)}>
                               {RECIPIENT_TYPES.map(r => <option key={r} value={r}>{r}</option>)}</select></div>
                             <div><label style={labelStyle}>Default Recipients</label><input style={inputStyle} defaultValue={tpl.default_recipients || ''} onBlur={e => updateEmailTemplate(tpl.id, 'default_recipients', e.target.value)} placeholder="email@example.com" /></div>
-                            <div><label style={labelStyle}>Sort Order</label><input type="number" style={inputStyle} defaultValue={tpl.sort_order || 0} onBlur={e => updateEmailTemplate(tpl.id, 'sort_order', Number(e.target.value) || 0)} /></div>
                           </div>
                           <div style={{ marginBottom: 8 }}><label style={labelStyle}>Context to Include</label></div>
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
@@ -869,7 +889,7 @@ export default function CoachAdmin() {
             </Card>
             <Card title="Custom Research Instructions">
               <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 6 }}>Additional instructions for the AI when researching companies.</div>
-              <textarea style={{ ...inputStyle, fontFamily: T.mono, fontSize: 12, minHeight: 180, resize: 'vertical', width: '100%' }}
+              <textarea style={{ ...inputStyle, fontFamily: T.font, fontSize: 13, lineHeight: 1.55, minHeight: 140, resize: 'vertical', width: '100%' }}
                 defaultValue={researchConfig?.custom_instructions || ''}
                 onBlur={async e => {
                   if (!researchConfig?.id) return

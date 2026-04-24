@@ -185,15 +185,25 @@ export const labelStyle = {
 }
 
 // === EMPTY STATE ===
-export function EmptyState({ message, action }) {
+export function EmptyState({ icon, title, message, action, compact }) {
+  // Back-compat: if title is missing, treat `message` as the top line.
+  const heading = title ?? message
+  const body = title ? message : null
   return (
     <Card>
-      <div style={{ textAlign: 'center', padding: 32, color: T.textMuted }}>
-        <div style={{ fontSize: 13, marginBottom: action ? 12 : 0 }}>{message}</div>
-        {action}
+      <div style={{ textAlign: 'center', padding: compact ? 18 : 32, color: T.textMuted }}>
+        {icon && <div style={{ fontSize: compact ? 22 : 30, marginBottom: 6, color: T.textMuted, opacity: 0.6 }}>{icon}</div>}
+        {heading && <div style={{ fontSize: 13, fontWeight: 600, color: T.text, marginBottom: body || action ? 6 : 0 }}>{heading}</div>}
+        {body && <div style={{ fontSize: 12, lineHeight: 1.5, marginBottom: action ? 12 : 0, maxWidth: 360, margin: '0 auto' }}>{body}</div>}
+        {action && <div style={{ marginTop: 10 }}>{action}</div>}
       </div>
     </Card>
   )
+}
+
+// === INLINE EMPTY (in-card, no wrapper) ===
+export function InlineEmpty({ text }) {
+  return <div style={{ color: T.textMuted, fontSize: 12, fontStyle: 'italic', padding: 10, textAlign: 'center' }}>{text}</div>
 }
 
 // === LOADING SPINNER ===
@@ -206,6 +216,51 @@ export function Spinner() {
         animation: 'spin 0.8s linear infinite',
       }} />
       <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+    </div>
+  )
+}
+
+// === SKELETON (shimmer placeholder) ===
+export function Skeleton({ h = 14, w = '100%', r = 4, style: s }) {
+  return (
+    <>
+      <div style={{
+        height: h, width: w, borderRadius: r,
+        background: `linear-gradient(90deg, ${T.borderLight} 0%, ${T.surfaceAlt} 50%, ${T.borderLight} 100%)`,
+        backgroundSize: '200% 100%', animation: 'ri-shimmer 1.3s ease-in-out infinite',
+        ...s,
+      }} />
+      <style>{`@keyframes ri-shimmer { 0% { background-position: 200% 0 } 100% { background-position: -200% 0 } }`}</style>
+    </>
+  )
+}
+
+// === SKELETON TABLE (N rows x M cols) ===
+export function SkeletonTable({ rows = 4, cols = 3 }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {Array.from({ length: rows }).map((_, i) => (
+        <div key={i} style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 10 }}>
+          {Array.from({ length: cols }).map((__, j) => (
+            <Skeleton key={j} h={12} />
+          ))}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// === SKELETON CARDS (N stacked cards) ===
+export function SkeletonCards({ count = 3 }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {Array.from({ length: count }).map((_, i) => (
+        <div key={i} style={{ padding: 12, border: `1px solid ${T.borderLight}`, borderRadius: 6, background: T.surface }}>
+          <Skeleton h={12} w="60%" style={{ marginBottom: 8 }} />
+          <Skeleton h={10} w="90%" style={{ marginBottom: 6 }} />
+          <Skeleton h={10} w="75%" />
+        </div>
+      ))}
     </div>
   )
 }

@@ -251,27 +251,27 @@ export default function Pipeline() {
             }}>{p === 'month' ? 'In-Month' : p === 'quarter' ? 'In-Quarter' : 'Full Pipeline'}</button>
           ))}
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr) auto', gap: 10 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 6 }}>
           {categories.map(cat => {
             const catDeals = periodDeals.filter(d => d.forecast_category === cat.key)
             const totalARR = catDeals.reduce((s, d) => s + getARR(d), 0)
             const isSelected = selectedForecast === cat.key
             return (
               <div key={cat.key} onClick={() => setSelectedForecast(isSelected ? null : cat.key)} style={{
-                background: isSelected ? cat.color + '15' : T.surfaceAlt, borderRadius: 8, padding: 14,
-                textAlign: 'center', cursor: 'pointer', borderLeft: '4px solid ' + cat.color,
+                background: isSelected ? cat.color + '15' : T.surfaceAlt, borderRadius: 6, padding: '8px 10px',
+                textAlign: 'center', cursor: 'pointer', borderLeft: '3px solid ' + cat.color,
                 border: isSelected ? '1px solid ' + cat.color : '1px solid transparent', transition: 'all 0.15s',
               }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: cat.color, textTransform: 'uppercase' }}>{cat.label}</div>
-                <div style={{ fontSize: 22, fontWeight: 800, color: T.text, marginTop: 4 }}>{formatCurrency(totalARR)}</div>
-                <div style={{ fontSize: 11, color: T.textMuted }}>{catDeals.length} deal{catDeals.length !== 1 ? 's' : ''}</div>
+                <div style={{ fontSize: 9, fontWeight: 700, color: cat.color, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{cat.label}</div>
+                <div style={{ fontSize: 17, fontWeight: 800, color: T.text, marginTop: 2, fontFeatureSettings: '"tnum"' }}>{formatCurrency(totalARR)}</div>
+                <div style={{ fontSize: 10, color: T.textMuted }}>{catDeals.length} deal{catDeals.length !== 1 ? 's' : ''}</div>
               </div>
             )
           })}
-          <div style={{ background: T.surfaceAlt, borderRadius: 8, padding: 14, textAlign: 'center', borderLeft: '4px solid ' + T.text }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase' }}>Total</div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: T.text, marginTop: 4 }}>{formatCurrency(periodDeals.reduce((s, d) => s + getARR(d), 0))}</div>
-            <div style={{ fontSize: 11, color: T.textMuted }}>{periodDeals.length} deals</div>
+          <div style={{ background: T.surfaceAlt, borderRadius: 6, padding: '8px 10px', textAlign: 'center', borderLeft: '3px solid ' + T.text }}>
+            <div style={{ fontSize: 9, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total</div>
+            <div style={{ fontSize: 17, fontWeight: 800, color: T.text, marginTop: 2, fontFeatureSettings: '"tnum"' }}>{formatCurrency(periodDeals.reduce((s, d) => s + getARR(d), 0))}</div>
+            <div style={{ fontSize: 10, color: T.textMuted }}>{periodDeals.length} deals</div>
           </div>
         </div>
       </div>
@@ -794,11 +794,11 @@ export default function Pipeline() {
         <div style={{ width: '100%', minWidth: 0 }}>
           <ResponsiveGridLayout
             className="layout"
-            layouts={{ lg: pLayout.filter(l => pWidgets.find(w => w.id === l.i && w.visible)) }}
-            breakpoints={{ lg: 1200, md: 996, sm: 768 }}
-            cols={{ lg: 12, md: 12, sm: 6 }}
+            layouts={{ lg: pLayout.filter(l => pWidgets.find(w => w.id === l.i && w.visible)), md: pLayout.filter(l => pWidgets.find(w => w.id === l.i && w.visible)), sm: pLayout.filter(l => pWidgets.find(w => w.id === l.i && w.visible)).map(l => ({ ...l, w: Math.min(l.w, 6), x: 0 })), xs: pLayout.filter(l => pWidgets.find(w => w.id === l.i && w.visible)).map(l => ({ ...l, w: 4, x: 0 })) }}
+            breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480 }}
+            cols={{ lg: 12, md: 10, sm: 6, xs: 4 }}
             rowHeight={60}
-            margin={[12, 12]}
+            margin={[8, 8]}
             containerPadding={[0, 0]}
             isDraggable={editMode}
             isResizable={editMode}
