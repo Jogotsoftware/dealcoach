@@ -18,22 +18,14 @@ function parseReportBlocks(content) {
     try {
       const cfg = JSON.parse(raw.trim())
       drafts.push(cfg)
-      return '' // strip from prose
-    } catch { return '' } // malformed — drop
+      return ''
+    } catch { return '' }
   }).trim()
   return { displayText, drafts }
 }
 
 const HIDDEN_ROUTES = ['/login']
 const HIDDEN_PREFIXES = ['/msp/shared/', '/partner']
-
-const TOPICS = [
-  { key: 'deal', label: 'Deal', desc: 'Ask about a specific deal' },
-  { key: 'pipeline', label: 'Pipeline', desc: 'Strategic pipeline questions' },
-  { key: 'coaching', label: 'Coaching', desc: 'Methodology guidance' },
-  { key: 'help', label: 'Help', desc: 'Product help' },
-  { key: 'feedback', label: 'Feedback', desc: 'Send beta feedback' },
-]
 
 const THUMBS_DOWN_REASONS = [
   { key: 'wrong_info', label: 'Wrong info' },
@@ -53,17 +45,45 @@ function relativeTime(date) {
   return `${Math.floor(hrs / 24)}d ago`
 }
 
+// Pick a context hint from the current route so the AI knows where the user
+// is without making them choose from a pill menu. page_name is handed to the
+// edge function so the AI can give page-specific guidance from its SOP library.
+function routeContext(pathname) {
+  const dealMatch = pathname.match(/^\/deal\/([0-9a-f-]{36})/)
+  if (dealMatch) {
+    if (pathname.includes('/call/')) return { contextType: 'deal', dealId: dealMatch[1], pageName: 'call_detail', hint: 'reviewing a call recording / transcript' }
+    if (pathname.endsWith('/msp')) return { contextType: 'deal', dealId: dealMatch[1], pageName: 'msp_page', hint: 'on the Mutual Success Plan page' }
+    if (pathname.includes('/quote/')) return { contextType: 'deal', dealId: dealMatch[1], pageName: 'quote_editor', hint: 'editing a quote' }
+    if (pathname.endsWith('/proposal')) return { contextType: 'deal', dealId: dealMatch[1], pageName: 'proposal_builder', hint: 'on the proposal builder' }
+    if (pathname.endsWith('/retrospective')) return { contextType: 'deal', dealId: dealMatch[1], pageName: 'deal_retrospective', hint: 'reviewing a closed deal retrospective' }
+    return { contextType: 'deal', dealId: dealMatch[1], pageName: 'deal_detail', hint: 'on a deal page' }
+  }
+  if (pathname === '/deal/new') return { contextType: 'general', dealId: null, pageName: 'new_deal', hint: 'creating a new deal' }
+  if (pathname === '/reports') return { contextType: 'general', dealId: null, pageName: 'reports', hint: 'on the reports page' }
+  if (pathname === '/coach/builder') return { contextType: 'coaching', dealId: null, pageName: 'coach_builder', hint: 'in the Coach Builder wizard' }
+  if (pathname === '/coach') return { contextType: 'coaching', dealId: null, pageName: 'coach_admin', hint: 'in Coach Admin' }
+  if (pathname === '/settings' || pathname.startsWith('/settings/team')) return { contextType: 'help', dealId: null, pageName: 'settings', hint: 'on the settings page' }
+  if (pathname.startsWith('/settings/organization')) return { contextType: 'help', dealId: null, pageName: 'org_settings', hint: 'on organization settings' }
+  if (pathname.startsWith('/admin/widgets')) return { contextType: 'help', dealId: null, pageName: 'widget_builder', hint: 'in the Widget Builder' }
+  if (pathname.startsWith('/admin/invitations')) return { contextType: 'help', dealId: null, pageName: 'invitations', hint: 'managing invitations' }
+  if (pathname.startsWith('/admin/feedback')) return { contextType: 'help', dealId: null, pageName: 'beta_feedback', hint: 'reviewing beta feedback' }
+  if (pathname.startsWith('/admin/extraction-definitions')) return { contextType: 'help', dealId: null, pageName: 'extraction_definitions', hint: 'on AI extraction rules' }
+  if (pathname.startsWith('/admin')) return { contextType: 'help', dealId: null, pageName: 'admin_console', hint: 'in the admin console' }
+  if (pathname === '/onboarding') return { contextType: 'help', dealId: null, pageName: 'onboarding', hint: 'in onboarding' }
+  if (pathname === '/' || pathname.startsWith('/pipeline')) return { contextType: 'pipeline', dealId: null, pageName: 'pipeline', hint: 'on the pipeline page' }
+  return { contextType: 'general', dealId: null, pageName: 'unknown', hint: null }
+}
+
 export default function GlobalChatbot() {
   const { profile } = useAuth()
   const { org } = useOrg() || {}
   const location = useLocation()
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
-  const [topic, setTopic] = useState(null) // 'deal' | 'pipeline' | 'coaching' | 'help' | 'feedback'
   const [dealPickerOpen, setDealPickerOpen] = useState(false)
   const [deals, setDeals] = useState([])
   const [dealSearch, setDealSearch] = useState('')
-  const [selectedDealId, setSelectedDealId] = useState(null)
+  const [overrideDealId, setOverrideDealId] = useState(null)
   const [sessionId, setSessionId] = useState(null)
   const [sessions, setSessions] = useState([])
   const [sessionsOpen, setSessionsOpen] = useState(false)
@@ -74,14 +94,10 @@ export default function GlobalChatbot() {
   const [feedbackModalOpen, setFeedbackModalOpen] = useState(false)
   const messagesEndRef = useRef(null)
 
-  // Auto-route to Deal topic with the current deal selected when we're on a deal page
-  useEffect(() => {
-    const m = location.pathname.match(/^\/deal\/([0-9a-f-]{36})/)
-    if (open && m && !topic) {
-      setTopic('deal')
-      setSelectedDealId(m[1])
-    }
-  }, [open, location.pathname, topic])
+  const { contextType: routeContextType, dealId: routeDealId, pageName: routePageName, hint: routeHint } = routeContext(location.pathname)
+  // Active deal: explicit override (user picked one) wins, otherwise inferred from route
+  const activeDealId = overrideDealId ?? routeDealId
+  const activeContextType = overrideDealId ? 'deal' : routeContextType
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -107,39 +123,19 @@ export default function GlobalChatbot() {
 
   async function openBot() {
     setOpen(true)
-    track('chatbot_opened', { route: location.pathname })
+    track('chatbot_opened', { route: location.pathname, auto_context: activeContextType })
     loadSessions()
-  }
-
-  function pickTopic(key) {
-    if (key === 'feedback') {
-      track('chatbot_topic_selected', { context_type: 'feedback' })
-      setFeedbackModalOpen(true)
-      return
-    }
-    setTopic(key)
-    setMessages([])
-    setSessionId(null)
-    setInput('')
-    setFeedbackState({})
-    track('chatbot_topic_selected', { context_type: key })
-    if (key === 'deal') {
-      const m = location.pathname.match(/^\/deal\/([0-9a-f-]{36})/)
-      if (m) setSelectedDealId(m[1])
-      else { setSelectedDealId(null); setDealPickerOpen(true); loadDeals() }
-    }
   }
 
   function newChat() {
     setMessages([])
     setSessionId(null)
     setFeedbackState({})
-    setTopic(null)
+    setOverrideDealId(null)
   }
 
   async function openSession(sess) {
-    setTopic(sess.context_type || 'deal')
-    setSelectedDealId(sess.deal_id || null)
+    setOverrideDealId(sess.deal_id || null)
     setSessionId(sess.id)
     const { data } = await supabase.from('deal_chat_messages').select('*').eq('session_id', sess.id).order('created_at')
     setMessages(data || [])
@@ -149,15 +145,14 @@ export default function GlobalChatbot() {
   async function sendMessage() {
     const text = input.trim()
     if (!text || sending) return
-    if (topic === 'feedback') return // feedback has its own flow
-    if (topic === 'deal' && !selectedDealId) { setDealPickerOpen(true); return }
 
     setInput('')
     setSending(true)
-    track('chatbot_message_sent', { context_type: topic, has_deal: !!selectedDealId, message_length: text.length })
+    track('chatbot_message_sent', { context_type: activeContextType, has_deal: !!activeDealId, message_length: text.length })
     setMessages(prev => [...prev, { role: 'user', content: text, created_at: new Date().toISOString() }])
 
-    const res = await callDealChat(topic === 'deal' ? selectedDealId : null, sessionId, text, profile?.id, topic)
+    const pageContext = { path: location.pathname, page_name: routePageName, hint: routeHint }
+    const res = await callDealChat(activeDealId, sessionId, text, profile?.id, activeContextType, pageContext)
     setSending(false)
 
     if (res.error) {
@@ -168,7 +163,6 @@ export default function GlobalChatbot() {
     if (!sessionId && res.session_id) setSessionId(res.session_id)
     setMessages(prev => [...prev, { role: 'assistant', content: res.message || '', actions_taken: res.actions_taken || [], created_at: new Date().toISOString() }])
 
-    // Refetch with IDs so thumbs work
     const sid = res.session_id || sessionId
     if (sid) {
       const { data, error: refetchErr } = await supabase.from('deal_chat_messages').select('*').eq('session_id', sid).order('created_at')
@@ -180,7 +174,6 @@ export default function GlobalChatbot() {
   async function submitThumbs(msg, sentiment, reasonKey, notes) {
     let targetId = msg.id
     if (!targetId && sessionId) {
-      // Fallback: look up the latest assistant message in this session
       const { data: last } = await supabase
         .from('deal_chat_messages')
         .select('id')
@@ -194,7 +187,7 @@ export default function GlobalChatbot() {
     const { error } = await supabase.from('ai_output_feedback').insert({
       org_id: profile?.org_id || null,
       user_id: profile?.id,
-      deal_id: selectedDealId || null,
+      deal_id: activeDealId || null,
       sentiment,
       target_type: 'chat_response',
       target_id: targetId,
@@ -204,16 +197,14 @@ export default function GlobalChatbot() {
     if (error) { console.error('ai_output_feedback insert failed:', error); return }
     const key = msg.id || targetId
     setFeedbackState(s => ({ ...s, [key]: { ...s[key], sentiment, submitted: true, showPicker: false } }))
-    track('chatbot_thumbs', { sentiment, context_type: topic, reason: reasonKey })
+    track('chatbot_thumbs', { sentiment, context_type: activeContextType, reason: reasonKey })
   }
 
   function handleKeyDown(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }
 
   const filteredDeals = deals.filter(d => d.company_name?.toLowerCase().includes(dealSearch.toLowerCase()))
 
-  // Session satisfaction prompt — fires on close when the session has >=3 messages
-  // and no satisfaction has been captured yet for this session.
-  const [satPrompt, setSatPrompt] = useState(null) // session_id to rate
+  const [satPrompt, setSatPrompt] = useState(null)
   const [satSubmittedFor, setSatSubmittedFor] = useState(new Set())
   const [satScore, setSatScore] = useState(0)
   const [satNotes, setSatNotes] = useState('')
@@ -226,7 +217,7 @@ export default function GlobalChatbot() {
       session_id: satPrompt,
       org_id: profile?.org_id || null,
       user_id: profile?.id,
-      deal_id: selectedDealId || null,
+      deal_id: activeDealId || null,
       message_count: messages.length,
       thumbs_up_count: thumbsUp,
       thumbs_down_count: thumbsDown,
@@ -234,7 +225,7 @@ export default function GlobalChatbot() {
       satisfaction_notes: notes || null,
     })
     if (error) console.error('chatbot_session_feedback insert failed:', error)
-    track('chatbot_satisfaction_rated', { score, context_type: topic, message_count: messages.length })
+    track('chatbot_satisfaction_rated', { score, context_type: activeContextType, message_count: messages.length })
     setSatSubmittedFor(s => new Set(s).add(satPrompt))
     setSatPrompt(null)
     setSatScore(0)
@@ -244,10 +235,7 @@ export default function GlobalChatbot() {
     setSessionsOpen(false)
   }
 
-  // Close the whole panel
   function closePanel() {
-    // If the session has 3+ messages and hasn't been rated yet, surface the prompt
-    // before closing. Skipping just closes the panel.
     if (sessionId && messages.length >= 3 && !satSubmittedFor.has(sessionId) && !satPrompt) {
       setSatPrompt(sessionId)
       return
@@ -257,6 +245,29 @@ export default function GlobalChatbot() {
     setSessionsOpen(false)
     setSatPrompt(null)
   }
+
+  // Context badge shown below the header — gives the user a clear signal of
+  // what the AI can see right now, without making them click to configure it.
+  const contextBadge = (() => {
+    if (activeContextType === 'deal' && activeDealId) {
+      const dealName = deals.find(d => d.id === activeDealId)?.company_name
+      return { label: dealName ? `Deal: ${dealName}` : 'This deal', changeable: true }
+    }
+    if (activeContextType === 'deal') return { label: 'Pick a deal', changeable: true }
+    if (activeContextType === 'pipeline') return { label: 'Your pipeline', changeable: true }
+    if (activeContextType === 'coaching') return { label: 'Coaching methodology', changeable: true }
+    if (activeContextType === 'help') return { label: 'Product help', changeable: true }
+    return { label: 'General', changeable: true }
+  })()
+
+  const placeholder = (() => {
+    if (activeContextType === 'deal' && !activeDealId) return 'Pick a deal to ask about...'
+    if (activeContextType === 'deal') return 'Ask anything about this deal...'
+    if (activeContextType === 'pipeline') return 'Which deals need attention?'
+    if (activeContextType === 'coaching') return 'Ask about methodology, discovery, objections...'
+    if (activeContextType === 'help') return 'How do I...?'
+    return 'Ask anything — deals, methodology, reports...'
+  })()
 
   return (
     <>
@@ -308,7 +319,7 @@ export default function GlobalChatbot() {
       {open && !satPrompt && (
         <div style={{
           position: 'fixed', bottom: 20, right: 20, zIndex: 9000,
-          width: 360, height: '72vh', maxHeight: 720,
+          width: 380, height: '74vh', maxHeight: 760,
           background: T.surface, borderRadius: 14, border: `1px solid ${T.border}`,
           boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
           display: 'flex', flexDirection: 'column', fontFamily: T.font, overflow: 'hidden',
@@ -317,12 +328,28 @@ export default function GlobalChatbot() {
           <div style={{ padding: '12px 14px', borderBottom: `1px solid ${T.border}`, background: T.surfaceAlt, display: 'flex', alignItems: 'center', gap: 8 }}>
             <div style={{ width: 8, height: 8, borderRadius: '50%', background: T.success }} />
             <div style={{ flex: 1, fontSize: 13, fontWeight: 700, color: T.text }}>Revenue Instruments</div>
+            <button onClick={() => setFeedbackModalOpen(true)} title="Send beta feedback"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, fontSize: 14, padding: 2 }}>✎</button>
             <button onClick={() => { setSessionsOpen(s => !s); loadSessions() }} title="History"
               style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, fontSize: 14, padding: 2 }}>⏱</button>
             <button onClick={newChat} title="New chat"
               style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, fontSize: 14, padding: 2 }}>＋</button>
             <button onClick={closePanel} title="Minimize"
               style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, fontSize: 16, padding: 2 }}>×</button>
+          </div>
+
+          {/* Context badge — auto-detected from route, clickable to pick a specific deal */}
+          <div style={{ padding: '6px 12px', borderBottom: `1px solid ${T.borderLight}`, background: T.surface, display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
+            <span style={{ color: T.textMuted, fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Context</span>
+            <span style={{
+              padding: '2px 8px', borderRadius: 10, background: T.primaryLight || 'rgba(93,173,226,0.12)',
+              border: `1px solid ${T.primary}40`, color: T.primary, fontWeight: 600, fontSize: 10,
+              maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>{contextBadge.label}</span>
+            <button onClick={() => { setDealPickerOpen(true); loadDeals() }}
+              style={{ marginLeft: 'auto', background: 'none', border: 'none', color: T.textMuted, fontSize: 10, cursor: 'pointer', padding: 0, textDecoration: 'underline', fontFamily: T.font }}>
+              {activeContextType === 'deal' && activeDealId ? 'Change deal' : 'Focus on a deal'}
+            </button>
           </div>
 
           {/* Sessions dropdown */}
@@ -339,60 +366,20 @@ export default function GlobalChatbot() {
             </div>
           )}
 
-          {/* Topic pills */}
-          {!topic && (
-            <div style={{ padding: '14px 14px', display: 'flex', flexDirection: 'column', gap: 8, flex: 1, overflow: 'auto' }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 4 }}>How can I help?</div>
-              {TOPICS.map(t => (
-                <button key={t.key} onClick={() => pickTopic(t.key)}
-                  style={{
-                    display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2,
-                    padding: '10px 12px', border: `1px solid ${T.border}`, borderRadius: 8, background: T.surfaceAlt,
-                    cursor: 'pointer', fontFamily: T.font, textAlign: 'left',
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor = T.primary; e.currentTarget.style.background = T.primaryLight || 'rgba(93,173,226,0.08)' }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.background = T.surfaceAlt }}>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{t.label}</span>
-                  <span style={{ fontSize: 11, color: T.textMuted }}>{t.desc}</span>
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Active topic pill row */}
-          {topic && (
-            <div style={{ padding: '6px 10px', borderBottom: `1px solid ${T.borderLight}`, background: T.surface, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-              {TOPICS.map(t => (
-                <button key={t.key} onClick={() => pickTopic(t.key)}
-                  style={{
-                    padding: '3px 10px', borderRadius: 12, fontSize: 10, fontWeight: 600, cursor: 'pointer',
-                    border: `1px solid ${topic === t.key ? T.primary : T.border}`,
-                    background: topic === t.key ? T.primary : 'transparent',
-                    color: topic === t.key ? '#fff' : T.textMuted,
-                    fontFamily: T.font,
-                  }}>{t.label}</button>
-              ))}
-              {topic === 'deal' && selectedDealId && (
-                <button onClick={() => { setDealPickerOpen(true); loadDeals() }}
-                  style={{ padding: '3px 10px', borderRadius: 12, fontSize: 10, fontWeight: 600, border: `1px solid ${T.border}`, background: T.surfaceAlt, color: T.textSecondary, cursor: 'pointer', fontFamily: T.font, marginLeft: 'auto' }}>
-                  {deals.find(d => d.id === selectedDealId)?.company_name || 'Change deal'}
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* Deal picker */}
-          {topic === 'deal' && dealPickerOpen && (
-            <div style={{ position: 'absolute', top: 88, left: 0, right: 0, bottom: 0, background: T.surface, zIndex: 10, display: 'flex', flexDirection: 'column' }}>
-              <div style={{ padding: 10, borderBottom: `1px solid ${T.border}` }}>
+          {/* Deal picker overlay */}
+          {dealPickerOpen && (
+            <div style={{ position: 'absolute', top: 72, left: 0, right: 0, bottom: 0, background: T.surface, zIndex: 10, display: 'flex', flexDirection: 'column' }}>
+              <div style={{ padding: 10, borderBottom: `1px solid ${T.border}`, display: 'flex', gap: 6 }}>
                 <input value={dealSearch} onChange={e => setDealSearch(e.target.value)} placeholder="Search deals..." autoFocus
-                  style={{ width: '100%', padding: '6px 10px', fontSize: 12, border: `1px solid ${T.border}`, borderRadius: 6, background: T.surface, color: T.text, fontFamily: T.font }} />
+                  style={{ flex: 1, padding: '6px 10px', fontSize: 12, border: `1px solid ${T.border}`, borderRadius: 6, background: T.surface, color: T.text, fontFamily: T.font }} />
+                <button onClick={() => { setOverrideDealId(null); setDealPickerOpen(false) }}
+                  style={{ padding: '6px 10px', fontSize: 11, border: `1px solid ${T.border}`, borderRadius: 6, background: T.surfaceAlt, color: T.textMuted, cursor: 'pointer', fontFamily: T.font }}>Clear</button>
               </div>
               <div style={{ flex: 1, overflow: 'auto' }}>
                 {filteredDeals.length === 0 ? (
                   <div style={{ padding: 20, textAlign: 'center', color: T.textMuted, fontSize: 12 }}>No deals found</div>
                 ) : filteredDeals.map(d => (
-                  <button key={d.id} onClick={() => { setSelectedDealId(d.id); setDealPickerOpen(false) }}
+                  <button key={d.id} onClick={() => { setOverrideDealId(d.id); setDealPickerOpen(false) }}
                     style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px', border: 'none', borderBottom: `1px solid ${T.borderLight}`, background: 'transparent', cursor: 'pointer', fontFamily: T.font }}>
                     <div style={{ fontSize: 12, fontWeight: 600, color: T.text }}>{d.company_name}</div>
                     <div style={{ fontSize: 10, color: T.textMuted }}>{d.stage}</div>
@@ -405,16 +392,15 @@ export default function GlobalChatbot() {
             </div>
           )}
 
-          {/* Chat body — hidden when feedback topic */}
-          {topic && topic !== 'feedback' && !dealPickerOpen && (
+          {/* Chat body */}
+          {!dealPickerOpen && (
             <>
               <div style={{ flex: 1, overflow: 'auto', padding: 14 }}>
                 {messages.length === 0 && !sending && (
-                  <div style={{ textAlign: 'center', padding: '24px 12px', color: T.textMuted, fontSize: 12 }}>
-                    {topic === 'deal' ? (selectedDealId ? 'Ask anything about this deal' : 'Pick a deal to start') :
-                     topic === 'pipeline' ? 'Which deals need attention? Where am I at risk?' :
-                     topic === 'coaching' ? 'Ask about methodology, discovery, objections...' :
-                     topic === 'help' ? 'How do I use DealCoach?' : 'Ask me anything'}
+                  <div style={{ padding: '16px 12px', color: T.textMuted, fontSize: 12, lineHeight: 1.6 }}>
+                    <div style={{ fontWeight: 700, color: T.text, fontSize: 13, marginBottom: 6 }}>Hi {profile?.full_name?.split(' ')[0] || 'there'} 👋</div>
+                    <div>Ask me anything — your deals, pipeline, methodology, or to build reports. I'll use whatever context is most relevant based on where you are.</div>
+                    {routeHint && <div style={{ marginTop: 8, fontSize: 10, color: T.textMuted, fontStyle: 'italic' }}>Noticed you're {routeHint}.</div>}
                   </div>
                 )}
                 {messages.map((m, i) => (
@@ -459,8 +445,6 @@ export default function GlobalChatbot() {
                     </div>
                     {/* Report drafts emitted by the assistant */}
                     {m.role === 'assistant' && (() => {
-                      // v15+: drafts arrive as tool_use results in actions_taken.
-                      // Pre-v15: fenced ```report``` blocks in the message body.
                       const toolDrafts = (m.actions_taken || [])
                         .filter(a => a.type === 'build_report' && a.result?.success !== false)
                         .map(a => ({ config: a.input, preview: a.result }))
@@ -496,10 +480,10 @@ export default function GlobalChatbot() {
               </div>
               {/* Input */}
               <div style={{ padding: 10, borderTop: `1px solid ${T.border}`, display: 'flex', gap: 6 }}>
-                <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={handleKeyDown} disabled={sending || (topic === 'deal' && !selectedDealId)}
-                  placeholder={topic === 'deal' && !selectedDealId ? 'Pick a deal first...' : 'Type a message...'}
+                <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={handleKeyDown} disabled={sending}
+                  placeholder={placeholder}
                   style={{ flex: 1, padding: '8px 12px', fontSize: 12, border: `1px solid ${T.border}`, borderRadius: 20, background: T.surfaceAlt, color: T.text, fontFamily: T.font, outline: 'none' }} />
-                <button onClick={sendMessage} disabled={sending || !input.trim() || (topic === 'deal' && !selectedDealId)}
+                <button onClick={sendMessage} disabled={sending || !input.trim()}
                   style={{ width: 34, height: 34, borderRadius: '50%', border: 'none', background: input.trim() && !sending ? T.primary : T.borderLight, color: '#fff', cursor: input.trim() && !sending ? 'pointer' : 'default', fontSize: 14 }}>↑</button>
               </div>
             </>
@@ -519,8 +503,6 @@ export default function GlobalChatbot() {
 // the first 10 rows + total count inline. "Open in builder" deep-links to
 // /reports?draft=<base64> so the user can tweak + save.
 function ReportCard({ draft, preview, onOpenInBuilder }) {
-  // If Claude already ran it server-side (tool_use path), pre-populate result
-  // with the sample rows + total count so the card is instantly interactive.
   const initialResult = preview?.success !== false && preview?.sample_rows
     ? { rows: preview.sample_rows, columns: Object.keys(preview.sample_rows[0] || {}).slice(0, 6), aggregate: false, _serverTotal: preview.total_count }
     : null
