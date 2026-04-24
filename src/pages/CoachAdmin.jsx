@@ -492,8 +492,9 @@ export default function CoachAdmin() {
                     <div style={{ display: 'flex', gap: 6 }}><Button primary onClick={addPrompt}>Add Prompt</Button><Button onClick={() => setShowAddPrompt(false)}>Cancel</Button></div>
                   </Card>
                 )}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: 12, alignItems: 'start' }}>
                 {prompts.map(p => (
-                  <Card key={p.id}>
+                  <Card key={p.id} style={{ marginBottom: 0, gridColumn: editingPrompt === p.id ? '1 / -1' : 'auto' }}>
                     {editingPrompt === p.id ? (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                         <div><label style={labelStyle}>Label</label><input style={inputStyle} value={editPromptData.label || ''} onChange={e => setEditPromptData(prev => ({ ...prev, label: e.target.value }))} /></div>
@@ -524,6 +525,7 @@ export default function CoachAdmin() {
                     )}
                   </Card>
                 ))}
+                </div>
               </div>
             )}
 
@@ -542,21 +544,25 @@ export default function CoachAdmin() {
                     <div style={{ display: 'flex', gap: 6 }}><Button primary onClick={addDocument}>Add Document</Button><Button onClick={() => setShowAddDoc(false)}>Cancel</Button></div>
                   </Card>
                 )}
-                {docs.length === 0
-                  ? <Card><div style={{ textAlign: 'center', padding: 24, color: T.textMuted }}>No documents uploaded yet.</div></Card>
-                  : docs.map(d => (
-                    <Card key={d.id}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div>
-                          <div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>{d.name}</div>
-                          <Badge color={T.primary}>{(d.doc_type || '').replace(/_/g, ' ')}</Badge>
+                {docs.length === 0 ? (
+                  <Card><div style={{ textAlign: 'center', padding: 24, color: T.textMuted }}>No documents uploaded yet.</div></Card>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 12, alignItems: 'start' }}>
+                    {docs.map(d => (
+                      <Card key={d.id} style={{ marginBottom: 0 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>{d.name}</div>
+                            <Badge color={T.primary}>{(d.doc_type || '').replace(/_/g, ' ')}</Badge>
+                          </div>
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            {d.active && <Badge color={T.success}>Active</Badge>}
+                          </div>
                         </div>
-                        <div style={{ display: 'flex', gap: 8 }}>
-                          {d.active && <Badge color={T.success}>Active</Badge>}
-                        </div>
-                      </div>
-                    </Card>
-                  ))}
+                      </Card>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
@@ -578,8 +584,10 @@ export default function CoachAdmin() {
                 </div>
                 {repScoringConfigs.length === 0 ? (
                   <Card><div style={{ textAlign: 'center', padding: 32, color: T.textMuted }}>No rep scoring criteria configured.</div></Card>
-                ) : repScoringConfigs.map(config => (
-                  <Card key={config.id} title={config.criteria_name}
+                ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(440px, 1fr))', gap: 12, alignItems: 'start' }}>
+                {repScoringConfigs.map(config => (
+                  <Card key={config.id} title={config.criteria_name} style={{ marginBottom: 0 }}
                     action={
                       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                         <div onClick={() => updateRepScoring(config.id, 'active', !config.active)}
@@ -594,12 +602,27 @@ export default function CoachAdmin() {
                       <div><label style={labelStyle}>Criteria Name</label><input style={inputStyle} defaultValue={config.criteria_name} onBlur={e => updateRepScoring(config.id, 'criteria_name', e.target.value)} /></div>
                       <div><label style={labelStyle}>Description</label><input style={inputStyle} defaultValue={config.description || ''} onBlur={e => updateRepScoring(config.id, 'description', e.target.value)} /></div>
                       <div><label style={labelStyle}>Max Score</label><input type="number" style={inputStyle} defaultValue={config.max_score} onBlur={e => updateRepScoring(config.id, 'max_score', Number(e.target.value) || 10)} /></div>
-                      <div><label style={labelStyle}>Weight</label><input type="number" step="0.1" style={inputStyle} defaultValue={config.weight} onBlur={e => updateRepScoring(config.id, 'weight', Number(e.target.value) || 1.0)} /></div>
+                      <div>
+                        <label style={labelStyle}>Weight: {Number(config.weight ?? 1).toFixed(1)}</label>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <input
+                            type="range" min="0" max="5" step="0.1"
+                            defaultValue={config.weight ?? 1.0}
+                            onChange={e => e.currentTarget.nextElementSibling.textContent = Number(e.target.value).toFixed(1)}
+                            onMouseUp={e => updateRepScoring(config.id, 'weight', Number(e.target.value) || 1.0)}
+                            onTouchEnd={e => updateRepScoring(config.id, 'weight', Number(e.target.value) || 1.0)}
+                            style={{ flex: 1, accentColor: T.primary, cursor: 'pointer' }}
+                          />
+                          <span style={{ fontSize: 12, fontWeight: 700, color: T.primary, minWidth: 32, textAlign: 'right', fontFeatureSettings: '"tnum"' }}>{Number(config.weight ?? 1).toFixed(1)}</span>
+                        </div>
+                      </div>
                       <div><label style={labelStyle}>Category</label><select style={{ ...inputStyle, cursor: 'pointer' }} defaultValue={config.category || 'general'} onChange={e => updateRepScoring(config.id, 'category', e.target.value)}>
                         {CATEGORIES.map(c => <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>)}</select></div>
                     </div>
                   </Card>
                 ))}
+                </div>
+                )}
               </div>
             )}
 
@@ -744,10 +767,12 @@ export default function CoachAdmin() {
 
                 {emailTemplatesAdmin.length === 0 ? (
                   <Card><div style={{ textAlign: 'center', padding: 32, color: T.textMuted }}>No email templates. Create one to enable AI-generated emails.</div></Card>
-                ) : emailTemplatesAdmin.map(tpl => {
+                ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: 12, alignItems: 'start' }}>
+                {emailTemplatesAdmin.map(tpl => {
                   const isExpanded = expandedEmailTemplate === tpl.id
                   return (
-                    <div key={tpl.id} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.radius, boxShadow: T.shadow, marginBottom: 12, overflow: 'hidden' }}>
+                    <div key={tpl.id} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.radius, boxShadow: T.shadow, overflow: 'hidden', gridColumn: isExpanded ? '1 / -1' : 'auto' }}>
                       {/* Header */}
                       <div style={{ padding: '12px 18px', background: T.surfaceAlt, borderBottom: isExpanded ? `1px solid ${T.border}` : 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
                         onClick={() => setExpandedEmailTemplate(isExpanded ? null : tpl.id)}>
@@ -822,6 +847,8 @@ export default function CoachAdmin() {
                     </div>
                   )
                 })}
+                </div>
+                )}
               </div>
             )}
           </>
@@ -935,14 +962,19 @@ export default function CoachAdmin() {
                 placeholder="e.g. don't speculate on internal politics, never quote revenue figures without citation..." />
             </Card>
             <Card title="Custom Research Instructions">
-              <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 6 }}>Additional instructions for the AI when researching companies.</div>
-              <textarea style={{ ...inputStyle, fontFamily: T.font, fontSize: 13, lineHeight: 1.55, minHeight: 140, resize: 'vertical', width: '100%' }}
-                defaultValue={researchConfig?.custom_instructions || ''}
-                onBlur={async e => {
+              <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 6 }}>One instruction per bubble. Type and press Enter (or comma) to add. Each instruction is a discrete rule the AI follows during research.</div>
+              <TagInput
+                label=""
+                value={(researchConfig?.custom_instructions
+                  ? String(researchConfig.custom_instructions).split(/\n+/).map(s => s.trim()).filter(Boolean)
+                  : [])}
+                onChange={async (next) => {
                   if (!researchConfig?.id) return
-                  await supabase.from('coach_research_config').update({ custom_instructions: e.target.value }).eq('id', researchConfig.id)
-                  setResearchConfig(p => ({ ...p, custom_instructions: e.target.value }))
-                }} />
+                  const joined = next.join('\n')
+                  setResearchConfig(p => ({ ...p, custom_instructions: joined }))
+                  await supabase.from('coach_research_config').update({ custom_instructions: joined }).eq('id', researchConfig.id)
+                }}
+                placeholder="e.g. always cite sources, prefer recent data over historical..." />
             </Card>
           </div>
         )}
@@ -1483,11 +1515,15 @@ const EXTRACTION_ENTITIES = [
 // Falls back to free-form text if the field isn't JSON yet.
 function ExtractionRulesEditor({ coach, onSaved }) {
   const initial = (() => {
-    try { return JSON.parse(coach.extraction_rules || '{}') }
-    catch { return { _legacy_text: coach.extraction_rules || '' } }
+    try {
+      const parsed = JSON.parse(coach.extraction_rules || '{}')
+      if (!Array.isArray(parsed._custom)) parsed._custom = []
+      return parsed
+    } catch { return { _legacy_text: coach.extraction_rules || '', _custom: [] } }
   })()
   const [rules, setRules] = useState(initial)
   const [saving, setSaving] = useState(false)
+  const [savedMsg, setSavedMsg] = useState(false)
   const [expanded, setExpanded] = useState({})
 
   function toggle(key) {
@@ -1497,16 +1533,37 @@ function ExtractionRulesEditor({ coach, onSaved }) {
     setRules(r => ({ ...r, [key]: { ...(r[key] || { enabled: true }), instructions: text } }))
   }
 
+  function addCustomRule() {
+    setRules(r => ({ ...r, _custom: [...(r._custom || []), { name: 'New rule', instructions: '', enabled: true }] }))
+  }
+  function updateCustomRule(i, patch) {
+    setRules(r => ({ ...r, _custom: (r._custom || []).map((c, idx) => idx === i ? { ...c, ...patch } : c) }))
+  }
+  function removeCustomRule(i) {
+    setRules(r => ({ ...r, _custom: (r._custom || []).filter((_, idx) => idx !== i) }))
+  }
+
   async function save() {
     setSaving(true)
     const json = JSON.stringify(rules, null, 2)
     const { error } = await supabase.from('coaches').update({ extraction_rules: json }).eq('id', coach.id)
     setSaving(false)
-    if (!error && onSaved) onSaved(json)
+    if (!error) {
+      setSavedMsg(true)
+      setTimeout(() => setSavedMsg(false), 1500)
+      if (onSaved) onSaved(json)
+    }
   }
 
+  const customRules = rules._custom || []
+
   return (
-    <Card title="Extraction Rules (Structured)" action={<Button primary onClick={save} disabled={saving} style={{ padding: '4px 12px', fontSize: 11 }}>{saving ? 'Saving...' : 'Save'}</Button>}>
+    <Card title="Extraction Rules" action={
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        {savedMsg && <span style={{ fontSize: 11, color: T.success, fontWeight: 600 }}>Saved</span>}
+        <Button primary onClick={save} disabled={saving} style={{ padding: '4px 12px', fontSize: 11 }}>{saving ? 'Saving...' : 'Save'}</Button>
+      </div>
+    }>
       <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 10 }}>Pick which entity types the AI should extract and add optional org-specific instructions. Serialized as JSON and injected into the extraction prompt.</div>
       {rules._legacy_text && (
         <div style={{ padding: 10, background: T.surfaceAlt, borderRadius: 6, marginBottom: 10, fontSize: 11, color: T.textMuted }}>
@@ -1515,6 +1572,9 @@ function ExtractionRulesEditor({ coach, onSaved }) {
           <div style={{ marginTop: 6, fontStyle: 'italic' }}>These will be kept and passed through. Add structured rules below to layer on top.</div>
         </div>
       )}
+
+      {/* Canonical entity rules */}
+      <div style={{ fontSize: 10, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Standard entities</div>
       {EXTRACTION_ENTITIES.map(ent => {
         const r = rules[ent.key] || { enabled: true }
         const isExpanded = expanded[ent.key]
@@ -1535,7 +1595,51 @@ function ExtractionRulesEditor({ coach, onSaved }) {
                 <textarea
                   placeholder={`Custom instructions for ${ent.label.toLowerCase()} extraction (optional)...`}
                   value={r.instructions || ''} onChange={e => setInstructions(ent.key, e.target.value)}
-                  style={{ ...inputStyle, fontFamily: T.mono, fontSize: 12, minHeight: 60, resize: 'vertical', width: '100%' }} />
+                  style={{ ...inputStyle, fontFamily: T.font, fontSize: 12, minHeight: 60, resize: 'vertical', width: '100%' }} />
+              </div>
+            )}
+          </div>
+        )
+      })}
+
+      {/* Custom rules */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 16, marginBottom: 6 }}>
+        <span style={{ fontSize: 10, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Custom rules ({customRules.length})</span>
+        <Button onClick={addCustomRule} style={{ padding: '3px 10px', fontSize: 11 }}>+ Add custom rule</Button>
+      </div>
+      {customRules.length === 0 && (
+        <div style={{ fontSize: 11, color: T.textMuted, fontStyle: 'italic', padding: '6px 0' }}>No custom rules. Add one for anything beyond the standard entity list.</div>
+      )}
+      {customRules.map((cr, i) => {
+        const rowKey = `_custom:${i}`
+        const isExpanded = expanded[rowKey]
+        return (
+          <div key={i} style={{ marginBottom: 6, border: `1px solid ${cr.enabled !== false ? T.primary + '40' : T.borderLight}`, borderRadius: 6, background: cr.enabled !== false ? T.surface : T.surfaceAlt, opacity: cr.enabled !== false ? 1 : 0.65 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px' }}>
+              <div onClick={() => updateCustomRule(i, { enabled: cr.enabled === false })}
+                style={{ width: 32, height: 18, borderRadius: 9, cursor: 'pointer', background: cr.enabled !== false ? T.success : T.borderLight, position: 'relative', transition: 'background 0.2s', flexShrink: 0 }}>
+                <div style={{ width: 14, height: 14, borderRadius: '50%', background: '#fff', position: 'absolute', top: 2, left: cr.enabled !== false ? 16 : 2, boxShadow: T.shadow, transition: 'left 0.2s' }} />
+              </div>
+              <input
+                value={cr.name || ''}
+                onChange={e => updateCustomRule(i, { name: e.target.value })}
+                placeholder="Rule name"
+                style={{ flex: 1, fontSize: 13, fontWeight: 600, border: 'none', outline: 'none', background: 'transparent', color: T.text, fontFamily: T.font, padding: 0 }}
+              />
+              <button onClick={() => setExpanded(e => ({ ...e, [rowKey]: !isExpanded }))} style={{ fontSize: 10, padding: '2px 8px', background: 'transparent', border: `1px solid ${T.border}`, borderRadius: 4, cursor: 'pointer', color: T.textMuted, fontFamily: T.font }}>
+                {cr.instructions ? 'Edit' : '+ Instructions'}
+              </button>
+              <button onClick={() => removeCustomRule(i)} title="Remove"
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, fontSize: 14 }}
+                onMouseEnter={e => e.currentTarget.style.color = T.error}
+                onMouseLeave={e => e.currentTarget.style.color = T.textMuted}>&times;</button>
+            </div>
+            {isExpanded && (
+              <div style={{ padding: 10, borderTop: `1px solid ${T.borderLight}`, background: T.surfaceAlt }}>
+                <textarea
+                  placeholder="What should the AI extract or do? Be specific."
+                  value={cr.instructions || ''} onChange={e => updateCustomRule(i, { instructions: e.target.value })}
+                  style={{ ...inputStyle, fontFamily: T.font, fontSize: 12, minHeight: 60, resize: 'vertical', width: '100%' }} />
               </div>
             )}
           </div>
