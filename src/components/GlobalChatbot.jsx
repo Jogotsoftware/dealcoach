@@ -443,6 +443,16 @@ export default function GlobalChatbot() {
                         </div>
                       )}
                     </div>
+                    {/* Non-report action receipts — tasks, contacts, field updates, risks */}
+                    {m.role === 'assistant' && (() => {
+                      const actions = (m.actions_taken || []).filter(a => a.type !== 'build_report')
+                      if (!actions.length) return null
+                      return (
+                        <div style={{ maxWidth: '85%', marginTop: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          {actions.map((a, ai) => <ActionCard key={ai} action={a} onOpenDeal={() => { if (selectedDealIdFromMsg(m, activeDealId)) { navigate(`/deal/${selectedDealIdFromMsg(m, activeDealId)}`); setOpen(false) } }} />)}
+                        </div>
+                      )
+                    })()}
                     {/* Report drafts emitted by the assistant */}
                     {m.role === 'assistant' && (() => {
                       const toolDrafts = (m.actions_taken || [])
@@ -495,6 +505,70 @@ export default function GlobalChatbot() {
       {/* Beta feedback modal (rendered outside panel so it isn't clipped) */}
       {feedbackModalOpen && <BetaFeedbackModal onClose={() => setFeedbackModalOpen(false)} />}
     </>
+  )
+}
+
+// Resolve a deal id for the "view" link on an action card. Messages only have
+// actions_taken, not deal_id, so we fall back to the chatbot's active deal.
+function selectedDealIdFromMsg(msg, fallback) {
+  return msg?.deal_id || fallback || null
+}
+
+// Compact action receipt rendered under assistant messages. Each row shows
+// what the AI actually did: task created, field updated, contact added, risk
+// logged. Green checkmark on success, red exclamation on failure.
+function ActionCard({ action, onOpenDeal }) {
+  const ok = action?.result?.success !== false
+  const icon = ok ? '✓' : '!'
+  const iconColor = ok ? '#2ecc71' : T.error || '#e74c3c'
+
+  const label = (() => {
+    if (!ok) {
+      const err = action.result?.error || 'action failed'
+      return { title: `${action.type.replace(/_/g, ' ')} — failed`, detail: String(err).slice(0, 140) }
+    }
+    switch (action.type) {
+      case 'create_task': return {
+        title: `Task created`,
+        detail: action.input?.title || action.result?.title || '',
+        meta: [action.input?.priority, action.input?.due_days ? `${action.input.due_days}d` : null].filter(Boolean).join(' · '),
+      }
+      case 'update_deal_field': return {
+        title: `Updated ${action.input?.table || 'field'}`,
+        detail: `${action.input?.field || ''} → ${String(action.input?.value || '').slice(0, 80)}`,
+      }
+      case 'add_contact': return {
+        title: `Contact added`,
+        detail: action.input?.name || action.result?.name || '',
+        meta: [action.input?.title, action.input?.role_in_deal, action.input?.is_champion ? 'CHAMP' : null, action.input?.is_economic_buyer ? 'EB' : null].filter(Boolean).join(' · '),
+      }
+      case 'add_risk': return {
+        title: `Risk logged`,
+        detail: action.input?.risk_description || '',
+        meta: [action.input?.severity, action.input?.category].filter(Boolean).join(' · '),
+      }
+      default: return { title: action.type, detail: '' }
+    }
+  })()
+
+  return (
+    <div style={{
+      border: `1px solid ${ok ? '#2ecc7133' : (T.error || '#e74c3c') + '33'}`, borderRadius: 8, background: T.surface,
+      padding: '6px 10px', display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 11,
+    }}>
+      <span style={{ color: iconColor, fontWeight: 800, fontSize: 13, lineHeight: '16px', flexShrink: 0 }}>{icon}</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontWeight: 700, color: T.text, fontSize: 11 }}>{label.title}</div>
+        {label.detail && <div style={{ color: T.textSecondary, fontSize: 11, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label.detail}</div>}
+        {label.meta && <div style={{ color: T.textMuted, fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', marginTop: 1 }}>{label.meta}</div>}
+      </div>
+      {ok && onOpenDeal && (
+        <button onClick={onOpenDeal} title="Open on deal page"
+          style={{ background: 'none', border: 'none', color: T.primary, fontSize: 10, fontWeight: 700, cursor: 'pointer', padding: '2px 0', flexShrink: 0, fontFamily: T.font }}>
+          View →
+        </button>
+      )}
+    </div>
   )
 }
 

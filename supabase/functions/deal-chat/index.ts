@@ -1,15 +1,18 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-// deal-chat v18
-// v18: unified assistant — drops the "topic picker" model. Every call gets the
-//      full methodology + PRODUCT_SOP help library + page-awareness. The client
-//      now sends `page_context: { path, page_name, hint }` so the AI can give
-//      page-specific guidance ("you're on the Coach Admin page — to change the
-//      assembled prompt, expand the System Prompt tab...").
+// deal-chat v19
+// v19: RAG over deal_context_chunks. For deal-context queries we embed the
+//      user's message via OpenAI text-embedding-3-small and pull the top
+//      semantically-relevant excerpts (transcripts, research, pain points,
+//      flags) from pgvector. Injected as a "RELEVANT EXCERPTS" section so
+//      the AI can quote the actual language the prospect used instead of
+//      paraphrasing the summary dump.
+// v18: unified assistant + PRODUCT_SOP + page_context.
 // v17: schema introspection via introspect_reportable_columns() RPC.
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
+const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
@@ -124,6 +127,49 @@ async function recordAssembledPrompt(sb: any, coachId: string | null, callType: 
       await sb.from('assembled_prompt_versions').insert({ prompt_hash: hash, coach_id: coachId, call_type: callType, action, assembled_content: content });
     }
   } catch (e) { console.log('recordAssembledPrompt error:', e); }
+}
+
+// ---------------------------------------------------------------------------
+// RAG helpers — embed the user's message and pull top-K relevant chunks from
+// deal_context_chunks. Requires OPENAI_API_KEY. Fails silent (returns '') if
+// the API is unavailable or returns an empty result — chat still works, just
+// without the precision boost.
+// ---------------------------------------------------------------------------
+async function embedQuery(text: string): Promise<number[] | null> {
+  if (!OPENAI_API_KEY) return null;
+  try {
+    const response = await fetch('https://api.openai.com/v1/embeddings', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'text-embedding-3-small', input: text.slice(0, 8000) }),
+    });
+    if (!response.ok) { console.log('embed error:', response.status); return null; }
+    const data = await response.json();
+    return data?.data?.[0]?.embedding || null;
+  } catch (e: any) { console.log('embed exception:', e?.message); return null; }
+}
+
+async function fetchRelevantExcerpts(sb: any, dealId: string, query: string): Promise<string> {
+  const embedding = await embedQuery(query);
+  if (!embedding) return '';
+  try {
+    const { data, error } = await sb.rpc('search_deal_chunks', {
+      p_deal_id: dealId,
+      p_embedding: JSON.stringify(embedding),
+      p_match_count: 8,
+      p_match_threshold: 0.35,
+    });
+    if (error) { console.log('search_deal_chunks error:', error.message); return ''; }
+    if (!Array.isArray(data) || data.length === 0) return '';
+    const lines = data.map((r: any, i: number) => {
+      const header = r.chunk_type === 'transcript'
+        ? `[${i + 1}] transcript · ${r.speaker || 'unknown'} · ${r.call_type || 'call'} ${r.call_date ? '· ' + r.call_date : ''} (similarity ${r.similarity?.toFixed(2)})`
+        : `[${i + 1}] ${r.chunk_type} (similarity ${r.similarity?.toFixed(2)})`;
+      const body = String(r.content || '').replace(/\s+/g, ' ').trim().slice(0, 600);
+      return `${header}\n${body}`;
+    });
+    return lines.join('\n\n');
+  } catch (e: any) { console.log('RAG exception:', e?.message); return ''; }
 }
 
 async function callClaudeWithRetry(body: any, maxRetries = 3): Promise<Response> {
@@ -335,7 +381,7 @@ function pageContextBlock(pageContext: any): string {
   return `\n# WHERE THE USER IS RIGHT NOW\npage: ${page_name || 'unknown'}\npath: ${path || ''}${hint ? `\ncontext: ${hint}` : ''}\nUse this to tailor product guidance. If they ask "how do I do this" without naming a flow, assume they mean something on this page.\n`;
 }
 
-function buildSystemPrompt(opts: { schemaBlock: string; dealContext: string; pipelineContext: string; pageContext: any; assembledCoachPrompt: string }) {
+function buildSystemPrompt(opts: { schemaBlock: string; dealContext: string; pipelineContext: string; pageContext: any; assembledCoachPrompt: string; ragExcerpts: string }) {
   const parts: string[] = [];
   if (opts.assembledCoachPrompt) parts.push(opts.assembledCoachPrompt);
   parts.push(UNIFIED_SYSTEM_PROMPT);
@@ -343,6 +389,7 @@ function buildSystemPrompt(opts: { schemaBlock: string; dealContext: string; pip
   parts.push(reportToolGuide(opts.schemaBlock));
   if (opts.pageContext) parts.push(pageContextBlock(opts.pageContext));
   if (opts.dealContext) parts.push(`\n# ACTIVE DEAL CONTEXT\n${opts.dealContext}`);
+  if (opts.ragExcerpts) parts.push(`\n# RELEVANT EXCERPTS (retrieved by semantic similarity to the user's question)\nQuote these verbatim when answering — they are the actual language used on calls and in research. Cite the number in brackets.\n\n${opts.ragExcerpts}`);
   if (opts.pipelineContext) parts.push(`\n# PIPELINE CONTEXT\n${opts.pipelineContext}`);
   return parts.join('\n\n');
 }
@@ -503,12 +550,12 @@ Deno.serve(async (req: Request) => {
   const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
   try {
-    if (!ANTHROPIC_API_KEY) return jsonResponse({ error: 'v18: ANTHROPIC_API_KEY not configured' }, 500);
+    if (!ANTHROPIC_API_KEY) return jsonResponse({ error: 'v19: ANTHROPIC_API_KEY not configured' }, 500);
     const { deal_id, session_id, message, user_id, context_type, page_context } = await req.json();
     const ctxType = context_type || (deal_id ? 'deal' : 'general');
-    if (!message) return jsonResponse({ error: 'v18: message required' }, 400);
-    if (ctxType === 'deal' && !deal_id) return jsonResponse({ error: 'v18: deal_id required for context_type=deal' }, 400);
-    if (ctxType !== 'deal' && !user_id) return jsonResponse({ error: 'v18: user_id required' }, 400);
+    if (!message) return jsonResponse({ error: 'v19: message required' }, 400);
+    if (ctxType === 'deal' && !deal_id) return jsonResponse({ error: 'v19: deal_id required for context_type=deal' }, 400);
+    if (ctxType !== 'deal' && !user_id) return jsonResponse({ error: 'v19: user_id required' }, 400);
 
     const schema = await getSchema(sb);
     const schemaBlock = formatSchemaForPrompt(schema);
@@ -526,16 +573,19 @@ Deno.serve(async (req: Request) => {
     await sb.from('deal_chat_messages').insert({ session_id: activeSessionId, deal_id: ctxType === 'deal' ? deal_id : null, role: 'user', content: message });
     const { data: history } = await sb.from('deal_chat_messages').select('role, content').eq('session_id', activeSessionId).order('created_at').limit(20);
 
-    let dealContext = '', pipelineContext = '', model = 'claude-sonnet-4-20250514', cid: string | null = null, deal: any = null, rep: any = null, orgId: string | null = null;
+    let dealContext = '', pipelineContext = '', ragExcerpts = '', model = 'claude-sonnet-4-20250514', cid: string | null = null, deal: any = null, rep: any = null, orgId: string | null = null;
 
     if (ctxType === 'deal') {
-      const built = await buildDealContext(sb, deal_id);
-      if (!built.deal) return jsonResponse({ error: 'v18: Deal not found' }, 404);
+      // Kick off context build, pipeline, and RAG in parallel.
+      const [built, ragResult] = await Promise.all([
+        buildDealContext(sb, deal_id),
+        fetchRelevantExcerpts(sb, deal_id, message),
+      ]);
+      if (!built.deal) return jsonResponse({ error: 'v19: Deal not found' }, 404);
       dealContext = built.context; model = built.model; cid = built.cid; deal = built.deal; rep = built.rep;
+      ragExcerpts = ragResult;
       const { data: repProfile } = await sb.from('profiles').select('org_id').eq('id', deal.rep_id).single();
       orgId = repProfile?.org_id || null;
-      // Always include the rep's pipeline as secondary context so the AI can
-      // cross-reference the active deal against the rep's other work.
       try {
         const pctx = await buildPipelineContext(sb, deal.rep_id);
         pipelineContext = pctx.context;
@@ -561,7 +611,7 @@ Deno.serve(async (req: Request) => {
       } catch (e) { console.log('assemble_coach_prompt error (chat, non-fatal):', e); }
     }
 
-    const finalSystem = buildSystemPrompt({ schemaBlock, dealContext, pipelineContext, pageContext: page_context, assembledCoachPrompt });
+    const finalSystem = buildSystemPrompt({ schemaBlock, dealContext, pipelineContext, pageContext: page_context, assembledCoachPrompt, ragExcerpts });
 
     const messages = (history || []).map((m: any) => ({ role: m.role, content: m.content }));
     const tools = ctxType === 'deal' ? [...DEAL_TOOLS, REPORT_TOOL] : [REPORT_TOOL];
@@ -569,7 +619,7 @@ Deno.serve(async (req: Request) => {
     const claudeRes = await callClaudeWithRetry({
       model, max_tokens: 4000, temperature: 0.3, system: finalSystem, tools, messages,
     });
-    if (!claudeRes.ok) { const errText = await claudeRes.text(); return jsonResponse({ error: `v18: Claude API error: ${claudeRes.status}`, details: errText }, 500); }
+    if (!claudeRes.ok) { const errText = await claudeRes.text(); return jsonResponse({ error: `v19: Claude API error: ${claudeRes.status}`, details: errText }, 500); }
     let claudeData = await claudeRes.json();
     let usage = claudeData.usage || {};
     const actionsTaken: any[] = [];
@@ -611,11 +661,11 @@ Deno.serve(async (req: Request) => {
       if (orgId) await sb.rpc('deduct_credits', { p_org_id: orgId, p_user_id: user_id || deal?.rep_id, p_amount: 1, p_type: 'chat', p_description: `Chat (${ctxType}): ${deal?.company_name || ctxType}`, p_reference_id: null });
     } catch (e) { console.log('Credit deduction failed:', e); }
 
-    return jsonResponse({ success: true, version: 'v18', session_id: activeSessionId, context_type: ctxType, message: responseText, actions_taken: actionsTaken, tokens: { input: usage.input_tokens, output: usage.output_tokens } });
+    return jsonResponse({ success: true, version: "v19", session_id: activeSessionId, context_type: ctxType, message: responseText, actions_taken: actionsTaken, tokens: { input: usage.input_tokens, output: usage.output_tokens } });
 
   } catch (err: any) {
-    console.error('deal-chat v18 error:', err);
-    return jsonResponse({ error: `v18: ${err.message}`, success: false }, 500);
+    console.error('deal-chat v19 error:', err);
+    return jsonResponse({ error: `v19: ${err.message}`, success: false }, 500);
   }
 });
 
