@@ -111,13 +111,20 @@ export default function Reports() {
   const [runError, setRunError] = useState(null)
 
   useEffect(() => { loadReports() }, [])
+  // If the user has no saved reports yet, drop them straight into the builder
+  // so the report writer is visible — not a tiny "+ Build Report" button in the corner.
+  useEffect(() => {
+    if (!loading && reports.length === 0 && mode === 'list') startNew()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, reports.length])
 
   if (modulesLoading) return <Spinner />
   if (!hasModule('reports')) return <Navigate to="/" replace />
 
   async function loadReports() {
     setLoading(true)
-    const { data } = await supabase.from('saved_reports').select('*').order('sort_order', { nullsFirst: false }).order('created_at', { ascending: false })
+    const { data, error } = await supabase.from('saved_reports').select('*').order('created_at', { ascending: false })
+    if (error) console.error('loadReports failed:', error)
     setReports(data || [])
     setLoading(false)
   }
@@ -314,17 +321,27 @@ export default function Reports() {
         {mode === 'list' && <ListView reports={reports} filtered={filtered} categories={categories} filter={filter} setFilter={setFilter} runReport={runReport} startEdit={startEdit} deleteReport={deleteReport} startNew={startNew} />}
 
         {mode === 'build' && (
-          <BuildView
-            form={form}
-            setForm={setForm}
-            editingId={editingId}
-            baseFields={baseFields}
-            reports={reports}
-            saving={saving}
-            saveReport={saveReport}
-            cancel={() => setMode('list')}
-            previewReport={() => runReport({ ...form, query_config: form.config, base_entity: form.config.base_entity })}
-          />
+          <>
+            {reports.length === 0 && (
+              <div style={{ background: T.primaryLight, border: `1px solid ${T.primary}40`, borderLeft: `4px solid ${T.primary}`, borderRadius: 6, padding: '12px 16px', marginBottom: 14 }}>
+                <div style={{ fontSize: 10, fontWeight: 800, color: T.primary, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Report writer</div>
+                <div style={{ fontSize: 13, color: T.text, lineHeight: 1.55 }}>
+                  Pick a base table, choose fields, stack filters with AND/OR, add calculated columns, cross-reference other reports, group + aggregate. Preview results before saving.
+                </div>
+              </div>
+            )}
+            <BuildView
+              form={form}
+              setForm={setForm}
+              editingId={editingId}
+              baseFields={baseFields}
+              reports={reports}
+              saving={saving}
+              saveReport={saveReport}
+              cancel={() => setMode('list')}
+              previewReport={() => runReport({ ...form, query_config: form.config, base_entity: form.config.base_entity })}
+            />
+          </>
         )}
 
         {mode === 'run' && (
