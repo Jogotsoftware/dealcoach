@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, createContext, useContext } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
@@ -6,6 +6,10 @@ import { theme as T, formatCurrency, formatDate } from '../lib/theme'
 import { Button, Badge, Spinner, TabBar, inputStyle, labelStyle } from '../components/Shared'
 import ModuleAccessPicker from '../components/ModuleAccessPicker'
 import { callSendInvitation } from '../lib/webhooks'
+
+// Org scope context — when set, all tabs filter their queries to this org_id.
+const OrgScopeContext = createContext({ orgId: null, setOrgId: () => {}, orgName: null })
+const useOrgScope = () => useContext(OrgScopeContext)
 
 const MODULE_SLUGS = [
   'pipeline', 'deal_management', 'transcript_analysis', 'coaching',
@@ -36,6 +40,8 @@ export default function AdminConsole() {
   const nav = useNavigate()
   const [tab, setTab] = useState('orgs')
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(null)
+  const [scopedOrgId, setScopedOrgId] = useState(null)
+  const [allOrgs, setAllOrgs] = useState([])
 
   useEffect(() => {
     if (profile?.id) {
@@ -43,6 +49,13 @@ export default function AdminConsole() {
         .then(({ data }) => setIsPlatformAdmin(!!data))
     }
   }, [profile])
+
+  useEffect(() => {
+    if (isPlatformAdmin) {
+      supabase.from('organizations').select('id, name, slug').order('name')
+        .then(({ data }) => setAllOrgs(data || []))
+    }
+  }, [isPlatformAdmin])
 
   if (isPlatformAdmin === null) return <Spinner />
   if (!isPlatformAdmin) return (
@@ -52,30 +65,60 @@ export default function AdminConsole() {
     </div>
   )
 
+  const scopedOrg = scopedOrgId ? allOrgs.find(o => o.id === scopedOrgId) : null
+  // When an org is scoped, hide the Organizations list tab and default to Users.
+  const effectiveTabs = scopedOrgId
+    ? ADMIN_TABS.filter(t => t.key !== 'orgs')
+    : ADMIN_TABS
+
+  useEffect(() => {
+    if (scopedOrgId && tab === 'orgs') setTab('users')
+  }, [scopedOrgId])
+
   return (
-    <div style={{ fontFamily: T.font, color: T.text, fontSize: 13, minHeight: '100vh', background: T.bg }}>
-      <div style={{ padding: '16px 24px', borderBottom: `1px solid ${T.border}`, background: T.surface }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h1 style={{ fontSize: 18, fontWeight: 800, margin: 0, color: T.text }}>Platform Admin Console</h1>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={() => nav('/admin/invitations')} style={{ background: T.surface, color: T.primary, border: `1px solid ${T.primary}`, borderRadius: 6, padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: T.font }}>Invitations</button>
-            <button onClick={() => nav('/admin/feedback')} style={{ background: T.primary, color: '#fff', border: 'none', borderRadius: 6, padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: T.font }}>Beta Feedback</button>
+    <OrgScopeContext.Provider value={{ orgId: scopedOrgId, setOrgId: setScopedOrgId, orgName: scopedOrg?.name || null }}>
+      <div style={{ fontFamily: T.font, color: T.text, fontSize: 13, minHeight: '100vh', background: T.bg }}>
+        <div style={{ padding: '12px 24px', borderBottom: `1px solid ${T.border}`, background: T.surface }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <h1 style={{ fontSize: 18, fontWeight: 800, margin: 0, color: T.text }}>Platform Admin</h1>
+              <span style={{ fontSize: 11, color: T.textMuted }}>|</span>
+              <span style={{ fontSize: 11, color: T.textMuted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Scope:</span>
+              <select value={scopedOrgId || ''} onChange={e => setScopedOrgId(e.target.value || null)}
+                style={{ padding: '5px 10px', fontSize: 12, fontWeight: 600, border: `1px solid ${scopedOrgId ? T.primary : T.border}`, borderRadius: 6, background: scopedOrgId ? T.primaryLight : T.surface, color: scopedOrgId ? T.primary : T.text, cursor: 'pointer', fontFamily: T.font, minWidth: 200 }}>
+                <option value="">All organizations</option>
+                {allOrgs.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+              </select>
+              {scopedOrgId && (
+                <button onClick={() => setScopedOrgId(null)} style={{ background: 'transparent', border: 'none', color: T.textMuted, fontSize: 11, cursor: 'pointer', fontFamily: T.font }}>✕ Clear scope</button>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => nav('/admin/invitations')} style={{ background: T.surface, color: T.primary, border: `1px solid ${T.primary}`, borderRadius: 6, padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: T.font }}>Invitations</button>
+              <button onClick={() => nav('/admin/feedback')} style={{ background: T.primary, color: '#fff', border: 'none', borderRadius: 6, padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: T.font }}>Beta Feedback</button>
+            </div>
           </div>
+          {scopedOrg && (
+            <div style={{ marginTop: 8, padding: '8px 12px', background: T.primaryLight, borderRadius: 6, fontSize: 12, color: T.primary, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span>Viewing: <strong>{scopedOrg.name}</strong></span>
+              <button onClick={() => nav(`/admin/orgs/${scopedOrg.id}`)} style={{ background: T.primary, color: '#fff', border: 'none', borderRadius: 4, padding: '3px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: T.font, marginLeft: 'auto' }}>Open full org page →</button>
+            </div>
+          )}
+        </div>
+        <div style={{ background: T.surface, borderBottom: `1px solid ${T.border}` }}>
+          <TabBar tabs={effectiveTabs} active={tab} onChange={setTab} />
+        </div>
+        <div style={{ padding: 24 }}>
+          {tab === 'orgs' && !scopedOrgId && <OrganizationsTab />}
+          {tab === 'users' && <UsersTab />}
+          {tab === 'plans' && <PlansTab />}
+          {tab === 'credits' && <CreditsTab />}
+          {tab === 'costs' && <CreditCostsTab />}
+          {tab === 'modules' && <ModulesTab />}
+          {tab === 'usage' && <UsageTab />}
         </div>
       </div>
-      <div style={{ background: T.surface, borderBottom: `1px solid ${T.border}` }}>
-        <TabBar tabs={ADMIN_TABS} active={tab} onChange={setTab} />
-      </div>
-      <div style={{ padding: 24 }}>
-        {tab === 'orgs' && <OrganizationsTab />}
-        {tab === 'users' && <UsersTab />}
-        {tab === 'plans' && <PlansTab />}
-        {tab === 'credits' && <CreditsTab />}
-        {tab === 'costs' && <CreditCostsTab />}
-        {tab === 'modules' && <ModulesTab />}
-        {tab === 'usage' && <UsageTab />}
-      </div>
-    </div>
+    </OrgScopeContext.Provider>
   )
 }
 
@@ -348,6 +391,7 @@ function OrganizationsTab() {
 
 // ==================== TAB 2: USERS ====================
 function UsersTab() {
+  const { orgId: scopedOrgId } = useOrgScope()
   const [users, setUsers] = useState([])
   const [orgs, setOrgs] = useState([])
   const [moduleOverrides, setModuleOverrides] = useState({})
@@ -360,14 +404,20 @@ function UsersTab() {
   const [sortCol, setSortCol] = useState('created_at')
   const [sortDir, setSortDir] = useState('desc')
 
-  useEffect(() => { loadUsers() }, [])
+  useEffect(() => { loadUsers() }, [scopedOrgId])
 
   async function loadUsers() {
     setLoading(true)
+    let usersQ = supabase.from('profiles').select('*')
+    let invQ = supabase.from('invitations').select('*, organizations(name)').eq('status', 'pending').order('created_at', { ascending: false })
+    if (scopedOrgId) {
+      usersQ = usersQ.eq('org_id', scopedOrgId)
+      invQ = invQ.eq('org_id', scopedOrgId)
+    }
     const [usersRes, orgsRes, invRes, modRes] = await Promise.all([
-      supabase.from('profiles').select('*'),
+      usersQ,
       supabase.from('organizations').select('id, name'),
-      supabase.from('invitations').select('*, organizations(name)').eq('status', 'pending').order('created_at', { ascending: false }),
+      invQ,
       supabase.from('user_module_access').select('user_id'),
     ])
     setUsers(usersRes.data || [])
@@ -727,20 +777,27 @@ function PlansTab() {
 function CreditsTab() {
   const [credits, setCredits] = useState([])
   const [orgs, setOrgs] = useState([])
+  const { orgId: scopedOrgId } = useOrgScope()
   const [ledger, setLedger] = useState([])
   const [loading, setLoading] = useState(true)
   const [grantOrg, setGrantOrg] = useState('')
   const [grantAmount, setGrantAmount] = useState(0)
   const [grantReason, setGrantReason] = useState('')
 
-  useEffect(() => { loadCredits() }, [])
+  useEffect(() => { loadCredits() }, [scopedOrgId])
 
   async function loadCredits() {
     setLoading(true)
+    let creditsQ = supabase.from('org_credits').select('*')
+    let ledgerQ = supabase.from('credit_ledger').select('*').order('created_at', { ascending: false }).limit(50)
+    if (scopedOrgId) {
+      creditsQ = creditsQ.eq('org_id', scopedOrgId)
+      ledgerQ = ledgerQ.eq('org_id', scopedOrgId)
+    }
     const [creditsRes, orgsRes, ledgerRes] = await Promise.all([
-      supabase.from('org_credits').select('*'),
+      creditsQ,
       supabase.from('organizations').select('id, name'),
-      supabase.from('credit_ledger').select('*').order('created_at', { ascending: false }).limit(50),
+      ledgerQ,
     ])
     setCredits(creditsRes.data || [])
     setOrgs(orgsRes.data || [])
@@ -958,23 +1015,38 @@ function ModulesTab() {
 
 // ==================== TAB 7: USAGE ====================
 function UsageTab() {
+  const { orgId: scopedOrgId } = useOrgScope()
   const [logs, setLogs] = useState([])
   const [orgs, setOrgs] = useState([])
   const [loading, setLoading] = useState(true)
   const [range, setRange] = useState('30d')
   const [sortCol, setSortCol] = useState('total_tokens')
 
-  useEffect(() => { loadUsage() }, [range])
+  useEffect(() => { loadUsage() }, [range, scopedOrgId])
 
   async function loadUsage() {
     setLoading(true)
     let since = null
     if (range === '7d') since = new Date(Date.now() - 7 * 86400000).toISOString()
     else if (range === '30d') since = new Date(Date.now() - 30 * 86400000).toISOString()
+    // Filter by org via deal_ids when scoped
+    let dealIdsForOrg = null
+    if (scopedOrgId) {
+      const { data: scopedDeals } = await supabase.from('deals').select('id').eq('org_id', scopedOrgId)
+      dealIdsForOrg = (scopedDeals || []).map(d => d.id)
+    }
+    let logsQ = supabase.from('ai_response_log').select('response_type, status, created_at, prompt_tokens, completion_tokens, deal_id')
+    if (since) logsQ = logsQ.gte('created_at', since)
+    if (dealIdsForOrg) {
+      if (dealIdsForOrg.length === 0) {
+        setLogs([]); setOrgs([]); setLoading(false); return
+      }
+      logsQ = logsQ.in('deal_id', dealIdsForOrg)
+    }
+    logsQ = logsQ.order('created_at', { ascending: false })
+    if (!since) logsQ = logsQ.limit(5000)
     const [logsRes, orgsRes] = await Promise.all([
-      (since
-        ? supabase.from('ai_response_log').select('response_type, status, created_at, prompt_tokens, completion_tokens, deal_id').gte('created_at', since).order('created_at', { ascending: false })
-        : supabase.from('ai_response_log').select('response_type, status, created_at, prompt_tokens, completion_tokens, deal_id').order('created_at', { ascending: false }).limit(5000)),
+      logsQ,
       supabase.from('deals').select('id, org_id, organizations(name)'),
     ])
     setLogs(logsRes.data || [])

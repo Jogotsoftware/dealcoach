@@ -624,6 +624,12 @@ function SectionCanvas({
         {section.data_source.fields.length > 0 && (
           <TrailingDropZone onDrop={e => onDropBeforeField(e, section.data_source.fields.length)} />
         )}
+        <button
+          onClick={() => onAddField({ table: '_formula', field: `calc_${Math.random().toString(36).slice(2, 6)}`, label: 'Formula', type: 'number' }, section.data_source.fields.length)}
+          style={{ fontSize: 10, padding: '4px 8px', border: `1px dashed ${T.border}`, borderRadius: 16, background: 'transparent', color: T.textMuted, cursor: 'pointer', fontFamily: T.font, fontWeight: 600 }}
+          title="Add a calculated column (formula)">
+          + formula
+        </button>
       </div>
 
       {/* Live preview */}
@@ -640,6 +646,17 @@ function SectionCanvas({
       <div style={{ padding: '8px 14px', borderTop: '1px solid ' + T.borderLight }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
           <span style={{ fontSize: 10, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Filters</span>
+          {(section.data_source.filters || []).length > 1 && (
+            <div style={{ display: 'flex', border: '1px solid ' + T.border, borderRadius: 4, overflow: 'hidden' }}>
+              {['and', 'or'].map(logic => (
+                <button key={logic}
+                  onClick={() => onUpdate({ data_source: { ...section.data_source, filter_logic: logic } })}
+                  style={{ padding: '2px 8px', fontSize: 10, fontWeight: 700, border: 'none', cursor: 'pointer', background: (section.data_source.filter_logic || 'and') === logic ? T.primary : T.surface, color: (section.data_source.filter_logic || 'and') === logic ? '#fff' : T.textMuted, textTransform: 'uppercase' }}>
+                  {logic}
+                </button>
+              ))}
+            </div>
+          )}
           <Button onClick={() => setFilterPickerOpen(true)} style={{ padding: '2px 8px', fontSize: 10 }}>+ Filter</Button>
         </div>
         {(section.data_source.filters || []).length === 0 && <div style={{ fontSize: 11, color: T.textMuted, fontStyle: 'italic' }}>No filters</div>}
@@ -885,14 +902,25 @@ function PropertiesPanel({ selected, sections, onUpdateField, onUpdateSection, o
   if (selected?.kind === 'field') {
     const section = sections[selected.sectionIdx]
     const f = section?.data_source.fields[selected.fieldIdx]
+    const isFormula = f?.table === '_formula'
     if (f) {
-      title = `Field: ${f.label}`
+      title = `${isFormula ? 'Formula' : 'Field'}: ${f.label}`
       body = (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div>
             <label style={labelStyle}>Label</label>
             <input style={inputStyle} value={f.label} onChange={e => onUpdateField(selected.sectionIdx, selected.fieldIdx, { label: e.target.value })} />
           </div>
+          {isFormula && (
+            <div>
+              <label style={labelStyle}>Formula</label>
+              <textarea style={{ ...inputStyle, minHeight: 60, fontFamily: 'ui-monospace, monospace', resize: 'vertical' }}
+                value={f.formula || ''}
+                onChange={e => onUpdateField(selected.sectionIdx, selected.fieldIdx, { formula: e.target.value, is_formula: true })}
+                placeholder={`e.g.\ndeal_value * 0.1\n(fit_score + deal_health_score) / 2`} />
+              <div style={{ fontSize: 10, color: T.textMuted, marginTop: 4 }}>Use field names (deal_value, fit_score) and operators <code>+ - * / ( )</code>. Only numeric fields. Safe eval — no functions.</div>
+            </div>
+          )}
           <div>
             <label style={labelStyle}>Display Format</label>
             <select style={{ ...inputStyle, cursor: 'pointer' }} value={f.format?.type || f.type} onChange={e => onUpdateField(selected.sectionIdx, selected.fieldIdx, { format: { type: e.target.value } })}>

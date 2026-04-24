@@ -37,6 +37,7 @@ export default function Layout() {
       { to: '/', icon: '\u25A6', label: 'Pipeline', show: hasModule('pipeline') },
       { to: '/coach', icon: '\u25CE', label: 'Coach', show: hasModule('coach_customization') },
       { to: '/reports', icon: '\u2261', label: 'Reports', show: hasModule('reports') },
+      { to: '/dashboards', icon: '\u25a4', label: 'Dashboards', show: true },
       { to: '/settings/team', icon: '\u2630', label: 'Team', show: true },
       { to: '/settings', icon: '\u2699', label: 'Settings', show: true },
     ]},
@@ -100,7 +101,7 @@ export default function Layout() {
                   <div style={{ fontSize: 9, fontWeight: 700, color: '#556677', textTransform: 'uppercase', letterSpacing: '0.08em', padding: '8px 16px 4px', userSelect: 'none' }}>{section.label}</div>
                 )}
                 {items.map(item => (
-                  <NavLink key={item.to} to={item.to} end={item.to === '/' || item.to === '/settings'} title={!sidebarExpanded ? item.label : undefined}
+                  <NavLink key={item.to} to={item.to} end title={!sidebarExpanded ? item.label : undefined}
                     style={({ isActive }) => ({
                       display: 'flex', alignItems: 'center', gap: 12,
                       padding: '10px 16px', borderRadius: 8, textDecoration: 'none', margin: '2px 0',

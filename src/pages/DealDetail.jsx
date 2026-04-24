@@ -40,6 +40,67 @@ const ResponsiveGridLayout = WidthProvider(Responsive)
 const ddLabelStyle = { fontSize: 11, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2, display: 'block' }
 const unknownStyle = { color: '#e8a0a0', fontStyle: 'italic', fontWeight: 400 }
 
+// Auto-populate deal sizing by scanning transcripts, pain points, and analysis text
+// for number-of-X phrases. Conservative — only returns fields where we find a signal.
+function scanTranscriptsForSizing(conversations = [], painPoints = [], deal = null) {
+  const blobs = []
+  for (const c of conversations) {
+    if (c.transcript) blobs.push(c.transcript)
+    if (c.ai_summary) blobs.push(c.ai_summary)
+  }
+  for (const p of painPoints) {
+    if (p.pain_description) blobs.push(p.pain_description)
+    if (p.affected_team) blobs.push(p.affected_team)
+    if (p.impact_text) blobs.push(p.impact_text)
+  }
+  if (deal?.notes) blobs.push(deal.notes)
+  const text = blobs.join(' \n ').toLowerCase()
+  if (!text.trim()) return {}
+
+  // Number-phrase detector: `\d+` within 5 words of a keyword.
+  function find(keywords) {
+    // Try "KEYWORDS.*(\d+)" and "(\d+).*KEYWORDS"
+    for (const kw of keywords) {
+      const r1 = new RegExp(`(\\d+[,\\d]*)\\s*(?:\\w+\\s+){0,5}${kw}`, 'i')
+      const r2 = new RegExp(`${kw}\\s*(?:\\w+\\s+){0,5}(\\d+[,\\d]*)`, 'i')
+      const m = text.match(r1) || text.match(r2)
+      if (m) {
+        const n = parseInt(m[1].replace(/,/g, ''), 10)
+        if (n > 0 && n < 1000000) return n
+      }
+    }
+    return null
+  }
+
+  const result = {}
+  const warehouse = find(['warehouse (?:user|staff|worker|employee|people|picker|packer|forklift)'])
+  if (warehouse) result.warehouse_users = warehouse
+  const inventory = find(['inventory (?:user|staff|clerk|team|manager|specialist)'])
+  if (inventory) result.inventory_users = inventory
+  const fulfillment = find(['fulfill?ment (?:user|staff|team|people)', 'shipping (?:user|staff|team|people)'])
+  if (fulfillment) result.fulfillment_users = fulfillment
+  const receiving = find(['receiving (?:user|staff|dock|team|people)'])
+  if (receiving) result.receiving_users = receiving
+  const customers = find(['customers?', 'accounts?'])
+  if (customers && customers > 5) result.customer_count = customers
+  const orderVol = find(['orders?\\s*(?:per|/|a)\\s*month', 'monthly orders?', 'orders?\\s*monthly'])
+  if (orderVol) result.order_volume_monthly = orderVol
+
+  // Infer full_users + entity_count + payroll count if not already present
+  const fullUsers = find(['(?:full|licensed|named|admin)\\s*users?', 'seats'])
+  if (fullUsers) result.full_users = fullUsers
+  const entities = find(['entit(?:y|ies)', 'legal entit(?:y|ies)', 'subsidiar(?:y|ies)', 'divisions?'])
+  if (entities) result.entity_count = entities
+  const payroll = find(['payroll\\s*(?:employee|people|headcount)', 'fte', 'full.?time'])
+  if (payroll && payroll < 100000) result.employee_count_payroll = payroll
+  const apInv = find(['ap invoices?\\s*(?:per|/|a)\\s*month', 'vendor invoices?\\s*(?:per|/|a)\\s*month'])
+  if (apInv) result.ap_invoices_monthly = apInv
+  const arInv = find(['ar invoices?\\s*(?:per|/|a)\\s*month', 'customer invoices?\\s*(?:per|/|a)\\s*month', 'invoices?\\s*(?:per|/|a)\\s*month'])
+  if (arInv) result.ar_invoices_monthly = arInv
+
+  return result
+}
+
 // === Linkify inline URLs ===
 function Linkify({ text }) {
   if (!text) return null
@@ -277,8 +338,10 @@ function SourceBadge({ source, sourceUrl, conversationId, dealId, navigate: nav,
 }
 
 function parseNewsItem(item) {
-  const urlMatch = item.match(/\((https?:\/\/[^\s)]+)\)\s*$/)
-  if (urlMatch) return { text: item.replace(urlMatch[0], '').trim(), url: urlMatch[1] }
+  const parenMatch = item.match(/\((https?:\/\/[^\s)]+)\)\s*$/)
+  if (parenMatch) return { text: item.replace(parenMatch[0], '').trim(), url: parenMatch[1] }
+  const urlMatch = item.match(/(https?:\/\/[^\s,;]+)/)
+  if (urlMatch) return { text: item.replace(urlMatch[0], '').replace(/[\s\-:|]+$/, '').trim(), url: urlMatch[1] }
   return { text: item, url: null }
 }
 
@@ -297,7 +360,8 @@ const DOC_TYPES = ['rfp', 'rfi', 'demo_schedule', 'sow', 'proposal', 'pricing', 
 const DEFAULT_LAYOUT = [
   { i: 'call_history', x: 0, y: 0, w: 12, h: 4, minW: 2, minH: 1 },
   { i: 'company_profile', x: 0, y: 4, w: 8, h: 5, minW: 2, minH: 1 },
-  { i: 'scores', x: 8, y: 4, w: 4, h: 5, minW: 3, minH: 3 },
+  { i: 'scores', x: 8, y: 4, w: 4, h: 3, minW: 3, minH: 2 },
+  { i: 'deal_info', x: 8, y: 7, w: 4, h: 2, minW: 3, minH: 2 },
   { i: 'contacts', x: 0, y: 9, w: 4, h: 4, minW: 2, minH: 1 },
   { i: 'dates', x: 4, y: 9, w: 8, h: 3, minW: 2, minH: 1 },
   { i: 'analysis', x: 0, y: 13, w: 6, h: 5, minW: 2, minH: 1 },
@@ -934,13 +998,20 @@ export default function DealDetail() {
     const scoreBreakdownMap = {}
     if (deal.icp_fit_breakdown) scoreBreakdownMap['icp_fit'] = deal.icp_fit_breakdown
 
+    const SCORE_DESCRIPTIONS = {
+      'Fit': 'How closely the deal matches your sales criteria (stage progression, engagement, BANT/MEDDPICC signals).',
+      'Health': 'Overall momentum: recency of activity, risks, flags, and progress vs. expected cadence.',
+      'ICP Fit': 'How well this company matches your Ideal Customer Profile (industry, size, tech stack, buyer personas).',
+    }
     const ScoreWithTooltip = ({ label, score, max = 10, breakdown, colorOverride }) => {
       const [showTip, setShowTip] = useState(false)
+      const description = SCORE_DESCRIPTIONS[label]
+      const hasTip = breakdown || description
       return (
         <div style={{ marginBottom: 8, position: 'relative' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
             <span style={{ fontSize: 10, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase', letterSpacing: '0.04em', flex: 1 }}>{label}</span>
-            {breakdown && (
+            {hasTip && (
               <span onMouseEnter={() => setShowTip(true)} onMouseLeave={() => setShowTip(false)}
                 style={{ cursor: 'help', fontSize: 10, color: T.textMuted, border: `1px solid ${T.border}`, borderRadius: '50%', width: 14, height: 14, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>?</span>
             )}
@@ -951,15 +1022,20 @@ export default function DealDetail() {
               <span style={{ fontSize: 11, color: T.textMuted }}>/{max}</span>
             </div>
           )}
-          {showTip && breakdown && (
+          {showTip && hasTip && (
             <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, boxShadow: '0 4px 12px rgba(0,0,0,0.1)', padding: 10, fontSize: 11, zIndex: 100, width: 260, color: T.text }}>
-              <div style={{ fontWeight: 700, marginBottom: 6 }}>Top score drivers</div>
-              {Object.entries(breakdown).slice(0, 3).map(([k, v]) => (
-                <div key={k} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                  <span style={{ color: T.textMuted }}>{k.replace(/_/g, ' ')}</span>
-                  <span style={{ fontWeight: 600 }}>{typeof v === 'number' ? v : typeof v === 'object' ? (v?.score != null ? `${v.score}/${v.max || '?'}` : JSON.stringify(v).substring(0, 30)) : String(v).substring(0, 30)}</span>
-                </div>
-              ))}
+              {description && <div style={{ marginBottom: breakdown ? 8 : 0, lineHeight: 1.4, color: T.textSecondary }}>{description}</div>}
+              {breakdown && (
+                <>
+                  <div style={{ fontWeight: 700, marginBottom: 6 }}>Top score drivers</div>
+                  {Object.entries(breakdown).slice(0, 3).map(([k, v]) => (
+                    <div key={k} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                      <span style={{ color: T.textMuted }}>{k.replace(/_/g, ' ')}</span>
+                      <span style={{ fontWeight: 600 }}>{typeof v === 'number' ? v : typeof v === 'object' ? (v?.score != null ? `${v.score}/${v.max || '?'}` : JSON.stringify(v).substring(0, 30)) : String(v).substring(0, 30)}</span>
+                    </div>
+                  ))}
+                </>
+              )}
             </div>
           )}
         </div>
@@ -1425,6 +1501,7 @@ export default function DealDetail() {
   }
 
   function QuoteSizingWidget() {
+    const [autoPopulating, setAutoPopulating] = useState(false)
     async function updateSizing(field, value) {
       const num = parseInt(value) || null
       if (sizing?.id) {
@@ -1435,23 +1512,72 @@ export default function DealDetail() {
         if (data) setSizing(data)
       }
     }
-    const fields = [
+    async function autoPopulate() {
+      setAutoPopulating(true)
+      const counts = scanTranscriptsForSizing(conversations, painPoints, deal)
+      if (Object.keys(counts).length === 0) {
+        setAutoPopulating(false)
+        alert('No sizing numbers detected in transcripts or pain points. Add more call data first.')
+        return
+      }
+      const payload = { ...counts, auto_populated_from_transcript: true, auto_populated_at: new Date().toISOString() }
+      let newRow
+      if (sizing?.id) {
+        const { data } = await supabase.from('deal_sizing').update(payload).eq('id', sizing.id).select().single()
+        newRow = data
+      } else {
+        const { data } = await supabase.from('deal_sizing').insert({ deal_id: id, ...payload }).select().single()
+        newRow = data
+      }
+      if (newRow) setSizing(newRow)
+      setAutoPopulating(false)
+    }
+    const baseFields = [
       { key: 'full_users', label: 'Full Users' }, { key: 'view_only_users', label: 'View-Only Users' },
       { key: 'entity_count', label: 'Entities' }, { key: 'ap_invoices_monthly', label: 'AP Invoices/mo' },
       { key: 'ar_invoices_monthly', label: 'AR Invoices/mo' }, { key: 'fixed_assets', label: 'Fixed Assets' },
       { key: 'employee_count_payroll', label: 'Payroll Employees' },
     ]
+    const opsFields = [
+      { key: 'warehouse_users', label: 'Warehouse Users' }, { key: 'inventory_users', label: 'Inventory Users' },
+      { key: 'fulfillment_users', label: 'Fulfillment' }, { key: 'receiving_users', label: 'Receiving' },
+      { key: 'customer_count', label: 'Customers' }, { key: 'order_volume_monthly', label: 'Orders/mo' },
+    ]
     return (
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-        {fields.map(f => (
-          <div key={f.key}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase', marginBottom: 2 }}>{f.label}</div>
-            <input type="number" value={sizing?.[f.key] || ''} placeholder={'\u2014'}
-              onBlur={e => updateSizing(f.key, e.target.value)}
-              onChange={e => setSizing(prev => ({ ...prev, [f.key]: e.target.value }))}
-              style={{ ...inputStyle, width: '100%', textAlign: 'center', fontSize: 16, fontWeight: 700, padding: '8px' }} />
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <span style={{ fontSize: 11, color: T.textMuted }}>
+            {sizing?.auto_populated_from_transcript && sizing?.auto_populated_at && <>Auto-populated {new Date(sizing.auto_populated_at).toLocaleDateString()}</>}
+          </span>
+          <Button onClick={autoPopulate} disabled={autoPopulating} style={{ padding: '3px 10px', fontSize: 11 }}>
+            {autoPopulating ? 'Scanning...' : 'Auto-populate from transcripts'}
+          </Button>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          {baseFields.map(f => (
+            <div key={f.key}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase', marginBottom: 2 }}>{f.label}</div>
+              <input type="number" value={sizing?.[f.key] || ''} placeholder={'\u2014'}
+                onBlur={e => updateSizing(f.key, e.target.value)}
+                onChange={e => setSizing(prev => ({ ...prev, [f.key]: e.target.value }))}
+                style={{ ...inputStyle, width: '100%', textAlign: 'center', fontSize: 16, fontWeight: 700, padding: '8px' }} />
+            </div>
+          ))}
+        </div>
+        <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${T.borderLight}` }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', marginBottom: 6 }}>Warehouse / Inventory / Volume</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            {opsFields.map(f => (
+              <div key={f.key}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase', marginBottom: 2 }}>{f.label}</div>
+                <input type="number" value={sizing?.[f.key] || ''} placeholder={'\u2014'}
+                  onBlur={e => updateSizing(f.key, e.target.value)}
+                  onChange={e => setSizing(prev => ({ ...prev, [f.key]: e.target.value }))}
+                  style={{ ...inputStyle, width: '100%', textAlign: 'center', fontSize: 15, fontWeight: 700, padding: '7px' }} />
+              </div>
+            ))}
           </div>
-        ))}
+        </div>
       </div>
     )
   }
@@ -1697,18 +1823,24 @@ export default function DealDetail() {
               >
                 {(() => {
                   const wbc = { company_profile: '#3498db', recent_news: '#3498db', tech_systems: '#3498db', qualification: '#f39c12', scores: '#f39c12', risks: '#e74c3c', red_flags: '#e74c3c', pain_points: '#e74c3c', green_flags: '#27ae60', events: '#27ae60', catalysts: '#27ae60', call_history: '#9b59b6', quote_sizing: '#9b59b6' }
-                  return widgets.filter(w => w.visible).map(w => (
-                    <div key={w.id} style={{ background: T.surface, border: editMode ? '1px dashed rgba(93,173,226,0.3)' : `1px solid ${T.border}`, borderLeft: '3px solid ' + (wbc[w.id] || '#8899aa'), borderRadius: 10, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                      <div style={{ padding: '6px 10px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', gap: 8, background: T.surfaceAlt, flexShrink: 0 }}>
+                  return widgets.filter(w => w.visible).map(w => {
+                    const customDef = customWidgetDefs.find(c => c.id === w.id)
+                    const customHeader = customDef?.config?.header_color
+                    const accent = customHeader || wbc[w.id] || '#8899aa'
+                    const headerBg = customHeader ? customHeader + '18' : T.surfaceAlt
+                    return (
+                    <div key={w.id} style={{ background: T.surface, border: editMode ? '1px dashed rgba(93,173,226,0.3)' : `1px solid ${T.border}`, borderLeft: '3px solid ' + accent, borderRadius: 10, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                      <div style={{ padding: '6px 10px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', gap: 8, background: headerBg, flexShrink: 0 }}>
                         {editMode && <span className="widget-drag-handle" style={{ cursor: 'grab', color: T.textMuted, fontSize: 14, userSelect: 'none' }}>{'\u2807'}</span>}
-                        <span style={{ fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: T.text, flex: 1 }}>{w.title}</span>
+                        <span style={{ fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: customHeader || T.text, flex: 1 }}>{w.title}</span>
                         {editMode && <span style={{ cursor: 'pointer', color: T.textMuted, fontSize: 16, lineHeight: 1 }} onClick={() => toggleWidget(w.id)}>&times;</span>}
                       </div>
                       <div style={{ padding: 10, overflow: 'auto', flex: 1, fontSize: 12 }}>
                         {renderWidget(w.id)}
                       </div>
                     </div>
-                  ))
+                    )
+                  })
                 })()}
               </ResponsiveGridLayout>
             </div>

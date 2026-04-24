@@ -21,6 +21,7 @@ import AcceptInvite from './pages/AcceptInvite'
 import TeamManagement from './pages/settings/TeamManagement'
 import OrgSettings from './pages/settings/OrgSettings'
 import WidgetBuilder from './pages/WidgetBuilder'
+import Dashboards from './pages/Dashboards'
 import BetaFeedbackAdmin from './pages/admin/BetaFeedback'
 import InvitationsAdmin from './pages/admin/Invitations'
 import PlatformAdminDashboard from './pages/admin/PlatformAdminDashboard'
@@ -30,18 +31,42 @@ import CoachBuilder from './pages/CoachBuilder'
 import Reports from './pages/Reports'
 import DealRetrospective from './pages/DealRetrospective'
 import PlatformAdminGuard from './components/guards/PlatformAdminGuard'
-import { Spinner } from './components/Shared'
+import { theme as T } from './lib/theme'
+
+function AppLoadingSkeleton() {
+  return (
+    <div style={{
+      minHeight: '100vh', display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center', background: '#fff',
+      fontFamily: T.font,
+    }}>
+      <div style={{ fontSize: 18, fontWeight: 700, color: T.text,
+        marginBottom: 24, letterSpacing: '-0.02em' }}>
+        Revenue Instruments
+      </div>
+      <div style={{ width: 200, height: 3, background: T.border,
+        borderRadius: 2, overflow: 'hidden' }}>
+        <div style={{
+          width: '40%', height: '100%', background: T.primary,
+          borderRadius: 2,
+          animation: 'shimmer 1.4s ease-in-out infinite',
+          transformOrigin: 'left',
+        }} />
+      </div>
+    </div>
+  )
+}
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth()
-  if (loading) return <Spinner />
+  if (loading) return <AppLoadingSkeleton />
   if (!user) return <Navigate to="/login" replace />
   return children
 }
 
 function PublicRoute({ children }) {
   const { user, loading } = useAuth()
-  if (loading) return <Spinner />
+  if (loading) return <AppLoadingSkeleton />
   if (user) return <Navigate to="/" replace />
   return children
 }
@@ -74,6 +99,8 @@ export default function App() {
                 <Route path="/coach" element={<CoachAdmin />} />
                 <Route path="/coach/builder" element={<CoachBuilder />} />
                 <Route path="/reports" element={<Reports />} />
+                <Route path="/dashboards" element={<Dashboards />} />
+                <Route path="/dashboards/:dashboardId" element={<Dashboards />} />
                 <Route path="/deal/:id/retrospective" element={<DealRetrospective />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/admin" element={<AdminConsole />} />

@@ -15,6 +15,8 @@ export default function TranscriptUpload({ deals, onClose, onUploaded }) {
   const [processing, setProcessing] = useState(false)
   const [error, setError] = useState(null)
   const [result, setResult] = useState(null)
+  const [shareUrl, setShareUrl] = useState('')
+  const [importing, setImporting] = useState(false)
 
   const activeDeals = (deals || []).filter(d =>
     !['closed_won', 'closed_lost', 'disqualified'].includes(d.stage)
@@ -99,6 +101,33 @@ export default function TranscriptUpload({ deals, onClose, onUploaded }) {
 
   const canSubmit = form.deal_id && form.transcript.trim() && !saving
 
+  async function importFromUrl() {
+    if (!form.deal_id) { setError('Pick a deal first'); return }
+    if (!shareUrl.trim()) { setError('Paste a transcript URL first'); return }
+    setImporting(true); setError(null); setResult(null)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const r = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/import-transcript-url`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+          'Authorization': session ? `Bearer ${session.access_token}` : `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({ deal_id: form.deal_id, url: shareUrl.trim(), call_type: form.call_type, call_date: form.call_date, title: form.title || null }),
+      })
+      const body = await r.json()
+      if (!r.ok || body.error) throw new Error(body.error || `HTTP ${r.status}`)
+      track('transcript_uploaded', { call_type: form.call_type, source: 'url_import', size_chars: body.transcript_length || 0 })
+      setResult({ saved: true, processing: true, message: `Imported ${body.transcript_length?.toLocaleString() || ''} chars from URL. Processing with AI...` })
+      if (onUploaded) onUploaded({ id: body.conversation_id })
+    } catch (e) {
+      setError(`Import failed: ${e.message}`)
+    } finally {
+      setImporting(false)
+    }
+  }
+
   return (
     <div
       style={{
@@ -166,6 +195,20 @@ export default function TranscriptUpload({ deals, onClose, onUploaded }) {
                 onChange={e => set('title', e.target.value)}
                 placeholder="e.g. QDC with CFO" />
             </div>
+          </div>
+
+          {/* Import from share URL (Chorus / Gong / Fathom / etc.) */}
+          <div>
+            <label style={labelStyle}>Import from share URL</label>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input style={{ ...inputStyle, flex: 1 }} value={shareUrl}
+                onChange={e => setShareUrl(e.target.value)}
+                placeholder="Paste a Chorus / Gong / Fathom / Zoom share link..." />
+              <Button onClick={importFromUrl} disabled={importing || !shareUrl.trim() || !form.deal_id} style={{ padding: '8px 14px', fontSize: 12 }}>
+                {importing ? 'Importing...' : 'Import'}
+              </Button>
+            </div>
+            <div style={{ fontSize: 10, color: T.textMuted, marginTop: 4 }}>Works with any publicly accessible transcript page. Server-side fetch + HTML scrape.</div>
           </div>
 
           {/* File Upload */}

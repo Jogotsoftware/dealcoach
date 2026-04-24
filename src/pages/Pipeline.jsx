@@ -536,6 +536,7 @@ export default function Pipeline() {
   function TaskListWidget() {
     const [showAddTask, setShowAddTask] = useState(false)
     const [newTask, setNewTask] = useState({ title: '', deal_id: '', priority: 'medium', due_date: '' })
+    const [selected, setSelected] = useState(new Set())
     const filtered = taskFilter === 'high' ? tasks.filter(t => !t.completed && t.priority === 'high')
       : taskFilter === 'overdue' ? tasks.filter(t => !t.completed && t.due_date && new Date(t.due_date) < new Date())
       : tasks.filter(t => !t.completed)
@@ -549,15 +550,44 @@ export default function Pipeline() {
       await supabase.from('tasks').update({ completed: !task.completed }).eq('id', taskId)
       setTasks(prev => prev.map(t => t.id === taskId ? { ...t, completed: !t.completed } : t))
     }
+    function toggleSel(id) { setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n }) }
+    function selectAll() { setSelected(new Set(filtered.map(t => t.id))) }
+    function clearSel() { setSelected(new Set()) }
+    async function bulkComplete() {
+      const ids = [...selected]; if (!ids.length) return
+      await supabase.from('tasks').update({ completed: true, completed_at: new Date().toISOString() }).in('id', ids)
+      setTasks(prev => prev.map(t => ids.includes(t.id) ? { ...t, completed: true } : t))
+      setSelected(new Set())
+    }
+    async function bulkDelete() {
+      const ids = [...selected]; if (!ids.length) return
+      if (!window.confirm(`Delete ${ids.length} task${ids.length === 1 ? '' : 's'}?`)) return
+      await supabase.from('tasks').delete().in('id', ids)
+      setTasks(prev => prev.filter(t => !ids.includes(t.id)))
+      setSelected(new Set())
+    }
     return (
       <div>
-        <div style={{ display: 'flex', gap: 4, marginBottom: 8, justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', gap: 4, marginBottom: 8, justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', gap: 4 }}>
             {['all', 'high', 'overdue'].map(f => (
               <button key={f} onClick={() => setTaskFilter(f)} style={{ padding: '3px 10px', borderRadius: 4, fontSize: 10, fontWeight: 600, border: 'none', cursor: 'pointer', background: taskFilter === f ? T.primary : T.surfaceAlt, color: taskFilter === f ? '#fff' : T.textMuted }}>{f === 'all' ? 'All' : f === 'high' ? 'High Priority' : 'Overdue'}</button>
             ))}
           </div>
-          <button onClick={() => setShowAddTask(!showAddTask)} style={{ background: T.primary, color: '#fff', border: 'none', borderRadius: 4, padding: '3px 10px', fontSize: 10, fontWeight: 700, cursor: 'pointer' }}>+ Add</button>
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+            {selected.size > 0 && (
+              <>
+                <span style={{ fontSize: 10, color: T.textMuted, fontWeight: 600 }}>{selected.size} selected</span>
+                <button onClick={bulkComplete} style={{ background: T.success, color: '#fff', border: 'none', borderRadius: 4, padding: '3px 10px', fontSize: 10, fontWeight: 700, cursor: 'pointer' }}>Complete</button>
+                <button onClick={bulkDelete} style={{ background: T.error, color: '#fff', border: 'none', borderRadius: 4, padding: '3px 10px', fontSize: 10, fontWeight: 700, cursor: 'pointer' }}>Delete</button>
+                <button onClick={clearSel} style={{ background: T.surfaceAlt, color: T.textMuted, border: 'none', borderRadius: 4, padding: '3px 10px', fontSize: 10, fontWeight: 700, cursor: 'pointer' }}>Clear</button>
+              </>
+            )}
+            {selected.size === 0 && filtered.length > 0 && (
+              <button onClick={selectAll} style={{ background: T.surfaceAlt, color: T.textMuted, border: '1px solid ' + T.border, borderRadius: 4, padding: '3px 10px', fontSize: 10, fontWeight: 600, cursor: 'pointer' }}>Select all</button>
+            )}
+            <button onClick={() => setShowAddTask(!showAddTask)} style={{ background: T.primary, color: '#fff', border: 'none', borderRadius: 4, padding: '3px 10px', fontSize: 10, fontWeight: 700, cursor: 'pointer' }}>+ Add</button>
+          </div>
         </div>
         {showAddTask && (
           <div style={{ padding: 10, background: T.surfaceAlt, borderRadius: 6, marginBottom: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -580,9 +610,11 @@ export default function Pipeline() {
         <div style={{ overflow: 'auto' }}>
           {filtered.map(t => {
             const overdue = t.due_date && new Date(t.due_date) < new Date()
+            const isSel = selected.has(t.id)
             return (
-              <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid ' + T.borderLight }}>
-                <input type="checkbox" checked={!!t.completed} onChange={() => toggleTask(t.id)} style={{ cursor: 'pointer' }} />
+              <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid ' + T.borderLight, background: isSel ? T.primaryLight : 'transparent' }}>
+                <input type="checkbox" checked={isSel} onChange={() => toggleSel(t.id)} style={{ cursor: 'pointer', accentColor: T.primary }} title="Select" />
+                <button onClick={() => toggleTask(t.id)} style={{ width: 18, height: 18, borderRadius: 4, border: '1.5px solid ' + T.border, background: t.completed ? T.success : 'transparent', cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }} title="Toggle complete">{t.completed && <span style={{ color: '#fff', fontSize: 11 }}>✓</span>}</button>
                 <span style={{ width: 8, height: 8, borderRadius: '50%', background: t.priority === 'high' ? '#e74c3c' : t.priority === 'medium' ? '#f39c12' : '#8899aa', flexShrink: 0 }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 12, fontWeight: t.priority === 'high' ? 700 : 500, color: T.text }}>{t.title}</div>

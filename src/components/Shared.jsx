@@ -28,21 +28,21 @@ export function Card({ children, title, action, style: s, className }) {
   return (
     <div style={{
       background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.radius,
-      boxShadow: T.shadow, overflow: 'hidden', marginBottom: 12, ...s,
+      boxShadow: T.shadow, overflow: 'hidden', marginBottom: 10, ...s,
     }}>
       {title && (
         <div style={{
-          padding: '8px 14px', borderBottom: `1px solid ${T.border}`,
+          padding: '6px 12px', borderBottom: `1px solid ${T.border}`,
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           background: T.surfaceAlt,
         }}>
-          <span style={{ fontSize: 13, fontWeight: 800, color: '#1a1a2e', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+          <span style={{ fontSize: 12, fontWeight: 800, color: '#1a1a2e', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
             {title}
           </span>
           {action}
         </div>
       )}
-      <div style={{ padding: 10 }}>{children}</div>{/* ws6a: kept at 10 for density */}
+      <div style={{ padding: 10 }}>{children}</div>
     </div>
   )
 }
@@ -97,15 +97,15 @@ export function ScoreBar({ score, max = 10, label }) {
 // === FIELD (label + value) ===
 export function Field({ label, value, mono }) {
   return (
-    <div style={{ marginBottom: 12 }}>
+    <div style={{ marginBottom: 8 }}>
       <div style={{
-        fontSize: 11, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase',
-        letterSpacing: '0.05em', marginBottom: 4,
+        fontSize: 10, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase',
+        letterSpacing: '0.05em', marginBottom: 2,
       }}>
         {label}
       </div>
       <div style={{
-        fontSize: 13, color: T.text, lineHeight: 1.5,
+        fontSize: 13, color: T.text, lineHeight: 1.45,
         fontFamily: mono ? T.mono : T.font,
         whiteSpace: mono ? 'pre-wrap' : undefined,
       }}>
@@ -175,13 +175,13 @@ export function TabBar({ tabs, active, onChange }) {
 // === INPUT STYLES (reusable object) ===
 export const inputStyle = {
   width: '100%', background: T.surface, border: `1px solid ${T.border}`,
-  borderRadius: 6, padding: '10px 12px', color: T.text, fontSize: 13,
+  borderRadius: 6, padding: '8px 10px', color: T.text, fontSize: 13,
   outline: 'none', fontFamily: T.font, transition: 'border-color 0.15s, box-shadow 0.15s',
 }
 
 export const labelStyle = {
-  fontSize: 11, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase',
-  letterSpacing: '0.05em', marginBottom: 4, display: 'block',
+  fontSize: 10, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase',
+  letterSpacing: '0.05em', marginBottom: 3, display: 'block',
 }
 
 // === EMPTY STATE ===

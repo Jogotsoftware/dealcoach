@@ -444,6 +444,9 @@ export default function CoachAdmin() {
                   onCancel={() => setEditingSystemPrompt(false)}
                   value={systemPromptVal} setValue={setSystemPromptVal} onSave={saveSystemPrompt} />
 
+                {/* Coach Voice & Behavior — structured fields */}
+                <CoachVoiceEditor coach={coach} onSaved={(p) => setCoach(prev => ({ ...prev, ...p }))} />
+
                 {/* Research Prompt */}
                 <Card title="Research Prompt" action={
                   <Button style={{ padding: '4px 12px', fontSize: 11 }}
@@ -841,15 +844,28 @@ export default function CoachAdmin() {
               </div>
             </Card>
             <Card title="Focus Areas">
-              <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 6 }}>One focus area per line. These guide what the AI researches about each company.</div>
-              <textarea style={{ ...inputStyle, fontFamily: T.mono, fontSize: 12, minHeight: 180, resize: 'vertical', width: '100%' }}
-                defaultValue={(researchConfig?.focus_areas || []).join('\n')}
-                onBlur={async e => {
+              <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 6 }}>Type and press Enter or comma to add a bubble. These guide what the AI researches about each company.</div>
+              <TagInput
+                label=""
+                value={researchConfig?.focus_areas || []}
+                onChange={async (next) => {
                   if (!researchConfig?.id) return
-                  const areas = e.target.value.split('\n').map(s => s.trim()).filter(Boolean)
-                  await supabase.from('coach_research_config').update({ focus_areas: areas }).eq('id', researchConfig.id)
-                  setResearchConfig(p => ({ ...p, focus_areas: areas }))
-                }} />
+                  setResearchConfig(p => ({ ...p, focus_areas: next }))
+                  await supabase.from('coach_research_config').update({ focus_areas: next }).eq('id', researchConfig.id)
+                }}
+                placeholder="e.g. tech stack modernization, M&A activity, hiring freeze..." />
+            </Card>
+            <Card title="Anti-Rules / What NOT to do">
+              <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 6 }}>Things the AI should avoid when researching or writing. Type and press Enter to add.</div>
+              <TagInput
+                label=""
+                value={researchConfig?.anti_rules || []}
+                onChange={async (next) => {
+                  if (!researchConfig?.id) return
+                  setResearchConfig(p => ({ ...p, anti_rules: next }))
+                  await supabase.from('coach_research_config').update({ anti_rules: next }).eq('id', researchConfig.id)
+                }}
+                placeholder="e.g. don't speculate on internal politics, never quote revenue figures without citation..." />
             </Card>
             <Card title="Custom Research Instructions">
               <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 6 }}>Additional instructions for the AI when researching companies.</div>
@@ -1303,6 +1319,84 @@ function AssembledPromptPreview({ coach, editing, onEdit, onCancel, value, setVa
           <div style={{ fontSize: 10, color: T.textMuted, marginTop: 6, fontStyle: 'italic' }}>This is what the AI sees when processing transcripts for this coach.</div>
         </div>
       )}
+    </Card>
+  )
+}
+
+// Coach voice & behavior — structured fields rendered as clean labeled cards
+function CoachVoiceEditor({ coach, onSaved }) {
+  const [fields, setFields] = useState({
+    tone: coach.tone || '',
+    response_format: coach.response_format || '',
+    behavior_rules: coach.behavior_rules || '',
+    custom_context: coach.custom_context || '',
+  })
+  const [editing, setEditing] = useState(null) // field key or null
+  const [busy, setBusy] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    setFields({
+      tone: coach.tone || '',
+      response_format: coach.response_format || '',
+      behavior_rules: coach.behavior_rules || '',
+      custom_context: coach.custom_context || '',
+    })
+  }, [coach.id])
+
+  async function saveField(key) {
+    setBusy(true)
+    const patch = { [key]: fields[key] || null }
+    const { error } = await supabase.from('coaches').update(patch).eq('id', coach.id)
+    setBusy(false)
+    if (error) { alert('Save failed: ' + error.message); return }
+    onSaved?.(patch)
+    setEditing(null)
+    setSaved(true); setTimeout(() => setSaved(false), 1500)
+  }
+
+  const sections = [
+    { key: 'tone', label: 'Tone & Voice', placeholder: 'e.g. Direct. Data-driven. Coach, not cheerleader. Short sentences.', accent: '#8b5cf6' },
+    { key: 'response_format', label: 'Response Format', placeholder: 'e.g. Bullets under 2 lines each. Lead with the punch-line. No preamble.', accent: '#0ea5e9' },
+    { key: 'behavior_rules', label: 'Behavior Rules', placeholder: 'e.g. Never guess. Always cite the transcript. Never flatter. If data is missing, say so.', accent: '#dc3545' },
+    { key: 'custom_context', label: 'Custom Context', placeholder: 'Anything extra you want every response to keep in mind...', accent: '#10b981' },
+  ]
+
+  return (
+    <Card title="Coach Voice & Behavior" action={saved ? <span style={{ fontSize: 11, color: T.success, fontWeight: 700 }}>✓ Saved</span> : null}>
+      <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 10, fontFamily: T.font }}>
+        Structured coach personality. These four fields are woven into every AI response — transcripts, chat, emails, research.
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+        {sections.map(s => {
+          const isEdit = editing === s.key
+          const val = fields[s.key]
+          return (
+            <div key={s.key} style={{ border: `1px solid ${T.border}`, borderLeft: `3px solid ${s.accent}`, borderRadius: 6, padding: 10, background: T.surface }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <span style={{ fontSize: 11, fontWeight: 800, color: T.text, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{s.label}</span>
+                {!isEdit ? (
+                  <button onClick={() => setEditing(s.key)} style={{ background: 'transparent', border: 'none', color: T.primary, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: T.font, padding: 0 }}>Edit</button>
+                ) : (
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button onClick={() => saveField(s.key)} disabled={busy} style={{ background: T.primary, color: '#fff', border: 'none', borderRadius: 4, padding: '3px 10px', fontSize: 10, fontWeight: 700, cursor: 'pointer', fontFamily: T.font }}>Save</button>
+                    <button onClick={() => { setFields(f => ({ ...f, [s.key]: coach[s.key] || '' })); setEditing(null) }} style={{ background: 'transparent', border: `1px solid ${T.border}`, color: T.textMuted, borderRadius: 4, padding: '3px 10px', fontSize: 10, cursor: 'pointer', fontFamily: T.font }}>Cancel</button>
+                  </div>
+                )}
+              </div>
+              {isEdit ? (
+                <textarea value={val} onChange={e => setFields(f => ({ ...f, [s.key]: e.target.value }))}
+                  placeholder={s.placeholder}
+                  style={{ width: '100%', minHeight: 80, padding: 8, border: `1px solid ${T.border}`, borderRadius: 4, fontSize: 13, fontFamily: T.font, lineHeight: 1.5, color: T.text, background: T.surfaceAlt, resize: 'vertical', outline: 'none' }} />
+              ) : (
+                <div style={{ fontSize: 13, lineHeight: 1.55, color: val ? T.text : T.textMuted, fontStyle: val ? 'normal' : 'italic', fontFamily: T.font, whiteSpace: 'pre-wrap', minHeight: 40 }}>
+                  {val || s.placeholder}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
     </Card>
   )
 }
