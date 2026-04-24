@@ -1624,6 +1624,40 @@ function PreviewTable({ data, cfg, setCfg, baseFields }) {
     setCfg({ fields })
   }
 
+  // Insert a sidebar-dragged field at a specific column position (or at the end)
+  function insertFieldFromSidebar(payload, atIdx) {
+    if (!payload) return false
+    const entry = payload.join ? { join: payload.join, field: payload.field, label: payload.field } : payload.field
+    if (!entry) return false
+    const fields = [...(cfg.fields || [])]
+    // Dedupe — if already present, just move to the target spot
+    const idOf = (f) => typeof f === 'string' ? f : (f.join ? `${f.join}_${f.field}` : (f.key || f.label))
+    const newId = payload.join ? `${payload.join}_${payload.field}` : payload.field
+    const existingIdx = fields.findIndex(f => idOf(f) === newId)
+    if (existingIdx >= 0) {
+      const [moved] = fields.splice(existingIdx, 1)
+      const targetIdx = atIdx == null ? fields.length : Math.min(atIdx, fields.length)
+      fields.splice(targetIdx, 0, moved)
+    } else {
+      const targetIdx = atIdx == null ? fields.length : Math.min(atIdx, fields.length)
+      fields.splice(targetIdx, 0, entry)
+    }
+    // If the field's from a related object, ensure the relation is included
+    const patch = { fields }
+    if (payload.join && !(cfg.included_relations || []).includes(payload.join)) {
+      patch.included_relations = [...(cfg.included_relations || []), payload.join]
+    }
+    setCfg(patch)
+    return true
+  }
+
+  // Parse a dataTransfer blob — handles both sidebar-add and header-reorder drags
+  function parseDrag(e) {
+    const raw = e.dataTransfer.getData('text/plain')
+    if (!raw) return null
+    try { return JSON.parse(raw) } catch { return { kind: 'reorder-existing', id: raw } }
+  }
+
   // Drop header onto top bar → add as a group (Salesforce summary pattern)
   function groupByColumn(colId) {
     // Only works for base-table fields right now
@@ -1667,7 +1701,19 @@ function PreviewTable({ data, cfg, setCfg, baseFields }) {
         draggable
         onDragStart={e => { setDragCol(id); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', id) }}
         onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move' }}
-        onDrop={e => { e.preventDefault(); reorderFields(dragCol, id); setDragCol(null) }}
+        onDrop={e => {
+          e.preventDefault(); e.stopPropagation()
+          const d = parseDrag(e)
+          if (d?.kind === 'add') {
+            // Sidebar field dropped onto this column header → insert at this position
+            const targetIdx = columns.indexOf(id)
+            insertFieldFromSidebar(d, targetIdx >= 0 ? targetIdx : null)
+          } else {
+            // Existing-column drag → reorder
+            reorderFields(dragCol, id)
+          }
+          setDragCol(null)
+        }}
         onDragEnd={() => setDragCol(null)}
         style={{
           textAlign: 'left', padding: '6px 8px', fontSize: 10, fontWeight: 700,
@@ -1914,12 +1960,32 @@ function PreviewTable({ data, cfg, setCfg, baseFields }) {
         </div>
       </div>
 
-      {/* Drop zone at top — drag a column header here to add it as a group */}
+      {/* Drop zone at top — accepts BOTH existing column headers AND sidebar field drags */}
       {cfg.report_type !== 'matrix' && (
         <div
-          onDragOver={e => { if (dragCol && baseFields[dragCol]) { e.preventDefault(); setDropOverTop(true) } }}
+          onDragOver={e => { e.preventDefault(); setDropOverTop(true); e.dataTransfer.dropEffect = 'copy' }}
           onDragLeave={() => setDropOverTop(false)}
-          onDrop={e => { e.preventDefault(); setDropOverTop(false); if (dragCol) { groupByColumn(dragCol); setDragCol(null) } }}
+          onDrop={e => {
+            e.preventDefault(); setDropOverTop(false)
+            const d = parseDrag(e)
+            if (d?.kind === 'add') {
+              // Sidebar field → add as group (base-table fields only for now)
+              if (baseFields[d.field] && !d.join) groupByColumn(d.field)
+              else if (d.join) {
+                // Include the relation + group the joined-field column id
+                const patch = {
+                  included_relations: (cfg.included_relations || []).includes(d.join)
+                    ? cfg.included_relations : [...(cfg.included_relations || []), d.join],
+                }
+                // Joined grouping not fully supported; add as column so at least it shows
+                insertFieldFromSidebar(d)
+                setCfg(patch)
+              }
+            } else if (dragCol) {
+              groupByColumn(dragCol)
+            }
+            setDragCol(null)
+          }}
           style={{
             padding: 8, marginBottom: 8, borderRadius: 6,
             border: `1px dashed ${dropOverTop ? T.primary : T.borderLight}`,
@@ -1928,10 +1994,22 @@ function PreviewTable({ data, cfg, setCfg, baseFields }) {
             textAlign: 'center', fontWeight: 600, transition: 'all 0.1s',
           }}>
           {(cfg.groups || []).length > 0
-            ? <><strong>Grouped by:</strong> {(cfg.groups || []).map(g => colLabel(g)).join(' → ')} — drop another column to group further</>
-            : <>Drop a column header here to group by it (switches to Summary)</>}
+            ? <><strong>Grouped by:</strong> {(cfg.groups || []).map(g => colLabel(g)).join(' → ')} — drop another column or sidebar field to group further</>
+            : <>Drop a column header or sidebar field here to group by it (switches to Summary)</>}
         </div>
       )}
+
+      {/* Catch-all field drop zone — wraps the whole table so dropping anywhere in open
+         space appends the field as a new column. Headers / group-bar / cells handle
+         their own precise drops via stopPropagation. */}
+      <div
+        onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' }}
+        onDrop={e => {
+          e.preventDefault()
+          const d = parseDrag(e)
+          if (d?.kind === 'add') insertFieldFromSidebar(d)
+        }}
+      >
 
       {cfg.report_type === 'tabular' && renderTabular()}
       {cfg.report_type === 'summary' && renderSummary()}
@@ -1940,6 +2018,7 @@ function PreviewTable({ data, cfg, setCfg, baseFields }) {
       {rows.length > 200 && cfg.report_type === 'tabular' && (
         <div style={{ fontSize: 10, color: T.textMuted, marginTop: 6, textAlign: 'center' }}>Showing first 200 of {rows.length} rows.</div>
       )}
+      </div>
     </Card>
   )
 }
