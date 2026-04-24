@@ -69,6 +69,22 @@ export default function Settings() {
   const [showAddMember, setShowAddMember] = useState(false)
   const [newMember, setNewMember] = useState({ name: '', title: '', company: '', email: '', phone: '', member_type: 'internal_sc' })
 
+  // Auto-redeem coach token from ?coach_token= URL param (e.g. when clicked via email share)
+  useEffect(() => {
+    if (!profile) return
+    const params = new URLSearchParams(window.location.search)
+    const urlToken = params.get('coach_token')
+    if (!urlToken) return
+    ;(async () => {
+      const { data, error } = await supabase.rpc('redeem_coach_token', { p_token: urlToken.trim() })
+      if (!error && data?.success) setTokenStatus({ success: `Added "${data.coach_name}" from share link` })
+      else setTokenStatus({ error: error?.message || data?.error || 'Link invalid or expired' })
+      // Strip param from URL
+      window.history.replaceState({}, '', window.location.pathname)
+      loadCoachSections()
+    })()
+  }, [profile?.id])
+
   useEffect(() => {
     if (profile) {
       setFyEndMonth(profile.fiscal_year_end_month || 9)
@@ -341,7 +357,16 @@ export default function Settings() {
         {/* My Coach — 3 sections */}
         <Card title="My Coach">
           <CoachSection title="Your Organization's Coach" coaches={orgCoach ? [orgCoach] : []} activeId={activeCoachId} onSelect={selectCoach} emptyText="No org coach yet — your admin can set one up in /coach" />
-          <CoachSection title="Coaches You've Built" coaches={builtCoaches} activeId={activeCoachId} onSelect={selectCoach} emptyText="You haven't built any coaches yet — go to /coach/builder" />
+          <CoachSection
+            title="Coaches You've Built"
+            coaches={builtCoaches}
+            activeId={activeCoachId}
+            onSelect={selectCoach}
+            emptyText="You haven't built any coaches yet — go to /coach/builder"
+            ownerActions
+            userId={profile?.id}
+            onDeleted={() => loadCoachSections()}
+          />
           <CoachSection title="Shared Coaches" coaches={sharedCoaches} activeId={activeCoachId} onSelect={selectCoach} emptyText="No shared coaches. Paste a share token below to add one." />
 
           <div style={{ marginTop: 14, padding: 12, background: T.surfaceAlt, borderRadius: 6, border: `1px solid ${T.borderLight}` }}>
@@ -717,7 +742,48 @@ export default function Settings() {
   )
 }
 
-function CoachSection({ title, coaches, activeId, onSelect, emptyText }) {
+function CoachSection({ title, coaches, activeId, onSelect, emptyText, ownerActions, userId, onDeleted }) {
+  const [sharingCoachId, setSharingCoachId] = useState(null)
+  const [shareToken, setShareToken] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [deletingId, setDeletingId] = useState(null)
+
+  async function generateShare(coachId) {
+    setBusy(true)
+    const { data, error } = await supabase.from('coach_share_tokens').insert({
+      coach_id: coachId, created_by: userId, label: 'Shared from Settings',
+    }).select().single()
+    setBusy(false)
+    if (error) { alert('Share failed: ' + error.message); return }
+    setSharingCoachId(coachId); setShareToken(data.token); setCopied(false)
+  }
+
+  async function copyShareToken() {
+    if (!shareToken) return
+    try { await navigator.clipboard.writeText(shareToken); setCopied(true); setTimeout(() => setCopied(false), 1500) } catch {}
+  }
+
+  function emailShareToken(coachName) {
+    if (!shareToken) return
+    const subject = encodeURIComponent(`I'm sharing a DealCoach coach with you: ${coachName}`)
+    const body = encodeURIComponent(
+      `I'm sharing my coach "${coachName}" with you.\n\n` +
+      `Paste this token into Settings → "Add a coach via share token" in DealCoach:\n\n${shareToken}\n\n` +
+      `Or follow this link: ${window.location.origin}/settings?coach_token=${shareToken}`
+    )
+    window.open(`mailto:?subject=${subject}&body=${body}`)
+  }
+
+  async function deleteCoach(coachId) {
+    if (!window.confirm('Archive this coach? It will no longer appear here. Deals already using it keep their history.')) return
+    setDeletingId(coachId)
+    const { error } = await supabase.from('coaches').update({ active: false }).eq('id', coachId).eq('created_by', userId)
+    setDeletingId(null)
+    if (error) { alert('Delete failed: ' + error.message); return }
+    if (onDeleted) onDeleted()
+  }
+
   return (
     <div style={{ marginBottom: 12 }}>
       <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>{title}</div>
@@ -727,22 +793,49 @@ function CoachSection({ title, coaches, activeId, onSelect, emptyText }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           {coaches.map(c => {
             const isActive = c.id === activeId
+            const isSharing = sharingCoachId === c.id
             return (
-              <button key={c.id} onClick={() => onSelect(isActive ? null : c.id)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px',
-                  borderRadius: 6, cursor: 'pointer', textAlign: 'left',
-                  border: `1px solid ${isActive ? T.primary : T.border}`,
-                  background: isActive ? T.primaryLight || 'rgba(93,173,226,0.08)' : T.surfaceAlt,
-                  fontFamily: T.font,
-                }}>
-                <span style={{ width: 10, height: 10, borderRadius: '50%', background: isActive ? T.primary : T.borderLight, flexShrink: 0 }} />
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{c.name}</div>
-                  {c.description && <div style={{ fontSize: 11, color: T.textSecondary, marginTop: 2, lineHeight: 1.4 }}>{c.description.substring(0, 120)}{c.description.length > 120 ? '...' : ''}</div>}
+              <div key={c.id}>
+                <div
+                  onClick={() => onSelect(isActive ? null : c.id)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px',
+                    borderRadius: 6, cursor: 'pointer',
+                    border: `1px solid ${isActive ? T.primary : T.border}`,
+                    background: isActive ? T.primaryLight || 'rgba(93,173,226,0.08)' : T.surfaceAlt,
+                    fontFamily: T.font,
+                  }}>
+                  <span style={{ width: 10, height: 10, borderRadius: '50%', background: isActive ? T.primary : T.borderLight, flexShrink: 0 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{c.name}</div>
+                    {c.description && <div style={{ fontSize: 11, color: T.textSecondary, marginTop: 2, lineHeight: 1.4 }}>{c.description.substring(0, 120)}{c.description.length > 120 ? '...' : ''}</div>}
+                  </div>
+                  {isActive && <span style={{ fontSize: 10, fontWeight: 700, color: T.primary }}>ACTIVE</span>}
+                  {ownerActions && (
+                    <div style={{ display: 'flex', gap: 6 }} onClick={e => e.stopPropagation()}>
+                      <button onClick={() => generateShare(c.id)} disabled={busy && isSharing}
+                        style={{ fontSize: 10, padding: '3px 8px', border: `1px solid ${T.border}`, borderRadius: 4, background: T.surface, color: T.primary, cursor: 'pointer', fontFamily: T.font, fontWeight: 600 }}>
+                        Share
+                      </button>
+                      <button onClick={() => deleteCoach(c.id)} disabled={deletingId === c.id}
+                        style={{ fontSize: 10, padding: '3px 8px', border: `1px solid ${T.border}`, borderRadius: 4, background: T.surface, color: T.error, cursor: 'pointer', fontFamily: T.font, fontWeight: 600 }}>
+                        {deletingId === c.id ? '...' : 'Delete'}
+                      </button>
+                    </div>
+                  )}
                 </div>
-                {isActive && <span style={{ fontSize: 10, fontWeight: 700, color: T.primary }}>ACTIVE</span>}
-              </button>
+                {isSharing && shareToken && (
+                  <div style={{ marginTop: 4, padding: '8px 12px', background: T.primaryLight || 'rgba(93,173,226,0.08)', border: `1px solid ${T.primary}40`, borderRadius: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 11, color: T.textSecondary }}>Share token:</span>
+                    <code style={{ fontFamily: T.mono, fontSize: 11, padding: '3px 8px', background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, color: T.text, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{shareToken}</code>
+                    <button onClick={copyShareToken} style={{ fontSize: 10, padding: '3px 10px', border: `1px solid ${T.primary}`, borderRadius: 4, background: T.primary, color: '#fff', cursor: 'pointer', fontFamily: T.font, fontWeight: 600 }}>
+                      {copied ? 'Copied!' : 'Copy'}
+                    </button>
+                    <button onClick={() => emailShareToken(c.name)} style={{ fontSize: 10, padding: '3px 10px', border: `1px solid ${T.border}`, borderRadius: 4, background: T.surface, color: T.primary, cursor: 'pointer', fontFamily: T.font, fontWeight: 600 }}>Email</button>
+                    <button onClick={() => { setSharingCoachId(null); setShareToken(null) }} style={{ fontSize: 10, padding: '3px 8px', border: 'none', background: 'transparent', color: T.textMuted, cursor: 'pointer', fontFamily: T.font }}>Close</button>
+                  </div>
+                )}
+              </div>
             )
           })}
         </div>

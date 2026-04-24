@@ -365,10 +365,11 @@ export default function Pipeline() {
     }
     return (
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-        <thead><tr>{th('company_name', 'Company')}{th('stage', 'Stage')}{th('forecast_category', 'Forecast')}{th('deal_value', 'ARR')}{th('target_close_date', 'Close')}{th('fit_score', 'Fit')}{th('deal_health_score', 'Health')}<th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 10, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase', borderBottom: `1px solid ${T.border}` }}>Next Steps</th></tr></thead>
+        <thead><tr>{th('company_name', 'Company')}{th('stage', 'Stage')}{th('forecast_category', 'Forecast')}{th('deal_value', 'ARR')}{th('cmrr', 'CMRR')}{th('target_close_date', 'Close')}{th('icp_fit_score', 'ICP')}{th('fit_score', 'Fit')}{th('deal_health_score', 'Health')}<th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 10, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase', borderBottom: `1px solid ${T.border}` }}>Next Steps</th></tr></thead>
         <tbody>
           {tSorted.map(d => {
             const days = daysUntil(d.target_close_date)
+            const icp = d.icp_fit_score
             return (
               <tr key={d.id} onClick={() => navigate(`/deal/${d.id}`)} style={{ cursor: 'pointer', borderBottom: `1px solid ${T.borderLight}` }}
                 onMouseEnter={e => e.currentTarget.style.background = T.surfaceHover} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
@@ -376,7 +377,9 @@ export default function Pipeline() {
                 <td style={{ padding: '8px' }}><StageBadge stage={d.stage} /></td>
                 <td style={{ padding: '8px' }}><ForecastBadge category={d.forecast_category} /></td>
                 <td style={{ padding: '8px', fontWeight: 700, fontFeatureSettings: '"tnum"' }}>{formatCurrency(getARR(d))}</td>
+                <td style={{ padding: '8px', color: T.textMuted, fontFeatureSettings: '"tnum"' }}>{d.cmrr ? formatCurrency(d.cmrr) : '--'}</td>
                 <td style={{ padding: '8px', color: days != null && days < 0 ? T.error : T.textMuted, fontFeatureSettings: '"tnum"' }}>{d.target_close_date ? formatDate(d.target_close_date) : '--'}</td>
+                <td style={{ padding: '8px', fontWeight: 700, color: icp == null ? T.textMuted : icp >= 70 ? T.success : icp >= 40 ? T.warning : T.error, fontFeatureSettings: '"tnum"' }}>{icp ?? '--'}</td>
                 <td style={{ padding: '8px' }}>{d.fit_score ?? '--'}</td>
                 <td style={{ padding: '8px' }}>{d.deal_health_score ?? '--'}</td>
                 <td style={{ padding: '8px', color: T.textMuted, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11 }}>{d.next_steps?.substring(0, 60) || '--'}</td>
