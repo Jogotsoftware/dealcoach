@@ -573,7 +573,7 @@ export default function CoachAdmin() {
                       <div><label style={labelStyle}>Type</label><select style={{ ...inputStyle, cursor: 'pointer' }} value={newDoc.doc_type} onChange={e => setNewDoc(p => ({ ...p, doc_type: e.target.value }))}>
                         {DOC_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}</select></div>
                     </div>
-                    <div style={{ marginBottom: 10 }}><label style={labelStyle}>Content (paste document text)</label><textarea style={{ ...inputStyle, fontFamily: T.mono, fontSize: 12, minHeight: 200, resize: 'vertical' }} value={newDoc.content} onChange={e => setNewDoc(p => ({ ...p, content: e.target.value }))} placeholder="Paste document content..." /></div>
+                    <div style={{ marginBottom: 10 }}><label style={labelStyle}>Content (paste document text)</label><textarea style={{ ...inputStyle, fontFamily: T.mono, fontSize: 12, minHeight: 140, maxHeight: 320, resize: 'vertical', width: '100%' }} value={newDoc.content} onChange={e => setNewDoc(p => ({ ...p, content: e.target.value }))} placeholder="Paste document content..." /><div style={{ fontSize: 10, color: T.textMuted, marginTop: 2 }}>Drag the bottom-right corner to resize.</div></div>
                     <div style={{ display: 'flex', gap: 6 }}><Button primary onClick={addDocument}>Add Document</Button><Button onClick={() => setShowAddDoc(false)}>Cancel</Button></div>
                   </Card>
                 )}
@@ -901,7 +901,7 @@ export default function CoachAdmin() {
             }>
               {editingResearchPrompt ? (
                 <div>
-                  <textarea style={{ ...inputStyle, fontSize: 13, minHeight: 240, resize: 'vertical', width: '100%', lineHeight: 1.55, fontFamily: T.font }}
+                  <textarea style={{ ...inputStyle, fontSize: 13, minHeight: 120, maxHeight: 280, resize: 'vertical', width: '100%', lineHeight: 1.55, fontFamily: T.font }}
                     value={researchPromptVal} onChange={e => setResearchPromptVal(e.target.value)}
                     placeholder="What should the AI investigate about each company? e.g. recent M&A, exec changes, tech stack, funding, busy-season patterns..." />
                   <div style={{ fontSize: 10, color: T.textMuted, marginTop: 2 }}>{researchPromptVal.length} chars</div>
@@ -1414,7 +1414,7 @@ function AssembledPromptPreview({ coach, editing, onEdit, onCancel, value, setVa
       {editing ? (
         <div>
           <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 6 }}>Editing just the coach-level context. Platform core + methodology layers are managed by Revenue Instruments and can't be changed here.</div>
-          <textarea style={{ ...inputStyle, fontFamily: T.mono, fontSize: 12, minHeight: 260, resize: 'vertical', width: '100%' }}
+          <textarea style={{ ...inputStyle, fontFamily: T.font, fontSize: 13, lineHeight: 1.55, minHeight: 120, maxHeight: 280, resize: 'vertical', width: '100%' }}
             value={value} onChange={e => setValue(e.target.value)} placeholder="Your coach's personality, voice, and custom instructions..." />
           <div style={{ fontSize: 10, color: T.textMuted, marginTop: 2 }}>{(value || '').length} chars · autosaves on Save</div>
           <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
@@ -1868,7 +1868,7 @@ function EmailBodyTemplateEditor({ tpl, onSave }) {
         </div>
         <span style={{ fontSize: 10, color: T.textMuted }}>Use {'{Variable}'} tokens for personalization. The AI fills these in from deal context when generating.</span>
       </div>
-      <textarea ref={taRef} style={{ ...inputStyle, fontFamily: T.mono, fontSize: 12, minHeight: 150, resize: 'vertical' }}
+      <textarea ref={taRef} style={{ ...inputStyle, fontFamily: T.mono, fontSize: 12, minHeight: 120, maxHeight: 280, resize: 'vertical', width: '100%' }}
         value={value} onChange={e => setValue(e.target.value)}
         onBlur={e => onSave(e.target.value)}
         placeholder="Describe the email content, structure, and key points to include..." />
