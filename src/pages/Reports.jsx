@@ -1681,16 +1681,27 @@ function PreviewTable({ data, cfg, setCfg, baseFields }) {
   const hasAnyFooterTotal = columns.some(c => totalAggFor(c) != null)
 
   // Drag column → reorder in cfg.fields
+  const idOf = (f) => typeof f === 'string' ? f : (f.formula !== undefined ? (f.key || f.label) : `${f.join}_${f.field}`)
   function reorderFields(draggedId, targetId) {
     if (!draggedId || draggedId === targetId) return
     const fields = [...(cfg.fields || [])]
-    const idOf = (f) => typeof f === 'string' ? f : (f.formula !== undefined ? (f.key || f.label) : `${f.join}_${f.field}`)
     const fromIdx = fields.findIndex(f => idOf(f) === draggedId)
     const toIdx = fields.findIndex(f => idOf(f) === targetId)
     if (fromIdx < 0 || toIdx < 0) return
     const [moved] = fields.splice(fromIdx, 1)
     fields.splice(toIdx, 0, moved)
     setCfg({ fields })
+  }
+
+  // Pull column off the preview → drop from cfg.fields
+  function removeColumnById(id) {
+    const fields = (cfg.fields || []).filter(f => idOf(f) !== id)
+    // Also clean up column-level state keyed by id
+    const widths = { ...(cfg.column_widths || {}) }; delete widths[id]
+    const totals = { ...(cfg.column_totals || {}) }; delete totals[id]
+    // If sort was on this column, drop it
+    const orderBy = cfg.order_by === id ? null : cfg.order_by
+    setCfg({ fields, column_widths: widths, column_totals: totals, order_by: orderBy })
   }
 
   // Insert a sidebar-dragged field at a specific column position (or at the end)
@@ -1796,7 +1807,21 @@ function PreviewTable({ data, cfg, setCfg, baseFields }) {
           background: dragCol === id ? T.primaryLight : T.surfaceAlt,
           borderRight: `1px solid ${T.borderLight}`,
         }}>
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', display: 'inline-block', maxWidth: width - 40 }}>{label}</span>
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', display: 'inline-block', maxWidth: width - 56 }}>{label}</span>
+        <span
+          onClick={e => { e.stopPropagation(); removeColumnById(id) }}
+          draggable={false}
+          onMouseDown={e => e.stopPropagation()}
+          title={`Remove "${label}" from report`}
+          style={{
+            position: 'absolute', right: canTotal ? 26 : 10, top: '50%', transform: 'translateY(-50%)',
+            fontSize: 14, lineHeight: 1, color: T.textMuted,
+            cursor: 'pointer', padding: '0 3px', borderRadius: 3,
+            opacity: 0.35, transition: 'opacity 0.1s, color 0.1s',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.opacity = 1; e.currentTarget.style.color = T.error }}
+          onMouseLeave={e => { e.currentTarget.style.opacity = 0.35; e.currentTarget.style.color = T.textMuted }}
+        >×</span>
         {canTotal && (
           <span onClick={e => { e.stopPropagation(); setMenuOpen(m => !m) }}
             title={currentAgg ? `Footer: ${currentAgg}` : 'Set footer total'}
