@@ -41,10 +41,11 @@ export default function Login() {
       if (error) throw error
       const { data: { user } } = await supabase.auth.getUser()
       if (user) { identify(user.id, { email: user.email }); track('user_signed_in', { email: user.email }) }
-      navigate('/')
+      // Intentionally no navigate — PublicRoute redirects once auth + org finish
+      // hydrating. Keeping `loading` true means the button stays "Signing in…"
+      // so there's no flash of a loading screen between here and the Home page.
     } catch (err) {
       setError(err.message)
-    } finally {
       setLoading(false)
     }
   }

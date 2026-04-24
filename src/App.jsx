@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './hooks/useAuth'
-import { OrgProvider } from './contexts/OrgContext'
+import { OrgProvider, useOrg } from './contexts/OrgContext'
 import Layout from './components/Layout'
 import RequireOrg from './components/guards/RequireOrg'
 import RequireAdmin from './components/guards/RequireAdmin'
@@ -65,9 +65,13 @@ function ProtectedRoute({ children }) {
   return children
 }
 
+// Keep the user on their current public page (e.g. Login) while auth AND org
+// are hydrating — this eliminates the branded/spinner flashes between sign-in
+// and the destination. Only redirect once everything is ready.
 function PublicRoute({ children }) {
-  const { user, loading } = useAuth()
-  if (loading) return <AppLoadingSkeleton />
+  const { user, loading: authLoading } = useAuth()
+  const { loading: orgLoading } = useOrg()
+  if (authLoading || orgLoading) return children
   if (user) return <Navigate to="/" replace />
   return children
 }
