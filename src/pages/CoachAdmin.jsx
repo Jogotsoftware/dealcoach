@@ -1525,12 +1525,25 @@ function ExtractionRulesEditor({ coach, onSaved }) {
   const [saving, setSaving] = useState(false)
   const [savedMsg, setSavedMsg] = useState(false)
   const [expanded, setExpanded] = useState({})
+  const [legacyOpen, setLegacyOpen] = useState(false)
 
   function toggle(key) {
     setRules(r => ({ ...r, [key]: { ...(r[key] || {}), enabled: !(r[key]?.enabled ?? true) } }))
   }
   function setInstructions(key, text) {
     setRules(r => ({ ...r, [key]: { ...(r[key] || { enabled: true }), instructions: text } }))
+  }
+  function clearLegacy() {
+    if (!confirm('Remove the legacy free-form rules? The AI will only use the structured rules below. This is not reversible until you save — you can cancel out of the page if you change your mind.')) return
+    setRules(r => { const { _legacy_text, ...rest } = r; return rest })
+    setLegacyOpen(false)
+  }
+  function copyLegacyToNewRule() {
+    setRules(r => ({
+      ...r,
+      _custom: [...(r._custom || []), { name: 'Migrated from legacy rules', instructions: r._legacy_text || '', enabled: true }],
+    }))
+    setLegacyOpen(false)
   }
 
   function addCustomRule() {
@@ -1565,13 +1578,6 @@ function ExtractionRulesEditor({ coach, onSaved }) {
       </div>
     }>
       <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 10 }}>Pick which entity types the AI should extract and add optional org-specific instructions. Serialized as JSON and injected into the extraction prompt.</div>
-      {rules._legacy_text && (
-        <div style={{ padding: 10, background: T.surfaceAlt, borderRadius: 6, marginBottom: 10, fontSize: 11, color: T.textMuted }}>
-          <div style={{ fontWeight: 700, color: T.warning, marginBottom: 4 }}>Legacy free-form rules detected:</div>
-          <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontFamily: T.mono }}>{rules._legacy_text}</pre>
-          <div style={{ marginTop: 6, fontStyle: 'italic' }}>These will be kept and passed through. Add structured rules below to layer on top.</div>
-        </div>
-      )}
 
       {/* Canonical entity rules */}
       <div style={{ fontSize: 10, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Standard entities</div>
@@ -1645,6 +1651,31 @@ function ExtractionRulesEditor({ coach, onSaved }) {
           </div>
         )
       })}
+
+      {rules._legacy_text && (
+        <div style={{ marginTop: 16, borderTop: `1px dashed ${T.border}`, paddingTop: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 10, fontWeight: 800, color: T.warning, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Legacy free-form rules</span>
+            <span style={{ fontSize: 11, color: T.textMuted, flex: 1, minWidth: 140 }}>
+              {(rules._legacy_text || '').length} chars — will still be appended to the prompt until you clear them.
+            </span>
+            <button onClick={() => setLegacyOpen(o => !o)} style={{ fontSize: 10, padding: '2px 10px', background: 'transparent', border: `1px solid ${T.border}`, borderRadius: 4, cursor: 'pointer', color: T.textMuted, fontFamily: T.font }}>
+              {legacyOpen ? 'Hide' : 'View'}
+            </button>
+            <button onClick={copyLegacyToNewRule} style={{ fontSize: 10, padding: '2px 10px', background: 'transparent', border: `1px solid ${T.border}`, borderRadius: 4, cursor: 'pointer', color: T.textMuted, fontFamily: T.font }} title="Copy the legacy text into a new custom rule so you can edit it structured">
+              Convert to custom rule
+            </button>
+            <button onClick={clearLegacy} style={{ fontSize: 10, padding: '2px 10px', background: 'transparent', border: `1px solid ${T.error}55`, borderRadius: 4, cursor: 'pointer', color: T.error, fontFamily: T.font }}>
+              Clear
+            </button>
+          </div>
+          {legacyOpen && (
+            <pre style={{ margin: '8px 0 0', padding: 10, background: T.surfaceAlt, borderRadius: 6, fontSize: 11, color: T.textMuted, fontFamily: T.mono, whiteSpace: 'pre-wrap', maxHeight: 200, overflow: 'auto', border: `1px solid ${T.borderLight}` }}>
+              {rules._legacy_text}
+            </pre>
+          )}
+        </div>
+      )}
     </Card>
   )
 }
