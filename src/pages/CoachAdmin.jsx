@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
@@ -429,12 +429,12 @@ export default function CoachAdmin() {
                       <Button primary onClick={saveCoach}>Save</Button>
                     </div>
                   ) : (
-                    <>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
                       <Field label="Name" value={coach.name} />
                       <Field label="Description" value={coach.description} />
                       <Field label="Model" value={AI_MODELS.find(m => m.key === coach.model)?.label || coach.model} />
                       <Field label="Temperature" value={String(coach.temperature ?? '0.7')} />
-                    </>
+                    </div>
                   )}
                 </Card>
 
@@ -690,7 +690,24 @@ export default function CoachAdmin() {
                           ) : tplStages.map((s, si) => (
                               <TemplateStageRow key={s.id} stage={s} index={si}
                                 onUpdate={(field, val) => updateTemplateStage(s.id, field, val)}
-                                onDelete={() => deleteTemplateStage(s.id)} />
+                                onDelete={() => deleteTemplateStage(s.id)}
+                                onDragStart={e => { e.dataTransfer.setData('text/plain', s.id); e.dataTransfer.effectAllowed = 'move' }}
+                                onDragOver={e => e.preventDefault()}
+                                onDrop={async e => {
+                                  e.preventDefault()
+                                  const draggedId = e.dataTransfer.getData('text/plain')
+                                  if (draggedId === s.id) return
+                                  const fromIdx = tplStages.findIndex(x => x.id === draggedId)
+                                  if (fromIdx === -1) return
+                                  const next = [...tplStages]
+                                  const [moved] = next.splice(fromIdx, 1)
+                                  next.splice(si, 0, moved)
+                                  // Write new stage_order for each
+                                  for (let i = 0; i < next.length; i++) {
+                                    await supabase.from('msp_template_stages').update({ stage_order: i + 1 }).eq('id', next[i].id)
+                                  }
+                                  loadCoachData(coach.id)
+                                }} />
                             ))}
                         </div>
                       )}
@@ -809,7 +826,7 @@ export default function CoachAdmin() {
 
         {/* ===== RESEARCH TAB ===== */}
         {tab === 'research' && coach && (
-          <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 14, alignItems: 'start' }}>
             <Card title="Perplexity Integration">
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
@@ -897,7 +914,7 @@ export default function CoachAdmin() {
                   setResearchConfig(p => ({ ...p, custom_instructions: e.target.value }))
                 }} />
             </Card>
-          </>
+          </div>
         )}
 
         {/* ===== SLIDES TAB ===== */}
@@ -1621,12 +1638,13 @@ function ScoringConfigEditor({ config, onSaved }) {
   )
 }
 
-function TemplateStageRow({ stage, index, onUpdate, onDelete }) {
+function TemplateStageRow({ stage, index, onUpdate, onDelete, onDragStart, onDragOver, onDrop }) {
   const [expanded, setExpanded] = useState(false)
   const [callType, setCallType] = useState(stage.call_type || '')
   const [purpose, setPurpose] = useState(stage.purpose || '')
   const [notes, setNotes] = useState(stage.notes || '')
   const [attendees, setAttendees] = useState(stage.attendee_roles || [])
+  const [color, setColor] = useState(stage.color || '#5DADE2')
 
   function toggleRole(r) {
     const next = attendees.includes(r) ? attendees.filter(x => x !== r) : [...attendees, r]
@@ -1635,9 +1653,15 @@ function TemplateStageRow({ stage, index, onUpdate, onDelete }) {
   }
 
   return (
-    <div style={{ background: T.surfaceAlt, borderRadius: 6, border: `1px solid ${T.borderLight}`, marginBottom: 4, overflow: 'hidden' }}>
+    <div
+      draggable
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      style={{ background: T.surfaceAlt, borderRadius: 6, border: `1px solid ${T.borderLight}`, borderLeft: `4px solid ${color}`, marginBottom: 4, overflow: 'hidden', cursor: 'grab' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px' }}>
-        <span style={{ width: 24, height: 24, borderRadius: '50%', background: T.primary, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{index + 1}</span>
+        <span style={{ color: T.textMuted, fontSize: 12, cursor: 'grab' }} title="Drag to reorder">⋮⋮</span>
+        <span style={{ width: 24, height: 24, borderRadius: '50%', background: color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{index + 1}</span>
         <input style={{ ...inputStyle, flex: 1, padding: '4px 8px', fontSize: 13, fontWeight: 600 }}
           defaultValue={stage.stage_name} onBlur={e => onUpdate('stage_name', e.target.value)} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -1654,7 +1678,13 @@ function TemplateStageRow({ stage, index, onUpdate, onDelete }) {
       </div>
       {expanded && (
         <div style={{ padding: '10px 14px', borderTop: `1px solid ${T.borderLight}`, background: T.surface }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 10, marginBottom: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr 2fr', gap: 10, marginBottom: 8, alignItems: 'end' }}>
+            <div>
+              <label style={labelStyle}>Color</label>
+              <input type="color" value={color}
+                onChange={e => { setColor(e.target.value); onUpdate('color', e.target.value) }}
+                style={{ width: 40, height: 30, padding: 0, border: `1px solid ${T.border}`, borderRadius: 4, cursor: 'pointer' }} />
+            </div>
             <div>
               <label style={labelStyle}>Call Type</label>
               <select style={{ ...inputStyle, cursor: 'pointer', padding: '4px 8px', fontSize: 12 }}

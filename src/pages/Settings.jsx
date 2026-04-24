@@ -4,6 +4,30 @@ import { useAuth } from '../hooks/useAuth'
 import { theme as T, formatCurrency, getFiscalPeriods } from '../lib/theme'
 import { useOrg } from '../contexts/OrgContext'
 import { Card, Badge, Button, Spinner, inputStyle, labelStyle } from '../components/Shared'
+
+// Collapsible card wrapper — persists open/closed state per-section to localStorage.
+// Usage: <SectionCard id="my_coach" title="My Coach">...</SectionCard>
+function SectionCard({ id, title, action, children, defaultOpen = true }) {
+  const storageKey = `ri_settings_collapsed_${id}`
+  const [open, setOpen] = useState(() => {
+    try { const v = localStorage.getItem(storageKey); return v === null ? defaultOpen : v === 'true' }
+    catch { return defaultOpen }
+  })
+  useEffect(() => { try { localStorage.setItem(storageKey, String(open)) } catch {} }, [open, storageKey])
+  return (
+    <div style={{ background: '#fff', border: '1px solid ' + (typeof window !== 'undefined' ? '#e3e7ed' : '#e3e7ed'), borderRadius: 8, marginBottom: 10, overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.03)' }}>
+      <div onClick={() => setOpen(o => !o)}
+        style={{ padding: '8px 14px', borderBottom: open ? '1px solid #e3e7ed' : 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f5f7fa', cursor: 'pointer', userSelect: 'none' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 12, color: '#8899aa', fontWeight: 700, transition: 'transform 0.15s', transform: open ? 'rotate(90deg)' : 'rotate(0)' }}>▸</span>
+          <span style={{ fontSize: 12, fontWeight: 800, color: '#1a1a2e', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{title}</span>
+        </div>
+        {action && <div onClick={e => e.stopPropagation()}>{action}</div>}
+      </div>
+      {open && <div style={{ padding: 10 }}>{children}</div>}
+    </div>
+  )
+}
 import Papa from 'papaparse'
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
@@ -355,7 +379,7 @@ export default function Settings() {
       <div style={{ padding: '16px 24px' }}>
 
         {/* My Coach — 3 sections */}
-        <Card title="My Coach">
+        <SectionCard id="my_coach" title="My Coach">
           <CoachSection title="Your Organization's Coach" coaches={orgCoach ? [orgCoach] : []} activeId={activeCoachId} onSelect={selectCoach} emptyText="No org coach yet — your admin can set one up in /coach" />
           <CoachSection
             title="Coaches You've Built"
@@ -378,10 +402,10 @@ export default function Settings() {
             {tokenStatus?.success && <div style={{ color: T.success, fontSize: 12, marginTop: 6 }}>{tokenStatus.success}</div>}
             {tokenStatus?.error && <div style={{ color: T.error, fontSize: 12, marginTop: 6 }}>{tokenStatus.error}</div>}
           </div>
-        </Card>
+        </SectionCard>
 
         {/* Profile */}
-        <Card title="Profile" action={profileSaved ? <span style={{ fontSize: 12, color: T.success, fontWeight: 600 }}>Saved</span> : null}>
+        <SectionCard id="profile" title="Profile" action={profileSaved ? <span style={{ fontSize: 12, color: T.success, fontWeight: 600 }}>Saved</span> : null}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <div>
               <label style={labelStyle}>Full Name</label>
@@ -424,10 +448,10 @@ export default function Settings() {
               </select>
             </div>
           </div>
-        </Card>
+        </SectionCard>
 
         {/* My Team */}
-        <Card title="My Team" action={<Button style={{ padding: '4px 12px', fontSize: 11 }} onClick={() => setShowAddMember(true)}>+ Add Member</Button>}>
+        <SectionCard id="my_team" title="My Team" action={<Button style={{ padding: '4px 12px', fontSize: 11 }} onClick={() => setShowAddMember(true)}>+ Add Member</Button>}>
           <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 12, lineHeight: 1.4 }}>
             Your working team — SCs, partners, managers, and collaborators. These people don't need DealCoach accounts. They can be assigned to deals and will be excluded from AI contact extraction.
           </div>
@@ -511,11 +535,11 @@ export default function Settings() {
               </tbody>
             </table>
           )}
-        </Card>
+        </SectionCard>
 
         {/* Organization */}
         {orgData && (
-          <Card title="Organization" action={
+          <SectionCard id="organization" title="Organization" action={
             ['admin', 'system_admin'].includes(profile?.role) ? (
               <Button style={{ padding: '4px 12px', fontSize: 11 }} onClick={() => setShowOrgInvite(!showOrgInvite)}>Invite User</Button>
             ) : null
@@ -585,11 +609,11 @@ export default function Settings() {
                 ))}
               </tbody>
             </table>
-          </Card>
+          </SectionCard>
         )}
 
         {/* Quota */}
-        <Card title={`Quota -- FY${fp.fy} (Oct ${fp.fy - 1} - Sep ${fp.fy})`}>
+        <SectionCard id="quota" title={`Quota -- FY${fp.fy} (Oct ${fp.fy - 1} - Sep ${fp.fy})`}>
           {/* CSV upload */}
           <div style={{ marginBottom: 16, padding: 12, background: T.surfaceAlt, borderRadius: 6, border: `1px solid ${T.borderLight}` }}>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -714,10 +738,10 @@ export default function Settings() {
             <Button primary onClick={saveQuota} disabled={loading}>{loading ? 'Saving...' : 'Save Quota'}</Button>
             {saved && <span style={{ fontSize: 13, color: T.success, fontWeight: 600 }}>&#10003; Saved</span>}
           </div>
-        </Card>
+        </SectionCard>
 
         {/* Preferences */}
-        <Card title="Preferences">
+        <SectionCard id="preferences" title="Preferences" defaultOpen={false}>
           {[
             ['Email Notifications', 'Get notified about deal updates'],
             ['Weekly Digest', 'Pipeline summary every Friday'],
@@ -736,7 +760,7 @@ export default function Settings() {
               </div>
             </div>
           ))}
-        </Card>
+        </SectionCard>
       </div>
     </div>
   )

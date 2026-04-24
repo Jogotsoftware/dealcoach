@@ -10,6 +10,12 @@ import { evalFormula } from '../lib/widgetQuery'
 
 const CATEGORY_COLORS = { performance: T.primary, pipeline: T.success, forecast: T.warning, quality: '#8b5cf6', coaching: '#e67e22', custom: T.textMuted }
 
+const TYPE_COLORS = {
+  text: '#8899aa', number: '#0ea5e9', currency: '#2ecc71', date: '#f59e0b',
+  badge: '#8b5cf6', boolean: '#6c757d', score: '#10b981', percentage: '#f97316',
+  formula: '#e67e22',
+}
+
 const OPERATORS = [
   { key: 'eq', label: 'equals' },
   { key: 'neq', label: 'does not equal' },
@@ -265,6 +271,17 @@ export default function Reports() {
     loadReports()
   }
 
+  async function toggleFavorite(r) {
+    const next = !r.is_favorite
+    await supabase.from('saved_reports').update({ is_favorite: next }).eq('id', r.id)
+    setReports(prev => prev.map(x => x.id === r.id ? { ...x, is_favorite: next } : x))
+  }
+
+  async function moveToFolder(r, folder) {
+    await supabase.from('saved_reports').update({ folder: folder || null }).eq('id', r.id)
+    setReports(prev => prev.map(x => x.id === r.id ? { ...x, folder: folder || null } : x))
+  }
+
   async function runReport(report) {
     setMode('run')
     setSelectedReport(report)
@@ -315,7 +332,7 @@ export default function Reports() {
       </div>
 
       <div style={{ padding: '16px 24px' }}>
-        {mode === 'list' && <ListView reports={reports} filtered={filtered} categories={categories} filter={filter} setFilter={setFilter} runReport={runReport} startEdit={startEdit} deleteReport={deleteReport} startNew={startNew} />}
+        {mode === 'list' && <ListView reports={reports} runReport={runReport} startEdit={startEdit} deleteReport={deleteReport} startNew={startNew} toggleFavorite={toggleFavorite} moveToFolder={moveToFolder} />}
 
         {mode === 'build' && (
           <>
@@ -350,50 +367,157 @@ export default function Reports() {
 }
 
 // ────────────────────────────────────────────────────────
-function ListView({ reports, filtered, categories, filter, setFilter, runReport, startEdit, deleteReport, startNew }) {
+function ListView({ reports, runReport, startEdit, deleteReport, startNew, toggleFavorite, moveToFolder }) {
+  const [activeFolder, setActiveFolder] = useState('__all__') // __all__ | __fav__ | __uncat__ | <folder name>
+  const [search, setSearch] = useState('')
+  const [newFolder, setNewFolder] = useState('')
+  const [draggingId, setDraggingId] = useState(null)
+
+  // Unique list of folders (excluding empty/nulls)
+  const folders = useMemo(() => {
+    const set = new Set()
+    for (const r of reports) if (r.folder) set.add(r.folder)
+    return [...set].sort()
+  }, [reports])
+
+  const filtered = useMemo(() => {
+    let list = reports
+    if (activeFolder === '__fav__') list = list.filter(r => r.is_favorite)
+    else if (activeFolder === '__uncat__') list = list.filter(r => !r.folder)
+    else if (activeFolder !== '__all__') list = list.filter(r => r.folder === activeFolder)
+    if (search) {
+      const q = search.toLowerCase()
+      list = list.filter(r => r.name?.toLowerCase().includes(q) || r.description?.toLowerCase().includes(q) || r.category?.toLowerCase().includes(q))
+    }
+    return list
+  }, [reports, activeFolder, search])
+
+  const favCount = reports.filter(r => r.is_favorite).length
+  const uncatCount = reports.filter(r => !r.folder).length
+
   return (
-    <>
-      <div style={{ display: 'flex', gap: 4, marginBottom: 14, flexWrap: 'wrap' }}>
-        <button onClick={() => setFilter('all')} style={{ padding: '4px 12px', fontSize: 11, fontWeight: 600, border: 'none', borderRadius: 4, cursor: 'pointer', fontFamily: T.font, background: filter === 'all' ? T.primary : T.surfaceAlt, color: filter === 'all' ? '#fff' : T.textMuted }}>All ({reports.length})</button>
-        {categories.map(c => (
-          <button key={c} onClick={() => setFilter(c)} style={{ padding: '4px 12px', fontSize: 11, fontWeight: 600, border: 'none', borderRadius: 4, cursor: 'pointer', fontFamily: T.font, background: filter === c ? (CATEGORY_COLORS[c] || T.primary) : T.surfaceAlt, color: filter === c ? '#fff' : T.textMuted }}>{c}</button>
+    <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: 16, alignItems: 'start' }}>
+      {/* SIDEBAR */}
+      <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: 10, position: 'sticky', top: 0 }}>
+        <FolderItem active={activeFolder === '__all__'} onClick={() => setActiveFolder('__all__')} label="All reports" count={reports.length} icon="≡" />
+        <FolderItem active={activeFolder === '__fav__'} onClick={() => setActiveFolder('__fav__')} label="Favorites" count={favCount} icon="★" color={T.warning} />
+        <FolderItem active={activeFolder === '__uncat__'} onClick={() => setActiveFolder('__uncat__')} label="Uncategorized" count={uncatCount} icon="📄" />
+        <div style={{ height: 1, background: T.borderLight, margin: '8px 0' }} />
+        <div style={{ fontSize: 9, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '4px 8px' }}>Folders</div>
+        {folders.length === 0 && (
+          <div style={{ fontSize: 11, color: T.textMuted, fontStyle: 'italic', padding: '4px 8px' }}>No folders yet.</div>
+        )}
+        {folders.map(f => (
+          <FolderItem key={f}
+            active={activeFolder === f}
+            onClick={() => setActiveFolder(f)}
+            label={f}
+            count={reports.filter(r => r.folder === f).length}
+            icon="▸"
+            droppable
+            onDrop={e => {
+              e.preventDefault()
+              const id = e.dataTransfer.getData('text/plain')
+              const r = reports.find(x => x.id === id)
+              if (r) moveToFolder(r, f)
+              setDraggingId(null)
+            }} />
         ))}
-      </div>
-      {filtered.length === 0 ? (
-        <EmptyState icon="≡" title="No reports yet" message="Build your first report — slice and dice deals, conversations, tasks, contacts, anything. Combine filters with AND/OR, add calculated columns, cross-reference other reports."
-          action={<Button primary onClick={startNew}>+ Build Report</Button>} />
-      ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
-          {filtered.map(r => {
-            const cfg = r.query_config || {}
-            const filterCount = (cfg.filter_groups || []).reduce((s, g) => s + (g.conditions?.length || 0), 0) + (cfg.filters?.length || 0)
-            return (
-              <Card key={r.id}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6, gap: 8 }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: T.text, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</div>
-                  <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-                    {r.is_prebuilt && <Badge color={T.textMuted}>Prebuilt</Badge>}
-                    {r.category && <Badge color={CATEGORY_COLORS[r.category] || T.primary}>{r.category}</Badge>}
-                  </div>
-                </div>
-                {r.description && <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 8, lineHeight: 1.5 }}>{r.description}</div>}
-                <div style={{ fontSize: 10, color: T.textMuted, marginBottom: 8, fontFamily: T.mono }}>
-                  {r.base_entity || 'deals'}
-                  {cfg.fields?.length ? ` · ${cfg.fields.length} fields` : ''}
-                  {filterCount ? ` · ${filterCount} filters` : ''}
-                  {cfg.cross_filters?.length ? ` · ${cfg.cross_filters.length} x-refs` : ''}
-                </div>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <Button primary onClick={() => runReport(r)} style={{ padding: '4px 10px', fontSize: 11 }}>Run</Button>
-                  {!r.is_prebuilt && <Button onClick={() => startEdit(r)} style={{ padding: '4px 10px', fontSize: 11 }}>Edit</Button>}
-                  {!r.is_prebuilt && <Button onClick={() => deleteReport(r.id)} style={{ padding: '4px 10px', fontSize: 11, color: T.error }}>Delete</Button>}
-                </div>
-              </Card>
-            )
-          })}
+        <div style={{ height: 1, background: T.borderLight, margin: '8px 0' }} />
+        <div style={{ padding: '4px 8px' }}>
+          <input value={newFolder} onChange={e => setNewFolder(e.target.value)} placeholder="+ New folder"
+            onKeyDown={e => { if (e.key === 'Enter' && newFolder.trim()) { setActiveFolder(newFolder.trim()); setNewFolder('') } }}
+            style={{ ...inputStyle, padding: '4px 8px', fontSize: 11 }} />
+          <div style={{ fontSize: 10, color: T.textMuted, marginTop: 4 }}>Drag a report onto a folder to move it. Enter to create.</div>
         </div>
-      )}
-    </>
+      </div>
+
+      {/* MAIN */}
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 10 }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: T.text }}>
+            {activeFolder === '__all__' ? 'All reports' : activeFolder === '__fav__' ? 'Favorites' : activeFolder === '__uncat__' ? 'Uncategorized' : activeFolder}
+            <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 8 }}>({filtered.length})</span>
+          </div>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search reports..."
+            style={{ ...inputStyle, padding: '4px 10px', fontSize: 12, maxWidth: 240 }} />
+        </div>
+        {filtered.length === 0 ? (
+          <EmptyState icon="≡" title="No reports here"
+            message={activeFolder === '__all__' || activeFolder === '__uncat__'
+              ? "Build your first report — slice and dice deals, conversations, tasks, contacts, anything. Combine filters with AND/OR, add calculated columns, cross-reference other reports."
+              : activeFolder === '__fav__'
+                ? "No favorites yet. Hit the ★ on any report to pin it here."
+                : `"${activeFolder}" is empty. Drag reports onto it from the list.`}
+            action={<Button primary onClick={startNew}>+ Build Report</Button>} />
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 10 }}>
+            {filtered.map(r => {
+              const cfg = r.query_config || {}
+              const filterCount = (cfg.filter_groups || []).reduce((s, g) => s + (g.conditions?.length || 0), 0) + (cfg.filters?.length || 0)
+              return (
+                <Card key={r.id}
+                  style={{ opacity: draggingId === r.id ? 0.4 : 1, cursor: r.is_prebuilt ? 'default' : 'grab' }}
+                >
+                  <div draggable={!r.is_prebuilt}
+                    onDragStart={e => { e.dataTransfer.setData('text/plain', r.id); e.dataTransfer.effectAllowed = 'move'; setDraggingId(r.id) }}
+                    onDragEnd={() => setDraggingId(null)}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6, gap: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, flex: 1 }}>
+                        <button onClick={(e) => { e.stopPropagation(); toggleFavorite(r) }}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, padding: 0, color: r.is_favorite ? T.warning : T.borderLight, lineHeight: 1 }}
+                          title={r.is_favorite ? 'Unfavorite' : 'Favorite'}>★</button>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: T.text, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                        {r.is_prebuilt && <Badge color={T.textMuted}>Prebuilt</Badge>}
+                        {r.category && <Badge color={CATEGORY_COLORS[r.category] || T.primary}>{r.category}</Badge>}
+                      </div>
+                    </div>
+                    {r.description && <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 8, lineHeight: 1.5 }}>{r.description}</div>}
+                    <div style={{ fontSize: 10, color: T.textMuted, marginBottom: 8, fontFamily: T.mono }}>
+                      {r.base_entity || 'deals'}
+                      {cfg.fields?.length ? ` · ${cfg.fields.length} fields` : ''}
+                      {filterCount ? ` · ${filterCount} filters` : ''}
+                      {cfg.cross_filters?.length ? ` · ${cfg.cross_filters.length} x-refs` : ''}
+                      {r.folder ? ` · ${r.folder}` : ''}
+                    </div>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <Button primary onClick={() => runReport(r)} style={{ padding: '4px 10px', fontSize: 11 }}>Run</Button>
+                      {!r.is_prebuilt && <Button onClick={() => startEdit(r)} style={{ padding: '4px 10px', fontSize: 11 }}>Edit</Button>}
+                      {!r.is_prebuilt && <Button onClick={() => deleteReport(r.id)} style={{ padding: '4px 10px', fontSize: 11, color: T.error }}>Delete</Button>}
+                    </div>
+                  </div>
+                </Card>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function FolderItem({ active, onClick, label, count, icon, color, droppable, onDrop }) {
+  const [hovering, setHovering] = useState(false)
+  return (
+    <div
+      onClick={onClick}
+      onDragOver={droppable ? (e) => { e.preventDefault(); setHovering(true) } : undefined}
+      onDragLeave={droppable ? () => setHovering(false) : undefined}
+      onDrop={droppable ? (e) => { onDrop(e); setHovering(false) } : undefined}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
+        borderRadius: 5, cursor: 'pointer', marginBottom: 2, fontSize: 12,
+        background: hovering ? T.primaryLight : active ? T.primaryLight : 'transparent',
+        color: active ? T.primary : T.text,
+        fontWeight: active ? 700 : 500,
+        border: hovering ? `1px dashed ${T.primary}` : '1px solid transparent',
+      }}>
+      <span style={{ fontSize: 13, color: color || (active ? T.primary : T.textMuted), flexShrink: 0 }}>{icon}</span>
+      <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+      <span style={{ fontSize: 10, color: T.textMuted, fontWeight: 600 }}>{count}</span>
+    </div>
   )
 }
 
@@ -401,6 +525,7 @@ function ListView({ reports, filtered, categories, filter, setFilter, runReport,
 function BuildView({ form, setForm, editingId, baseFields, reports, saving, saveReport, cancel, previewReport }) {
   const cfg = form.config
   const setCfg = (patch) => setForm(p => ({ ...p, config: { ...p.config, ...patch } }))
+  const [fieldSearch, setFieldSearch] = useState('')
 
   // Live preview — debounced re-run whenever the config changes.
   const [livePreview, setLivePreview] = useState(null)
@@ -497,35 +622,128 @@ function BuildView({ form, setForm, editingId, baseFields, reports, saving, save
         </div>
       </Card>
 
-      <Card title="Fields" action={<Button onClick={addFormulaField} style={{ padding: '3px 10px', fontSize: 11 }}>+ Calculated column</Button>}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 6, marginBottom: formulaFields.length > 0 ? 10 : 0 }}>
-          {Object.entries(baseFields).map(([key, meta]) => {
-            const checked = rawSelected.includes(key)
-            return (
-              <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: T.text, cursor: 'pointer', padding: '4px 8px', background: checked ? T.primaryLight : T.surfaceAlt, borderRadius: 4, border: `1px solid ${checked ? T.primary + '55' : T.borderLight}` }}>
-                <input type="checkbox" checked={checked} onChange={() => {
-                  const next = checked ? cfg.fields.filter(f => f !== key) : [...cfg.fields, key]
-                  setCfg({ fields: next })
-                }} />
-                <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meta.label || key}</span>
-                <span style={{ fontSize: 9, color: T.textMuted, fontFamily: T.mono }}>{meta.type}</span>
-              </label>
-            )
-          })}
+      <Card title="Fields" action={
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <input value={fieldSearch} onChange={e => setFieldSearch(e.target.value)} placeholder="Search fields..." style={{ ...inputStyle, padding: '3px 8px', fontSize: 11, width: 160 }} />
+          <Button onClick={addFormulaField} style={{ padding: '3px 10px', fontSize: 11 }}>+ Calculated column</Button>
+        </div>
+      }>
+        <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 8 }}>
+          Drag fields from the left into the right panel, or click a chip to toggle. Drag selected fields to reorder.
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, minHeight: 200 }}>
+          {/* LEFT: available fields */}
+          <div style={{ border: `1px solid ${T.borderLight}`, borderRadius: 6, background: T.surfaceAlt, padding: 10, overflow: 'auto', maxHeight: 320 }}>
+            <div style={{ fontSize: 9, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Available fields in {TABLES[cfg.base_entity]?.label || cfg.base_entity}</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+              {Object.entries(baseFields)
+                .filter(([k, m]) => !fieldSearch || (m.label || '').toLowerCase().includes(fieldSearch.toLowerCase()) || k.includes(fieldSearch.toLowerCase()))
+                .map(([key, meta]) => {
+                const selected = rawSelected.includes(key)
+                return (
+                  <div key={key}
+                    draggable
+                    onDragStart={e => {
+                      e.dataTransfer.setData('text/plain', JSON.stringify({ kind: 'db-field', field: key, label: meta.label, type: meta.type }))
+                      e.dataTransfer.effectAllowed = 'copy'
+                    }}
+                    onClick={() => {
+                      const next = selected ? cfg.fields.filter(f => f !== key) : [...cfg.fields, key]
+                      setCfg({ fields: next })
+                    }}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 5,
+                      padding: '3px 8px', fontSize: 11, borderRadius: 16,
+                      border: `1px solid ${selected ? T.primary : T.border}`,
+                      background: selected ? T.primaryLight : T.surface,
+                      cursor: 'grab', userSelect: 'none', fontFamily: T.font, color: T.text,
+                    }}>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: TYPE_COLORS[meta.type] || T.textMuted, flexShrink: 0 }} />
+                    <span style={{ fontWeight: 500 }}>{meta.label || key}</span>
+                    <span style={{ fontSize: 9, color: T.textMuted, fontFamily: T.mono }}>{meta.type}</span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* RIGHT: selected fields (drop target) */}
+          <div
+            onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' }}
+            onDrop={e => {
+              e.preventDefault()
+              try {
+                const d = JSON.parse(e.dataTransfer.getData('text/plain'))
+                if (d?.kind === 'db-field' && !rawSelected.includes(d.field)) setCfg({ fields: [...cfg.fields, d.field] })
+              } catch { /* noop */ }
+            }}
+            style={{ border: `2px dashed ${T.primary}40`, borderRadius: 6, padding: 10, background: T.surface, minHeight: 200, maxHeight: 320, overflow: 'auto' }}>
+            <div style={{ fontSize: 9, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Report columns ({cfg.fields.length})</div>
+            {cfg.fields.length === 0 ? (
+              <div style={{ fontSize: 12, color: T.textMuted, fontStyle: 'italic', textAlign: 'center', padding: 30 }}>
+                Drop fields here or click chips on the left.<br /><span style={{ fontSize: 10 }}>Leave empty to show first 8 columns.</span>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {cfg.fields.map((f, i) => {
+                  const isFormula = typeof f === 'object'
+                  const label = isFormula ? (f.label || 'Calculated') : (baseFields[f]?.label || f)
+                  const type = isFormula ? 'formula' : (baseFields[f]?.type || 'text')
+                  return (
+                    <div key={i}
+                      draggable={!isFormula}
+                      onDragStart={e => {
+                        e.dataTransfer.setData('text/plain', JSON.stringify({ kind: 'reorder', fromIdx: i }))
+                        e.dataTransfer.effectAllowed = 'move'
+                      }}
+                      onDragOver={e => { if (!isFormula) e.preventDefault() }}
+                      onDrop={e => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        try {
+                          const d = JSON.parse(e.dataTransfer.getData('text/plain'))
+                          if (d?.kind === 'reorder' && d.fromIdx !== i) {
+                            const arr = [...cfg.fields]
+                            const [moved] = arr.splice(d.fromIdx, 1)
+                            arr.splice(i, 0, moved)
+                            setCfg({ fields: arr })
+                          } else if (d?.kind === 'db-field' && !rawSelected.includes(d.field)) {
+                            const arr = [...cfg.fields]
+                            arr.splice(i, 0, d.field)
+                            setCfg({ fields: arr })
+                          }
+                        } catch { /* noop */ }
+                      }}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
+                        background: isFormula ? T.primaryLight : T.surfaceAlt,
+                        border: `1px solid ${isFormula ? T.primary + '55' : T.borderLight}`,
+                        borderRadius: 6, fontSize: 12, cursor: isFormula ? 'default' : 'grab',
+                      }}>
+                      <span style={{ fontSize: 10, color: T.textMuted }}>⋮⋮</span>
+                      <span style={{ width: 6, height: 6, borderRadius: '50%', background: TYPE_COLORS[type] || T.textMuted, flexShrink: 0 }} />
+                      {isFormula ? (
+                        <>
+                          <input style={{ ...inputStyle, padding: '2px 6px', fontSize: 11, width: 120 }} value={f.label} onChange={e => updateField(i, { label: e.target.value })} placeholder="Label" />
+                          <input style={{ ...inputStyle, padding: '2px 6px', fontSize: 11, flex: 1, fontFamily: 'ui-monospace, monospace' }} value={f.formula} onChange={e => updateField(i, { formula: e.target.value })} placeholder="e.g. (fit_score + deal_health_score) / 2" />
+                        </>
+                      ) : (
+                        <>
+                          <span style={{ flex: 1, fontWeight: 600, color: T.text }}>{label}</span>
+                          <span style={{ fontSize: 9, color: T.textMuted, fontFamily: T.mono }}>{type}</span>
+                        </>
+                      )}
+                      <button onClick={() => removeField(i)} style={{ background: 'none', border: 'none', color: T.textMuted, fontSize: 14, cursor: 'pointer', padding: 0 }}>×</button>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
         </div>
         {formulaFields.length > 0 && (
-          <div style={{ paddingTop: 10, borderTop: `1px solid ${T.borderLight}` }}>
-            <div style={{ fontSize: 10, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', marginBottom: 6 }}>Calculated columns</div>
-            {cfg.fields.map((f, i) => typeof f === 'object' ? (
-              <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 3fr auto', gap: 6, marginBottom: 6, alignItems: 'center' }}>
-                <input style={{ ...inputStyle, padding: '4px 8px', fontSize: 12 }} value={f.label} onChange={e => updateField(i, { label: e.target.value })} placeholder="Label" />
-                <input style={{ ...inputStyle, padding: '4px 8px', fontSize: 12, fontFamily: 'ui-monospace, monospace' }} value={f.formula} onChange={e => updateField(i, { formula: e.target.value })} placeholder="e.g. (fit_score + deal_health_score) / 2" />
-                <button onClick={() => removeField(i)} style={{ background: 'none', border: 'none', color: T.textMuted, fontSize: 14, cursor: 'pointer' }}>×</button>
-              </div>
-            ) : null)}
-            <div style={{ fontSize: 10, color: T.textMuted }}>
-              Use field names + arithmetic: <code>+ − × ÷ ( )</code>. Safe numeric-only eval.
-            </div>
+          <div style={{ fontSize: 10, color: T.textMuted, marginTop: 8 }}>
+            Formula columns evaluate client-side per row. Use field names + arithmetic: <code>+ − × ÷ ( )</code>. Safe numeric-only eval.
           </div>
         )}
       </Card>

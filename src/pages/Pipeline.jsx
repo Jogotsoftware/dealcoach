@@ -92,6 +92,18 @@ export default function Pipeline() {
   const [pWidgets, setPWidgets] = useState(PIPELINE_WIDGETS)
   const [pOrgLayoutId, setPOrgLayoutId] = useState(null)
   const [editMode, setEditMode] = useState(false)
+
+  // Dashboard tabs — user-built dashboards from org_widget_layouts (non-deal scopes)
+  const [dashboards, setDashboards] = useState([])
+  const [dashboardTab, setDashboardTab] = useState(() => {
+    try { return localStorage.getItem('ri_home_tab') || '__pipeline__' } catch { return '__pipeline__' }
+  })
+  useEffect(() => { try { localStorage.setItem('ri_home_tab', dashboardTab) } catch {} }, [dashboardTab])
+  useEffect(() => {
+    if (!profile?.org_id) return
+    supabase.from('org_widget_layouts').select('id, name, dashboard_title, scope, scope_value, widgets, layout').eq('org_id', profile.org_id).neq('scope', 'deal').order('created_at', { ascending: false })
+      .then(({ data }) => setDashboards(data || []))
+  }, [profile?.org_id])
   const [showMoreMenu, setShowMoreMenu] = useState(false)
   const [customWidgetDefs, setCustomWidgetDefs] = useState([])
 
@@ -537,9 +549,26 @@ export default function Pipeline() {
     const [showAddTask, setShowAddTask] = useState(false)
     const [newTask, setNewTask] = useState({ title: '', deal_id: '', priority: 'medium', due_date: '' })
     const [selected, setSelected] = useState(new Set())
-    const filtered = taskFilter === 'high' ? tasks.filter(t => !t.completed && t.priority === 'high')
-      : taskFilter === 'overdue' ? tasks.filter(t => !t.completed && t.due_date && new Date(t.due_date) < new Date())
-      : tasks.filter(t => !t.completed)
+    const [ownerSide, setOwnerSide] = useState('rep') // 'rep' | 'prospect' | 'all'
+    // A task counts as a concrete ACTION item (not a deal strategy note) only if it implies
+    // a verb a rep/prospect actually DOES. Strip out coaching prompts like
+    // "validate compelling event" / "quantify pain" / "confirm budget" — those are deal
+    // gaps, not to-dos.
+    const DEAL_STRATEGY_PATTERNS = /^(validate|quantify|confirm|verify|identify|determine|assess|ensure|understand|clarify|align|explore|develop|gather|research)\s+(the\s+)?(compelling|pain|budget|champion|economic|decision|authority|timeline|criteria|process|fit|need|case|value|strategy|plan|risk|stakeholder)/i
+    const isActionItem = (t) => {
+      const title = (t.title || '').trim()
+      if (!title) return false
+      if (DEAL_STRATEGY_PATTERNS.test(title)) return false
+      return true
+    }
+    const matchesOwner = (t) => {
+      if (ownerSide === 'all') return true
+      if (ownerSide === 'prospect') return t.committed_by === 'prospect'
+      return t.committed_by !== 'prospect' // 'rep' or null/default → rep side
+    }
+    let filtered = tasks.filter(t => !t.completed && matchesOwner(t) && isActionItem(t))
+    if (taskFilter === 'high') filtered = filtered.filter(t => t.priority === 'high')
+    else if (taskFilter === 'overdue') filtered = filtered.filter(t => t.due_date && new Date(t.due_date) < new Date())
     async function addTask() {
       if (!newTask.title.trim()) return
       const { data, error } = await supabase.from('tasks').insert({ title: newTask.title, deal_id: newTask.deal_id || null, priority: newTask.priority, due_date: newTask.due_date || null, auto_generated: false, completed: false }).select('*, deals(company_name)').single()
@@ -568,12 +597,21 @@ export default function Pipeline() {
     }
     return (
       <div>
-        <div style={{ display: 'flex', gap: 4, marginBottom: 8, justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', border: `1px solid ${T.border}`, borderRadius: 4, overflow: 'hidden' }}>
+            {[['rep', 'My tasks'], ['prospect', 'Prospect tasks'], ['all', 'All']].map(([k, label]) => (
+              <button key={k} onClick={() => setOwnerSide(k)}
+                style={{ padding: '3px 10px', fontSize: 10, fontWeight: 700, border: 'none', cursor: 'pointer', background: ownerSide === k ? T.primary : T.surface, color: ownerSide === k ? '#fff' : T.textMuted }}>
+                {label}
+              </button>
+            ))}
+          </div>
           <div style={{ display: 'flex', gap: 4 }}>
             {['all', 'high', 'overdue'].map(f => (
               <button key={f} onClick={() => setTaskFilter(f)} style={{ padding: '3px 10px', borderRadius: 4, fontSize: 10, fontWeight: 600, border: 'none', cursor: 'pointer', background: taskFilter === f ? T.primary : T.surfaceAlt, color: taskFilter === f ? '#fff' : T.textMuted }}>{f === 'all' ? 'All' : f === 'high' ? 'High Priority' : 'Overdue'}</button>
             ))}
           </div>
+          <span style={{ flex: 1 }} />
           <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
             {selected.size > 0 && (
               <>
@@ -755,20 +793,21 @@ export default function Pipeline() {
       `}</style>
 
       {/* Header */}
-      <div style={{ padding: '16px 24px', borderBottom: '1px solid ' + T.border, display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: T.surface }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <h1 style={{ fontSize: 18, fontWeight: 800, margin: 0, color: T.text }}>Pipeline</h1>
-          {profile?.org_id && (
-            <div style={{ display: 'flex', gap: 4 }}>
-              {['my', 'all'].map(f => (
-                <button key={f} onClick={() => setDealFilter(f)} style={{
-                  padding: '4px 12px', borderRadius: 4, fontSize: 11, fontWeight: 600, border: 'none', cursor: 'pointer',
-                  background: dealFilter === f ? T.primary : T.surfaceAlt, color: dealFilter === f ? '#fff' : T.textMuted,
-                }}>{f === 'my' ? 'My Deals' : 'All Deals'}</button>
-              ))}
-            </div>
-          )}
-        </div>
+      <div style={{ padding: '12px 24px 0', borderBottom: '1px solid ' + T.border, background: T.surface }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <h1 style={{ fontSize: 18, fontWeight: 800, margin: 0, color: T.text }}>Home</h1>
+            {profile?.org_id && dashboardTab === '__pipeline__' && (
+              <div style={{ display: 'flex', gap: 4 }}>
+                {['my', 'all'].map(f => (
+                  <button key={f} onClick={() => setDealFilter(f)} style={{
+                    padding: '4px 12px', borderRadius: 4, fontSize: 11, fontWeight: 600, border: 'none', cursor: 'pointer',
+                    background: dealFilter === f ? T.primary : T.surfaceAlt, color: dealFilter === f ? '#fff' : T.textMuted,
+                  }}>{f === 'my' ? 'My Deals' : 'All Deals'}</button>
+                ))}
+              </div>
+            )}
+          </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <Button onClick={() => setShowTranscript(true)}>Transcript</Button>
           <Button primary onClick={() => navigate('/deal/new')}>+ New Deal</Button>
@@ -784,9 +823,36 @@ export default function Pipeline() {
             )}
           </div>
         </div>
+        </div>
+        {/* Dashboard tabs */}
+        <div style={{ display: 'flex', gap: 0, marginTop: 12, alignItems: 'flex-end', overflow: 'auto' }}>
+          <DashboardTab label="Pipeline" active={dashboardTab === '__pipeline__'} onClick={() => setDashboardTab('__pipeline__')} />
+          {dashboards.map(d => (
+            <DashboardTab key={d.id}
+              label={d.dashboard_title || d.name}
+              scope={d.scope}
+              active={dashboardTab === d.id}
+              onClick={() => setDashboardTab(d.id)} />
+          ))}
+          <button onClick={() => navigate('/dashboards')}
+            style={{ background: 'none', border: 'none', color: T.textMuted, fontSize: 11, padding: '8px 14px', cursor: 'pointer', fontFamily: T.font, fontWeight: 600 }}
+            title="Create or manage dashboards">+ Dashboard</button>
+        </div>
       </div>
 
       {showTranscript && <TranscriptUpload deals={deals} onClose={() => setShowTranscript(false)} onUploaded={() => loadData()} />}
+
+      {/* Non-pipeline dashboard tab — render the selected dashboard's widgets */}
+      {dashboardTab !== '__pipeline__' && (() => {
+        const dash = dashboards.find(d => d.id === dashboardTab)
+        if (!dash) return <div style={{ padding: 24, color: T.textMuted, fontSize: 12 }}>Dashboard not found.</div>
+        return <DashboardTabView dashboard={dash} customWidgetDefs={customWidgetDefs} profile={profile} onManage={() => navigate(`/dashboards`)} />
+      })()}
+
+      {/* Keep the pipeline grid mounted only on the Pipeline tab */}
+      {dashboardTab === '__pipeline__' && (
+        <div>
+
 
       {/* Edit bar */}
       {editMode && (
@@ -860,6 +926,59 @@ export default function Pipeline() {
           </ResponsiveGridLayout>
         </div>
       </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function DashboardTab({ label, scope, active, onClick }) {
+  return (
+    <button onClick={onClick}
+      style={{
+        padding: '8px 16px', fontSize: 13, fontWeight: active ? 700 : 500,
+        border: 'none', cursor: 'pointer', fontFamily: T.font,
+        background: 'transparent',
+        color: active ? T.primary : T.textMuted,
+        borderBottom: active ? `2px solid ${T.primary}` : '2px solid transparent',
+        marginBottom: -1,
+        display: 'inline-flex', alignItems: 'center', gap: 6,
+      }}>
+      {label}
+      {scope && <span style={{ fontSize: 9, padding: '1px 6px', borderRadius: 3, background: T.surfaceAlt, color: T.textMuted, fontWeight: 700, textTransform: 'uppercase' }}>{scope}</span>}
+    </button>
+  )
+}
+
+function DashboardTabView({ dashboard, customWidgetDefs, profile, onManage }) {
+  const widgets = Array.isArray(dashboard.widgets) ? dashboard.widgets : []
+  const layout = Array.isArray(dashboard.layout) ? dashboard.layout : []
+  return (
+    <div style={{ padding: '16px 24px' }}>
+      {widgets.length === 0 ? (
+        <div style={{ padding: 40, textAlign: 'center', color: T.textMuted, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>This dashboard is empty</div>
+          <div style={{ fontSize: 12, marginBottom: 14 }}>Add widgets from the library to populate it.</div>
+          <Button primary onClick={onManage}>Open dashboard editor</Button>
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 10 }}>
+          {widgets.map(w => {
+            const def = customWidgetDefs.find(d => d.id === w.widget_definition_id)
+            const l = layout.find(x => x.i === w.id) || { w: 6, h: 4 }
+            return (
+              <div key={w.id} style={{ gridColumn: `span ${Math.min(Math.max(l.w || 6, 3), 12)}`, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 180 }}>
+                <div style={{ padding: '6px 10px', background: def?.config?.header_color || T.surfaceAlt, color: def?.config?.header_color ? '#fff' : T.text, borderBottom: '1px solid ' + T.border, fontSize: 12, fontWeight: 700 }}>
+                  {w.title || def?.name || 'Widget'}
+                </div>
+                <div style={{ flex: 1, padding: 10, overflow: 'auto' }}>
+                  {def ? <WidgetRenderer config={def.config} context={{ user_id: profile.id }} /> : <div style={{ color: T.textMuted, fontSize: 11, fontStyle: 'italic' }}>Widget definition not found</div>}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
