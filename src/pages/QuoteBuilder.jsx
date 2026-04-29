@@ -1627,6 +1627,7 @@ function ResourcesTab({ deal, onDealUpdated }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [editing, setEditing] = useState(null)  // null | { ...resource } (for add/edit modal)
+  const [showLibrary, setShowLibrary] = useState(false)
 
   useEffect(() => { if (deal?.id) load() }, [deal?.id])
 
@@ -1646,8 +1647,60 @@ function ResourcesTab({ deal, onDealUpdated }) {
   function newResource() {
     setEditing({
       org_id: org?.id, deal_id: deal.id, created_by: profile?.id,
-      resource_type: 'document', title: '', url: '', storage_path: '', mime_type: '', file_size: null, _file: null,
+      resource_type: 'document', title: '', notes: '', url: '', storage_path: '', mime_type: '', file_size: null, _file: null,
     })
+  }
+
+  // Save an existing per-deal resource into the org's reusable library so
+  // any teammate can pull it into a future deal.
+  async function saveToLibrary(r) {
+    setError('')
+    try {
+      const { data: existing } = await supabase.from('org_resource_library').select('id').eq('org_id', org.id).eq('title', r.title).maybeSingle()
+      if (existing) {
+        if (!confirm(`A library resource named "${r.title}" already exists. Replace it?`)) return
+        const { error: upErr } = await supabase.from('org_resource_library').update({
+          resource_type: r.resource_type, notes: r.notes || null,
+          url: r.url || null, storage_path: r.storage_path || null,
+          mime_type: r.mime_type || null, file_size: r.file_size || null,
+        }).eq('id', existing.id)
+        if (upErr) throw upErr
+      } else {
+        const { error: insErr } = await supabase.from('org_resource_library').insert({
+          org_id: org.id, created_by: profile?.id,
+          resource_type: r.resource_type, title: r.title, notes: r.notes || null,
+          url: r.url || null, storage_path: r.storage_path || null,
+          mime_type: r.mime_type || null, file_size: r.file_size || null,
+        })
+        if (insErr) throw insErr
+      }
+      alert(`"${r.title}" saved to your team library.`)
+    } catch (e) {
+      console.error('[ResourcesTab] saveToLibrary failed:', e)
+      setError(e?.message || 'Save to library failed')
+    }
+  }
+
+  // Add a library entry to this deal as a deal_resources row. Storage paths
+  // are shared (same bucket) so we just copy references — no re-upload.
+  async function addFromLibrary(libItem) {
+    setError('')
+    try {
+      const { error: insErr } = await supabase.from('deal_resources').insert({
+        org_id: org.id, deal_id: deal.id, created_by: profile?.id,
+        resource_type: libItem.resource_type, title: libItem.title, notes: libItem.notes || null,
+        url: libItem.url || null, storage_path: libItem.storage_path || null,
+        mime_type: libItem.mime_type || null, file_size: libItem.file_size || null,
+        sort_order: resources.length,
+      })
+      if (insErr) throw insErr
+      try { await supabase.from('org_resource_library').update({ usage_count: (libItem.usage_count || 0) + 1 }).eq('id', libItem.id) } catch { /* non-fatal */ }
+      setShowLibrary(false)
+      await load()
+    } catch (e) {
+      console.error('[ResourcesTab] addFromLibrary failed:', e)
+      setError(e?.message || 'Add from library failed')
+    }
   }
 
   async function save(draft) {
@@ -1662,6 +1715,7 @@ function ResourcesTab({ deal, onDealUpdated }) {
         org_id: org.id, deal_id: deal.id,
         resource_type: draft.resource_type,
         title: draft.title.trim(),
+        notes: draft.notes?.trim() ? draft.notes.trim() : null,
         url: draft.url || null,
         storage_path: draft.storage_path || null,
         mime_type: draft.mime_type || null,
@@ -1717,7 +1771,15 @@ function ResourcesTab({ deal, onDealUpdated }) {
 
   return (
     <div>
-      <Card title="Files & Links" action={<Button primary onClick={newResource} style={{ padding: '4px 10px', fontSize: 11 }}>+ Add Resource</Button>}>
+      <Card title="Files & Links" action={
+        <div style={{ display: 'flex', gap: 6 }}>
+          <Button onClick={() => setShowLibrary(true)} style={{ padding: '4px 10px', fontSize: 11 }}>From library</Button>
+          <Button primary onClick={newResource} style={{ padding: '4px 10px', fontSize: 11 }}>+ Add Resource</Button>
+        </div>
+      }>
+        <div style={{ fontSize: 11, color: T.textSecondary, marginBottom: 10 }}>
+          Description text on each resource shows to the customer in the Evaluation Room Library tab. Use it to explain what the file is and why it matters.
+        </div>
         {error && (
           <div style={{ padding: '8px 10px', background: T.errorLight, color: T.error, fontSize: 12, borderRadius: 4, marginBottom: 10, border: `1px solid ${T.error}30` }}>{error}</div>
         )}
@@ -1730,18 +1792,23 @@ function ResourcesTab({ deal, onDealUpdated }) {
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
             {resources.map(r => (
-              <ResourceCard key={r.id} resource={r} onEdit={() => setEditing({ ...r, _file: null })} onDelete={() => del(r)} />
+              <ResourceCard key={r.id} resource={r}
+                onEdit={() => setEditing({ ...r, _file: null })}
+                onDelete={() => del(r)}
+                onSaveToLibrary={() => saveToLibrary(r)}
+              />
             ))}
           </div>
         )}
       </Card>
 
       {editing && <ResourceEditor initial={editing} onClose={() => setEditing(null)} onSave={save} />}
+      {showLibrary && <LibraryPicker orgId={org?.id} onClose={() => setShowLibrary(false)} onPick={addFromLibrary} />}
     </div>
   )
 }
 
-function ResourceCard({ resource, onEdit, onDelete }) {
+function ResourceCard({ resource, onEdit, onDelete, onSaveToLibrary }) {
   const meta = RESOURCE_TYPE_META[resource.resource_type] || RESOURCE_TYPE_META.misc
   return (
     <div style={{ padding: 12, border: `1px solid ${T.border}`, borderLeft: `4px solid ${meta.color}`, borderRadius: 6, background: T.surface, display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -1749,6 +1816,9 @@ function ResourceCard({ resource, onEdit, onDelete }) {
         <Badge color={meta.color}>{meta.label}</Badge>
         <div style={{ fontSize: 13, fontWeight: 700, color: T.text, flex: 1, lineHeight: 1.3 }}>{resource.title}</div>
       </div>
+      {resource.notes && (
+        <div style={{ fontSize: 11, color: T.textSecondary, lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>{resource.notes}</div>
+      )}
       {resource.storage_path && resource.file_size != null && (
         <div style={{ fontSize: 10, color: T.textMuted }}>
           {Math.round(resource.file_size / 1024)} KB · {resource.mime_type || 'file'}
@@ -1757,7 +1827,7 @@ function ResourceCard({ resource, onEdit, onDelete }) {
       {!resource.storage_path && resource.url && (
         <div style={{ fontSize: 10, color: T.textMuted, wordBreak: 'break-all', fontFamily: T.mono }}>{resource.url}</div>
       )}
-      <div style={{ display: 'flex', gap: 6, marginTop: 'auto' }}>
+      <div style={{ display: 'flex', gap: 6, marginTop: 'auto', flexWrap: 'wrap' }}>
         {resource.url && (
           <a href={resource.url} target="_blank" rel="noopener noreferrer"
             style={{ fontSize: 11, fontWeight: 600, color: T.primary, padding: '4px 10px', border: `1px solid ${T.border}`, borderRadius: 4, textDecoration: 'none', cursor: 'pointer', flex: 1, textAlign: 'center', background: T.surface }}>
@@ -1765,6 +1835,9 @@ function ResourceCard({ resource, onEdit, onDelete }) {
           </a>
         )}
         <Button onClick={onEdit} style={{ padding: '4px 10px', fontSize: 11 }}>Edit</Button>
+        {onSaveToLibrary && (
+          <Button onClick={onSaveToLibrary} style={{ padding: '4px 10px', fontSize: 11 }} title="Save to your team library so anyone can re-use it on another deal">★ Library</Button>
+        )}
         <Button danger onClick={onDelete} style={{ padding: '4px 10px', fontSize: 11 }}>Delete</Button>
       </div>
     </div>
@@ -1824,6 +1897,16 @@ function ResourceEditor({ initial, onClose, onSave }) {
             <input style={inputStyle} value={draft.title} onChange={e => setF('title', e.target.value)} placeholder="What is this resource?" />
           </div>
 
+          <div style={{ marginBottom: 12 }}>
+            <label style={labelStyle}>Description (shown to the customer in the Evaluation Room)</label>
+            <textarea
+              style={{ ...inputStyle, minHeight: 70, resize: 'vertical', fontFamily: T.font, fontSize: 13, lineHeight: 1.5 }}
+              value={draft.notes || ''}
+              onChange={e => setF('notes', e.target.value)}
+              placeholder="e.g. 30-minute walkthrough of the AP automation flow — start with this if you've never seen Sage Intacct."
+            />
+          </div>
+
           {meta.allowUrl && (
             <div style={{ marginBottom: 12 }}>
               <label style={labelStyle}>{draft.resource_type === 'link' ? 'URL *' : 'External URL (optional — or upload a file below)'}</label>
@@ -1863,6 +1946,110 @@ function ResourceEditor({ initial, onClose, onSave }) {
             <Button onClick={onClose}>Cancel</Button>
             <Button primary disabled={busy || !draft.title || (!draft._file && !draft.url && !draft.storage_path)} onClick={handleSave}>{busy ? 'Saving…' : 'Save'}</Button>
           </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function LibraryPicker({ orgId, onClose, onPick }) {
+  const [items, setItems] = useState(null)
+  const [filter, setFilter] = useState('')
+  const [type, setType] = useState('all')
+
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      const { data, error } = await supabase
+        .from('org_resource_library')
+        .select('*')
+        .eq('org_id', orgId)
+        .order('usage_count', { ascending: false })
+        .order('updated_at', { ascending: false })
+      if (cancelled) return
+      if (error) { console.error('[LibraryPicker] load failed:', error); setItems([]); return }
+      setItems(data || [])
+    }
+    if (orgId) load()
+    return () => { cancelled = true }
+  }, [orgId])
+
+  async function deleteFromLibrary(item) {
+    if (!confirm(`Remove "${item.title}" from your team library? This won't affect deals already using it.`)) return
+    try {
+      await supabase.from('org_resource_library').delete().eq('id', item.id)
+      setItems(prev => prev.filter(x => x.id !== item.id))
+    } catch (e) { console.error('[LibraryPicker] delete failed:', e); alert(e?.message || 'Delete failed') }
+  }
+
+  const visible = (items || []).filter(it => {
+    if (type !== 'all' && it.resource_type !== type) return false
+    if (filter.trim() && !`${it.title} ${it.notes || ''}`.toLowerCase().includes(filter.trim().toLowerCase())) return false
+    return true
+  })
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ background: T.surface, borderRadius: 8, width: '100%', maxWidth: 720, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: T.shadowMd }}>
+        <div style={{ padding: '14px 18px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center' }}>
+          <div style={{ flex: 1 }}>
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: T.text }}>Add from team library</h3>
+            <div style={{ fontSize: 11, color: T.textSecondary, marginTop: 2 }}>Reusable resources saved across all deals in your org. Picking copies the resource into this deal — edits later are deal-specific.</div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 22, color: T.textMuted, lineHeight: 1, padding: 0 }}>×</button>
+        </div>
+
+        <div style={{ padding: '12px 18px', borderBottom: `1px solid ${T.borderLight}`, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <input value={filter} onChange={e => setFilter(e.target.value)} placeholder="Search title or description…"
+            style={{ ...inputStyle, padding: '6px 10px', fontSize: 12, flex: 1, minWidth: 200 }} />
+          <select value={type} onChange={e => setType(e.target.value)} style={{ ...inputStyle, padding: '6px 10px', fontSize: 12, width: 'auto', cursor: 'pointer' }}>
+            <option value="all">All types</option>
+            {Object.entries(RESOURCE_TYPE_META).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}
+          </select>
+        </div>
+
+        <div style={{ padding: 12, overflowY: 'auto', flex: 1 }}>
+          {items === null ? (
+            <div style={{ padding: 20, textAlign: 'center', color: T.textMuted, fontSize: 12 }}>Loading library…</div>
+          ) : items.length === 0 ? (
+            <div style={{ padding: 32, textAlign: 'center', color: T.textMuted, fontSize: 13 }}>
+              Your team library is empty. Save resources to it from the Files & Links cards using the <strong>★ Library</strong> button.
+            </div>
+          ) : visible.length === 0 ? (
+            <div style={{ padding: 24, textAlign: 'center', color: T.textMuted, fontSize: 12 }}>No matches.</div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
+              {visible.map(it => {
+                const meta = RESOURCE_TYPE_META[it.resource_type] || RESOURCE_TYPE_META.misc
+                return (
+                  <div key={it.id} style={{ padding: 12, border: `1px solid ${T.border}`, borderLeft: `4px solid ${meta.color}`, borderRadius: 6, background: T.surface, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                      <Badge color={meta.color}>{meta.label}</Badge>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: T.text, flex: 1, lineHeight: 1.3 }}>{it.title}</div>
+                    </div>
+                    {it.notes && <div style={{ fontSize: 11, color: T.textSecondary, lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>{it.notes}</div>}
+                    {it.storage_path && it.file_size != null && (
+                      <div style={{ fontSize: 10, color: T.textMuted }}>{Math.round(it.file_size / 1024)} KB · {it.mime_type || 'file'}</div>
+                    )}
+                    {!it.storage_path && it.url && (
+                      <div style={{ fontSize: 10, color: T.textMuted, wordBreak: 'break-all', fontFamily: T.mono }}>{it.url}</div>
+                    )}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto', gap: 6 }}>
+                      <span style={{ fontSize: 10, color: T.textMuted }}>Used {it.usage_count || 0}×</span>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <Button danger onClick={() => deleteFromLibrary(it)} style={{ padding: '3px 8px', fontSize: 10 }}>Remove</Button>
+                        <Button primary onClick={() => onPick(it)} style={{ padding: '3px 10px', fontSize: 11 }}>Add to deal</Button>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
+        <div style={{ padding: '10px 18px', borderTop: `1px solid ${T.border}`, display: 'flex', justifyContent: 'flex-end' }}>
+          <Button onClick={onClose}>Close</Button>
         </div>
       </div>
     </div>
