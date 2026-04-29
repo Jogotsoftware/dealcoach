@@ -1824,6 +1824,9 @@ export default function DealDetail() {
               onAddTask={() => setShowAddTask(true)}
               editMode={editMode}
               onExitEdit={() => setEditMode(false)}
+              renderWidget={renderWidget}
+              registeredWidgets={registeredWidgets}
+              customWidgetDefs={customWidgetDefs}
             />
           </div>
         )}
@@ -2572,8 +2575,21 @@ const HOME_DEFAULT_LAYOUT = [
   { i: 'deal_age', x: 8, y: 0, w: 4, h: 3, minW: 2, minH: 2 },
 ]
 
-function HomeDashboard({ dealId, deal, tasks, setTasks, userId, onAddTask, editMode, onExitEdit }) {
+function HomeDashboard({ dealId, deal, tasks, setTasks, userId, onAddTask, editMode, onExitEdit, renderWidget, registeredWidgets = [], customWidgetDefs = [] }) {
   const [showAddWidgetMenu, setShowAddWidgetMenu] = useState(false)
+
+  // Built-in Home widgets handled inline by HomeDashboard.
+  const BUILT_IN_IDS = new Set(['tasks', 'deal_age', 'retrospective'])
+  // Build a merged catalog: built-ins + registered widgets (widget_registry,
+  // any widget_type) + the org's custom widget definitions (deal-scoped).
+  // We expose them all in the "+ Add widget" picker so anything the rep has
+  // built or installed shows up here without code changes.
+  const externalWidgets = [
+    ...(registeredWidgets || []).filter(w => !BUILT_IN_IDS.has(w.id)).map(w => ({ id: w.id, title: w.title || w.name || w.id, w: 6, h: 4, minW: 3, minH: 2 })),
+    ...(customWidgetDefs  || []).filter(w => w.widget_type === 'deal').map(w => ({ id: w.id, title: w.name || w.id, w: 6, h: 4, minW: 3, minH: 2 })),
+  ]
+  const widgetCatalog = [...HOME_WIDGET_REGISTRY, ...externalWidgets]
+  const findDef = (id) => widgetCatalog.find(w => w.id === id)
   const isClosed = ['closed_won', 'closed_lost', 'disqualified'].includes(deal.stage)
   // One layout per user across every deal — the rep's chosen arrangement
   // travels with them. Drop the per-deal key.
@@ -2629,7 +2645,7 @@ function HomeDashboard({ dealId, deal, tasks, setTasks, userId, onAddTask, editM
   }
 
   function addWidget(id) {
-    const def = HOME_WIDGET_REGISTRY.find(w => w.id === id)
+    const def = findDef(id)
     if (!def) return
     setState(prev => {
       if (prev.widgets.includes(id)) return prev
@@ -2655,7 +2671,7 @@ function HomeDashboard({ dealId, deal, tasks, setTasks, userId, onAddTask, editM
     setState(next)
   }
 
-  const availableToAdd = HOME_WIDGET_REGISTRY.filter(w => !state.widgets.includes(w.id) && (w.id !== 'retrospective' || isClosed))
+  const availableToAdd = widgetCatalog.filter(w => !state.widgets.includes(w.id) && (w.id !== 'retrospective' || isClosed))
 
   return (
     <div>
@@ -2713,10 +2729,11 @@ function HomeDashboard({ dealId, deal, tasks, setTasks, userId, onAddTask, editM
         compactType="vertical"
       >
         {state.widgets.map(id => {
-          const def = HOME_WIDGET_REGISTRY.find(w => w.id === id)
+          const def = findDef(id)
           if (!def) return null
           // Skip retrospective for open deals
           if (id === 'retrospective' && !isClosed) return null
+          const isBuiltIn = BUILT_IN_IDS.has(id)
           return (
             <div key={id} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
               <div className="home-widget-handle"
@@ -2743,7 +2760,13 @@ function HomeDashboard({ dealId, deal, tasks, setTasks, userId, onAddTask, editM
               <div style={{ flex: 1, overflow: 'auto' }}>
                 {id === 'tasks' && <HomeTasksBody tasks={tasks} setTasks={setTasks} onAdd={onAddTask} />}
                 {id === 'deal_age' && <HomeDealAgeBody deal={deal} />}
-                {id === 'retrospective' && <HomeRetroBody deal={deal} navigate={(p) => window.history.pushState(null, '', p)} dealId={dealId} />}
+                {id === 'retrospective' && <HomeRetroBody deal={deal} dealId={dealId} />}
+                {/* Anything not built-in routes through the parent's
+                    renderWidget switch (registry widgets + custom widget
+                    definitions all dispatch from there). */}
+                {!isBuiltIn && renderWidget && (
+                  <div style={{ padding: '10px 14px' }}>{renderWidget(id)}</div>
+                )}
               </div>
             </div>
           )
