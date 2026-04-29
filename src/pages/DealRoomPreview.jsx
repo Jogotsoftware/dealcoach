@@ -213,6 +213,7 @@ export default function DealRoomPreview() {
                 archived
                 onComment={async () => { alert('Preview mode — interactions are disabled.'); return false }}
                 themeColor={themeColor}
+                columnVisibility={room.proposal_column_visibility}
               />
             : <div style={{ padding: 40, textAlign: 'center', color: T.textMuted, fontSize: 14, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8 }}>No proposal snapshot yet. Snapshot one from the Quotes tab to see the customer view here.</div>
         )}

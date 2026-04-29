@@ -293,7 +293,7 @@ export default function DealRoomViewer() {
         )}
 
         {tab === 'proposal' && (
-          <ProposalTabContent data={proposal} archived={archived} onComment={submitComment} themeColor={themeColor} />
+          <ProposalTabContent data={proposal} archived={archived} onComment={submitComment} themeColor={themeColor} columnVisibility={meta.proposal_column_visibility} />
         )}
       </main>
 
@@ -409,10 +409,17 @@ function LibraryTabContent({ data, themeColor }) {
 // ════════════════════════════════════════════
 // Proposal tab — render snapshot
 // ════════════════════════════════════════════
-export function ProposalTabContent({ data, archived, onComment, themeColor }) {
+export function ProposalTabContent({ data, archived, onComment, themeColor, columnVisibility }) {
   const accent = themeColor || T.primary
   if (!data) return <Spinner />
   const { snapshot, message } = data
+  // Per-column visibility: AE can hide individual columns from the customer
+  // proposal table. Defaults to everything visible if no override set.
+  const visKey = (k) => {
+    if (!columnVisibility) return true
+    const v = columnVisibility[k]
+    return v === undefined || v === null ? true : !!v
+  }
   if (!snapshot) {
     return (
       <div style={{ padding: 40, textAlign: 'center', color: T.textMuted, fontSize: 14, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8 }}>
@@ -470,9 +477,10 @@ export function ProposalTabContent({ data, archived, onComment, themeColor }) {
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: T.text }}>Proposal</h1>
-          <div style={{ fontSize: 11, color: T.textMuted, marginTop: 4 }}>
-            {snapshot.quote_name}{snapshot.quote_version ? ` v${snapshot.quote_version}` : ''}
-            {snapshot.snapshotted_at ? ` · Captured ${new Date(snapshot.snapshotted_at).toLocaleDateString()}` : ''}
+          <div style={{ fontSize: 13, color: T.textSecondary, marginTop: 4 }}>
+            {snapshot.signer_contact?.name
+              ? <>Prepared for <strong style={{ color: T.text }}>{snapshot.signer_contact.name}</strong>{snapshot.signer_contact.title ? <span style={{ color: T.textMuted }}>{', ' + snapshot.signer_contact.title}</span> : null}</>
+              : <>Prepared for <strong style={{ color: T.text }}>{snapshot.deal?.company_name || 'your team'}</strong></>}
           </div>
         </div>
         {startDate && (
@@ -483,73 +491,114 @@ export function ProposalTabContent({ data, archived, onComment, themeColor }) {
       </div>
 
       {/* Sage Annual Software Subscription */}
-      {sageLines.length > 0 && (
-        <div style={{ marginTop: 22 }}>
-          <ProposalSectionHeader>Sage Annual Software Subscription</ProposalSectionHeader>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <thead>
-                <tr style={{ borderBottom: `2px solid ${T.border}`, background: T.surfaceAlt }}>
-                  <th style={{ ...cellHead, textAlign: 'left' }}>Item</th>
-                  <th style={{ ...cellHead, width: COL_WIDTHS.qty }}>Qty</th>
-                  <th style={{ ...cellHead, width: COL_WIDTHS.list }}>List</th>
-                  <th style={{ ...cellHead, width: COL_WIDTHS.totalList }}>Total List</th>
-                  <th style={{ ...cellHead, width: COL_WIDTHS.discount, background: '#fde9d9' }}>Discount</th>
-                  <th style={{ ...cellHead, width: COL_WIDTHS.totalPrice, background: '#e2f0d9' }}>Total Price</th>
-                </tr>
-              </thead>
-              <tbody>
-                {parents.map(p => {
-                  const kids = childrenOf(p.id)
-                  const isBundle = !!p.is_bundle && kids.length > 0
-                  const lineList = num(p.quantity) * num(p.unit_price)
-                  return (
-                    <tr key={p.id} style={{ borderBottom: `1px solid ${T.borderLight}`, verticalAlign: 'top' }}>
-                      <td style={{ padding: '12px 10px', color: T.text }}>
-                        <div style={{ fontWeight: 700, fontSize: 13 }}>{p.name || p.sku || '—'}</div>
-                        {isBundle && (
-                          <div style={{ marginTop: 6, fontSize: 11.5, color: '#0f5132', lineHeight: 1.6 }}>
-                            {kids.map(c => {
-                              const childQty = num(c.quantity)
-                              const showQty = childQty > 0 && childQty !== 1
-                              return (
-                                <div key={c.id}>- {c.name || c.sku}{showQty ? ` (${childQty})` : ''}</div>
-                              )
-                            })}
-                          </div>
-                        )}
-                      </td>
-                      <td style={cellRight}>{num(p.quantity).toLocaleString()}</td>
-                      <td style={{ ...cellRight, color: T.textSecondary }}>{money(p.unit_price)}</td>
-                      <td style={cellRight}>{money(lineList)}</td>
-                      <td style={{ ...cellRight, background: '#fdf2e9' }}>{num(p.discount_pct) > 0 ? `${Math.round(num(p.discount_pct) * 100)}%` : '—'}</td>
-                      <td style={{ ...cellRight, background: '#eaf3e0', fontWeight: 700 }}>{money(p.extended)}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-              <tfoot>
-                <tr>
-                  <td colSpan={4} style={{ ...cellRight, fontWeight: 700 }}>Annual Subscription Total List Price</td>
-                  <td style={{ ...cellRight, fontWeight: 700 }} />
-                  <td style={{ ...cellRight, fontWeight: 800 }}>{money(annualListTotal)}</td>
-                </tr>
-                {annualDiscountAmount > 0 && (
-                  <tr>
-                    <td colSpan={4} style={{ ...cellRight, color: T.error, fontWeight: 700 }}>Discount Amount</td>
-                    <td style={{ ...cellRight, color: T.error, fontWeight: 700 }}>{blendedDiscountPct.toFixed(0)}%</td>
-                    <td style={{ ...cellRight, color: T.error, fontWeight: 800 }}>{money(annualDiscountAmount)}</td>
+      {sageLines.length > 0 && (() => {
+        // Column order matches the AE worksheet: Solution | List | Qty |
+        // Total List | Discount % | Discount Amount | Net Price. Each is
+        // independently hideable via proposal_column_visibility.
+        const cols = [
+          { key: 'solution',        label: 'Solution',  always: true,           align: 'left',  width: undefined,             headBg: undefined,   cellBg: undefined },
+          { key: 'list',            label: 'List',      visible: visKey('list'),                width: COL_WIDTHS.list,       headBg: undefined,   cellBg: undefined },
+          { key: 'qty',             label: 'Qty',       visible: visKey('qty'),                 width: COL_WIDTHS.qty,        headBg: undefined,   cellBg: undefined },
+          { key: 'total_list',      label: 'Total List', visible: visKey('total_list'),         width: COL_WIDTHS.totalList,  headBg: undefined,   cellBg: undefined },
+          { key: 'discount_pct',    label: 'Disc. %',   visible: visKey('discount_pct'),        width: COL_WIDTHS.discount,   headBg: '#fde9d9',   cellBg: '#fdf2e9' },
+          { key: 'discount_amount', label: 'Disc. $',   visible: visKey('discount_amount'),     width: COL_WIDTHS.discount + 16, headBg: '#fde9d9', cellBg: '#fdf2e9' },
+          { key: 'net_price',       label: 'Net Price', visible: visKey('net_price'),           width: COL_WIDTHS.totalPrice, headBg: '#e2f0d9',   cellBg: '#eaf3e0' },
+        ].filter(c => c.always || c.visible)
+        const colCount = cols.length
+        const lastCol = cols[colCount - 1]
+
+        const renderCell = (p, col, lineList, lineDisc) => {
+          switch (col.key) {
+            case 'solution': {
+              const kids = childrenOf(p.id)
+              const isBundle = !!p.is_bundle && kids.length > 0
+              return (
+                <td key={col.key} style={{ padding: '12px 10px', color: T.text }}>
+                  <div style={{ fontWeight: 700, fontSize: 13 }}>{p.name || p.sku || '—'}</div>
+                  {isBundle && (
+                    <div style={{ marginTop: 6, fontSize: 11.5, color: '#0f5132', lineHeight: 1.6 }}>
+                      {kids.map(c => {
+                        const childQty = num(c.quantity)
+                        const showQty = childQty > 0 && childQty !== 1
+                        return (
+                          <div key={c.id}>- {c.name || c.sku}{showQty ? ` (${childQty})` : ''}</div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </td>
+              )
+            }
+            case 'list':
+              return <td key={col.key} style={{ ...cellRight, color: T.textSecondary }}>{money(p.unit_price)}</td>
+            case 'qty':
+              return <td key={col.key} style={cellRight}>{num(p.quantity).toLocaleString()}</td>
+            case 'total_list':
+              return <td key={col.key} style={cellRight}>{money(lineList)}</td>
+            case 'discount_pct':
+              return <td key={col.key} style={{ ...cellRight, background: col.cellBg }}>{num(p.discount_pct) > 0 ? `${Math.round(num(p.discount_pct) * 100)}%` : '—'}</td>
+            case 'discount_amount':
+              return <td key={col.key} style={{ ...cellRight, background: col.cellBg, color: lineDisc > 0 ? T.error : T.text, fontWeight: lineDisc > 0 ? 700 : 400 }}>{lineDisc > 0 ? `(${money(lineDisc)})` : '—'}</td>
+            case 'net_price':
+              return <td key={col.key} style={{ ...cellRight, background: col.cellBg, fontWeight: 700 }}>{money(p.extended)}</td>
+            default:
+              return null
+          }
+        }
+
+        // Footer rows reach the value column on the right; everything left
+        // of it merges into a single label cell. Width of the merged label
+        // = total cols minus 1 (for the value cell). When a discount column
+        // is also visible, we drop the value into the matching column.
+        const valueColKey = lastCol.key
+        const labelSpan = colCount - 1
+
+        return (
+          <div style={{ marginTop: 22 }}>
+            <ProposalSectionHeader>Sage Annual Software Subscription</ProposalSectionHeader>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ borderBottom: `2px solid ${T.border}`, background: T.surfaceAlt }}>
+                    {cols.map(c => (
+                      <th key={c.key} style={{ ...cellHead, textAlign: c.align || 'right', width: c.width, background: c.headBg }}>
+                        {c.label}
+                      </th>
+                    ))}
                   </tr>
-                )}
-                <tr style={{ background: '#eaf3e0' }}>
-                  <td colSpan={5} style={{ ...cellRight, fontWeight: 800 }}>Net Annual Subscription Total</td>
-                  <td style={{ ...cellRight, fontWeight: 900 }}>{money(annualNetTotal)}</td>
-                </tr>
-              </tfoot>
-            </table>
+                </thead>
+                <tbody>
+                  {parents.map(p => {
+                    const lineList = num(p.quantity) * num(p.unit_price)
+                    const lineDisc = lineList - num(p.extended)
+                    return (
+                      <tr key={p.id} style={{ borderBottom: `1px solid ${T.borderLight}`, verticalAlign: 'top' }}>
+                        {cols.map(col => renderCell(p, col, lineList, lineDisc))}
+                      </tr>
+                    )
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td colSpan={labelSpan} style={{ ...cellRight, fontWeight: 700 }}>Annual Subscription Total List Price</td>
+                    <td style={{ ...cellRight, fontWeight: 800 }}>{money(annualListTotal)}</td>
+                  </tr>
+                  {annualDiscountAmount > 0 && (
+                    <tr>
+                      <td colSpan={labelSpan} style={{ ...cellRight, color: T.error, fontWeight: 700 }}>Discount Amount ({blendedDiscountPct.toFixed(0)}%)</td>
+                      <td style={{ ...cellRight, color: T.error, fontWeight: 800 }}>({money(annualDiscountAmount)})</td>
+                    </tr>
+                  )}
+                  <tr style={{ background: '#eaf3e0' }}>
+                    <td colSpan={labelSpan} style={{ ...cellRight, fontWeight: 800 }}>Net Annual Subscription Total</td>
+                    <td style={{ ...cellRight, fontWeight: 900 }}>{money(annualNetTotal)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* One Time Implementation */}
       {(sageImpl.length > 0 || implTotal > 0) && (
