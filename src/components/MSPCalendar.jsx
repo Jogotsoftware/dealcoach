@@ -1,10 +1,15 @@
 import { useMemo, useState } from 'react'
 import { Calendar, momentLocalizer, Views } from 'react-big-calendar'
+import withDragAndDrop from 'react-big-calendar/lib/addons/dragAndDrop'
 import moment from 'moment'
 import 'react-big-calendar/lib/css/react-big-calendar.css'
+import 'react-big-calendar/lib/addons/dragAndDrop/styles.css'
 import { theme as T } from '../lib/theme'
 
 const localizer = momentLocalizer(moment)
+// Wrap once per module rather than per render — keeps the HOC instance stable
+// so react-big-calendar internals don't tear down drop targets between renders.
+const DnDCalendar = withDragAndDrop(Calendar)
 
 const RANGE_OPTIONS = [
   { key: '1mo', label: '1 month',  months: 1, gridCols: 1 },
@@ -278,7 +283,7 @@ export default function MSPCalendar({
                     {monthLabel}
                   </div>
                 )}
-                <Calendar
+                <DnDCalendar
                   localizer={localizer}
                   events={events}
                   view={Views.MONTH}
@@ -295,8 +300,8 @@ export default function MSPCalendar({
                   dayPropGetter={dayPropGetter}
                   onSelectEvent={onSelectEvent}
                   selectable={!readOnly}
-                  draggableAccessor={() => !readOnly}
-                  resizable={!readOnly}
+                  draggableAccessor={(event) => !readOnly && event.resource?.kind === 'stage'}
+                  resizableAccessor={(event) => !readOnly && event.resource?.kind === 'stage'}
                   onEventDrop={handleEventDrop}
                   onEventResize={handleEventResize}
                   style={{ height: miniHeight }}
