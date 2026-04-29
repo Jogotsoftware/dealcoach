@@ -361,6 +361,17 @@ export default function DealRoomConfig() {
           </div>
         </Card>
 
+        {/* Card 1.6: Theme color */}
+        <Card title="Evaluation Room theme color">
+          <div style={{ fontSize: 11, color: T.textSecondary, marginBottom: 10 }}>
+            Sets the primary accent color the customer sees — tab highlights, request-change buttons, contact icons, the Year 1 Total band. Pick anything from the spectrum or use one of the quick presets.
+          </div>
+          <ThemeColorPicker
+            value={room?.theme_color || ''}
+            onChange={(hex) => saveRoom({ theme_color: hex || null })}
+          />
+        </Card>
+
         {/* Card 2: What customer will see */}
         <Card title="What the customer will see">
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, marginBottom: 14 }}>
@@ -553,6 +564,87 @@ export default function DealRoomConfig() {
 }
 
 const thStyle = { textAlign: 'left', padding: '8px 10px', fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em' }
+
+// Quick-pick palette for the Evaluation Room theme. Hand-picked across the
+// spectrum so an AE can grab a brand-adjacent color in one click; the native
+// color input below the swatches gives them the full spectrum if they want
+// something exact.
+const THEME_COLOR_PRESETS = [
+  '#5DADE2', // Carolina Blue (default)
+  '#2563eb', // royal blue
+  '#0ea5e9', // sky
+  '#06b6d4', // cyan
+  '#10b981', // emerald
+  '#22c55e', // green
+  '#84cc16', // lime
+  '#eab308', // yellow
+  '#f59e0b', // amber
+  '#f97316', // orange
+  '#dc2626', // red
+  '#e11d48', // rose
+  '#ec4899', // pink
+  '#a855f7', // violet
+  '#7c3aed', // purple
+  '#4f46e5', // indigo
+  '#0f172a', // slate-900
+  '#374151', // gray-700
+]
+
+function ThemeColorPicker({ value, onChange }) {
+  const current = value || ''
+  return (
+    <div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+        {THEME_COLOR_PRESETS.map(c => {
+          const selected = current.toLowerCase() === c.toLowerCase()
+          return (
+            <button
+              key={c}
+              onClick={() => onChange(c)}
+              title={c}
+              style={{
+                width: 30, height: 30, borderRadius: 6, background: c, cursor: 'pointer',
+                border: selected ? `2px solid ${T.text}` : `1px solid ${T.borderLight}`,
+                padding: 0, position: 'relative', boxShadow: selected ? `0 0 0 2px ${T.surface}` : 'none',
+              }}
+            >
+              {selected && <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 14, fontWeight: 900, textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}>✓</span>}
+            </button>
+          )
+        })}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+          <input
+            type="color"
+            value={current || '#5DADE2'}
+            onChange={e => onChange(e.target.value)}
+            style={{ width: 36, height: 36, padding: 0, border: `1px solid ${T.borderLight}`, borderRadius: 6, cursor: 'pointer', background: T.surface }}
+            title="Pick any color"
+          />
+          <span style={{ fontSize: 11, color: T.textSecondary }}>Pick any color</span>
+        </label>
+        <input
+          type="text"
+          value={current}
+          onChange={e => onChange(e.target.value)}
+          placeholder="#5DADE2"
+          style={{ ...inputStyle, width: 110, padding: '6px 8px', fontSize: 12, fontFamily: T.mono }}
+        />
+        <button
+          onClick={() => onChange('')}
+          style={{ padding: '6px 10px', fontSize: 11, border: `1px solid ${T.border}`, borderRadius: 4, background: T.surface, color: T.textMuted, cursor: 'pointer', fontFamily: T.font }}
+        >
+          Reset
+        </button>
+        <div style={{ flex: 1 }} />
+        <div title="Live preview" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 12px', borderRadius: 6, background: (current || T.primary), color: '#fff', fontSize: 11, fontWeight: 700 }}>
+          Preview
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function Stat({ label, value, note }) {
   return (

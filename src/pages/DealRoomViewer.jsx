@@ -80,14 +80,17 @@ export default function DealRoomViewer() {
     if (!meta) return
     const company = meta.deal?.company_name
     document.title = company ? `Evaluation Room · ${company}` : 'Evaluation Room'
-    const logoUrl = meta.org?.logo_url
-    if (!logoUrl) return
+    // Favicon: prefer a PNG dropped at /evaluation-room.png if present, else
+    // fall back to the gradient-S SVG that ships with the app. Both files
+    // live under public/. Customers always see this icon — never the AE org
+    // logo, never the platform default.
     const head = document.head
     const previous = []
     head.querySelectorAll('link[rel~="icon"]').forEach(l => { previous.push({ node: l, parent: l.parentNode }); l.remove() })
     const link = document.createElement('link')
     link.rel = 'icon'
-    link.href = logoUrl
+    link.type = 'image/svg+xml'
+    link.href = '/evaluation-room.svg'
     head.appendChild(link)
     return () => {
       link.remove()
@@ -187,6 +190,7 @@ export default function DealRoomViewer() {
   }
 
   const { viewer, deal, org, rep, ae_notes, archived } = meta
+  const themeColor = (meta.theme_color && /^#[0-9a-f]{3,8}$/i.test(meta.theme_color)) ? meta.theme_color : T.primary
 
   return (
     <div style={{ background: T.bg, minHeight: '100vh', fontFamily: T.font, color: T.text }}>
@@ -197,7 +201,7 @@ export default function DealRoomViewer() {
             {org?.logo_url ? (
               <img src={org.logo_url} alt={org.name} style={{ maxWidth: 140, maxHeight: 50, objectFit: 'contain' }} />
             ) : (
-              <div style={{ fontSize: 16, fontWeight: 800, color: T.primary }}>{org?.name || 'Revenue Instruments'}</div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: themeColor }}>{org?.name || 'Revenue Instruments'}</div>
             )}
           </div>
           <div style={{ textAlign: 'center' }}>
@@ -227,18 +231,18 @@ export default function DealRoomViewer() {
             { key: 'proposal', label: 'Proposal' },
           ].map(t => (
             <button key={t.key} onClick={() => selectTab(t.key)}
-              style={{ padding: '14px 24px', border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: T.font, fontSize: 13, fontWeight: 600, color: tab === t.key ? T.primary : T.textMuted, borderBottom: tab === t.key ? `3px solid ${T.primary}` : '3px solid transparent', marginBottom: -1 }}>
+              style={{ padding: '14px 24px', border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: T.font, fontSize: 13, fontWeight: 600, color: tab === t.key ? themeColor : T.textMuted, borderBottom: tab === t.key ? `3px solid ${themeColor}` : '3px solid transparent', marginBottom: -1 }}>
               {t.label}
             </button>
           ))}
           <div style={{ flex: 1 }} />
-          <RepContactIcons rep={rep} />
+          <RepContactIcons rep={rep} themeColor={themeColor} />
         </div>
       </div>
 
       <main style={{ maxWidth: 1200, margin: '0 auto', padding: '24px' }}>
         {ae_notes && ae_notes.trim() && (
-          <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderLeft: `4px solid ${T.primary}`, borderRadius: 8, padding: '14px 18px', marginBottom: 18 }}>
+          <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderLeft: `4px solid ${themeColor}`, borderRadius: 8, padding: '14px 18px', marginBottom: 18 }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
               Notes from {rep?.full_name || 'your AE'}
             </div>
@@ -253,15 +257,16 @@ export default function DealRoomViewer() {
             onView={setView}
             onComment={submitComment}
             onRequestChange={(payload) => setChangeModal(payload)}
+            themeColor={themeColor}
           />
         )}
 
         {tab === 'library' && (
-          <LibraryTabContent data={library} />
+          <LibraryTabContent data={library} themeColor={themeColor} />
         )}
 
         {tab === 'proposal' && (
-          <ProposalTabContent data={proposal} archived={archived} onComment={submitComment} />
+          <ProposalTabContent data={proposal} archived={archived} onComment={submitComment} themeColor={themeColor} />
         )}
       </main>
 
@@ -305,8 +310,9 @@ export default function DealRoomViewer() {
 // ════════════════════════════════════════════
 // MSP tab
 // ════════════════════════════════════════════
-function MspTabContent({ data, archived, view, onView, onComment, onRequestChange }) {
+function MspTabContent({ data, archived, view, onView, onComment, onRequestChange, themeColor }) {
   if (!data) return <Spinner />
+  const accent = themeColor || T.primary
   const { stages = [], milestones = [], pending_requests = [], comment_counts = {} } = data
   const pendingByTarget = useMemo(() => {
     const m = new Map()
@@ -319,7 +325,7 @@ function MspTabContent({ data, archived, view, onView, onComment, onRequestChang
       <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
         {[{ k: 'timeline', l: 'Timeline' }, { k: 'calendar', l: 'Calendar' }].map(v => (
           <button key={v.k} onClick={() => onView(v.k)}
-            style={{ padding: '5px 12px', fontSize: 11, fontWeight: 600, border: `1px solid ${view === v.k ? T.primary : T.border}`, borderRadius: 4, background: view === v.k ? T.primary : T.surface, color: view === v.k ? '#fff' : T.text, cursor: 'pointer', fontFamily: T.font }}>
+            style={{ padding: '5px 12px', fontSize: 11, fontWeight: 600, border: `1px solid ${view === v.k ? accent : T.border}`, borderRadius: 4, background: view === v.k ? accent : T.surface, color: view === v.k ? '#fff' : T.text, cursor: 'pointer', fontFamily: T.font }}>
             {v.l}
           </button>
         ))}
@@ -366,7 +372,7 @@ function MspTabContent({ data, archived, view, onView, onComment, onRequestChang
                   <span style={{ padding: '4px 10px', background: T.warningLight, color: T.warning, fontSize: 10, fontWeight: 600, borderRadius: 999, border: `1px solid ${T.warning}30` }}>Change requested · pending review</span>
                 ) : !archived && (
                   <button onClick={() => onRequestChange({ kind: 'stage', item: stage, parent: null, targetTable: 'msp_stages' })}
-                    style={{ padding: '4px 10px', fontSize: 11, border: `1px solid ${T.border}`, borderRadius: 4, background: T.surface, color: T.primary, fontWeight: 600, cursor: 'pointer', fontFamily: T.font }}>
+                    style={{ padding: '4px 10px', fontSize: 11, border: `1px solid ${T.border}`, borderRadius: 4, background: T.surface, color: accent, fontWeight: 600, cursor: 'pointer', fontFamily: T.font }}>
                     Request change
                   </button>
                 )}
@@ -392,7 +398,7 @@ function MspTabContent({ data, archived, view, onView, onComment, onRequestChang
                         <span style={{ padding: '2px 8px', background: T.warningLight, color: T.warning, fontSize: 10, fontWeight: 600, borderRadius: 999, border: `1px solid ${T.warning}30` }}>Change requested</span>
                       ) : !archived && (
                         <button onClick={() => onRequestChange({ kind: 'milestone', item: m, parent: stage, targetTable: 'msp_milestones' })}
-                          style={{ padding: '3px 8px', fontSize: 10, border: `1px solid ${T.border}`, borderRadius: 4, background: T.surface, color: T.primary, fontWeight: 600, cursor: 'pointer', fontFamily: T.font }}>
+                          style={{ padding: '3px 8px', fontSize: 10, border: `1px solid ${T.border}`, borderRadius: 4, background: T.surface, color: accent, fontWeight: 600, cursor: 'pointer', fontFamily: T.font }}>
                           Request change
                         </button>
                       )}
@@ -455,8 +461,11 @@ function CommentComposer({ onSubmit, placeholder, count }) {
 // ════════════════════════════════════════════
 // Library tab — NO URLS visible to customer
 // ════════════════════════════════════════════
-function LibraryTabContent({ data }) {
+function LibraryTabContent({ data, themeColor }) {
   if (!data) return <Spinner />
+  // themeColor reserved for future per-type accent overrides; resource type
+  // pills currently use intrinsic per-type colors from RESOURCE_TYPE_META.
+  void themeColor
   const { resources = [] } = data
   if (resources.length === 0) {
     return <div style={{ padding: 32, textAlign: 'center', color: T.textMuted, fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8 }}>No resources shared yet.</div>
@@ -493,7 +502,8 @@ function LibraryTabContent({ data }) {
 // ════════════════════════════════════════════
 // Proposal tab — render snapshot
 // ════════════════════════════════════════════
-function ProposalTabContent({ data, archived, onComment }) {
+function ProposalTabContent({ data, archived, onComment, themeColor }) {
+  const accent = themeColor || T.primary
   if (!data) return <Spinner />
   const { snapshot, message } = data
   if (!snapshot) {
@@ -935,8 +945,9 @@ const modalSecondaryBtn = { padding: '8px 16px', fontSize: 12, fontWeight: 600, 
 // ════════════════════════════════════════════
 // Rep contact icons (header) — email / sms / call
 // ════════════════════════════════════════════
-function RepContactIcons({ rep }) {
+function RepContactIcons({ rep, themeColor }) {
   if (!rep || (!rep.email && !rep.phone)) return null
+  const accent = themeColor || T.primary
   const phoneDigits = rep.phone ? String(rep.phone).replace(/[^\d+]/g, '') : ''
   const items = []
   if (rep.email) {
@@ -963,7 +974,7 @@ function RepContactIcons({ rep }) {
     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} title={rep.full_name ? `Your AE: ${rep.full_name}` : undefined}>
       {items.map(it => (
         <a key={it.key} href={it.href} aria-label={it.label} title={it.label}
-          style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: 6, border: `1px solid ${T.border}`, background: T.surface, color: T.primary, textDecoration: 'none' }}>
+          style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: 6, border: `1px solid ${T.border}`, background: T.surface, color: accent, textDecoration: 'none' }}>
           {it.icon}
         </a>
       ))}
