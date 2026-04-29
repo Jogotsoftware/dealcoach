@@ -30,6 +30,7 @@ import CompanyLogo from '../components/CompanyLogo'
 import LogoUploader from '../components/LogoUploader'
 import SlideGenerator from '../components/SlideGenerator'
 import WidgetRenderer from '../components/WidgetRenderer'
+import ContactsOrgTree from '../components/ContactsOrgTree'
 import { useAuth } from '../hooks/useAuth'
 import { useModules } from '../hooks/useModules'
 import { Responsive, WidthProvider } from 'react-grid-layout'
@@ -444,7 +445,14 @@ export default function DealDetail() {
     return () => timers.forEach(clearTimeout)
   }, [])
   const docsFileInputRef = useRef(null)
-  const [tab, setTab] = useState('overview')
+  const [tab, setTab] = useState('home')
+  const [showAddMenu, setShowAddMenu] = useState(false)
+  const [showStagePopover, setShowStagePopover] = useState(false)
+  const [showForecastPopover, setShowForecastPopover] = useState(false)
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [showAddTask, setShowAddTask] = useState(false)
+  const [activityFilter, setActivityFilter] = useState('all')  // 'all' | 'calls' | 'emails'
+  const [retrospective, setRetrospective] = useState(null)
   const [loading, setLoading] = useState(true)
   const [deal, setDeal] = useState(null)
   const [analysis, setAnalysis] = useState(null)
@@ -474,10 +482,6 @@ export default function DealDetail() {
   const [hasUserOverride, setHasUserOverride] = useState(false)
   const [registeredWidgets, setRegisteredWidgets] = useState([])
 
-  // Contact editing
-  const [editingContact, setEditingContact] = useState(null)
-  const [editContactData, setEditContactData] = useState({})
-
   // Competitor editing
   const [editingCompetitor, setEditingCompetitor] = useState(null)
   const [editCompData, setEditCompData] = useState({})
@@ -506,12 +510,9 @@ export default function DealDetail() {
   const [newEvent, setNewEvent] = useState({ event_description: '', event_date: '', strength: 'medium', impact: '' })
   const [newCatalyst, setNewCatalyst] = useState({ catalyst: '', category: 'internal', urgency: 'medium', impact: '' })
   const [newPain, setNewPain] = useState({ pain_description: '', category: 'operational', annual_cost: '', affected_team: '', notes: '' })
-  const [showAddTask, setShowAddTask] = useState(false)
   const [newTask, setNewTask] = useState({ title: '', priority: 'medium', due_date: '', notes: '' })
   const [taskCommitFilter, setTaskCommitFilter] = useState('all')
   const [selectedTasks, setSelectedTasks] = useState(new Set())
-  const [showAddContact, setShowAddContact] = useState(false)
-  const [newContact, setNewContact] = useState({ name: '', title: '', email: '', role_in_deal: '' })
 
   // Email generation
   const [showEmailGenerator, setShowEmailGenerator] = useState(false)
@@ -625,6 +626,12 @@ export default function DealDetail() {
 
       const { data: genEmails } = await supabase.from('generated_emails').select('*').eq('deal_id', id).order('created_at', { ascending: false })
       setGeneratedEmails(genEmails || [])
+
+      // Retrospective banner (only if deal is closed). Non-fatal if missing.
+      try {
+        const { data: retro } = await supabase.from('deal_retrospectives').select('*').eq('deal_id', id).order('created_at', { ascending: false }).limit(1).maybeSingle()
+        setRetrospective(retro || null)
+      } catch (e) { /* non-fatal */ }
 
       if (profile?.active_coach_id) {
         const { data: eTpls } = await supabase.from('email_templates').select('*').eq('coach_id', profile.active_coach_id).eq('active', true).order('sort_order')
@@ -785,28 +792,6 @@ export default function DealDetail() {
   }
 
   // === CRUD HELPERS ===
-  async function saveContact(contactId) {
-    const before = contacts.find(c => c.id === contactId) || {}
-    const { error } = await supabase.from('contacts').update(editContactData).eq('id', contactId)
-    if (!error) {
-      setContacts(prev => prev.map(c => c.id === contactId ? { ...c, ...editContactData } : c))
-      setEditingContact(null)
-      // Track AI suggestion edit if this was an AI-sourced contact
-      if (before?.notes && /^Source:/i.test(before.notes)) {
-        const fields = ['name', 'title', 'role_in_deal', 'department', 'email', 'influence_level']
-        const beforePayload = Object.fromEntries(fields.map(f => [f, before[f] ?? null]))
-        const afterPayload = Object.fromEntries(fields.map(f => [f, editContactData[f] ?? before[f] ?? null]))
-        const changed = fields.some(f => beforePayload[f] !== afterPayload[f])
-        if (changed) {
-          trackSuggestion({
-            orgId: profile?.org_id, dealId: id, userId: profile?.id,
-            targetType: 'contact', targetId: contactId, action: 'edited',
-            before: beforePayload, after: afterPayload, createdAt: before.created_at,
-          })
-        }
-      }
-    }
-  }
   async function saveCompetitor(compId) {
     const { error } = await supabase.from('deal_competitors').update(editCompData).eq('id', compId)
     if (!error) { setCompetitors(prev => prev.map(c => c.id === compId ? { ...c, ...editCompData } : c)); setEditingCompetitor(null) }
@@ -846,16 +831,6 @@ export default function DealDetail() {
     await supabase.from('deal_pain_points').update({ include_in_proposal: !current }).eq('id', painId)
     setPainPoints(prev => prev.map(p => p.id === painId ? { ...p, include_in_proposal: !current } : p))
   }
-  async function deleteContact(contactId) {
-    if (!window.confirm('Delete this contact?')) return
-    const contact = contacts.find(c => c.id === contactId)
-    await supabase.from('contacts').delete().eq('id', contactId)
-    setContacts(prev => prev.filter(c => c.id !== contactId))
-    // Treat AI-sourced contacts (notes prefix 'Source: transcript' or 'Source: Apollo'/etc) as trackable
-    if (contact?.notes && /^Source:/i.test(contact.notes)) {
-      trackSuggestion({ orgId: profile?.org_id, dealId: id, userId: profile?.id, targetType: 'contact', targetId: contactId, action: 'rejected', before: { name: contact.name, title: contact.title, role_in_deal: contact.role_in_deal }, createdAt: contact.created_at })
-    }
-  }
   async function deletePainPoint(painId) { await supabase.from('deal_pain_points').delete().eq('id', painId); setPainPoints(prev => prev.filter(p => p.id !== painId)) }
   async function deleteRisk(riskId) { await supabase.from('deal_risks').delete().eq('id', riskId); setRisks(prev => prev.filter(r => r.id !== riskId)) }
   async function deleteEvent(eventId) { await supabase.from('compelling_events').delete().eq('id', eventId); setEvents(prev => prev.filter(e => e.id !== eventId)) }
@@ -875,11 +850,6 @@ export default function DealDetail() {
     if (task?.auto_generated) {
       trackSuggestion({ orgId: profile?.org_id, dealId: id, userId: profile?.id, targetType: 'task', targetId: taskId, action: 'rejected', before: { title: task.title, priority: task.priority, due_date: task.due_date }, createdAt: task.created_at })
     }
-  }
-  async function addNewContact() {
-    if (!newContact.name.trim()) return
-    const { data, error } = await supabase.from('contacts').insert({ deal_id: id, name: newContact.name.trim(), title: newContact.title || null, email: newContact.email || null, role_in_deal: newContact.role_in_deal || null, influence_level: 'Unknown' }).select().single()
-    if (!error && data) { setContacts(prev => [...prev, data]); setShowAddContact(false); setNewContact({ name: '', title: '', email: '', role_in_deal: '' }) }
   }
   async function rerunResearch() {
     setResearchRunning(true)
@@ -1655,17 +1625,14 @@ export default function DealDetail() {
   const openTasks = tasks.filter(t => !t.completed)
   const doneTasks = tasks.filter(t => t.completed)
 
+  // Counts hide when zero per acceptance test step 6.
+  const labelWithCount = (base, n) => n > 0 ? `${base} (${n})` : base
+  const activityCount = conversations.length + generatedEmails.length
   const tabs = [
-    { key: 'overview', label: 'Overview' },
-    hasModule('deal_management') && { key: 'contacts', label: `Contacts (${contacts.length})` },
-    hasModule('transcript_analysis') && { key: 'transcripts', label: `Transcripts (${conversations.length})` },
-    hasModule('msp') && { key: 'msp', label: 'Project Plan' },
-    hasModule('proposal') && { key: 'quotes', label: `Quotes${quotes.length ? ` (${quotes.length})` : ''}` },
-    hasModule('proposal') && { key: 'deal_room', label: 'Deal Room' },
-    { key: 'tasks', label: `Tasks (${openTasks.length})` },
-    { key: 'documents', label: `Documents (${documents.length})` },
-    hasModule('coaching') && { key: 'emails', label: `Emails (${generatedEmails.length})` },
-    ['closed_won', 'closed_lost', 'disqualified'].includes(deal.stage) && { key: 'retrospective', label: 'Retrospective' },
+    { key: 'home', label: 'Home' },
+    (hasModule('msp') || hasModule('proposal')) && { key: 'deal_room', label: 'Deal Room' },
+    { key: 'activity', label: labelWithCount('Activity', activityCount) },
+    hasModule('deal_management') && { key: 'contacts', label: labelWithCount('Contacts', contacts.length) },
   ].filter(Boolean)
 
   return (
@@ -1682,97 +1649,115 @@ export default function DealDetail() {
         @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.7 } }
       `}</style>
 
-      {/* Header */}
+      {/* Header \u2014 minimal: chevron + bare logo + title + clickable stage/forecast + website + actions */}
       <div style={{ padding: '14px 24px', borderBottom: `1px solid ${T.border}`, background: T.surface }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-          <button onClick={() => navigate('/')} style={{
-            background: T.surfaceAlt, border: `1px solid ${T.border}`, borderRadius: 6,
-            padding: '6px 12px', cursor: 'pointer', fontSize: 12, color: T.primary,
-            fontWeight: 600, fontFamily: T.font,
-          }}>&larr; Pipeline</button>
+          <button onClick={() => navigate('/')} title="Pipeline"
+            style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 22, color: T.textMuted, padding: '0 4px', lineHeight: 1, fontFamily: T.font }}>
+            \u2039
+          </button>
           <CompanyLogo
             logoUrl={companyProfile?.logo_url}
             customerLogoUrl={deal.customer_logo_url}
             companyName={deal.company_name}
-            size="lg"
+            size="md"
+            bare
             editable
             dealId={deal.id}
             currentStoragePath={deal.customer_logo_storage_path}
             onUploaded={(publicUrl, path) => setDeal(prev => prev ? { ...prev, customer_logo_url: publicUrl, customer_logo_storage_path: path } : prev)}
           />
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 20, fontWeight: 700, color: T.text }}>{deal.company_name}</div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>
-              <StageBadge stage={deal.stage} />
-              <ForecastBadge category={deal.forecast_category} />
+            <div style={{ fontSize: 20, fontWeight: 700, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{deal.company_name}</div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4, position: 'relative' }}>
+              <span onClick={() => { setShowStagePopover(v => !v); setShowForecastPopover(false) }} style={{ cursor: 'pointer' }} title="Click to change stage">
+                <StageBadge stage={deal.stage} />
+              </span>
+              <span onClick={() => { setShowForecastPopover(v => !v); setShowStagePopover(false) }} style={{ cursor: 'pointer' }} title="Click to change forecast">
+                <ForecastBadge category={deal.forecast_category} />
+              </span>
               {deal.website && (
                 <a href={deal.website} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: T.primary, textDecoration: 'none', fontWeight: 500 }}>
                   {deal.website.replace(/^https?:\/\//, '').replace(/\/$/, '')} {'\u2197'}
                 </a>
               )}
-            </div>
-            {/* Next Steps inline in header */}
-            <div style={{ marginTop: 6, display: 'flex', alignItems: 'flex-start', gap: 6 }}>
-              <span style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap', paddingTop: 3 }}>Next:</span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <EditableField label="" value={deal.next_steps} field="next_steps" table="deals" recordId={deal.id} type="textarea" onSaved={(f, v) => setDeal(p => ({ ...p, [f]: v }))} />
-                {deal.updated_at && (
-                  <div style={{ fontSize: 10, color: T.textMuted, marginTop: 2 }}>Last updated {new Date(deal.updated_at).toLocaleDateString()}</div>
-                )}
-              </div>
-            </div>
-          </div>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 26, fontWeight: 700, color: T.text, fontFeatureSettings: '"tnum"' }}>{formatCurrency(deal.deal_value)}</div>
-            <div style={{ fontSize: 12, color: T.textSecondary }}>
-              {formatCurrency(deal.cmrr)}/mo CMRR
-              {days != null && (
-                <span style={{ marginLeft: 8, fontWeight: 600, color: days < 0 ? T.error : days <= 30 ? T.warning : T.success }}>
-                  Close: {formatDate(deal.target_close_date)} ({days < 0 ? `${Math.abs(days)}d late` : `${days}d`})
-                </span>
+              {showStagePopover && (
+                <BadgePopover onClose={() => setShowStagePopover(false)}
+                  options={[
+                    { k: 'qualify',              l: 'Qualify' },
+                    { k: 'discovery',            l: 'Discovery' },
+                    { k: 'solution_validation',  l: 'Solution Validation' },
+                    { k: 'confirming_value',     l: 'Confirming Value' },
+                    { k: 'selection',            l: 'Selection' },
+                    { k: 'disqualified',         l: 'Disqualified' },
+                    { k: 'closed_won',           l: 'Closed Won' },
+                    { k: 'closed_lost',          l: 'Closed Lost' },
+                  ]}
+                  selected={deal.stage}
+                  onPick={async (k) => {
+                    const { error: e } = await supabase.from('deals').update({ stage: k }).eq('id', deal.id)
+                    if (!e) setDeal(p => ({ ...p, stage: k, stage_changed_at: new Date().toISOString(), closed_at: ['closed_won','closed_lost','disqualified'].includes(k) ? new Date().toISOString() : null }))
+                    setShowStagePopover(false)
+                  }}
+                />
+              )}
+              {showForecastPopover && (
+                <BadgePopover onClose={() => setShowForecastPopover(false)}
+                  options={[
+                    { k: 'commit',   l: 'Commit' },
+                    { k: 'forecast', l: 'Forecast' },
+                    { k: 'upside',   l: 'Upside' },
+                    { k: 'pipeline', l: 'Pipeline' },
+                  ]}
+                  selected={deal.forecast_category}
+                  onPick={async (k) => {
+                    const { error: e } = await supabase.from('deals').update({ forecast_category: k }).eq('id', deal.id)
+                    if (!e) setDeal(p => ({ ...p, forecast_category: k }))
+                    setShowForecastPopover(false)
+                  }}
+                />
               )}
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <Button primary onClick={() => setShowChat(true)} style={{ padding: '6px 12px', fontSize: 11 }}>Ask Coach</Button>
-            {hasModule('transcript_analysis') ? (
-              <Button primary onClick={() => setShowTranscriptUpload(true)} style={{ padding: '6px 12px', fontSize: 11 }}>Upload Transcript</Button>
-            ) : (
-              <Button disabled style={{ padding: '6px 12px', fontSize: 11 }} title="Upgrade your plan">Upload Transcript</Button>
-            )}
-            {hasModule('coaching') ? (
-              <Button primary onClick={() => setShowEmailGenerator(true)} style={{ padding: '6px 12px', fontSize: 11 }}>Generate Email</Button>
-            ) : (
-              <Button disabled style={{ padding: '6px 12px', fontSize: 11 }} title="Upgrade your plan">Generate Email</Button>
-            )}
-            {/* More menu */}
+
+          {/* Actions: + menu, chat, pencil */}
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             <div style={{ position: 'relative' }}>
-              <button onClick={() => setShowMoreMenu(!showMoreMenu)} style={{
-                background: 'none', border: `1px solid ${T.border}`, borderRadius: 6,
-                padding: '6px 12px', cursor: 'pointer', color: T.textMuted, fontSize: 18,
-                fontFamily: T.font, lineHeight: 1,
-              }}>{'\u2026'}</button>
-              {showMoreMenu && (
+              <button onClick={() => setShowAddMenu(v => !v)} title="Add to deal"
+                style={{ background: T.primary, color: '#fff', border: 'none', borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontSize: 16, fontWeight: 700, fontFamily: T.font, lineHeight: 1, minWidth: 32, height: 30 }}>
+                +
+              </button>
+              {showAddMenu && (
                 <>
-                  <div style={{ position: 'fixed', inset: 0, zIndex: 999 }} onClick={() => setShowMoreMenu(false)} />
-                  <div style={{
-                    position: 'absolute', right: 0, top: '100%', marginTop: 4, zIndex: 1000,
-                    background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8,
-                    boxShadow: '0 8px 24px rgba(0,0,0,0.3)', minWidth: 200, padding: '4px 0',
-                  }}>
-                    <MoreMenuItem label={reprocessing ? (reprocessStatus || 'Reprocessing...') : 'Reprocess Deal'} disabled={reprocessing} onClick={() => { handleReprocess(); setShowMoreMenu(false) }} />
-                    <MoreMenuItem label={researchRunning ? 'Researching...' : 'Re-run Research'} disabled={researchRunning} onClick={() => { rerunResearch(); setShowMoreMenu(false) }} />
-                    <MoreMenuItem label="Generate Slides" onClick={() => { setShowSlideGenerator(true); setShowMoreMenu(false) }} />
-                    <MoreMenuItem label={editMode ? 'Lock Dashboard' : 'Edit Dashboard'} onClick={() => { setEditMode(!editMode); setShowMoreMenu(false) }} />
-                    <div style={{ borderTop: `1px solid ${T.border}`, margin: '4px 0' }} />
-                    <MoreMenuItem label="Delete Deal" danger onClick={() => { setShowMoreMenu(false); if (window.confirm('Delete this deal and all its data?')) { supabase.from('deals').delete().eq('id', deal.id).then(() => navigate('/')) } }} />
+                  <div style={{ position: 'fixed', inset: 0, zIndex: 999 }} onClick={() => setShowAddMenu(false)} />
+                  <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, zIndex: 1000, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.18)', minWidth: 180, padding: '4px 0' }}>
+                    {hasModule('transcript_analysis') && <MoreMenuItem label="+ Transcript" onClick={() => { setShowTranscriptUpload(true); setShowAddMenu(false) }} />}
+                    {hasModule('coaching')            && <MoreMenuItem label="+ Email"      onClick={() => { setShowEmailGenerator(true); setShowAddMenu(false) }} />}
+                    <MoreMenuItem label="+ Slides"   onClick={() => { setShowSlideGenerator(true); setShowAddMenu(false) }} />
+                    <MoreMenuItem label="+ Task"     onClick={() => { setShowAddTask(true); setShowAddMenu(false) }} />
+                    <MoreMenuItem label="+ Contact"  onClick={() => { setTab('contacts'); setShowAddMenu(false) }} />
                   </div>
                 </>
               )}
             </div>
+            <button onClick={() => setShowChat(true)} title="Ask coach"
+              style={{ background: T.surface, color: T.text, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', cursor: 'pointer', fontFamily: T.font, height: 30, display: 'inline-flex', alignItems: 'center' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+              </svg>
+            </button>
+            <button onClick={() => setShowEditModal(true)} title="Edit deal"
+              style={{ background: T.surface, color: T.textMuted, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', cursor: 'pointer', fontFamily: T.font, height: 30, display: 'inline-flex', alignItems: 'center' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+              </svg>
+            </button>
           </div>
         </div>
-        <TabBar tabs={tabs} active={tab} onChange={setTab} />
+        <TabBar tabs={tabs} active={tab} onChange={(k) => {
+          if (k === 'deal_room') { navigate(`/deal/${id}/room`); return }
+          setTab(k)
+        }} />
       </div>
 
       <div style={{ padding: '16px 24px', width: '100%' }}>
@@ -1791,7 +1776,52 @@ export default function DealDetail() {
           </div>
         )}
 
-        {/* ===== OVERVIEW TAB — WIDGET GRID ===== */}
+        {/* ════════════════════ HOME TAB ════════════════════ */}
+        {tab === 'home' && (
+          <div>
+            {/* Retrospective banner — only when deal is closed */}
+            {['closed_won', 'closed_lost', 'disqualified'].includes(deal.stage) && (
+              <div style={{ padding: '14px 18px', marginBottom: 14, background: T.surface, border: `1px solid ${T.border}`, borderLeft: `4px solid ${deal.stage === 'closed_won' ? T.success : T.error}`, borderRadius: 8, display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+                <StageBadge stage={deal.stage} />
+                {deal.closed_at && (
+                  <span style={{ fontSize: 12, color: T.textMuted }}>Closed {new Date(deal.closed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                )}
+                {retrospective ? (
+                  <div style={{ flex: 1, minWidth: 240 }}>
+                    {retrospective.what_helped_hurt && <div style={{ fontSize: 12, color: T.textSecondary, lineHeight: 1.5 }}>{String(retrospective.what_helped_hurt).slice(0, 240)}{String(retrospective.what_helped_hurt).length > 240 ? '…' : ''}</div>}
+                    {retrospective.key_lesson && <div style={{ fontSize: 12, color: T.text, marginTop: 4, fontWeight: 600 }}>Lesson: {retrospective.key_lesson}</div>}
+                  </div>
+                ) : (
+                  <div style={{ flex: 1, minWidth: 240, fontSize: 12, color: T.textMuted }}>Retrospective is generating in the background.</div>
+                )}
+                <Button onClick={() => navigate(`/deal/${id}/retrospective`)} style={{ padding: '5px 12px', fontSize: 12 }}>View full retrospective →</Button>
+              </div>
+            )}
+
+            {/* Next Steps widget — full width */}
+            <NextStepsWidget deal={deal} setDeal={setDeal} />
+
+            {/* Tasks + Deal Age side by side */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)', gap: 14, marginTop: 14 }}>
+              <TasksWidget tasks={tasks} setTasks={setTasks} dealId={id} userId={profile?.id} onAdd={() => setShowAddTask(true)} />
+              <DealAgeWidget deal={deal} />
+            </div>
+          </div>
+        )}
+
+        {/* ════════════════════ ACTIVITY TAB ════════════════════ */}
+        {tab === 'activity' && (
+          <ActivityFeed
+            conversations={conversations}
+            generatedEmails={generatedEmails}
+            dealId={id}
+            navigate={navigate}
+            filter={activityFilter}
+            onFilter={setActivityFilter}
+          />
+        )}
+
+        {/* ===== OVERVIEW TAB — WIDGET GRID (legacy, unreachable from new nav) ===== */}
         {tab === 'overview' && (
           <div>
             {conversations.some(c => !c.processed) && (
@@ -1895,91 +1925,7 @@ export default function DealDetail() {
 
         {/* ===== CONTACTS TAB ===== */}
         {tab === 'contacts' && (
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: T.text }}>Contacts</h3>
-              <Button primary onClick={() => setShowAddContact(true)}>+ Add Contact</Button>
-            </div>
-            {showAddContact && (
-              <div style={{ padding: 12, background: T.surfaceAlt, borderRadius: 6, marginBottom: 12, border: `1px solid ${T.borderLight}` }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
-                  <div><label style={labelStyle}>Name *</label><input style={inputStyle} value={newContact.name} onChange={e => setNewContact(p => ({ ...p, name: e.target.value }))} autoFocus /></div>
-                  <div><label style={labelStyle}>Title</label><input style={inputStyle} value={newContact.title} onChange={e => setNewContact(p => ({ ...p, title: e.target.value }))} /></div>
-                  <div><label style={labelStyle}>Email</label><input style={inputStyle} value={newContact.email} onChange={e => setNewContact(p => ({ ...p, email: e.target.value }))} /></div>
-                  <div><label style={labelStyle}>Role in Deal</label><input style={inputStyle} value={newContact.role_in_deal} onChange={e => setNewContact(p => ({ ...p, role_in_deal: e.target.value }))} /></div>
-                </div>
-                <div style={{ display: 'flex', gap: 6 }}><Button primary onClick={addNewContact}>Add Contact</Button><Button onClick={() => setShowAddContact(false)}>Cancel</Button></div>
-              </div>
-            )}
-            {contacts.length === 0 ? <EmptyState icon="☺" title="No contacts yet" message="Add them manually, or upload a call transcript — the AI will extract decision-relevant contacts automatically." action={<Button primary onClick={() => setShowAddContact(true)} style={{ padding: '6px 14px', fontSize: 12 }}>+ Add contact</Button>} /> : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: 12 }}>
-                {contacts.map(c => (
-                  <Card key={c.id}>
-                    {editingContact === c.id ? (
-                      <div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
-                          <div><label style={labelStyle}>Name</label><input style={inputStyle} value={editContactData.name || ''} onChange={e => setEditContactData(p => ({ ...p, name: e.target.value }))} /></div>
-                          <div><label style={labelStyle}>Title</label><input style={inputStyle} value={editContactData.title || ''} onChange={e => setEditContactData(p => ({ ...p, title: e.target.value }))} /></div>
-                          <div><label style={labelStyle}>Email</label><input style={inputStyle} value={editContactData.email || ''} onChange={e => setEditContactData(p => ({ ...p, email: e.target.value }))} /></div>
-                          <div><label style={labelStyle}>Department</label><input style={inputStyle} value={editContactData.department || ''} onChange={e => setEditContactData(p => ({ ...p, department: e.target.value }))} /></div>
-                          <div><label style={labelStyle}>Role in Deal</label><input style={inputStyle} value={editContactData.role_in_deal || ''} onChange={e => setEditContactData(p => ({ ...p, role_in_deal: e.target.value }))} /></div>
-                          <div><label style={labelStyle}>Priorities</label><input style={inputStyle} value={editContactData.priorities || ''} onChange={e => setEditContactData(p => ({ ...p, priorities: e.target.value }))} /></div>
-                          <div><label style={labelStyle}>Communication Style</label><input style={inputStyle} value={editContactData.communication_style || ''} onChange={e => setEditContactData(p => ({ ...p, communication_style: e.target.value }))} /></div>
-                          <div><label style={labelStyle}>Influence</label>
-                            <select style={{ ...inputStyle, cursor: 'pointer' }} value={editContactData.influence_level || ''} onChange={e => setEditContactData(p => ({ ...p, influence_level: e.target.value }))}>
-                              <option value="">Unknown</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
-                            </select></div>
-                        </div>
-                        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                          {['is_champion', 'is_economic_buyer', 'is_signer'].map(flag => (
-                            <label key={flag} style={{ fontSize: 12, color: T.textSecondary, display: 'flex', alignItems: 'center', gap: 4 }}>
-                              <input type="checkbox" checked={editContactData[flag] || false} onChange={e => setEditContactData(p => ({ ...p, [flag]: e.target.checked }))} />
-                              {flag.replace('is_', '').replace('_', ' ')}
-                            </label>
-                          ))}
-                        </div>
-                        <div style={{ display: 'flex', gap: 6, marginTop: 10 }}><Button primary onClick={() => saveContact(c.id)}>Save</Button><Button onClick={() => setEditingContact(null)}>Cancel</Button></div>
-                      </div>
-                    ) : (
-                      <>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-                          <div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                              <span style={{ fontSize: 15, fontWeight: 700, color: T.text }}>{c.name}</span>
-                              <LinkedInBadge url={c.linkedin} />
-                            </div>
-                            <div style={{ fontSize: 12, color: T.textSecondary }}>{c.title}{c.department ? ` - ${c.department}` : ''}</div>
-                            {c.background && c.background !== 'Unknown' && (
-                              <div style={{ fontSize: 11, color: T.textMuted, fontStyle: 'italic', marginTop: 3 }}>{c.background}</div>
-                            )}
-                            {c.previous_erp_experience && c.previous_erp_experience !== 'Unknown' && c.previous_erp_experience.trim() && (
-                              <span style={{ display: 'inline-block', background: '#fff3cd', color: '#856404', fontSize: 10, fontWeight: 700, borderRadius: 4, padding: '2px 8px', marginTop: 4 }}>Prior ERP: {c.previous_erp_experience}</span>
-                            )}
-                            {c.personality_notes && !c.personality_notes.startsWith('Source:') && (
-                              <div style={{ fontSize: 11, color: T.textMuted, marginTop: 3 }}>{c.personality_notes}</div>
-                            )}
-                          </div>
-                          <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexShrink: 0 }}>
-                            {c.is_champion && <Badge color={T.success}>Champion</Badge>}
-                            {c.is_economic_buyer && <Badge color={T.primary}>EB</Badge>}
-                            {c.is_signer && <Badge color={T.warning}>Signer</Badge>}
-                            <Badge color={c.influence_level === 'high' ? T.error : c.influence_level === 'medium' ? T.warning : T.textMuted}>{c.influence_level || 'Unknown'}</Badge>
-                            <Button style={{ padding: '3px 8px', fontSize: 10 }} onClick={() => { setEditingContact(c.id); setEditContactData({ ...c }) }}>Edit</Button>
-                            <Button danger style={{ padding: '3px 8px', fontSize: 10 }} onClick={() => deleteContact(c.id)}>Delete</Button>
-                          </div>
-                        </div>
-                        <Field label="Role in Deal" value={c.role_in_deal} />
-                        <Field label="Priorities" value={c.priorities} />
-                        <Field label="Communication Style" value={c.communication_style} />
-                        {c.email && <div style={{ fontSize: 12, color: T.primary }}>{c.email}</div>}
-                        <SourceLink url={c.source_url} />
-                      </>
-                    )}
-                  </Card>
-                ))}
-              </div>
-            )}
-          </div>
+          <ContactsOrgTree dealId={id} contacts={contacts} setContacts={setContacts} />
         )}
 
         {/* ===== TRANSCRIPTS TAB ===== */}
@@ -2469,6 +2415,354 @@ export default function DealDetail() {
           </div>
         </div>
       )}
+
+      {/* Edit deal modal — opened by the pencil icon in the header */}
+      {showEditModal && (
+        <EditDealModal deal={deal} setDeal={setDeal} onClose={() => setShowEditModal(false)} navigate={navigate} />
+      )}
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Sub-components for the new Home/Activity tabs + popovers/modals
+// ═══════════════════════════════════════════════════════════════
+
+function BadgePopover({ options, selected, onPick, onClose }) {
+  return (
+    <>
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 998 }} />
+      <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 999, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.18)', minWidth: 180, padding: '4px 0' }}>
+        {options.map(o => (
+          <button key={o.k} onClick={() => onPick(o.k)}
+            style={{
+              display: 'block', width: '100%', padding: '7px 14px', textAlign: 'left',
+              background: selected === o.k ? T.surfaceAlt : 'transparent',
+              border: 'none', cursor: 'pointer', fontFamily: T.font,
+              fontSize: 12, fontWeight: selected === o.k ? 700 : 500, color: T.text,
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = T.surfaceAlt}
+            onMouseLeave={e => e.currentTarget.style.background = selected === o.k ? T.surfaceAlt : 'transparent'}>
+            {o.l}
+            {selected === o.k && <span style={{ float: 'right', color: T.primary, fontWeight: 800 }}>✓</span>}
+          </button>
+        ))}
+      </div>
+    </>
+  )
+}
+
+function NextStepsWidget({ deal, setDeal }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(deal.next_steps || '')
+  const [saving, setSaving] = useState(false)
+  useEffect(() => { setDraft(deal.next_steps || '') }, [deal.next_steps])
+
+  async function save() {
+    if ((draft || '') === (deal.next_steps || '')) { setEditing(false); return }
+    setSaving(true)
+    try {
+      const { error } = await supabase.from('deals').update({ next_steps: draft || null }).eq('id', deal.id)
+      if (!error) {
+        // Reload to pick up next_steps_color the trigger just set.
+        const { data: refreshed } = await supabase.from('deals').select('next_steps, next_steps_color, updated_at').eq('id', deal.id).single()
+        setDeal(prev => ({ ...prev, next_steps: refreshed?.next_steps ?? draft, next_steps_color: refreshed?.next_steps_color ?? null, updated_at: refreshed?.updated_at ?? prev.updated_at }))
+      }
+    } catch (e) { console.error('save next_steps failed', e) }
+    setSaving(false)
+    setEditing(false)
+  }
+
+  const populated = (deal.next_steps || '').trim().length > 0
+  const accentColor = deal.next_steps_color === 'red' ? T.error : deal.next_steps_color === 'green' ? T.success : T.border
+
+  if (editing) {
+    return (
+      <div style={{ padding: '14px 18px', border: `1px solid ${T.border}`, borderLeft: `4px solid ${accentColor}`, borderRadius: 8, background: T.surface }}>
+        <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Next Steps</div>
+        <textarea
+          autoFocus
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          onBlur={save}
+          onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') save(); if (e.key === 'Escape') { setDraft(deal.next_steps || ''); setEditing(false) } }}
+          rows={4}
+          placeholder="What's the next move? Use RED / GREEN keywords to color-tint this card."
+          style={{ ...inputStyle, fontFamily: T.font, fontSize: 14, lineHeight: 1.6, resize: 'vertical', width: '100%' }}
+        />
+        <div style={{ marginTop: 4, fontSize: 10, color: T.textMuted }}>{saving ? 'Saving…' : 'Saves on blur or ⌘↵.'}</div>
+      </div>
+    )
+  }
+
+  if (!populated) {
+    return (
+      <div onClick={() => setEditing(true)}
+        style={{ padding: '14px 18px', border: `1px dashed ${T.border}`, borderRadius: 8, color: T.textMuted, fontStyle: 'italic', cursor: 'pointer', background: T.surface }}>
+        + Add next steps
+      </div>
+    )
+  }
+
+  return (
+    <div onClick={() => setEditing(true)}
+      style={{ padding: '14px 18px', border: `1px solid ${T.border}`, borderLeft: `4px solid ${accentColor}`, borderRadius: 8, cursor: 'pointer', background: T.surface }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+        <span style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Next Steps</span>
+        {deal.next_steps_color && (
+          <Badge color={deal.next_steps_color === 'red' ? T.error : T.success}>{deal.next_steps_color}</Badge>
+        )}
+      </div>
+      <div style={{ fontFamily: T.font, fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap', color: T.text }}>{deal.next_steps}</div>
+      <div style={{ fontSize: 11, color: T.textMuted, marginTop: 6 }}>
+        Updated {deal.updated_at ? new Date(deal.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'} · click to edit
+      </div>
+    </div>
+  )
+}
+
+function DealAgeWidget({ deal }) {
+  const created = deal.created_at ? new Date(deal.created_at) : null
+  const isClosed = ['closed_won', 'closed_lost', 'disqualified'].includes(deal.stage)
+  const closed = deal.closed_at ? new Date(deal.closed_at) : null
+  const end = isClosed && closed ? closed : new Date()
+  const days = created ? Math.max(0, Math.floor((end - created) / 86400000)) : null
+  const formatted = days == null ? '—'
+    : days < 7 ? `${days} day${days === 1 ? '' : 's'}`
+    : days < 60 ? `${Math.floor(days / 7)}w ${days % 7}d`
+    : `${days} days`
+  const closedMonth = isClosed && closed ? closed.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : null
+
+  return (
+    <div style={{ padding: '14px 18px', border: `1px solid ${T.border}`, borderRadius: 8, background: T.surface }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 8 }}>
+        {isClosed ? 'Deal length' : 'Deal age'}
+      </div>
+      <div style={{ fontSize: 32, fontWeight: 800, color: T.text, fontFeatureSettings: '"tnum"', lineHeight: 1 }}>{formatted}</div>
+      <div style={{ fontSize: 11, color: T.textMuted, marginTop: 6 }}>
+        {isClosed ? `Closed ${closedMonth}` : 'Since deal creation'}
+      </div>
+    </div>
+  )
+}
+
+function TasksWidget({ tasks, setTasks, dealId, userId, onAdd }) {
+  const open = tasks.filter(t => !t.completed)
+  const done = tasks.filter(t => t.completed)
+
+  async function toggleComplete(t) {
+    const next = !t.completed
+    try {
+      await supabase.from('tasks').update({ completed: next }).eq('id', t.id)
+      setTasks(prev => prev.map(x => x.id === t.id ? { ...x, completed: next } : x))
+    } catch (e) { console.error('toggle task failed', e) }
+  }
+
+  return (
+    <div style={{ padding: '14px 18px', border: `1px solid ${T.border}`, borderRadius: 8, background: T.surface }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <span style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Tasks</span>
+        {onAdd && <Button onClick={onAdd} style={{ padding: '3px 10px', fontSize: 11 }}>+ Add</Button>}
+      </div>
+      {tasks.length === 0 ? (
+        <div style={{ padding: '14px 0', fontSize: 12, color: T.textMuted, textAlign: 'center' }}>No tasks yet</div>
+      ) : (
+        <div>
+          {open.map(t => (
+            <div key={t.id} onClick={() => toggleComplete(t)}
+              style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '6px 0', borderBottom: `1px solid ${T.borderLight}`, cursor: 'pointer' }}>
+              <span style={{ width: 14, height: 14, borderRadius: 3, border: `1.5px solid ${T.border}`, marginTop: 2, flexShrink: 0 }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, color: T.text, lineHeight: 1.4 }}>{t.title || t.description || 'Task'}</div>
+                {t.due_date && <div style={{ fontSize: 10, color: T.textMuted, marginTop: 2 }}>Due {new Date(t.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</div>}
+              </div>
+            </div>
+          ))}
+          {done.length > 0 && (
+            <details style={{ marginTop: 8 }}>
+              <summary style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', cursor: 'pointer' }}>Completed ({done.length})</summary>
+              <div style={{ marginTop: 6 }}>
+                {done.map(t => (
+                  <div key={t.id} onClick={() => toggleComplete(t)}
+                    style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '4px 0', cursor: 'pointer', opacity: 0.55 }}>
+                    <span style={{ width: 14, height: 14, borderRadius: 3, background: T.success, color: '#fff', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 2, flexShrink: 0 }}>✓</span>
+                    <div style={{ fontSize: 12, color: T.textSecondary, textDecoration: 'line-through' }}>{t.title || t.description || 'Task'}</div>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ActivityFeed({ conversations, generatedEmails, dealId, navigate, filter, onFilter }) {
+  const items = []
+  for (const c of conversations) items.push({ kind: 'call',  id: `call-${c.id}`,  ts: c.call_date || c.created_at, data: c })
+  for (const e of generatedEmails) items.push({ kind: 'email', id: `email-${e.id}`, ts: e.created_at,                data: e })
+  items.sort((a, b) => new Date(b.ts || 0) - new Date(a.ts || 0))
+
+  const counts = { all: items.length, calls: conversations.length, emails: generatedEmails.length }
+  const visible = filter === 'all' ? items : items.filter(it => (filter === 'calls' ? it.kind === 'call' : it.kind === 'email'))
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
+        {[
+          { k: 'all', l: counts.all > 0 ? `All (${counts.all})` : 'All' },
+          counts.calls  > 0 ? { k: 'calls',  l: `Calls (${counts.calls})` }   : null,
+          counts.emails > 0 ? { k: 'emails', l: `Emails (${counts.emails})` } : null,
+        ].filter(Boolean).map(o => {
+          const active = filter === o.k
+          return (
+            <button key={o.k} onClick={() => onFilter(o.k)}
+              style={{
+                padding: '5px 12px', fontSize: 11, fontWeight: 600, fontFamily: T.font,
+                border: `1px solid ${active ? T.primary : T.border}`,
+                borderRadius: 999,
+                background: active ? T.primaryLight : T.surface,
+                color: active ? T.primary : T.textMuted,
+                cursor: 'pointer',
+              }}>
+              {o.l}
+            </button>
+          )
+        })}
+      </div>
+      {visible.length === 0 ? (
+        <div style={{ padding: 32, textAlign: 'center', color: T.textMuted, fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8 }}>
+          No activity yet. Use the <strong>+</strong> menu to upload a transcript or generate an email.
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {visible.map(it => it.kind === 'call' ? (
+            <ActivityCallRow key={it.id} call={it.data} dealId={dealId} navigate={navigate} />
+          ) : (
+            <ActivityEmailRow key={it.id} email={it.data} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ActivityCallRow({ call, dealId, navigate }) {
+  const date = call.call_date || call.created_at
+  return (
+    <div onClick={() => navigate(`/deal/${dealId}/call/${call.id}`)}
+      style={{ padding: 14, border: `1px solid ${T.border}`, borderLeft: `4px solid ${T.primary}`, borderRadius: 8, background: T.surface, cursor: 'pointer' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <Badge color={T.primary}>Call</Badge>
+        {call.call_type && <Badge color={T.textMuted}>{String(call.call_type).replace(/_/g, ' ')}</Badge>}
+        <span style={{ fontSize: 13, fontWeight: 700, color: T.text, flex: 1, minWidth: 0 }}>{call.title || call.call_type || 'Call'}</span>
+        <span style={{ fontSize: 11, color: T.textMuted }}>{date ? new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span>
+      </div>
+      {call.summary && <div style={{ fontSize: 12, color: T.textSecondary, marginTop: 6, lineHeight: 1.5 }}>{String(call.summary).slice(0, 280)}{String(call.summary).length > 280 ? '…' : ''}</div>}
+      {!call.processed && <div style={{ fontSize: 10, color: T.warning, marginTop: 6, fontWeight: 600 }}>Processing…</div>}
+    </div>
+  )
+}
+
+function ActivityEmailRow({ email }) {
+  return (
+    <div style={{ padding: 14, border: `1px solid ${T.border}`, borderLeft: `4px solid ${T.success}`, borderRadius: 8, background: T.surface }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <Badge color={T.success}>Email</Badge>
+        {email.email_type && <Badge color={T.textMuted}>{String(email.email_type).replace(/_/g, ' ')}</Badge>}
+        <span style={{ fontSize: 13, fontWeight: 700, color: T.text, flex: 1, minWidth: 0 }}>{email.subject || '(no subject)'}</span>
+        <span style={{ fontSize: 11, color: T.textMuted }}>{email.created_at ? new Date(email.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span>
+      </div>
+      {email.body && <div style={{ fontSize: 12, color: T.textSecondary, marginTop: 6, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{String(email.body).slice(0, 280)}{String(email.body).length > 280 ? '…' : ''}</div>}
+    </div>
+  )
+}
+
+// Minimal edit-deal modal: covers the most-edited fields plus a delete
+// destructor at the bottom. Pencil icon in the header opens this.
+function EditDealModal({ deal, setDeal, onClose, navigate }) {
+  const [draft, setDraft] = useState({
+    company_name: deal.company_name || '',
+    deal_value: deal.deal_value ?? '',
+    cmrr: deal.cmrr ?? '',
+    target_close_date: deal.target_close_date ? String(deal.target_close_date).split('T')[0] : '',
+    website: deal.website || '',
+  })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  async function save() {
+    setSaving(true)
+    setError('')
+    try {
+      const patch = {
+        company_name: draft.company_name?.trim() || deal.company_name,
+        deal_value: draft.deal_value === '' ? null : Number(draft.deal_value),
+        cmrr: draft.cmrr === '' ? null : Number(draft.cmrr),
+        target_close_date: draft.target_close_date || null,
+        website: draft.website?.trim() || null,
+      }
+      const { error: e } = await supabase.from('deals').update(patch).eq('id', deal.id)
+      if (e) throw e
+      setDeal(prev => ({ ...prev, ...patch }))
+      onClose()
+    } catch (e) {
+      setError(e?.message || 'Save failed')
+    }
+    setSaving(false)
+  }
+
+  async function destroy() {
+    if (!window.confirm('Delete this deal and all its data? This cannot be undone.')) return
+    try {
+      await supabase.from('deals').delete().eq('id', deal.id)
+      navigate('/')
+    } catch (e) { setError(e?.message || 'Delete failed') }
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: T.surface, borderRadius: 10, width: '100%', maxWidth: 520, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.25)' }}>
+        <div style={{ padding: '14px 18px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center' }}>
+          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: T.text, flex: 1 }}>Edit Deal</h3>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 22, color: T.textMuted, lineHeight: 1, padding: 0 }}>×</button>
+        </div>
+        <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {error && <div style={{ padding: '8px 10px', background: T.errorLight, color: T.error, fontSize: 12, borderRadius: 4 }}>{error}</div>}
+          <div>
+            <label style={labelStyle}>Company name</label>
+            <input style={inputStyle} value={draft.company_name} onChange={e => setDraft(p => ({ ...p, company_name: e.target.value }))} />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div>
+              <label style={labelStyle}>Deal value ($)</label>
+              <input type="number" style={inputStyle} value={draft.deal_value} onChange={e => setDraft(p => ({ ...p, deal_value: e.target.value }))} />
+            </div>
+            <div>
+              <label style={labelStyle}>CMRR ($/mo)</label>
+              <input type="number" style={inputStyle} value={draft.cmrr} onChange={e => setDraft(p => ({ ...p, cmrr: e.target.value }))} />
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div>
+              <label style={labelStyle}>Target close date</label>
+              <input type="date" style={inputStyle} value={draft.target_close_date} onChange={e => setDraft(p => ({ ...p, target_close_date: e.target.value }))} />
+            </div>
+            <div>
+              <label style={labelStyle}>Website</label>
+              <input style={inputStyle} value={draft.website} onChange={e => setDraft(p => ({ ...p, website: e.target.value }))} placeholder="https://" />
+            </div>
+          </div>
+        </div>
+        <div style={{ padding: '12px 18px', borderTop: `1px solid ${T.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+          <Button danger onClick={destroy}>Delete deal</Button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Button onClick={onClose}>Cancel</Button>
+            <Button primary onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
