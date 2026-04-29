@@ -576,17 +576,16 @@ function SubscriptionSection({ quote, lines, products, productMap, bundleChildre
   const percentTotal = Number(quote.percent_lines_total) || 0
   const sageSubscriptionTotal = Number(quote.sage_subscription_total) || 0
 
-  // Blended Discount % — internal metric. We exclude entity SKUs (which are
-  // typically heavily discounted as a sales tactic and skew the rate) and
-  // percent_of_total lines (they aren't list-priced) so the rep sees the
-  // effective discount on the rest of the bundle.
+  // Blended Discount % — internal metric. Only entity SKUs are excluded,
+  // since entities are typically heavily discounted as a sales tactic and
+  // skew the rate. Percent-of-total lines (surcharges/discounts) are part
+  // of the picture and stay in the math.
   const blendedDiscountPct = (() => {
     const eligible = lines.filter(l => {
       if (l.parent_line_id) return false
       const p = productMap[l.product_id]
       if (!p) return false
       if (p.is_entity) return false
-      if (p.pricing_method === 'percent_of_total') return false
       return true
     })
     let listSum = 0
@@ -859,7 +858,7 @@ function SubscriptionSection({ quote, lines, products, productMap, bundleChildre
           label="Blended Discount"
           value={blendedDiscountPct == null ? '—' : `${blendedDiscountPct.toFixed(1)}%`}
           color={blendedDiscountPct == null ? T.textMuted : (blendedDiscountPct > 0 ? T.success : T.textMuted)}
-          title="Internal metric: weighted discount across non-entity SKUs (entity SKUs excluded since they're often heavily discounted and skew the rate)."
+          title="Internal metric: weighted total discount across all lines except entity SKUs. Entities are excluded because they're often heavily discounted and skew the rate."
         />
         <FooterCell label="Sage Subscription" value={dollars(sageSubscriptionTotal)} bold color={T.primary} />
       </div>
@@ -1191,8 +1190,10 @@ function ProductPicker({ products, favorites, onClose, onAddSelected, onAddFavor
                     <button
                       onClick={() => isFav ? onRemoveFavorite(p.id) : onAddFavorite(p.id)}
                       title={isFav ? 'Remove from favorites' : 'Add to favorites'}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: isFav ? T.warning : T.textMuted, fontSize: 18, padding: 0, lineHeight: 1 }}
-                    >{isFav ? '★' : '☆'}</button>
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: isFav ? T.warning : T.textMuted, padding: 2, display: 'inline-flex' }}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill={isFav ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                    </button>
                   </div>
                   {isDescOpen && p.description && (
                     <div style={{ padding: '4px 50px 10px 50px', fontSize: 11, color: T.textMuted, lineHeight: 1.5 }}>{p.description}</div>
@@ -2049,7 +2050,7 @@ export function ResourcesTab({ deal, onDealUpdated, headerExtra = null }) {
                                   </a>
                                 )}
                                 <Button onClick={() => setEditing({ ...r, _file: null })} style={{ padding: '4px 10px', fontSize: 11 }}>Edit</Button>
-                                <Button onClick={() => saveToLibrary(r)} style={{ padding: '4px 10px', fontSize: 11 }} title="Save to your team library so anyone can re-use it on another deal">★ Library</Button>
+                                <Button onClick={() => saveToLibrary(r)} style={{ padding: '4px 10px', fontSize: 11 }} title="Save to your team library so anyone can re-use it on another deal">Save to library</Button>
                               </div>
                             </td>
                           </tr>
@@ -2098,7 +2099,7 @@ function ResourceCard({ resource, onEdit, onDelete, onSaveToLibrary }) {
         )}
         <Button onClick={onEdit} style={{ padding: '4px 10px', fontSize: 11 }}>Edit</Button>
         {onSaveToLibrary && (
-          <Button onClick={onSaveToLibrary} style={{ padding: '4px 10px', fontSize: 11 }} title="Save to your team library so anyone can re-use it on another deal">★ Library</Button>
+          <Button onClick={onSaveToLibrary} style={{ padding: '4px 10px', fontSize: 11 }} title="Save to your team library so anyone can re-use it on another deal">Save to library</Button>
         )}
         <Button danger onClick={onDelete} style={{ padding: '4px 10px', fontSize: 11 }}>Delete</Button>
       </div>
@@ -2275,7 +2276,7 @@ function LibraryPicker({ orgId, onClose, onPick }) {
             <div style={{ padding: 20, textAlign: 'center', color: T.textMuted, fontSize: 12 }}>Loading library…</div>
           ) : items.length === 0 ? (
             <div style={{ padding: 32, textAlign: 'center', color: T.textMuted, fontSize: 13 }}>
-              Your team library is empty. Save resources to it from the Files & Links cards using the <strong>★ Library</strong> button.
+              Your team library is empty. Save resources to it from the Files & Links cards using the <strong>Save to library</strong> button.
             </div>
           ) : visible.length === 0 ? (
             <div style={{ padding: 24, textAlign: 'center', color: T.textMuted, fontSize: 12 }}>No matches.</div>
@@ -2653,7 +2654,13 @@ function ScheduleTab({ quote, schedule, onRegenerate, onChanged }) {
                         style={{ ...inputStyle, fontSize: 12, padding: '4px 6px', textAlign: 'right', fontFeatureSettings: '"tnum"' }} />
                     </td>
                     <td style={{ padding: '6px 10px', textAlign: 'center' }}>
-                      <button onClick={() => toggleLock(r)} title={r.manually_edited ? 'Locked — survives regenerate' : 'Click to lock'} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, color: r.manually_edited ? T.warning : T.textMuted, padding: 0 }}>{r.manually_edited ? '🔒' : '🔓'}</button>
+                      <button onClick={() => toggleLock(r)} title={r.manually_edited ? 'Locked — survives regenerate' : 'Click to lock'} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'inline-flex', color: r.manually_edited ? T.warning : T.textMuted, padding: 2 }}>
+                        {r.manually_edited ? (
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                        ) : (
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
+                        )}
+                      </button>
                     </td>
                     <td style={{ padding: '4px 6px', textAlign: 'center' }}>
                       <button onClick={() => deleteRow(r.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, fontSize: 14, padding: 0 }}>×</button>
