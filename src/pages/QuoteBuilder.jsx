@@ -1831,15 +1831,37 @@ export function ResourcesTab({ deal, onDealUpdated }) {
                         {items.map(r => (
                           <tr key={r.id} style={{ borderBottom: `1px solid ${T.borderLight}`, verticalAlign: 'top' }}>
                             <td style={{ padding: '12px 14px' }}>
-                              <div style={{ fontSize: 13, fontWeight: 700, color: T.text, lineHeight: 1.35 }}>{r.title}</div>
-                              {r.storage_path && r.file_size != null && (
-                                <div style={{ fontSize: 10, color: T.textMuted, marginTop: 4 }}>
-                                  {Math.round(r.file_size / 1024)} KB · {r.mime_type || 'file'}
+                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                                <button
+                                  onClick={() => del(r)}
+                                  title={`Remove "${r.title}"`}
+                                  aria-label={`Remove ${r.title}`}
+                                  style={{
+                                    width: 18, height: 18, padding: 0, marginTop: 1,
+                                    border: 'none', background: 'transparent',
+                                    color: T.textMuted, cursor: 'pointer', borderRadius: 3, lineHeight: 1,
+                                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                    fontFamily: T.font, flexShrink: 0,
+                                    transition: 'background 0.1s, color 0.1s',
+                                  }}
+                                  onMouseEnter={e => { e.currentTarget.style.background = T.errorLight; e.currentTarget.style.color = T.error }}
+                                  onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = T.textMuted }}>
+                                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                                  </svg>
+                                </button>
+                                <div style={{ minWidth: 0 }}>
+                                  <div style={{ fontSize: 13, fontWeight: 700, color: T.text, lineHeight: 1.35 }}>{r.title}</div>
+                                  {r.storage_path && r.file_size != null && (
+                                    <div style={{ fontSize: 10, color: T.textMuted, marginTop: 4 }}>
+                                      {Math.round(r.file_size / 1024)} KB · {r.mime_type || 'file'}
+                                    </div>
+                                  )}
+                                  {!r.storage_path && r.url && (
+                                    <div style={{ fontSize: 10, color: T.textMuted, marginTop: 4, wordBreak: 'break-all', fontFamily: T.mono }}>{r.url}</div>
+                                  )}
                                 </div>
-                              )}
-                              {!r.storage_path && r.url && (
-                                <div style={{ fontSize: 10, color: T.textMuted, marginTop: 4, wordBreak: 'break-all', fontFamily: T.mono }}>{r.url}</div>
-                              )}
+                              </div>
                             </td>
                             <td style={{ padding: '12px 14px', fontSize: 12, color: T.textSecondary, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
                               {r.notes || <span style={{ color: T.textMuted, fontStyle: 'italic' }}>—</span>}
@@ -1854,7 +1876,6 @@ export function ResourcesTab({ deal, onDealUpdated }) {
                                 )}
                                 <Button onClick={() => setEditing({ ...r, _file: null })} style={{ padding: '4px 10px', fontSize: 11 }}>Edit</Button>
                                 <Button onClick={() => saveToLibrary(r)} style={{ padding: '4px 10px', fontSize: 11 }} title="Save to your team library so anyone can re-use it on another deal">★ Library</Button>
-                                <Button danger onClick={() => del(r)} style={{ padding: '4px 10px', fontSize: 11 }}>Delete</Button>
                               </div>
                             </td>
                           </tr>
