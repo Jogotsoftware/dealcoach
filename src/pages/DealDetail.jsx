@@ -2580,13 +2580,16 @@ function HomeDashboard({ dealId, deal, tasks, setTasks, userId, onAddTask, editM
 
   // Built-in Home widgets handled inline by HomeDashboard.
   const BUILT_IN_IDS = new Set(['tasks', 'deal_age', 'retrospective'])
-  // Build a merged catalog: built-ins + registered widgets (widget_registry,
-  // any widget_type) + the org's custom widget definitions (deal-scoped).
-  // We expose them all in the "+ Add widget" picker so anything the rep has
-  // built or installed shows up here without code changes.
+  // Build a merged catalog: built-ins + deal-scoped registered widgets +
+  // deal-scoped custom widget definitions. Pipeline-scoped widgets are
+  // excluded — they belong to the Home pipeline tab, not the deal home.
   const externalWidgets = [
-    ...(registeredWidgets || []).filter(w => !BUILT_IN_IDS.has(w.id)).map(w => ({ id: w.id, title: w.title || w.name || w.id, w: 6, h: 4, minW: 3, minH: 2 })),
-    ...(customWidgetDefs  || []).filter(w => w.widget_type === 'deal').map(w => ({ id: w.id, title: w.name || w.id, w: 6, h: 4, minW: 3, minH: 2 })),
+    ...(registeredWidgets || [])
+      .filter(w => !BUILT_IN_IDS.has(w.id) && w.category === 'deal')
+      .map(w => ({ id: w.id, title: w.title || w.name || w.id, w: 6, h: 4, minW: 3, minH: 2 })),
+    ...(customWidgetDefs  || [])
+      .filter(w => w.widget_type === 'deal')
+      .map(w => ({ id: w.id, title: w.name || w.id, w: 6, h: 4, minW: 3, minH: 2 })),
   ]
   const widgetCatalog = [...HOME_WIDGET_REGISTRY, ...externalWidgets]
   const findDef = (id) => widgetCatalog.find(w => w.id === id)
