@@ -16,11 +16,26 @@ const STATUS_OPTIONS = [
 ]
 const STAGE_COLOR_PRESETS = ['#5DADE2', '#6bb644', '#f59e0b', '#a855f7', '#ec4899', '#0ea5e9', '#10b981', '#dc6b2f', '#6b7280']
 
-// Display rule used wherever an MSP stage/milestone date is rendered:
-// date_label > formatted due_date > formatted start_date > 'TBD'
+// Display rule used wherever an MSP stage/milestone date is rendered.
+// Honors `date_mode` first (single | range | free_text), then falls back to
+// the legacy heuristic for older rows that don't have a mode set.
 export function displayMspDate(item, formatFn = formatDate) {
-  if (item?.date_label && String(item.date_label).trim()) return item.date_label
+  const mode = item?.date_mode
+  if (mode === 'free_text') return item?.date_label?.trim() || 'TBD'
+  if (mode === 'range') {
+    if (item?.start_date && item?.end_date) return `${formatFn(item.start_date)} – ${formatFn(item.end_date)}`
+    if (item?.start_date) return formatFn(item.start_date)
+    if (item?.end_date) return formatFn(item.end_date)
+    return 'TBD'
+  }
+  if (mode === 'single') {
+    if (item?.due_date) return formatFn(item.due_date)
+    return 'TBD'
+  }
+  // Legacy fallback for rows without a mode: prefer label > due > start
+  if (item?.date_label?.trim()) return item.date_label
   if (item?.due_date) return formatFn(item.due_date)
+  if (item?.start_date && item?.end_date) return `${formatFn(item.start_date)} – ${formatFn(item.end_date)}`
   if (item?.start_date) return formatFn(item.start_date)
   return 'TBD'
 }
@@ -148,11 +163,17 @@ export default function MSPEditor({ dealId, mode = 'standalone', readonlyAdapter
       if (!tplSteps?.length) { setApplyingTemplate(false); return }
       const today = new Date()
       for (const ts of tplSteps) {
+        // Stages seeded from a template inherit a real date if the template
+        // carries an offset; otherwise fall back to free_text so the AE can
+        // type a label.
+        const offset = ts.due_date_offset || ts.default_duration_days || 0
+        const hasOffset = !!ts.due_date_offset || !!ts.default_duration_days
         const dueDate = new Date(today)
-        dueDate.setDate(dueDate.getDate() + (ts.due_date_offset || ts.default_duration_days || 0))
+        dueDate.setDate(dueDate.getDate() + offset)
         const { data: newStage } = await supabase.from('msp_stages').insert({
           deal_id: dealId, stage_name: ts.stage_name, stage_order: ts.stage_order,
-          due_date: dueDate.toISOString().split('T')[0],
+          date_mode: hasOffset ? 'single' : 'free_text',
+          due_date: hasOffset ? dueDate.toISOString().split('T')[0] : null,
           notes: ts.notes || null, status: 'pending', is_completed: false,
           color: ts.color || null,
         }).select('id').single()
@@ -223,9 +244,12 @@ export default function MSPEditor({ dealId, mode = 'standalone', readonlyAdapter
   async function addStep() {
     if (!isWritable || !newStepName.trim()) return
     const nextOrder = steps.length > 0 ? Math.max(...steps.map(s => s.stage_order)) + 1 : 1
+    // Manually-added stages default to free_text mode so the AE can type
+    // "Mid May" / "Q3 2026" / "TBD" without first picking a calendar date.
     await supabase.from('msp_stages').insert({
       deal_id: dealId, stage_name: newStepName.trim(), stage_order: nextOrder,
       status: 'pending', is_completed: false, is_custom: true,
+      date_mode: 'free_text',
     })
     setNewStepName('')
     setShowAddStep(false)
@@ -237,6 +261,7 @@ export default function MSPEditor({ dealId, mode = 'standalone', readonlyAdapter
     await supabase.from('msp_stages').insert({
       deal_id: dealId, stage_name: 'New Step', stage_order: order,
       status: 'pending', is_completed: false, is_tweener: true, is_custom: true,
+      date_mode: 'free_text',
     })
     loadData()
   }
@@ -282,6 +307,25 @@ export default function MSPEditor({ dealId, mode = 'standalone', readonlyAdapter
     const value = dateLabel?.trim() ? dateLabel : null
     await supabase.from('msp_stages').update({ date_label: value }).eq('id', stepId)
     setSteps(prev => prev.map(s => s.id === stepId ? { ...s, date_label: value } : s))
+  }
+  async function updateDateMode(stepId, mode) {
+    if (!isWritable) return
+    if (!['single', 'range', 'free_text'].includes(mode)) return
+    // Clear the columns that don't apply to the new mode so display logic
+    // doesn't pick up stale values.
+    const patch = { date_mode: mode }
+    if (mode === 'single')    { patch.start_date = null; patch.end_date = null; patch.date_label = null }
+    if (mode === 'range')     { patch.due_date = null;   patch.date_label = null }
+    if (mode === 'free_text') { patch.due_date = null;   patch.start_date = null; patch.end_date = null }
+    await supabase.from('msp_stages').update(patch).eq('id', stepId)
+    setSteps(prev => prev.map(s => s.id === stepId ? { ...s, ...patch } : s))
+  }
+  async function updateStageRange(stepId, side, dateStr) {
+    if (!isWritable) return
+    const col = side === 'start' ? 'start_date' : 'end_date'
+    const value = dateStr || null
+    await supabase.from('msp_stages').update({ [col]: value }).eq('id', stepId)
+    setSteps(prev => prev.map(s => s.id === stepId ? { ...s, [col]: value } : s))
   }
   async function updateDuration(stepId, duration) {
     if (!isWritable) return
@@ -562,17 +606,12 @@ export default function MSPEditor({ dealId, mode = 'standalone', readonlyAdapter
 
                                   <StatusPicker step={step} onCycle={() => cycleStatus(step)} onSet={(s) => setStatus(step, s)} />
 
-                                  <input type="date" value={step.due_date?.split('T')[0] || ''}
-                                    onChange={e => updateDueDate(step.id, e.target.value)}
-                                    title="Date picker (used when no Date label is set)"
-                                    style={{ ...inputStyle, width: 'auto', padding: '4px 8px', fontSize: 11 }} />
-
-                                  <input
-                                    type="text" defaultValue={step.date_label || ''}
-                                    onBlur={e => { if ((e.target.value || '') !== (step.date_label || '')) updateDateLabel(step.id, e.target.value) }}
-                                    placeholder="Date label"
-                                    title="Free-text override for date display (e.g. 'Mid May', 'Q3 2026'). Overrides the date picker in display."
-                                    style={{ ...inputStyle, width: 110, padding: '4px 8px', fontSize: 11, fontStyle: step.date_label ? 'normal' : 'italic' }}
+                                  <DateModeEditor
+                                    step={step}
+                                    onUpdateMode={(mode) => updateDateMode(step.id, mode)}
+                                    onUpdateDueDate={(d) => updateDueDate(step.id, d)}
+                                    onUpdateRange={(side, d) => updateStageRange(step.id, side, d)}
+                                    onUpdateDateLabel={(v) => updateDateLabel(step.id, v)}
                                   />
 
                                   <input
@@ -583,7 +622,7 @@ export default function MSPEditor({ dealId, mode = 'standalone', readonlyAdapter
                                     style={{ ...inputStyle, width: 100, padding: '4px 8px', fontSize: 11, fontStyle: step.duration ? 'normal' : 'italic' }}
                                   />
 
-                                  {days != null && !step.is_completed && !step.date_label && (
+                                  {(step.date_mode === 'single' || !step.date_mode) && days != null && !step.is_completed && !step.date_label && (
                                     <span style={{ fontSize: 11, fontWeight: 600, color: overdue ? T.error : days <= 7 ? T.warning : T.textMuted, whiteSpace: 'nowrap', fontFeatureSettings: '"tnum"' }}>
                                       {overdue ? `${Math.abs(days)}d late` : `${days}d`}
                                     </span>
@@ -1048,6 +1087,69 @@ function ContactChips({ stepId, clients, team, dealId, userId, onChangeClients, 
             ))}
           </div>
         </>
+      )}
+    </div>
+  )
+}
+
+// 3-mode date editor for a stage row. Switching modes clears the columns
+// that don't apply to the new mode (handled by the onUpdateMode handler in
+// MSPEditor) so displayMspDate doesn't get confused by stale values.
+function DateModeEditor({ step, onUpdateMode, onUpdateDueDate, onUpdateRange, onUpdateDateLabel }) {
+  const mode = step.date_mode || (step.start_date && step.end_date ? 'range' : (step.date_label ? 'free_text' : 'single'))
+  const MODES = [
+    { k: 'single',    l: 'Date',     title: 'Single date — pick one calendar day' },
+    { k: 'range',     l: 'Range',    title: 'Date range — pick start and end dates' },
+    { k: 'free_text', l: 'Free text', title: 'Free text — e.g. "Mid May", "Q3 2026", "TBD"' },
+  ]
+  const startStr = step.start_date ? new Date(step.start_date).toISOString().split('T')[0] : ''
+  const endStr   = step.end_date   ? new Date(step.end_date).toISOString().split('T')[0]   : ''
+  const dueStr   = step.due_date   ? String(step.due_date).split('T')[0]                   : ''
+  return (
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+      <div style={{ display: 'inline-flex', border: `1px solid ${T.border}`, borderRadius: 4, overflow: 'hidden' }}>
+        {MODES.map((o, i) => {
+          const active = mode === o.k
+          return (
+            <button key={o.k} onClick={() => onUpdateMode(o.k)} title={o.title}
+              style={{
+                padding: '4px 8px', fontSize: 10, fontWeight: 600, fontFamily: T.font,
+                border: 'none', borderLeft: i > 0 ? `1px solid ${T.border}` : 'none',
+                background: active ? T.primary : T.surface,
+                color: active ? '#fff' : T.textMuted,
+                cursor: 'pointer',
+              }}>
+              {o.l}
+            </button>
+          )
+        })}
+      </div>
+      {mode === 'single' && (
+        <input type="date" value={dueStr}
+          onChange={e => onUpdateDueDate(e.target.value)}
+          style={{ ...inputStyle, width: 'auto', padding: '4px 8px', fontSize: 11 }} />
+      )}
+      {mode === 'range' && (
+        <>
+          <input type="date" value={startStr}
+            onChange={e => onUpdateRange('start', e.target.value)}
+            title="Start date"
+            style={{ ...inputStyle, width: 'auto', padding: '4px 8px', fontSize: 11 }} />
+          <span style={{ fontSize: 11, color: T.textMuted }}>→</span>
+          <input type="date" value={endStr}
+            onChange={e => onUpdateRange('end', e.target.value)}
+            title="End date"
+            style={{ ...inputStyle, width: 'auto', padding: '4px 8px', fontSize: 11 }} />
+        </>
+      )}
+      {mode === 'free_text' && (
+        <input
+          type="text"
+          defaultValue={step.date_label || ''}
+          onBlur={e => { if ((e.target.value || '') !== (step.date_label || '')) onUpdateDateLabel(e.target.value) }}
+          placeholder="e.g. Mid May, Q3 2026"
+          style={{ ...inputStyle, width: 160, padding: '4px 8px', fontSize: 11, fontStyle: step.date_label ? 'normal' : 'italic' }}
+        />
       )}
     </div>
   )
