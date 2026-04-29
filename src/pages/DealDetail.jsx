@@ -1659,8 +1659,9 @@ export default function DealDetail() {
     { key: 'overview', label: 'Overview' },
     hasModule('deal_management') && { key: 'contacts', label: `Contacts (${contacts.length})` },
     hasModule('transcript_analysis') && { key: 'transcripts', label: `Transcripts (${conversations.length})` },
-    hasModule('msp') && { key: 'msp', label: 'MSP' },
+    hasModule('msp') && { key: 'msp', label: 'Project Plan' },
     hasModule('proposal') && { key: 'quotes', label: `Quotes${quotes.length ? ` (${quotes.length})` : ''}` },
+    hasModule('proposal') && { key: 'deal_room', label: 'Deal Room' },
     { key: 'tasks', label: `Tasks (${openTasks.length})` },
     { key: 'documents', label: `Documents (${documents.length})` },
     hasModule('coaching') && { key: 'emails', label: `Emails (${generatedEmails.length})` },
@@ -2028,10 +2029,10 @@ export default function DealDetail() {
         {tab === 'msp' && (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: T.text }}>Mutual Success Plan</h3>
-              <Button primary onClick={() => navigate(`/deal/${id}/msp`)}>Open Full MSP</Button>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: T.text }}>Project Plan</h3>
+              <Button primary onClick={() => navigate(`/deal/${id}/msp`)}>Open Full Project Plan</Button>
             </div>
-            {mspStages.length === 0 ? <EmptyState message="No MSP steps yet. Open the full MSP to create steps or apply a template." action={<Button primary onClick={() => navigate(`/deal/${id}/msp`)} style={{ marginTop: 8 }}>Open MSP</Button>} /> : mspStages.map((step, si) => {
+            {mspStages.length === 0 ? <EmptyState message="No project plan steps yet. Open the full project plan to create steps or apply a template." action={<Button primary onClick={() => navigate(`/deal/${id}/msp`)} style={{ marginTop: 8 }}>Open Project Plan</Button>} /> : mspStages.map((step, si) => {
               const statusColor = step.is_completed ? T.success : step.status === 'in_progress' ? T.primary : step.status === 'blocked' ? T.error : T.border
               return (
                 <div key={step.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: T.surfaceAlt, borderRadius: 6, border: `1px solid ${T.borderLight}`, marginBottom: 6 }}>
@@ -2044,6 +2045,17 @@ export default function DealDetail() {
                 </div>
               )
             })}
+          </div>
+        )}
+
+        {/* ===== DEAL ROOM TAB ===== */}
+        {tab === 'deal_room' && (
+          <div>
+            <EmptyState
+              title="Deal Room"
+              message="The Deal Room is your customer-facing portal — Project Plan, Library, Proposal in one shareable URL. Configure it on its own page."
+              action={<Button primary onClick={() => navigate(`/deal/${id}/room`)}>Open Deal Room →</Button>}
+            />
           </div>
         )}
 

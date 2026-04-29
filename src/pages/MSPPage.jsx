@@ -333,7 +333,7 @@ export default function MSPPage() {
             fontWeight: 600, fontFamily: T.font,
           }}>&larr; {deal.company_name}</button>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 20, fontWeight: 700, color: T.text }}>Mutual Success Plan</div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: T.text }}>Project Plan</div>
             <div style={{ fontSize: 13, color: T.textSecondary }}>
               {deal.company_name} {deal.target_close_date && `| Target: ${formatDateLong(deal.target_close_date)}`}
             </div>
@@ -410,7 +410,7 @@ export default function MSPPage() {
             {steps.length === 0 ? (
               <Card>
                 <div style={{ textAlign: 'center', padding: 32 }}>
-                  <div style={{ fontSize: 14, color: T.textMuted, marginBottom: 16 }}>No MSP steps yet. Apply a template or add steps manually.</div>
+                  <div style={{ fontSize: 14, color: T.textMuted, marginBottom: 16 }}>No project plan steps yet. Apply a template or add steps manually.</div>
                   {templates.length > 0 && (
                     <div style={{ display: 'flex', justifyContent: 'center', gap: 8, alignItems: 'center', marginBottom: 12 }}>
                       {templates.length > 1 ? (
@@ -635,7 +635,7 @@ export default function MSPPage() {
                 <div style={{ display: 'flex', gap: 8 }}><Button primary onClick={addResource}>Add</Button><Button onClick={() => setShowAddResource(false)}>Cancel</Button></div>
               </Card>
             )}
-            {resources.length === 0 ? <EmptyState message="No resources attached to this MSP yet." /> : resources.map(r => (
+            {resources.length === 0 ? <EmptyState message="No resources attached to this project plan yet." /> : resources.map(r => (
               <Card key={r.id}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
@@ -660,7 +660,7 @@ export default function MSPPage() {
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
               <Button primary onClick={createShareLink}>Create Share Link</Button>
             </div>
-            {sharedLinks.length === 0 ? <EmptyState message="No shared links. Create one to share the MSP with your client." /> : sharedLinks.map(link => (
+            {sharedLinks.length === 0 ? <EmptyState message="No shared links. Create one to share the project plan with your client." /> : sharedLinks.map(link => (
               <Card key={link.id}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>

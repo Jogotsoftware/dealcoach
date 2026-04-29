@@ -247,7 +247,7 @@ export default function TranscriptUpload({ deals, onClose, onUploaded }) {
             <span style={{ fontSize: 16, lineHeight: 1 }}>&#9432;</span>
             <div style={{ fontSize: 12, color: T.text, lineHeight: 1.5 }}>
               Full deal context (company profile, analysis, contacts, competitors, previous calls,
-              open tasks, MSP status, scores) is sent with the transcript.
+              open tasks, project plan status, scores) is sent with the transcript.
               Claude receives the complete picture for coaching.
             </div>
           </div>

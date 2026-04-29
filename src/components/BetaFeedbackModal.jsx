@@ -100,7 +100,7 @@ export default function BetaFeedbackModal({ onClose, dealContext }) {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)' }} />
         <div style={{ position: 'relative', zIndex: 1, background: T.surface, borderRadius: 12, padding: 40, textAlign: 'center', boxShadow: '0 20px 60px rgba(0,0,0,0.15)' }}>
           <div style={{ fontSize: 18, fontWeight: 700, color: T.success, marginBottom: 8 }}>Feedback submitted</div>
-          <div style={{ fontSize: 13, color: T.textMuted }}>Thank you! This helps make DealCoach better.</div>
+          <div style={{ fontSize: 13, color: T.textMuted }}>Thank you! This helps make the platform better.</div>
         </div>
       </div>
     )

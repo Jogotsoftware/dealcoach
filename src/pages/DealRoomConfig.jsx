@@ -57,6 +57,8 @@ export default function DealRoomConfig() {
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteName, setInviteName] = useState('')
   const [reply, setReply] = useState({})  // commentId → draft reply text
+  const [aeNotesDraft, setAeNotesDraft] = useState('')
+  const [aeNotesSavedAt, setAeNotesSavedAt] = useState(null)
 
   useEffect(() => { load(true) }, [dealId])
 
@@ -81,6 +83,7 @@ export default function DealRoomConfig() {
       if (roomRes.error) throw roomRes.error
       setDeal(dealRes.data)
       setRoom(roomRes.data)
+      setAeNotesDraft(roomRes.data?.ae_notes || '')
       setQuotes(quotesRes.data || [])
       const primary = (quotesRes.data || []).find(q => q.is_primary)
       setSelectedQuoteId(primary?.id || quotesRes.data?.[0]?.id || '')
@@ -159,9 +162,19 @@ export default function DealRoomConfig() {
     } finally { setBusy(false) }
   }
 
+  async function saveAeNotes() {
+    const next = (aeNotesDraft || '').trim() || null
+    const current = room?.ae_notes || null
+    if (next === current) return
+    try {
+      await saveRoom({ ae_notes: next })
+      setAeNotesSavedAt(Date.now())
+    } catch (e) { /* error already surfaced via setError in saveRoom */ }
+  }
+
   async function copyShareUrl() {
     const url = `${APP_BASE}/room/${room.share_token}`
-    try { await navigator.clipboard.writeText(url); alert('Share URL copied') } catch { window.prompt('Copy this URL:', url) }
+    try { await navigator.clipboard.writeText(url); alert('Link copied — paste it into a message to your team or your customer.') } catch { window.prompt('Copy this URL:', url) }
   }
 
   async function openCustomerPreview() {
@@ -288,7 +301,7 @@ export default function DealRoomConfig() {
               <label style={labelStyle}>Share URL</label>
               <div style={{ display: 'flex', gap: 6 }}>
                 <input readOnly value={shareUrl} style={{ ...inputStyle, fontFamily: T.mono, fontSize: 11, flex: 1 }} />
-                <Button onClick={copyShareUrl} style={{ padding: '6px 14px', fontSize: 11 }}>Copy</Button>
+                <Button primary onClick={copyShareUrl} style={{ padding: '6px 14px', fontSize: 11, whiteSpace: 'nowrap' }}>Share With Your Team</Button>
               </div>
               <div style={{ marginTop: 12 }}>
                 <label style={labelStyle}>Access mode</label>
@@ -329,10 +342,29 @@ export default function DealRoomConfig() {
           </div>
         </Card>
 
+        {/* Card 1.5: Notes from you (shown across every tab) */}
+        <Card title={`Notes from ${profile?.full_name || 'you'} (shown on every tab)`}>
+          <div style={{ fontSize: 11, color: T.textSecondary, marginBottom: 8 }}>
+            A short personal note that appears at the top of every tab in the customer's Deal Room. Use it for context, a welcome message, or what to focus on.
+          </div>
+          <textarea
+            value={aeNotesDraft}
+            onChange={e => setAeNotesDraft(e.target.value)}
+            onBlur={saveAeNotes}
+            placeholder="e.g. Hey team — start with the Project Plan tab to align on dates, then review the proposal. Reach out anytime."
+            rows={4}
+            style={{ ...inputStyle, fontFamily: T.font, fontSize: 13, lineHeight: 1.55, resize: 'vertical' }}
+          />
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4, fontSize: 10, color: T.textMuted }}>
+            <span>{(aeNotesDraft || '').length} characters{aeNotesSavedAt && Date.now() - aeNotesSavedAt < 4000 ? ' · saved' : ''}</span>
+            <span>Saves automatically when you click outside the box.</span>
+          </div>
+        </Card>
+
         {/* Card 2: What customer will see */}
         <Card title="What the customer will see">
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, marginBottom: 14 }}>
-            <Stat label="MSP" value={`${stages.length} stages, ${milestones.length} milestones`} />
+            <Stat label="Project Plan" value={`${stages.length} stages, ${milestones.length} milestones`} />
             <Stat label="Library" value={`${resources.length} resources`} note="Manage in QuoteBuilder Resources tab" />
             <Stat label="Proposal"
               value={room.proposal_snapshotted_at ? `Last refreshed ${relativeTime(room.proposal_snapshotted_at)}` : 'No proposal shared yet'}
@@ -351,13 +383,13 @@ export default function DealRoomConfig() {
           </div>
         </Card>
 
-        {/* Card 3: MSP (calendar view + open editor link) */}
-        <Card title="MSP" action={<Button onClick={() => nav(`/deal/${dealId}/msp`)} style={{ padding: '4px 10px', fontSize: 11 }}>Open full MSP editor</Button>}>
+        {/* Card 3: Project Plan (calendar view + open editor link) */}
+        <Card title="Project Plan" action={<Button onClick={() => nav(`/deal/${dealId}/msp`)} style={{ padding: '4px 10px', fontSize: 11 }}>Open full Project Plan editor</Button>}>
           <div style={{ fontSize: 11, color: T.textSecondary, marginBottom: 10 }}>
-            Calendar view shows the rolling 6-month window the customer will see. Click an event to jump to it in the MSP editor.
+            Calendar view shows the rolling 6-month window the customer will see. Click an event to jump to it in the Project Plan editor.
           </div>
           {stages.length === 0 ? (
-            <EmptyState title="No MSP stages yet" message="Build your stages and milestones in the MSP editor." action={<Button primary onClick={() => nav(`/deal/${dealId}/msp`)}>Open MSP editor</Button>} />
+            <EmptyState title="No project plan stages yet" message="Build your stages and milestones in the Project Plan editor." action={<Button primary onClick={() => nav(`/deal/${dealId}/msp`)}>Open Project Plan editor</Button>} />
           ) : (
             <MSPCalendar
               stages={stages}

@@ -167,7 +167,7 @@ export default function DealRoomViewer() {
     )
   }
 
-  const { viewer, deal, org, archived } = meta
+  const { viewer, deal, org, rep, ae_notes, archived } = meta
 
   return (
     <div style={{ background: T.bg, minHeight: '100vh', fontFamily: T.font, color: T.text }}>
@@ -185,9 +185,10 @@ export default function DealRoomViewer() {
             <div style={{ fontSize: 22, fontWeight: 800, color: T.text }}>{deal?.company_name}</div>
             <div style={{ fontSize: 12, color: T.textSecondary, marginTop: 2 }}>Welcome, {viewer.name || viewer.email}</div>
           </div>
-          <div style={{ textAlign: 'right' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 12 }}>
+            <RepContactIcons rep={rep} />
             {deal?.customer_logo_url && (
-              <img src={deal.customer_logo_url} alt={deal.company_name} style={{ maxWidth: 140, maxHeight: 50, objectFit: 'contain', marginLeft: 'auto' }} />
+              <img src={deal.customer_logo_url} alt={deal.company_name} style={{ maxWidth: 110, maxHeight: 46, objectFit: 'contain' }} />
             )}
           </div>
         </div>
@@ -203,7 +204,7 @@ export default function DealRoomViewer() {
       <div style={{ background: T.surface, borderBottom: `1px solid ${T.border}`, padding: '0 24px' }}>
         <div style={{ display: 'flex', gap: 0, maxWidth: 1200, margin: '0 auto' }}>
           {[
-            { key: 'msp', label: 'MSP' },
+            { key: 'msp', label: 'Project Plan' },
             { key: 'library', label: 'Library' },
             { key: 'proposal', label: 'Proposal' },
           ].map(t => (
@@ -216,6 +217,14 @@ export default function DealRoomViewer() {
       </div>
 
       <main style={{ maxWidth: 1200, margin: '0 auto', padding: '24px' }}>
+        {ae_notes && ae_notes.trim() && (
+          <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderLeft: `4px solid ${T.primary}`, borderRadius: 8, padding: '14px 18px', marginBottom: 18 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
+              Notes from {rep?.full_name || 'your AE'}
+            </div>
+            <div style={{ fontSize: 13, color: T.text, lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{ae_notes}</div>
+          </div>
+        )}
         {tab === 'msp' && (
           <MspTabContent
             data={msp}
@@ -646,3 +655,42 @@ function ModalShell({ title, onClose, children }) {
 
 const modalPrimaryBtn = { padding: '8px 16px', fontSize: 12, fontWeight: 600, background: T.primary, color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontFamily: T.font }
 const modalSecondaryBtn = { padding: '8px 16px', fontSize: 12, fontWeight: 600, background: T.surface, color: T.textMuted, border: `1px solid ${T.border}`, borderRadius: 4, cursor: 'pointer', fontFamily: T.font }
+
+// ════════════════════════════════════════════
+// Rep contact icons (header) — email / sms / call
+// ════════════════════════════════════════════
+function RepContactIcons({ rep }) {
+  if (!rep || (!rep.email && !rep.phone)) return null
+  const phoneDigits = rep.phone ? String(rep.phone).replace(/[^\d+]/g, '') : ''
+  const items = []
+  if (rep.email) {
+    items.push({ key: 'email', href: `mailto:${rep.email}`, label: `Email ${rep.full_name || rep.email}`, icon: (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <rect x="3" y="5" width="18" height="14" rx="2" />
+        <path d="M3 7l9 6 9-6" />
+      </svg>
+    )})
+  }
+  if (phoneDigits) {
+    items.push({ key: 'sms', href: `sms:${phoneDigits}`, label: `Text ${rep.full_name || rep.phone}`, icon: (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M21 11.5a8.5 8.5 0 0 1-12.6 7.4L3 20l1.1-5.4A8.5 8.5 0 1 1 21 11.5z" />
+      </svg>
+    )})
+    items.push({ key: 'call', href: `tel:${phoneDigits}`, label: `Call ${rep.full_name || rep.phone}`, icon: (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.37 1.9.72 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.35 1.85.59 2.81.72A2 2 0 0 1 22 16.92z" />
+      </svg>
+    )})
+  }
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} title={rep.full_name ? `Your AE: ${rep.full_name}` : undefined}>
+      {items.map(it => (
+        <a key={it.key} href={it.href} aria-label={it.label} title={it.label}
+          style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: 6, border: `1px solid ${T.border}`, background: T.surface, color: T.primary, textDecoration: 'none' }}>
+          {it.icon}
+        </a>
+      ))}
+    </div>
+  )
+}

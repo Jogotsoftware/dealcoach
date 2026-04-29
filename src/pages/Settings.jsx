@@ -453,7 +453,7 @@ export default function Settings() {
         {/* My Team */}
         <SectionCard id="my_team" title="My Team" action={<Button style={{ padding: '4px 12px', fontSize: 11 }} onClick={() => setShowAddMember(true)}>+ Add Member</Button>}>
           <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 12, lineHeight: 1.4 }}>
-            Your working team — SCs, partners, managers, and collaborators. These people don't need DealCoach accounts. They can be assigned to deals and will be excluded from AI contact extraction.
+            Your working team — Solutions Consultants, partners, managers, and collaborators. These people don't need a platform account. They can be assigned to deals and will be excluded from AI contact extraction.
           </div>
           {showAddMember && (
             <div style={{ padding: 12, background: T.surfaceAlt, borderRadius: 6, marginBottom: 12, border: `1px solid ${T.borderLight}` }}>
@@ -790,10 +790,10 @@ function CoachSection({ title, coaches, activeId, onSelect, emptyText, ownerActi
 
   function emailShareToken(coachName) {
     if (!shareToken) return
-    const subject = encodeURIComponent(`I'm sharing a DealCoach coach with you: ${coachName}`)
+    const subject = encodeURIComponent(`I'm sharing a coach with you: ${coachName}`)
     const body = encodeURIComponent(
       `I'm sharing my coach "${coachName}" with you.\n\n` +
-      `Paste this token into Settings → "Add a coach via share token" in DealCoach:\n\n${shareToken}\n\n` +
+      `Paste this token into Settings → "Add a coach via share token":\n\n${shareToken}\n\n` +
       `Or follow this link: ${window.location.origin}/settings?coach_token=${shareToken}`
     )
     window.open(`mailto:?subject=${subject}&body=${body}`)

@@ -134,7 +134,7 @@ export default function MSPClientPortal() {
         )}
         {portal?.company_logo_url && <img src={portal.company_logo_url} alt="" style={{ height: 40, marginBottom: 12 }} />}
         <div style={{ fontSize: 12, fontWeight: 600, color: primaryColor, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>
-          {portal?.portal_title || 'Mutual Success Plan'}
+          {portal?.portal_title || 'Project Plan'}
         </div>
         <div style={{ fontSize: 24, fontWeight: 700, color: T.text }}>{deal?.company_name || 'Implementation Plan'}</div>
         {portal?.portal_subtitle && <div style={{ fontSize: 14, color: T.textSecondary, marginTop: 4 }}>{portal.portal_subtitle}</div>}

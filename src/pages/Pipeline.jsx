@@ -802,7 +802,7 @@ export default function Pipeline() {
         <div style={{ fontSize: 10, fontWeight: 800, color: T.primary, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Welcome</div>
         <div style={{ fontSize: 22, fontWeight: 800, color: T.text, marginBottom: 8 }}>Let's get your first deal in</div>
         <div style={{ fontSize: 13, color: T.textSecondary, lineHeight: 1.6, marginBottom: 20 }}>
-          DealCoach works best once a deal has a company name + website. We'll research the company in the background, and once you upload your first transcript, coaching insights, pain points, and tasks flow in automatically.
+          Deals work best once they have a company name + website. We'll research the company in the background, and once you upload your first transcript, coaching insights, pain points, and tasks flow in automatically.
         </div>
         <ol style={{ margin: 0, paddingLeft: 20, fontSize: 13, color: T.text, lineHeight: 1.8 }}>
           <li>Create your first deal (company name + website is enough)</li>

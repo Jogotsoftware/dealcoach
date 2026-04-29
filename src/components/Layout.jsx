@@ -85,9 +85,9 @@ export default function Layout() {
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontWeight: 800, fontSize: 13, color: '#fff', flexShrink: 0,
           }}>
-            D
+            {(org?.name || 'R').charAt(0).toUpperCase()}
           </div>
-          {sidebarExpanded && <span style={{ fontSize: 16, fontWeight: 700, color: '#fff' }}>DealCoach</span>}
+          {sidebarExpanded && <span style={{ fontSize: 16, fontWeight: 700, color: '#fff' }}>{org?.name || 'Revenue Instruments'}</span>}
         </div>
 
         {/* Nav sections */}

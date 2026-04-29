@@ -146,7 +146,7 @@ export default function TeamManagement() {
         {tab === 'team' && (
           <>
             <Card title={`My Working Team (${workingTeam.length})`} action={<Button primary onClick={() => setShowAddMember(true)} style={{ padding: '4px 12px', fontSize: 11 }}>+ Add Teammate</Button>}>
-              <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 10 }}>SCs, partners, managers, collaborators you work with. They don't need DealCoach accounts. They can be assigned to deals and are excluded from AI contact extraction.</div>
+              <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 10 }}>Solutions Consultants, partners, managers, collaborators you work with. They don't need a platform account. They can be assigned to deals and are excluded from AI contact extraction.</div>
               {showAddMember && (
                 <div style={{ padding: 12, background: T.surfaceAlt, borderRadius: 6, border: `1px solid ${T.borderLight}`, marginBottom: 10, display: 'grid', gridTemplateColumns: '2fr 2fr 1.5fr 1.5fr auto auto', gap: 8, alignItems: 'end' }}>
                   <div><label style={labelStyle}>Name *</label><input style={inputStyle} value={newMember.name} onChange={e => setNewMember(p => ({ ...p, name: e.target.value }))} autoFocus onKeyDown={e => e.key === 'Enter' && addWorkingMember()} /></div>
@@ -158,7 +158,7 @@ export default function TeamManagement() {
                 </div>
               )}
               {workingTeam.length === 0 ? (
-                <div style={{ padding: 18, textAlign: 'center', color: T.textMuted, fontSize: 13, fontStyle: 'italic' }}>No teammates yet. Add SCs, partners, or managers you work with.</div>
+                <div style={{ padding: 18, textAlign: 'center', color: T.textMuted, fontSize: 13, fontStyle: 'italic' }}>No teammates yet. Add Solutions Consultants, partners, or managers you work with.</div>
               ) : (
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead>
@@ -181,7 +181,7 @@ export default function TeamManagement() {
               )}
             </Card>
             <Card title={`Org Roster (${members.length})`}>
-              <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 8 }}>Other DealCoach users in your organization.</div>
+              <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 8 }}>Other users in your organization.</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10 }}>
                 {members.map(m => (
                   <div key={m.id} style={{ padding: 12, background: T.surfaceAlt, borderRadius: 8, border: `1px solid ${T.borderLight}`, display: 'flex', alignItems: 'center', gap: 10 }}>

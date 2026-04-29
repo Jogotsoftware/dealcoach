@@ -52,7 +52,7 @@ function routeContext(pathname) {
   const dealMatch = pathname.match(/^\/deal\/([0-9a-f-]{36})/)
   if (dealMatch) {
     if (pathname.includes('/call/')) return { contextType: 'deal', dealId: dealMatch[1], pageName: 'call_detail', hint: 'reviewing a call recording / transcript' }
-    if (pathname.endsWith('/msp')) return { contextType: 'deal', dealId: dealMatch[1], pageName: 'msp_page', hint: 'on the Mutual Success Plan page' }
+    if (pathname.endsWith('/msp')) return { contextType: 'deal', dealId: dealMatch[1], pageName: 'msp_page', hint: 'on the Project Plan page' }
     if (pathname.includes('/quote/')) return { contextType: 'deal', dealId: dealMatch[1], pageName: 'quote_editor', hint: 'editing a quote' }
     if (pathname.endsWith('/proposal')) return { contextType: 'deal', dealId: dealMatch[1], pageName: 'proposal_builder', hint: 'on the proposal builder' }
     if (pathname.endsWith('/retrospective')) return { contextType: 'deal', dealId: dealMatch[1], pageName: 'deal_retrospective', hint: 'reviewing a closed deal retrospective' }

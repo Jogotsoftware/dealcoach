@@ -46,7 +46,7 @@ export default function SlideGenerator({ dealId, companyName, orgName = 'Our Com
     const pptxgen = (await import('pptxgenjs')).default
     const pres = new pptxgen()
     pres.layout = 'LAYOUT_WIDE'
-    pres.author = 'DealCoach'
+    pres.author = orgName || 'Revenue Instruments'
     pres.title = `${companyName} + ${orgName}`
 
     for (let i = 0; i < slides.length; i++) {

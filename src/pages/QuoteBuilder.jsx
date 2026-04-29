@@ -214,7 +214,7 @@ export default function QuoteBuilder() {
     { key: 'quote', label: 'Quote' },
     { key: 'resources', label: 'Resources' },
     { key: 'models', label: 'Models' },
-    { key: 'msp', label: 'MSP' },
+    { key: 'msp', label: 'Project Plan' },
   ]
 
   const showWarning = !!quote.compute_warning && !warningDismissed
@@ -664,7 +664,7 @@ function SubscriptionSection({ quote, lines, products, productMap, bundleChildre
               <ColTH label="Qty" colKey="qty" visible={colVis.qty} onToggle={() => toggleColVis('qty')} align="right" />
               <ColTH label="List" colKey="list" visible={colVis.list} onToggle={() => toggleColVis('list')} align="right" />
               <ColTH label="Disc %" colKey="discount" visible={colVis.discount} onToggle={() => toggleColVis('discount')} align="right" />
-              <th style={{ ...thStyle, textAlign: 'center' }}>Excl. Global</th>
+              <th style={{ ...thStyle, textAlign: 'center' }}>Exclude Global</th>
               <ColTH label="Price" colKey="price" visible={colVis.price} onToggle={() => toggleColVis('price')} align="right" />
               <th style={{ ...thStyle, textAlign: 'center', whiteSpace: 'nowrap' }} title="Show row in customer DealRoom view">Deal Room</th>
               <th style={thStyle}></th>
@@ -751,9 +751,9 @@ function ColTH({ label, colKey, visible, onToggle, align = 'left' }) {
     <th style={{ ...thStyle, textAlign: align, padding: '6px 10px' }}>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: align === 'right' ? 'flex-end' : align === 'center' ? 'center' : 'flex-start', gap: 2 }}>
         <span>{label}</span>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 9, fontWeight: 500, color: visible ? T.success : T.textMuted, cursor: 'pointer', textTransform: 'none', letterSpacing: 0 }} title="Show this column in the customer DealRoom view">
+        <label style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 9, fontWeight: 500, color: visible ? T.success : T.textMuted, cursor: 'pointer', textTransform: 'none', letterSpacing: 0 }} title="Show this column in the customer Deal Room view">
           <input type="checkbox" checked={visible} onChange={onToggle} style={{ margin: 0, width: 11, height: 11 }} />
-          DR
+          Show
         </label>
       </div>
     </th>
@@ -2242,10 +2242,10 @@ function ScheduleTab({ quote, schedule, onRegenerate, onChanged }) {
 function MspTab({ dealId }) {
   const nav = useNavigate()
   return (
-    <Card title="MSP">
+    <Card title="Project Plan">
       <div style={{ padding: '12px 8px', fontSize: 13, color: T.textSecondary, lineHeight: 1.6 }}>
-        <p style={{ margin: '0 0 12px' }}>The Mutual Success Plan lives on its own page. Open it to edit stages, milestones, and resources.</p>
-        <Button primary onClick={() => nav(`/deal/${dealId}/msp`)}>Open MSP</Button>
+        <p style={{ margin: '0 0 12px' }}>The Project Plan lives on its own page. Open it to edit stages, milestones, and resources.</p>
+        <Button primary onClick={() => nav(`/deal/${dealId}/msp`)}>Open Project Plan</Button>
         <div style={{ marginTop: 10, fontSize: 11, color: T.textMuted }}>Inline embedding in this tab is on the followup list.</div>
       </div>
     </Card>

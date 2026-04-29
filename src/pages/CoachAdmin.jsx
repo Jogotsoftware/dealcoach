@@ -351,7 +351,7 @@ export default function CoachAdmin() {
     { key: 'docs', label: `Documents (${docs.length})` },
     { key: 'scoring', label: `Scoring (${scoringConfigs.length})` },
     { key: 'rep_scoring', label: `Rep Scoring (${repScoringConfigs.length})` },
-    { key: 'templates', label: `MSP Templates (${mspTemplates.length})` },
+    { key: 'templates', label: `Project Plan Templates (${mspTemplates.length})` },
     { key: 'emails', label: `Email Templates (${emailTemplatesAdmin.length})` },
     { key: 'research', label: 'Research' },
     { key: 'slides', label: 'Slides' },
@@ -678,7 +678,7 @@ export default function CoachAdmin() {
                 )}
 
                 {mspTemplates.length === 0 ? (
-                  <Card><div style={{ textAlign: 'center', padding: 32, color: T.textMuted }}>No MSP templates. Create one to allow reps to quickly populate deal timelines.</div></Card>
+                  <Card><div style={{ textAlign: 'center', padding: 32, color: T.textMuted }}>No project plan templates. Create one to allow reps to quickly populate deal timelines.</div></Card>
                 ) : mspTemplates.map(tpl => {
                   const tplStages = templateStages.filter(s => s.template_id === tpl.id)
                   const isExpanded = expandedTemplate === tpl.id
