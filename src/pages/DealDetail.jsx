@@ -447,6 +447,7 @@ export default function DealDetail() {
   const docsFileInputRef = useRef(null)
   const [tab, setTab] = useState('home')
   const [showAddMenu, setShowAddMenu] = useState(false)
+  const [showEditMenu, setShowEditMenu] = useState(false)
   const [showStagePopover, setShowStagePopover] = useState(false)
   const [showForecastPopover, setShowForecastPopover] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
@@ -1652,15 +1653,17 @@ export default function DealDetail() {
       {/* Header \u2014 minimal: chevron + bare logo + title + clickable stage/forecast + website + actions */}
       <div style={{ padding: '14px 24px', borderBottom: `1px solid ${T.border}`, background: T.surface }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-          <button onClick={() => navigate('/')} title="Pipeline"
-            style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 22, color: T.textMuted, padding: '0 4px', lineHeight: 1, fontFamily: T.font }}>
-            \u2039
+          <button onClick={() => navigate('/')} title="Back to pipeline"
+            style={{ background: T.surface, border: `1px solid ${T.border}`, cursor: 'pointer', color: T.textMuted, padding: '6px 10px', borderRadius: 6, fontFamily: T.font, height: 30, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M19 12H5M12 19l-7-7 7-7"/>
+            </svg>
           </button>
           <CompanyLogo
             logoUrl={companyProfile?.logo_url}
             customerLogoUrl={deal.customer_logo_url}
             companyName={deal.company_name}
-            size="md"
+            size="lg"
             bare
             editable
             dealId={deal.id}
@@ -1720,12 +1723,17 @@ export default function DealDetail() {
             </div>
           </div>
 
-          {/* Actions: + menu, chat, pencil */}
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          {/* Actions: outlined + menu and outlined pencil with dropdown.
+              Right-padding reserves space so the floating notification bell
+              from Layout doesn't overlap. Chat lives in the global chatbot
+              (sidebar) — no per-page chat icon. */}
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', paddingRight: 56 }}>
             <div style={{ position: 'relative' }}>
               <button onClick={() => setShowAddMenu(v => !v)} title="Add to deal"
-                style={{ background: T.primary, color: '#fff', border: 'none', borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontSize: 16, fontWeight: 700, fontFamily: T.font, lineHeight: 1, minWidth: 32, height: 30 }}>
-                +
+                style={{ background: T.surface, color: T.text, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', cursor: 'pointer', fontFamily: T.font, height: 30, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 32 }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M12 5v14M5 12h14"/>
+                </svg>
               </button>
               {showAddMenu && (
                 <>
@@ -1740,20 +1748,31 @@ export default function DealDetail() {
                 </>
               )}
             </div>
-            <button onClick={() => setShowChat(true)} title="Ask coach"
-              style={{ background: T.surface, color: T.text, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', cursor: 'pointer', fontFamily: T.font, height: 30, display: 'inline-flex', alignItems: 'center' }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
-              </svg>
-            </button>
-            <button onClick={() => setShowEditModal(true)} title="Edit deal"
-              style={{ background: T.surface, color: T.textMuted, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', cursor: 'pointer', fontFamily: T.font, height: 30, display: 'inline-flex', alignItems: 'center' }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
-              </svg>
-            </button>
+            <div style={{ position: 'relative' }}>
+              <button onClick={() => setShowEditMenu(v => !v)} title="Edit"
+                style={{ background: T.surface, color: T.textMuted, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', cursor: 'pointer', fontFamily: T.font, height: 30, display: 'inline-flex', alignItems: 'center' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                </svg>
+              </button>
+              {showEditMenu && (
+                <>
+                  <div style={{ position: 'fixed', inset: 0, zIndex: 999 }} onClick={() => setShowEditMenu(false)} />
+                  <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, zIndex: 1000, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.18)', minWidth: 200, padding: '4px 0' }}>
+                    <MoreMenuItem label="Edit deal details" onClick={() => { setShowEditModal(true); setShowEditMenu(false) }} />
+                    <MoreMenuItem label={editMode ? 'Lock home dashboard' : 'Edit home dashboard'} onClick={() => { setEditMode(!editMode); setShowEditMenu(false) }} />
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
+        {/* Next Steps lives in the header so it's always glanceable. The
+            widget renders compact when populated and dashed when empty. */}
+        <div style={{ marginBottom: 12 }}>
+          <NextStepsWidget deal={deal} setDeal={setDeal} compact />
+        </div>
+
         <TabBar tabs={tabs} active={tab} onChange={(k) => {
           if (k === 'deal_room') { navigate(`/deal/${id}/room`); return }
           setTab(k)
@@ -1798,11 +1817,9 @@ export default function DealDetail() {
               </div>
             )}
 
-            {/* Next Steps widget — full width */}
-            <NextStepsWidget deal={deal} setDeal={setDeal} />
-
-            {/* Tasks + Deal Age side by side */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)', gap: 14, marginTop: 14 }}>
+            {/* Tasks + Deal Age side by side. Next Steps now lives in the
+                page header so it's always visible while scrolling tabs. */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)', gap: 14 }}>
               <TasksWidget tasks={tasks} setTasks={setTasks} dealId={id} userId={profile?.id} onAdd={() => setShowAddTask(true)} />
               <DealAgeWidget deal={deal} />
             </div>
@@ -2452,7 +2469,7 @@ function BadgePopover({ options, selected, onPick, onClose }) {
   )
 }
 
-function NextStepsWidget({ deal, setDeal }) {
+function NextStepsWidget({ deal, setDeal, compact = false }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(deal.next_steps || '')
   const [saving, setSaving] = useState(false)
@@ -2464,7 +2481,6 @@ function NextStepsWidget({ deal, setDeal }) {
     try {
       const { error } = await supabase.from('deals').update({ next_steps: draft || null }).eq('id', deal.id)
       if (!error) {
-        // Reload to pick up next_steps_color the trigger just set.
         const { data: refreshed } = await supabase.from('deals').select('next_steps, next_steps_color, updated_at').eq('id', deal.id).single()
         setDeal(prev => ({ ...prev, next_steps: refreshed?.next_steps ?? draft, next_steps_color: refreshed?.next_steps_color ?? null, updated_at: refreshed?.updated_at ?? prev.updated_at }))
       }
@@ -2475,20 +2491,24 @@ function NextStepsWidget({ deal, setDeal }) {
 
   const populated = (deal.next_steps || '').trim().length > 0
   const accentColor = deal.next_steps_color === 'red' ? T.error : deal.next_steps_color === 'green' ? T.success : T.border
+  const pad = compact ? '8px 12px' : '14px 18px'
+  const labelSize = compact ? 9 : 10
+  const bodySize = compact ? 13 : 14
+  const rows = compact ? 2 : 4
 
   if (editing) {
     return (
-      <div style={{ padding: '14px 18px', border: `1px solid ${T.border}`, borderLeft: `4px solid ${accentColor}`, borderRadius: 8, background: T.surface }}>
-        <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Next Steps</div>
+      <div style={{ padding: pad, border: `1px solid ${T.border}`, borderLeft: `4px solid ${accentColor}`, borderRadius: 8, background: T.surface }}>
+        <div style={{ fontSize: labelSize, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Next Steps</div>
         <textarea
           autoFocus
           value={draft}
           onChange={e => setDraft(e.target.value)}
           onBlur={save}
           onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') save(); if (e.key === 'Escape') { setDraft(deal.next_steps || ''); setEditing(false) } }}
-          rows={4}
+          rows={rows}
           placeholder="What's the next move? Use RED / GREEN keywords to color-tint this card."
-          style={{ ...inputStyle, fontFamily: T.font, fontSize: 14, lineHeight: 1.6, resize: 'vertical', width: '100%' }}
+          style={{ ...inputStyle, fontFamily: T.font, fontSize: bodySize, lineHeight: 1.55, resize: 'vertical', width: '100%' }}
         />
         <div style={{ marginTop: 4, fontSize: 10, color: T.textMuted }}>{saving ? 'Saving…' : 'Saves on blur or ⌘↵.'}</div>
       </div>
@@ -2498,7 +2518,7 @@ function NextStepsWidget({ deal, setDeal }) {
   if (!populated) {
     return (
       <div onClick={() => setEditing(true)}
-        style={{ padding: '14px 18px', border: `1px dashed ${T.border}`, borderRadius: 8, color: T.textMuted, fontStyle: 'italic', cursor: 'pointer', background: T.surface }}>
+        style={{ padding: pad, border: `1px dashed ${T.border}`, borderRadius: 8, color: T.textMuted, fontStyle: 'italic', cursor: 'pointer', background: T.surface, fontSize: bodySize }}>
         + Add next steps
       </div>
     )
@@ -2506,17 +2526,24 @@ function NextStepsWidget({ deal, setDeal }) {
 
   return (
     <div onClick={() => setEditing(true)}
-      style={{ padding: '14px 18px', border: `1px solid ${T.border}`, borderLeft: `4px solid ${accentColor}`, borderRadius: 8, cursor: 'pointer', background: T.surface }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-        <span style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Next Steps</span>
+      style={{ padding: pad, border: `1px solid ${T.border}`, borderLeft: `4px solid ${accentColor}`, borderRadius: 8, cursor: 'pointer', background: T.surface }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: labelSize, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', flexShrink: 0 }}>Next Steps</span>
         {deal.next_steps_color && (
           <Badge color={deal.next_steps_color === 'red' ? T.error : T.success}>{deal.next_steps_color}</Badge>
         )}
+        {compact && (
+          <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 'auto' }}>
+            Updated {deal.updated_at ? new Date(deal.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'}
+          </span>
+        )}
       </div>
-      <div style={{ fontFamily: T.font, fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap', color: T.text }}>{deal.next_steps}</div>
-      <div style={{ fontSize: 11, color: T.textMuted, marginTop: 6 }}>
-        Updated {deal.updated_at ? new Date(deal.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'} · click to edit
-      </div>
+      <div style={{ fontFamily: T.font, fontSize: bodySize, lineHeight: 1.55, whiteSpace: 'pre-wrap', color: T.text, marginTop: 4 }}>{deal.next_steps}</div>
+      {!compact && (
+        <div style={{ fontSize: 11, color: T.textMuted, marginTop: 6 }}>
+          Updated {deal.updated_at ? new Date(deal.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'} · click to edit
+        </div>
+      )}
     </div>
   )
 }
