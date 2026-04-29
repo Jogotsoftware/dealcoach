@@ -239,10 +239,8 @@ export default function QuoteBuilder() {
 
   const tabs = [
     { key: 'quote', label: 'Quote' },
-    { key: 'partners', label: `Partners${partnerBlocks.length ? ` (${partnerBlocks.length})` : ''}` },
     { key: 'resources', label: 'Resources' },
-    { key: 'roi', label: 'ROI' },
-    { key: 'schedule', label: `Schedule${schedule.length ? ` (${schedule.length})` : ''}` },
+    { key: 'models', label: 'Models' },
     { key: 'msp', label: 'MSP' },
   ]
 
@@ -315,12 +313,16 @@ export default function QuoteBuilder() {
           <QuoteTab
             quote={quote}
             deal={deal}
+            quoteId={quoteId}
             lines={lines}
             products={products}
             productMap={productMap}
             bundleChildrenMap={bundleChildrenMap}
             favorites={favorites}
-            implItems={implItems.filter(i => i.source === 'sage')}
+            sageImplItems={implItems.filter(i => i.source === 'sage')}
+            partnerImplItems={implItems.filter(i => i.source === 'partner')}
+            partnerBlocks={partnerBlocks}
+            partnerLines={partnerLines}
             contractTerms={contractTerms}
             profileId={profile?.id}
             saveQuoteHeader={saveQuoteHeader}
@@ -328,22 +330,11 @@ export default function QuoteBuilder() {
             onSubChanged={async () => { await recomputeSub(); await reload() }}
             onImplChanged={async () => { await recomputeTotals(); await regenSchedule(); await reload() }}
             onTermsChanged={async () => { await recomputeTotals(); await regenSchedule(); await reload() }}
+            onPartnerSubChanged={async () => { await recomputePartner(); await reload() }}
             refreshFavorites={async () => {
               const { data } = await supabase.from('product_favorites').select('*').eq('user_id', profile?.id || '').order('sort_order')
               setFavorites(data || [])
             }}
-          />
-        )}
-        {tab === 'partners' && (
-          <PartnersTab
-            quote={quote}
-            quoteId={quoteId}
-            partnerBlocks={partnerBlocks}
-            partnerLines={partnerLines}
-            implItems={implItems.filter(i => i.source === 'partner')}
-            saveQuoteHeader={saveQuoteHeader}
-            onPartnerSubChanged={async () => { await recomputePartner(); await reload() }}
-            onImplChanged={async () => { await recomputeTotals(); await regenSchedule(); await reload() }}
           />
         )}
         {tab === 'resources' && (
@@ -352,13 +343,14 @@ export default function QuoteBuilder() {
             onDealUpdated={(patch) => setDeal(prev => prev ? { ...prev, ...patch } : prev)}
           />
         )}
-        {tab === 'roi' && (
-          <RoiTab quote={quote} pains={pains} />
-        )}
-        {tab === 'schedule' && (
-          <ScheduleTab
+        {tab === 'models' && (
+          <ModelsTab
             quote={quote}
+            pains={pains}
             schedule={schedule}
+            contractTerms={contractTerms}
+            partnerBlocks={partnerBlocks}
+            partnerLines={partnerLines}
             onRegenerate={async () => { await regenSchedule(); await reload() }}
             onChanged={async () => { await reload() }}
           />
@@ -390,9 +382,12 @@ function ContactPicker({ contacts, currentId, onChange }) {
 }
 
 // ══════════════════════════════════════════════════════════
-// QUOTE TAB — Subscription + Implementation + Terms stacked
+// QUOTE TAB — Subscription + Implementation + Terms + (collapsible) Partners
 // ══════════════════════════════════════════════════════════
-function QuoteTab({ quote, deal, lines, products, productMap, bundleChildrenMap, favorites, implItems, contractTerms, profileId, saveQuoteHeader, registerFlusher, onSubChanged, onImplChanged, onTermsChanged, refreshFavorites }) {
+function QuoteTab({ quote, deal, quoteId, lines, products, productMap, bundleChildrenMap, favorites, sageImplItems, partnerImplItems, partnerBlocks, partnerLines, contractTerms, profileId, saveQuoteHeader, registerFlusher, onSubChanged, onImplChanged, onTermsChanged, onPartnerSubChanged, refreshFavorites }) {
+  const [partnersOpen, setPartnersOpen] = useState(false)
+  const partnerCount = partnerBlocks.length + partnerImplItems.length
+
   return (
     <div>
       <SubscriptionSection
@@ -412,7 +407,7 @@ function QuoteTab({ quote, deal, lines, products, productMap, bundleChildrenMap,
         <ImplementationSection
           quote={quote}
           quoteId={quote.id}
-          implItems={implItems}
+          implItems={sageImplItems}
           implementorDefault="Sage"
           source="sage"
           saveQuoteHeader={saveQuoteHeader}
@@ -421,6 +416,40 @@ function QuoteTab({ quote, deal, lines, products, productMap, bundleChildrenMap,
       </div>
       <div style={{ marginTop: 24 }}>
         <TermsSection quote={quote} contractTerms={contractTerms} saveQuoteHeader={saveQuoteHeader} onChanged={onTermsChanged} />
+      </div>
+
+      {/* Collapsible Partners — bottom of the Quote tab */}
+      <div style={{ marginTop: 24 }}>
+        <Card style={{ marginBottom: 0 }}>
+          <button
+            onClick={() => setPartnersOpen(s => !s)}
+            style={{
+              width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '4px 4px',
+              background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: T.font, textAlign: 'left',
+            }}
+          >
+            <span style={{ fontSize: 14, color: T.textMuted, transform: partnersOpen ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s', display: 'inline-block', width: 14 }}>▸</span>
+            <span style={{ fontSize: 12, fontWeight: 800, color: '#1a1a2e', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Partners</span>
+            {partnerCount > 0 && <Badge color={T.sageGreen}>{partnerCount}</Badge>}
+            {Number(quote.partner_total) > 0 && (
+              <span style={{ fontSize: 11, color: T.textSecondary, fontFeatureSettings: '"tnum"' }}>· {dollars(quote.partner_total)}</span>
+            )}
+          </button>
+          {partnersOpen && (
+            <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${T.borderLight}` }}>
+              <PartnersTab
+                quote={quote}
+                quoteId={quoteId}
+                partnerBlocks={partnerBlocks}
+                partnerLines={partnerLines}
+                implItems={partnerImplItems}
+                saveQuoteHeader={saveQuoteHeader}
+                onPartnerSubChanged={onPartnerSubChanged}
+                onImplChanged={onImplChanged}
+              />
+            </div>
+          )}
+        </Card>
       </div>
     </div>
   )
@@ -1945,6 +1974,150 @@ function Metric({ label, value, positive }) {
     <div style={{ padding: '10px 12px', background: T.surfaceAlt, borderRadius: 6, borderLeft: `3px solid ${positive ? T.success : T.borderLight}` }}>
       <div style={{ fontSize: 9, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 2 }}>{label}</div>
       <div style={{ fontSize: 16, fontWeight: 800, color: positive ? T.success : T.text, fontFeatureSettings: '"tnum"' }}>{value}</div>
+    </div>
+  )
+}
+
+// ══════════════════════════════════════════════════════════
+// MODELS TAB — wraps ROI, Payment Schedule, and TCO under a sub-tab bar
+// ══════════════════════════════════════════════════════════
+function ModelsTab({ quote, pains, schedule, contractTerms, partnerBlocks, partnerLines, onRegenerate, onChanged }) {
+  const [sub, setSub] = useState('roi')
+  const subTabs = [
+    { key: 'roi', label: 'ROI' },
+    { key: 'schedule', label: `Payment Schedule${schedule.length ? ` (${schedule.length})` : ''}` },
+    { key: 'tco', label: 'TCO' },
+  ]
+  return (
+    <div>
+      <div style={{ marginBottom: 14 }}>
+        <TabBar tabs={subTabs} active={sub} onChange={setSub} />
+      </div>
+      {sub === 'roi' && <RoiTab quote={quote} pains={pains} />}
+      {sub === 'schedule' && <ScheduleTab quote={quote} schedule={schedule} onRegenerate={onRegenerate} onChanged={onChanged} />}
+      {sub === 'tco' && <TcoTab quote={quote} contractTerms={contractTerms} partnerBlocks={partnerBlocks} partnerLines={partnerLines} />}
+    </div>
+  )
+}
+
+// ──────────────────────────────────────────────────────────
+// TCO TAB — multi-year cost breakdown (subscription + impl + adjustments)
+// ──────────────────────────────────────────────────────────
+function TcoTab({ quote, contractTerms, partnerBlocks, partnerLines }) {
+  const term = contractTerms.find(ct => ct.id === quote.contract_term_id)
+  const sageYears = term?.term_years || 1
+  const yoyCaps = Array.isArray(term?.yoy_caps) ? term.yoy_caps : [0]
+
+  const sageY1 = Number(quote.sage_subscription_total) || 0
+  const sageImpl = Number(quote.sage_implementation_total) || 0
+  const sageMonthly = sageY1 / 12
+  const signingBonus = Number(quote.signing_bonus_amount) > 0
+    ? Number(quote.signing_bonus_amount)
+    : sageMonthly * (Number(quote.signing_bonus_months) || 0)
+  const freeMonthsValue = sageMonthly * (Number(quote.free_months) || 0)
+  const partnerImplTotal = Number(quote.partner_implementation_total) || 0
+
+  const maxPartnerYears = partnerBlocks.reduce((m, b) => Math.max(m, Number(b.term_years) || 0), 0)
+  const horizon = Math.max(sageYears, maxPartnerYears, 1)
+
+  // Per-year subscription Sage with YoY escalation; zero past sageYears
+  const sageSubByYear = []
+  let runningSage = sageY1
+  for (let y = 1; y <= horizon; y++) {
+    if (y === 1) {
+      sageSubByYear.push(runningSage)
+    } else if (y <= sageYears) {
+      const cap = Number(yoyCaps[y - 1]) || 0
+      runningSage = runningSage * (1 + cap / 100)
+      sageSubByYear.push(runningSage)
+    } else {
+      sageSubByYear.push(0)
+    }
+  }
+
+  // Per-year partner subscription = sum of block annuals while year <= block.term_years
+  const partnerSubByYear = []
+  for (let y = 1; y <= horizon; y++) {
+    let sum = 0
+    for (const block of partnerBlocks) {
+      if (y <= (Number(block.term_years) || 0)) {
+        const blockAnnual = partnerLines
+          .filter(l => l.block_id === block.id)
+          .reduce((s, l) => s + (Number(l.extended) || 0), 0)
+        sum += blockAnnual
+      }
+    }
+    partnerSubByYear.push(sum)
+  }
+
+  let cumulative = 0
+  const rows = []
+  for (let y = 1; y <= horizon; y++) {
+    const ss = sageSubByYear[y - 1] || 0
+    const si = y === 1 ? sageImpl : 0
+    const ps = partnerSubByYear[y - 1] || 0
+    const pi = y === 1 ? partnerImplTotal : 0
+    const adj = y === 1 ? -(signingBonus + freeMonthsValue) : 0
+    const yearTotal = ss + si + ps + pi + adj
+    cumulative += yearTotal
+    rows.push({ y, ss, si, ps, pi, adj, yearTotal, cumulative })
+  }
+
+  const grandTotal = rows.reduce((s, r) => s + r.yearTotal, 0)
+
+  if (sageY1 === 0 && partnerBlocks.length === 0) {
+    return <EmptyState title="Nothing to model yet" message="Add subscription lines, partner blocks, or implementation items first. The TCO model derives entirely from what's on the quote." />
+  }
+
+  return (
+    <div>
+      <Card title={`TCO — ${horizon}-year Total Cost of Ownership`}>
+        <div style={{ fontSize: 11, color: T.textSecondary, marginBottom: 10 }}>
+          Sage subscription escalates Y2+ per the contract template's YoY caps. Partners run flat for their term length. Implementation, signing bonus, and free months hit Year 1.
+        </div>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+          <thead>
+            <tr style={{ borderBottom: `2px solid ${T.primary}` }}>
+              <th style={thStyle}>Year</th>
+              <th style={{ ...thStyle, textAlign: 'right' }}>Sage Subscription</th>
+              <th style={{ ...thStyle, textAlign: 'right' }}>Sage Impl</th>
+              <th style={{ ...thStyle, textAlign: 'right' }}>Partner Subscription</th>
+              <th style={{ ...thStyle, textAlign: 'right' }}>Partner Impl</th>
+              <th style={{ ...thStyle, textAlign: 'right' }}>Adjustments</th>
+              <th style={{ ...thStyle, textAlign: 'right' }}>Year Total</th>
+              <th style={{ ...thStyle, textAlign: 'right' }}>Cumulative</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(r => (
+              <tr key={r.y} style={{ borderBottom: `1px solid ${T.borderLight}` }}>
+                <td style={{ padding: '8px 10px', fontWeight: 700 }}>Y{r.y}</td>
+                <td style={{ padding: '8px 10px', textAlign: 'right', fontFeatureSettings: '"tnum"' }}>{dollars(r.ss)}</td>
+                <td style={{ padding: '8px 10px', textAlign: 'right', fontFeatureSettings: '"tnum"', color: r.si === 0 ? T.textMuted : T.text }}>{r.si === 0 ? '—' : dollars(r.si)}</td>
+                <td style={{ padding: '8px 10px', textAlign: 'right', fontFeatureSettings: '"tnum"', color: r.ps === 0 ? T.textMuted : T.text }}>{r.ps === 0 ? '—' : dollars(r.ps)}</td>
+                <td style={{ padding: '8px 10px', textAlign: 'right', fontFeatureSettings: '"tnum"', color: r.pi === 0 ? T.textMuted : T.text }}>{r.pi === 0 ? '—' : dollars(r.pi)}</td>
+                <td style={{ padding: '8px 10px', textAlign: 'right', fontFeatureSettings: '"tnum"', color: r.adj < 0 ? T.success : T.textMuted }}>{r.adj === 0 ? '—' : dollars(r.adj)}</td>
+                <td style={{ padding: '8px 10px', textAlign: 'right', fontFeatureSettings: '"tnum"', fontWeight: 700 }}>{dollars(r.yearTotal)}</td>
+                <td style={{ padding: '8px 10px', textAlign: 'right', fontFeatureSettings: '"tnum"', fontWeight: 700, color: T.primary }}>{dollars(r.cumulative)}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr style={{ borderTop: `2px solid ${T.primary}`, background: T.primaryLight }}>
+              <td colSpan={6} style={{ padding: '10px', fontWeight: 800, fontSize: 13 }}>Total Cost of Ownership ({horizon} years)</td>
+              <td colSpan={2} style={{ padding: '10px', textAlign: 'right', fontWeight: 800, fontSize: 16, color: T.primary, fontFeatureSettings: '"tnum"' }}>{dollars(grandTotal)}</td>
+            </tr>
+          </tfoot>
+        </table>
+
+        {/* Mini-summary cards under the table */}
+        <div style={{ marginTop: 14, display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+          <Metric label="Sage TCV" value={dollars(rows.reduce((s, r) => s + r.ss + r.si, 0))} />
+          <Metric label="Partner TCV" value={dollars(rows.reduce((s, r) => s + r.ps + r.pi, 0))} />
+          <Metric label="Adjustments" value={dollars(rows.reduce((s, r) => s + r.adj, 0))} />
+          <Metric label="Average / year" value={dollars(grandTotal / horizon)} />
+        </div>
+      </Card>
     </div>
   )
 }
