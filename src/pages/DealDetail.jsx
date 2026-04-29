@@ -1815,12 +1815,15 @@ export default function DealDetail() {
               </div>
             )}
 
-            {/* Tasks + Deal Age side by side. Next Steps now lives in the
-                page header so it's always visible while scrolling tabs. */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)', gap: 14 }}>
-              <TasksWidget tasks={tasks} setTasks={setTasks} dealId={id} userId={profile?.id} onAdd={() => setShowAddTask(true)} />
-              <DealAgeWidget deal={deal} />
-            </div>
+            <HomeDashboard
+              dealId={id}
+              deal={deal}
+              tasks={tasks}
+              setTasks={setTasks}
+              userId={profile?.id}
+              onAddTask={() => setShowAddTask(true)}
+              editMode={editMode}
+            />
           </div>
         )}
 
@@ -2549,6 +2552,247 @@ function NextStepsWidget({ deal, setDeal, compact = false }) {
           Updated {deal.updated_at ? new Date(deal.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'} · click to edit
         </div>
       )}
+    </div>
+  )
+}
+
+// Editable widget grid for the Home tab. Uses the same react-grid-layout
+// infrastructure already wired into the file for the legacy overview, but
+// owns its own state + localStorage persistence keyed per deal so the rep
+// can drag/resize/delete/add without affecting the rest of the page.
+const HOME_WIDGET_REGISTRY = [
+  { id: 'tasks',         title: 'Tasks',         w: 8, h: 5, minW: 4, minH: 3 },
+  { id: 'deal_age',      title: 'Deal age',      w: 4, h: 3, minW: 2, minH: 2 },
+  { id: 'retrospective', title: 'Retrospective', w: 12, h: 4, minW: 6, minH: 3 },
+]
+
+const HOME_DEFAULT_LAYOUT = [
+  { i: 'tasks',    x: 0, y: 0, w: 8, h: 5, minW: 4, minH: 3 },
+  { i: 'deal_age', x: 8, y: 0, w: 4, h: 3, minW: 2, minH: 2 },
+]
+
+function HomeDashboard({ dealId, deal, tasks, setTasks, userId, onAddTask, editMode }) {
+  const isClosed = ['closed_won', 'closed_lost', 'disqualified'].includes(deal.stage)
+  const storageKey = `deal.home.${dealId}`
+
+  // Load layout + visible widget list from localStorage (per-deal). Falls back
+  // to the default layout. We persist {layout, widgets} as a single object.
+  const [state, setState] = useState(() => {
+    try {
+      const raw = localStorage.getItem(storageKey)
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        if (parsed?.layout && parsed?.widgets) return parsed
+      }
+    } catch { /* ignore */ }
+    // For closed deals, default-pin retrospective at the top.
+    if (isClosed) {
+      return {
+        widgets: ['retrospective', 'tasks', 'deal_age'],
+        layout: [
+          { i: 'retrospective', x: 0, y: 0, w: 12, h: 4, minW: 6, minH: 3 },
+          { i: 'tasks',         x: 0, y: 4, w: 8, h: 5, minW: 4, minH: 3 },
+          { i: 'deal_age',      x: 8, y: 4, w: 4, h: 3, minW: 2, minH: 2 },
+        ],
+      }
+    }
+    return { widgets: ['tasks', 'deal_age'], layout: HOME_DEFAULT_LAYOUT }
+  })
+
+  function persist(next) {
+    setState(next)
+    try { localStorage.setItem(storageKey, JSON.stringify(next)) } catch { /* ignore */ }
+  }
+
+  function onLayoutChange(newLayout) {
+    persist({ ...state, layout: newLayout })
+  }
+
+  function removeWidget(id) {
+    persist({
+      widgets: state.widgets.filter(x => x !== id),
+      layout:  state.layout.filter(x => x.i !== id),
+    })
+  }
+
+  function addWidget(id) {
+    if (state.widgets.includes(id)) return
+    const def = HOME_WIDGET_REGISTRY.find(w => w.id === id)
+    if (!def) return
+    // Drop the new widget at the bottom of the current grid.
+    const maxY = state.layout.reduce((m, x) => Math.max(m, x.y + x.h), 0)
+    persist({
+      widgets: [...state.widgets, id],
+      layout:  [...state.layout, { i: id, x: 0, y: maxY, w: def.w, h: def.h, minW: def.minW, minH: def.minH }],
+    })
+  }
+
+  function resetLayout() {
+    try { localStorage.removeItem(storageKey) } catch { /* ignore */ }
+    setState(isClosed
+      ? { widgets: ['retrospective', 'tasks', 'deal_age'], layout: [
+          { i: 'retrospective', x: 0, y: 0, w: 12, h: 4, minW: 6, minH: 3 },
+          { i: 'tasks',         x: 0, y: 4, w: 8, h: 5, minW: 4, minH: 3 },
+          { i: 'deal_age',      x: 8, y: 4, w: 4, h: 3, minW: 2, minH: 2 },
+        ] }
+      : { widgets: ['tasks', 'deal_age'], layout: HOME_DEFAULT_LAYOUT })
+  }
+
+  const availableToAdd = HOME_WIDGET_REGISTRY.filter(w => !state.widgets.includes(w.id) && (w.id !== 'retrospective' || isClosed))
+
+  return (
+    <div>
+      {editMode && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', marginBottom: 10, background: T.primaryLight, border: `1px solid ${T.primary}30`, borderRadius: 8, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: T.primary, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Edit dashboard</span>
+          <span style={{ fontSize: 11, color: T.textMuted, flex: 1, minWidth: 200 }}>Drag titles to move · drag corners to resize · click × to remove</span>
+          {availableToAdd.length > 0 && (
+            <select onChange={e => { if (e.target.value) { addWidget(e.target.value); e.target.value = '' } }} defaultValue=""
+              style={{ ...inputStyle, padding: '5px 10px', fontSize: 12, cursor: 'pointer', maxWidth: 180 }}>
+              <option value="">+ Add widget…</option>
+              {availableToAdd.map(w => <option key={w.id} value={w.id}>{w.title}</option>)}
+            </select>
+          )}
+          <Button onClick={resetLayout} style={{ padding: '4px 10px', fontSize: 11 }}>Reset layout</Button>
+        </div>
+      )}
+
+      <ResponsiveGridLayout
+        className="layout"
+        layouts={{ lg: state.layout, md: state.layout, sm: state.layout, xs: state.layout, xxs: state.layout }}
+        breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
+        cols={{ lg: 12, md: 12, sm: 6, xs: 4, xxs: 2 }}
+        rowHeight={48}
+        margin={[12, 12]}
+        containerPadding={[0, 0]}
+        isDraggable={editMode}
+        isResizable={editMode}
+        draggableHandle=".home-widget-handle"
+        onLayoutChange={(layout) => editMode && onLayoutChange(layout)}
+        compactType="vertical"
+      >
+        {state.widgets.map(id => {
+          const def = HOME_WIDGET_REGISTRY.find(w => w.id === id)
+          if (!def) return null
+          // Skip retrospective for open deals
+          if (id === 'retrospective' && !isClosed) return null
+          return (
+            <div key={id} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              <div className="home-widget-handle"
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '8px 12px', borderBottom: `1px solid ${T.borderLight}`,
+                  background: editMode ? T.surfaceAlt : 'transparent',
+                  cursor: editMode ? 'move' : 'default',
+                  userSelect: 'none',
+                }}>
+                <span style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{def.title}</span>
+                {editMode && (
+                  <button onClick={() => removeWidget(id)}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, fontSize: 16, lineHeight: 1, padding: 0 }}
+                    title="Remove widget"
+                    onMouseEnter={e => e.currentTarget.style.color = T.error}
+                    onMouseLeave={e => e.currentTarget.style.color = T.textMuted}>×</button>
+                )}
+              </div>
+              <div style={{ flex: 1, overflow: 'auto' }}>
+                {id === 'tasks' && <HomeTasksBody tasks={tasks} setTasks={setTasks} onAdd={onAddTask} />}
+                {id === 'deal_age' && <HomeDealAgeBody deal={deal} />}
+                {id === 'retrospective' && <HomeRetroBody deal={deal} navigate={(p) => window.history.pushState(null, '', p)} dealId={dealId} />}
+              </div>
+            </div>
+          )
+        })}
+      </ResponsiveGridLayout>
+    </div>
+  )
+}
+
+function HomeTasksBody({ tasks, setTasks, onAdd }) {
+  const open = tasks.filter(t => !t.completed)
+  const done = tasks.filter(t => t.completed)
+
+  async function toggleComplete(t) {
+    const next = !t.completed
+    try {
+      await supabase.from('tasks').update({ completed: next }).eq('id', t.id)
+      setTasks(prev => prev.map(x => x.id === t.id ? { ...x, completed: next } : x))
+    } catch (e) { console.error('toggle task failed', e) }
+  }
+
+  return (
+    <div style={{ padding: '10px 14px' }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}>
+        {onAdd && <Button onClick={onAdd} style={{ padding: '3px 10px', fontSize: 11 }}>+ Add</Button>}
+      </div>
+      {tasks.length === 0 ? (
+        <div style={{ padding: '14px 0', fontSize: 12, color: T.textMuted, textAlign: 'center' }}>No tasks yet</div>
+      ) : (
+        <div>
+          {open.map(t => (
+            <div key={t.id} onClick={() => toggleComplete(t)}
+              style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '6px 0', borderBottom: `1px solid ${T.borderLight}`, cursor: 'pointer' }}>
+              <span style={{ width: 14, height: 14, borderRadius: 3, border: `1.5px solid ${T.border}`, marginTop: 2, flexShrink: 0 }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, color: T.text, lineHeight: 1.4 }}>{t.title || t.description || 'Task'}</div>
+                {t.due_date && <div style={{ fontSize: 10, color: T.textMuted, marginTop: 2 }}>Due {new Date(t.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</div>}
+              </div>
+            </div>
+          ))}
+          {done.length > 0 && (
+            <details style={{ marginTop: 8 }}>
+              <summary style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', cursor: 'pointer' }}>Completed ({done.length})</summary>
+              <div style={{ marginTop: 6 }}>
+                {done.map(t => (
+                  <div key={t.id} onClick={() => toggleComplete(t)}
+                    style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '4px 0', cursor: 'pointer', opacity: 0.55 }}>
+                    <span style={{ width: 14, height: 14, borderRadius: 3, background: T.success, color: '#fff', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 2, flexShrink: 0 }}>✓</span>
+                    <div style={{ fontSize: 12, color: T.textSecondary, textDecoration: 'line-through' }}>{t.title || t.description || 'Task'}</div>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function HomeDealAgeBody({ deal }) {
+  const created = deal.created_at ? new Date(deal.created_at) : null
+  const isClosed = ['closed_won', 'closed_lost', 'disqualified'].includes(deal.stage)
+  const closed = deal.closed_at ? new Date(deal.closed_at) : null
+  const end = isClosed && closed ? closed : new Date()
+  const days = created ? Math.max(0, Math.floor((end - created) / 86400000)) : null
+  const formatted = days == null ? '—'
+    : days < 7 ? `${days} day${days === 1 ? '' : 's'}`
+    : days < 60 ? `${Math.floor(days / 7)}w ${days % 7}d`
+    : `${days} days`
+  const closedMonth = isClosed && closed ? closed.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : null
+  return (
+    <div style={{ padding: '14px 18px' }}>
+      <div style={{ fontSize: 32, fontWeight: 800, color: T.text, fontFeatureSettings: '"tnum"', lineHeight: 1 }}>{formatted}</div>
+      <div style={{ fontSize: 11, color: T.textMuted, marginTop: 6 }}>
+        {isClosed ? `Closed ${closedMonth}` : 'Since deal creation'}
+      </div>
+    </div>
+  )
+}
+
+function HomeRetroBody({ deal, dealId }) {
+  return (
+    <div style={{ padding: '14px 18px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+        <StageBadge stage={deal.stage} />
+        {deal.closed_at && (
+          <span style={{ fontSize: 12, color: T.textMuted }}>Closed {new Date(deal.closed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+        )}
+      </div>
+      <div style={{ fontSize: 12, color: T.textSecondary, lineHeight: 1.5, marginBottom: 10 }}>
+        Retrospective is generating in the background. Click below to see the full breakdown when ready.
+      </div>
+      <a href={`/deal/${dealId}/retrospective`} style={{ fontSize: 12, fontWeight: 600, color: T.primary, textDecoration: 'none' }}>View full retrospective →</a>
     </div>
   )
 }

@@ -25,7 +25,7 @@ function parseReportBlocks(content) {
 }
 
 const HIDDEN_ROUTES = ['/login']
-const HIDDEN_PREFIXES = ['/msp/shared/', '/partner']
+const HIDDEN_PREFIXES = ['/projectplan/shared/', '/msp/shared/', '/partner']
 
 const THUMBS_DOWN_REASONS = [
   { key: 'wrong_info', label: 'Wrong info' },
@@ -320,17 +320,23 @@ export default function GlobalChatbot() {
 
   return (
     <>
-      {/* Floating button */}
+      {/* Floating button — clean speech-bubble icon, no emoji */}
       {!open && (
         <button onClick={openBot} title="Revenue Instruments assistant"
           style={{
             position: 'fixed', bottom: 20, right: 20, zIndex: 9000,
-            width: 52, height: 52, borderRadius: '50%',
+            width: 48, height: 48, borderRadius: '50%',
             background: T.primary, color: '#fff', border: 'none', cursor: 'pointer',
-            boxShadow: '0 4px 20px rgba(93, 173, 226, 0.45)',
+            boxShadow: '0 6px 18px rgba(93, 173, 226, 0.35)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 22, fontWeight: 700, fontFamily: T.font,
-          }}>💬</button>
+            transition: 'transform 0.12s ease, box-shadow 0.12s ease',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 8px 22px rgba(93, 173, 226, 0.45)' }}
+          onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 6px 18px rgba(93, 173, 226, 0.35)' }}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+          </svg>
+        </button>
       )}
 
       {/* Satisfaction prompt overlay (shown when closing a 3+ msg session) */}
