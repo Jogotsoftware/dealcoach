@@ -27,6 +27,7 @@ async function trackSuggestion({ orgId, dealId, userId, targetType, targetId, ac
 }
 import DealChat from '../components/DealChat'
 import CompanyLogo from '../components/CompanyLogo'
+import LogoUploader from '../components/LogoUploader'
 import SlideGenerator from '../components/SlideGenerator'
 import WidgetRenderer from '../components/WidgetRenderer'
 import { useAuth } from '../hooks/useAuth'
@@ -451,8 +452,6 @@ export default function DealDetail() {
   const [contacts, setContacts] = useState([])
   const [conversations, setConversations] = useState([])
   const [mspStages, setMspStages] = useState([])
-  const [proposalDoc, setProposalDoc] = useState(null)
-  const [proposalInsights, setProposalInsights] = useState([])
   const [tasks, setTasks] = useState([])
   const [quotes, setQuotes] = useState([])
   const [competitors, setCompetitors] = useState([])
@@ -580,17 +579,15 @@ export default function DealDetail() {
   async function loadDeal() {
     setLoading(true)
     try {
-      const [dealRes, analysisRes, profileRes, contactsRes, convosRes, mspRes, propDocRes, propInsRes, tasksRes, quotesRes, compRes, risksRes, eventsRes, catalystsRes, painsRes, docsRes, sysRes, flagsRes, sizingRes] = await Promise.all([
+      const [dealRes, analysisRes, profileRes, contactsRes, convosRes, mspRes, tasksRes, quotesRes, compRes, risksRes, eventsRes, catalystsRes, painsRes, docsRes, sysRes, flagsRes, sizingRes] = await Promise.all([
         supabase.from('deals').select('*').eq('id', id).single(),
         supabase.from('deal_analysis').select('*').eq('deal_id', id).single(),
         supabase.from('company_profile').select('*').eq('deal_id', id).single(),
         supabase.from('contacts').select('*').eq('deal_id', id).order('created_at'),
         supabase.from('conversations').select('*').eq('deal_id', id).order('call_date', { ascending: false }),
         supabase.from('msp_stages').select('*').eq('deal_id', id).order('stage_order'),
-        supabase.from('proposal_documents').select('*').eq('deal_id', id).eq('is_current', true).limit(1),
-        supabase.from('proposal_insights').select('*').eq('deal_id', id).eq('include_in_proposal', true).order('created_at'),
         supabase.from('tasks').select('*').eq('deal_id', id).order('created_at', { ascending: false }),
-        supabase.from('quotes').select('*').eq('deal_id', id).order('version', { ascending: false }),
+        supabase.from('quotes').select('id, name, version, is_primary, status, solution_total, sage_total, partner_total, created_at, updated_at').eq('deal_id', id).order('created_at', { ascending: false }),
         supabase.from('deal_competitors').select('*').eq('deal_id', id),
         supabase.from('deal_risks').select('*').eq('deal_id', id).order('created_at', { ascending: false }),
         supabase.from('compelling_events').select('*').eq('deal_id', id).order('event_date'),
@@ -608,8 +605,6 @@ export default function DealDetail() {
       setContacts(contactsRes.data || [])
       setConversations(convosRes.data || [])
       setMspStages(mspRes.data || [])
-      setProposalDoc(propDocRes.data?.[0] || null)
-      setProposalInsights(propInsRes.data || [])
       setTasks(tasksRes.data || [])
       setQuotes(quotesRes.data || [])
       setCompetitors(compRes.data || [])
@@ -1665,7 +1660,7 @@ export default function DealDetail() {
     hasModule('deal_management') && { key: 'contacts', label: `Contacts (${contacts.length})` },
     hasModule('transcript_analysis') && { key: 'transcripts', label: `Transcripts (${conversations.length})` },
     hasModule('msp') && { key: 'msp', label: 'MSP' },
-    hasModule('proposal') && { key: 'proposal', label: 'Proposal' },
+    hasModule('proposal') && { key: 'quotes', label: `Quotes${quotes.length ? ` (${quotes.length})` : ''}` },
     { key: 'tasks', label: `Tasks (${openTasks.length})` },
     { key: 'documents', label: `Documents (${documents.length})` },
     hasModule('coaching') && { key: 'emails', label: `Emails (${generatedEmails.length})` },
@@ -1694,7 +1689,16 @@ export default function DealDetail() {
             padding: '6px 12px', cursor: 'pointer', fontSize: 12, color: T.primary,
             fontWeight: 600, fontFamily: T.font,
           }}>&larr; Pipeline</button>
-          <CompanyLogo logoUrl={companyProfile?.logo_url} companyName={deal.company_name} size="lg" />
+          <CompanyLogo
+            logoUrl={companyProfile?.logo_url}
+            customerLogoUrl={deal.customer_logo_url}
+            companyName={deal.company_name}
+            size="lg"
+            editable
+            dealId={deal.id}
+            currentStoragePath={deal.customer_logo_storage_path}
+            onUploaded={(publicUrl, path) => setDeal(prev => prev ? { ...prev, customer_logo_url: publicUrl, customer_logo_storage_path: path } : prev)}
+          />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 20, fontWeight: 700, color: T.text }}>{deal.company_name}</div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>
@@ -2043,50 +2047,39 @@ export default function DealDetail() {
           </div>
         )}
 
-        {/* ===== PROPOSAL TAB ===== */}
-        {tab === 'proposal' && (
+        {/* ===== QUOTES TAB ===== */}
+        {tab === 'quotes' && (
           <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: T.text }}>Proposal Builder</h3>
-              <div style={{ display: 'flex', gap: 8 }}>
-                {proposalDoc && <Button primary onClick={() => navigate(`/deal/${id}/proposal`)}>Edit in Builder</Button>}
-                <Button onClick={() => navigate(`/deal/${id}/quote/new`)}>New Quote</Button>
-              </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: T.text }}>Quotes</h3>
+              <Button primary onClick={() => navigate(`/deal/${id}/quotes`)}>Open Quotes</Button>
             </div>
-            {!proposalDoc && quotes.length === 0 ? <EmptyState message="No proposal or quote yet." action={<Button primary onClick={() => navigate(`/deal/${id}/proposal`)} style={{ marginTop: 8 }}>Create Proposal</Button>} /> : (
-              <div>
-                {proposalDoc && (
-                  <>
-                    <Card title={`Proposal v${proposalDoc.version}`} action={<Badge color={T.primary}>Draft</Badge>}>
-                      <Field label="Executive Summary" value={proposalDoc.executive_summary} />
-                    </Card>
-                    <Card title="Financial Summary">
-                      <div style={{ display: 'flex', gap: 24 }}>
-                        <div><div style={labelStyle}>Annual Impact</div><div style={{ fontSize: 22, fontWeight: 700, color: T.success }}>{proposalDoc.total_annual_impact || '--'}</div></div>
-                        <div><div style={labelStyle}>Investment</div><div style={{ fontSize: 22, fontWeight: 700, color: T.text }}>{proposalDoc.implementation_investment || formatCurrency(deal.deal_value)}</div></div>
-                        <div><div style={labelStyle}>ROI</div><div style={{ fontSize: 22, fontWeight: 700, color: T.primary }}>{proposalDoc.expected_roi || '--'}</div></div>
+            {quotes.length === 0 ? (
+              <EmptyState
+                message="No quotes yet."
+                action={<Button primary onClick={() => navigate(`/deal/${id}/quotes`)} style={{ marginTop: 8 }}>Create First Quote</Button>}
+              />
+            ) : (
+              <Card title={`Quotes (${quotes.length})`}>
+                {quotes.map(q => (
+                  <div key={q.id} onClick={() => navigate(`/deal/${id}/quote/${q.id}`)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', background: T.surfaceAlt, borderRadius: 6, marginBottom: 8, border: `1px solid ${T.borderLight}`, cursor: 'pointer' }}
+                    onMouseEnter={e => e.currentTarget.style.borderColor = T.primary} onMouseLeave={e => e.currentTarget.style.borderColor = T.borderLight}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: T.text, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {q.name || 'Quote'} v{q.version}
+                        {q.is_primary && <Badge color={T.primary}>Primary</Badge>}
                       </div>
-                    </Card>
-                  </>
-                )}
-                {quotes.length > 0 && (
-                  <Card title={`Quotes (${quotes.length})`}>
-                    {quotes.map(q => (
-                      <div key={q.id} onClick={() => navigate(`/deal/${id}/quote/${q.id}`)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', background: T.surfaceAlt, borderRadius: 6, marginBottom: 8, border: `1px solid ${T.borderLight}`, cursor: 'pointer' }}
-                        onMouseEnter={e => e.currentTarget.style.borderColor = T.primary} onMouseLeave={e => e.currentTarget.style.borderColor = T.borderLight}>
-                        <div>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>Quote v{q.version} {q.quote_number && `(${q.quote_number})`}</div>
-                          <div style={{ fontSize: 11, color: T.textSecondary }}>{q.contract_years}yr | {formatCurrency(q.arr)} ARR</div>
-                        </div>
-                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                          <Badge color={q.status === 'approved' ? T.success : q.status === 'sent' ? T.primary : T.textMuted}>{q.status}</Badge>
-                          <div style={{ fontSize: 16, fontWeight: 700, color: T.text, fontFeatureSettings: '"tnum"' }}>{formatCurrency(q.net_price)}</div>
-                        </div>
+                      <div style={{ fontSize: 11, color: T.textSecondary }}>
+                        Sage {formatCurrency(q.sage_total || 0)} · Partner {formatCurrency(q.partner_total || 0)}
                       </div>
-                    ))}
-                  </Card>
-                )}
-              </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <Badge color={q.status === 'accepted' ? T.success : q.status === 'sent' ? T.primary : q.status === 'rejected' ? T.error : T.textMuted}>{q.status}</Badge>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: T.text, fontFeatureSettings: '"tnum"' }}>{formatCurrency(q.solution_total || 0)}</div>
+                    </div>
+                  </div>
+                ))}
+              </Card>
             )}
           </div>
         )}

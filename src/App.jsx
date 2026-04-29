@@ -11,8 +11,9 @@ import NewDeal from './pages/NewDeal'
 import DealDetail from './pages/DealDetail'
 import MSPPage from './pages/MSPPage'
 import MSPClientPortal from './pages/MSPClientPortal'
-import QuoteEditor from './pages/QuoteEditor'
-import ProposalBuilder from './pages/ProposalBuilder'
+import QuotesList from './pages/QuotesList'
+import QuoteBuilder from './pages/QuoteBuilder'
+import ProposalRenderer from './pages/ProposalRenderer'
 import CallDetail from './pages/CallDetail'
 import CoachAdmin from './pages/CoachAdmin'
 import Settings from './pages/Settings'
@@ -98,9 +99,9 @@ export default function App() {
                 <Route path="/deal/:id" element={<ErrorBoundary label="this deal"><DealDetail /></ErrorBoundary>} />
                 <Route path="/deal/:dealId/call/:conversationId" element={<ErrorBoundary label="this call"><CallDetail /></ErrorBoundary>} />
                 <Route path="/deal/:dealId/msp" element={<ErrorBoundary label="the MSP"><MSPPage /></ErrorBoundary>} />
-                <Route path="/deal/:dealId/quote/new" element={<ErrorBoundary label="new quote"><QuoteEditor /></ErrorBoundary>} />
-                <Route path="/deal/:dealId/quote/:quoteId" element={<ErrorBoundary label="the quote"><QuoteEditor /></ErrorBoundary>} />
-                <Route path="/deal/:dealId/proposal" element={<ErrorBoundary label="the proposal"><ProposalBuilder /></ErrorBoundary>} />
+                <Route path="/deal/:dealId/quotes" element={<ErrorBoundary label="quotes"><QuotesList /></ErrorBoundary>} />
+                <Route path="/deal/:dealId/quote/:quoteId" element={<ErrorBoundary label="quote builder"><QuoteBuilder /></ErrorBoundary>} />
+                <Route path="/deal/:dealId/quote/:quoteId/proposal" element={<ErrorBoundary label="proposal preview"><ProposalRenderer /></ErrorBoundary>} />
                 <Route path="/coach" element={<ErrorBoundary label="coach admin"><CoachAdmin /></ErrorBoundary>} />
                 <Route path="/coach/builder" element={<ErrorBoundary label="coach builder"><CoachBuilder /></ErrorBoundary>} />
                 <Route path="/reports" element={<ErrorBoundary label="reports"><Reports /></ErrorBoundary>} />

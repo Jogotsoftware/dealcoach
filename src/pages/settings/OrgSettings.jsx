@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { useOrg } from '../../contexts/OrgContext'
 import { theme as T } from '../../lib/theme'
 import { Card, Badge, Button, Spinner, inputStyle, labelStyle } from '../../components/Shared'
+import LogoUploader from '../../components/LogoUploader'
 
 export default function OrgSettings() {
   const { org, plan, credits, isSystemAdmin, refreshOrg } = useOrg()
@@ -49,10 +50,6 @@ export default function OrgSettings() {
               <input style={inputStyle} defaultValue={org?.name || ''} onBlur={e => saveOrgField('name', e.target.value)} />
             </div>
             <div>
-              <label style={labelStyle}>Logo URL</label>
-              <input style={inputStyle} defaultValue={org?.logo_url || ''} onBlur={e => saveOrgField('logo_url', e.target.value)} placeholder="https://..." />
-            </div>
-            <div>
               <label style={labelStyle}>Primary Color</label>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <input type="color" value={org?.primary_color || '#5DADE2'} onChange={e => saveOrgField('primary_color', e.target.value)} style={{ width: 40, height: 30, border: 'none', cursor: 'pointer' }} />
@@ -65,6 +62,26 @@ export default function OrgSettings() {
               {org?.trial_ends_at && <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 8 }}>Trial ends {org.trial_ends_at.split('T')[0]}</span>}
             </div>
           </div>
+        </Card>
+
+        <Card title="Brand & Logo">
+          <LogoUploader
+            bucket="proposal-logos"
+            pathPrefix={org?.id}
+            filename="org-logo"
+            currentUrl={org?.logo_url}
+            currentPath={org?.logo_storage_path}
+            label="Your logo"
+            helpText="Uploaded once here. Renders automatically on every customer-facing proposal. SVG strongly preferred — scales cleanly on print."
+            onSaved={async (publicUrl, path) => {
+              await supabase.from('organizations').update({ logo_url: publicUrl, logo_storage_path: path }).eq('id', org.id)
+              await refreshOrg()
+            }}
+            onRemoved={async () => {
+              await supabase.from('organizations').update({ logo_url: null, logo_storage_path: null }).eq('id', org.id)
+              await refreshOrg()
+            }}
+          />
         </Card>
 
         <Card title="Fiscal Year">
