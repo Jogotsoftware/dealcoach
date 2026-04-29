@@ -179,6 +179,17 @@ export default function DealRoomConfig() {
     } finally { setBusy(false) }
   }
 
+  async function toggleProposalColumn(columnKey) {
+    const current = room?.proposal_column_visibility || {}
+    // Default visible (true) when missing → flipping it for the first time
+    // means "hide" (false). Subsequent toggles flip back and forth.
+    const isCurrentlyVisible = current[columnKey] === undefined ? true : !!current[columnKey]
+    const next = { ...current, [columnKey]: !isCurrentlyVisible }
+    try {
+      await saveRoom({ proposal_column_visibility: next })
+    } catch (e) { /* error already surfaced via setError in saveRoom */ }
+  }
+
   async function saveTabNote(tabKey) {
     const col = `ae_notes_${tabKey}`
     const next = (noteDrafts[tabKey] || '').trim() || null
@@ -395,13 +406,17 @@ export default function DealRoomConfig() {
                 onBlurSave={() => saveTabNote('msp')}
                 savedAt={noteSavedAt.msp}
               />
-              <Card title="Theme color">
-                <div style={{ fontSize: 11, color: T.textSecondary, marginBottom: 8 }}>
-                  Sets the primary accent color the customer sees throughout the Evaluation Room.
+              <Card title="Theme colors">
+                <div style={{ fontSize: 11, color: T.textSecondary, marginBottom: 10 }}>
+                  Three colors drive every customer-facing accent. Click any swatch for advanced color picking.
                 </div>
-                <ThemeColorPicker
-                  value={room?.theme_color || ''}
-                  onChange={(hex) => saveRoom({ theme_color: hex || null })}
+                <ThemeColorTriad
+                  primary={room?.theme_color || ''}
+                  secondary={room?.theme_color_secondary || ''}
+                  tertiary={room?.theme_color_tertiary || ''}
+                  onChangePrimary={(hex) => saveRoom({ theme_color: hex || null })}
+                  onChangeSecondary={(hex) => saveRoom({ theme_color_secondary: hex || null })}
+                  onChangeTertiary={(hex) => saveRoom({ theme_color_tertiary: hex || null })}
                 />
               </Card>
             </div>
@@ -490,6 +505,37 @@ export default function DealRoomConfig() {
                 {snapshotting ? 'Snapshotting…' : 'Refresh proposal snapshot'}
               </Button>
               {selectedQuoteId && <Button onClick={() => nav(`/deal/${dealId}/quote/${selectedQuoteId}`)} style={{ padding: '6px 14px', fontSize: 12 }}>Open quote →</Button>}
+            </div>
+          </Card>
+
+          <Card title="Proposal table columns the customer sees">
+            <div style={{ fontSize: 11, color: T.textSecondary, marginBottom: 10 }}>
+              Toggle individual columns off if you don't want the customer to see per-line list / discount detail. Solution column is always visible.
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {PROPOSAL_COLUMNS.map(col => {
+                const vis = room?.proposal_column_visibility || {}
+                const visible = vis[col.key] === undefined ? true : !!vis[col.key]
+                return (
+                  <button
+                    key={col.key}
+                    onClick={() => toggleProposalColumn(col.key)}
+                    title={visible ? 'Visible to the customer — click to hide' : 'Hidden from the customer — click to show'}
+                    style={{
+                      padding: '6px 12px', fontSize: 12, fontWeight: 600, fontFamily: T.font,
+                      border: `1px solid ${visible ? T.primary : T.border}`,
+                      borderRadius: 6,
+                      background: visible ? T.primaryLight : T.surface,
+                      color: visible ? T.primary : T.textMuted,
+                      cursor: 'pointer',
+                      display: 'inline-flex', alignItems: 'center', gap: 6,
+                    }}
+                  >
+                    <span style={{ fontSize: 12 }}>{visible ? '👁' : '⊘'}</span>
+                    {col.label}
+                  </button>
+                )
+              })}
             </div>
           </Card>
           </>
@@ -680,6 +726,17 @@ function PerTabNoteEditor({ tabKey, tabLabel, aeName, value, onChange, onBlurSav
   )
 }
 
+// Proposal table columns that AEs can toggle on/off per room. Mirrors the
+// switch statement inside DealRoomViewer.ProposalTabContent — keep in sync.
+const PROPOSAL_COLUMNS = [
+  { key: 'list',            label: 'List' },
+  { key: 'qty',             label: 'Qty' },
+  { key: 'total_list',      label: 'Total List' },
+  { key: 'discount_pct',    label: 'Discount %' },
+  { key: 'discount_amount', label: 'Discount $' },
+  { key: 'net_price',       label: 'Net Price' },
+]
+
 // Resource type metadata mirroring what the customer sees in the public
 // viewer's Library tab. Kept local to avoid an import cycle with
 // DealRoomViewer; if the source-of-truth shape changes there, mirror here.
@@ -770,6 +827,104 @@ function ThemeColorPicker({ value, onChange }) {
           Preview
         </div>
       </div>
+    </div>
+  )
+}
+
+// Three swatches stacked vertically. Each opens a popover with the same
+// preset palette + hex input + a native color input that surfaces the OS
+// hue/sliders picker.
+const TRIAD_SLOTS = [
+  { key: 'primary',   label: 'Primary',   help: 'Tab highlight, Year 1 Total band, request-change buttons, contact icons.' },
+  { key: 'secondary', label: 'Secondary', help: 'Section header bars, callouts, Investment Summary header (when applicable).' },
+  { key: 'tertiary',  label: 'Tertiary',  help: 'Discount text, signing bonus text, anything subtracted from totals.' },
+]
+
+function ThemeColorTriad({ primary, secondary, tertiary, onChangePrimary, onChangeSecondary, onChangeTertiary }) {
+  const values = { primary, secondary, tertiary }
+  const setters = { primary: onChangePrimary, secondary: onChangeSecondary, tertiary: onChangeTertiary }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {TRIAD_SLOTS.map(slot => (
+        <ThemeSlotRow
+          key={slot.key}
+          label={slot.label}
+          help={slot.help}
+          value={values[slot.key]}
+          onChange={setters[slot.key]}
+        />
+      ))}
+    </div>
+  )
+}
+
+function ThemeSlotRow({ label, help, value, onChange }) {
+  const [open, setOpen] = useState(false)
+  const current = value || ''
+  const swatchColor = current || T.primary
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', background: T.surfaceAlt, borderRadius: 6, position: 'relative' }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        title={`Edit ${label.toLowerCase()} color`}
+        style={{ width: 36, height: 36, borderRadius: 6, background: swatchColor, border: `1px solid ${T.borderLight}`, cursor: 'pointer', padding: 0, flexShrink: 0 }}
+      />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{label} {!current && <span style={{ fontSize: 10, color: T.textMuted, fontWeight: 500 }}>(default)</span>}</div>
+        <div style={{ fontSize: 10, color: T.textMuted, lineHeight: 1.35 }}>{help}</div>
+      </div>
+      <code style={{ fontSize: 11, color: T.textMuted, fontFamily: T.mono }}>{current || '—'}</code>
+      {open && (
+        <>
+          <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 500 }} />
+          <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, padding: 12, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, boxShadow: '0 10px 40px rgba(0,0,0,0.18)', zIndex: 501, width: 280 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 6, marginBottom: 8 }}>
+              {THEME_COLOR_PRESETS.map(c => {
+                const selected = current.toLowerCase() === c.toLowerCase()
+                return (
+                  <button key={c} onClick={() => { onChange(c); setOpen(false) }}
+                    title={c}
+                    style={{ width: '100%', aspectRatio: '1 / 1', borderRadius: 4, background: c, cursor: 'pointer',
+                      border: selected ? `2px solid ${T.text}` : `1px solid ${T.borderLight}`, padding: 0 }} />
+                )
+              })}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <label style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                <input
+                  type="color"
+                  value={current || '#5DADE2'}
+                  onChange={e => onChange(e.target.value)}
+                  style={{ width: 38, height: 32, padding: 0, border: `1px solid ${T.borderLight}`, borderRadius: 4, cursor: 'pointer', background: T.surface }}
+                  title="Open the system color wheel and sliders"
+                />
+                <span style={{ fontSize: 11, color: T.textSecondary }}>Wheel & sliders</span>
+              </label>
+              <input
+                type="text"
+                value={current}
+                onChange={e => onChange(e.target.value)}
+                placeholder="#5DADE2"
+                style={{ ...inputStyle, width: 96, padding: '5px 8px', fontSize: 11, fontFamily: T.mono }}
+              />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+              <button
+                onClick={() => { onChange(''); setOpen(false) }}
+                style={{ padding: '5px 10px', fontSize: 10, border: `1px solid ${T.border}`, borderRadius: 4, background: T.surface, color: T.textMuted, cursor: 'pointer', fontFamily: T.font }}
+              >
+                Reset to default
+              </button>
+              <button
+                onClick={() => setOpen(false)}
+                style={{ padding: '5px 12px', fontSize: 10, fontWeight: 600, border: 'none', borderRadius: 4, background: T.primary, color: '#fff', cursor: 'pointer', fontFamily: T.font }}
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   )
 }
