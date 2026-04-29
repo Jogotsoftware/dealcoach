@@ -76,6 +76,25 @@ export default function DealRoomViewer() {
 
   useEffect(() => { validate() }, [shareToken, magicToken])
 
+  useEffect(() => {
+    if (!meta) return
+    const company = meta.deal?.company_name
+    document.title = company ? `Evaluation Room · ${company}` : 'Evaluation Room'
+    const logoUrl = meta.org?.logo_url
+    if (!logoUrl) return
+    const head = document.head
+    const previous = []
+    head.querySelectorAll('link[rel~="icon"]').forEach(l => { previous.push({ node: l, parent: l.parentNode }); l.remove() })
+    const link = document.createElement('link')
+    link.rel = 'icon'
+    link.href = logoUrl
+    head.appendChild(link)
+    return () => {
+      link.remove()
+      previous.forEach(({ node, parent }) => parent && parent.appendChild(node))
+    }
+  }, [meta])
+
   async function validate() {
     setLoading(true)
     setError('')
@@ -484,48 +503,91 @@ function ProposalTabContent({ data, archived, onComment }) {
       </div>
     )
   }
-  // Snapshot is the full quote + lines + impl + partner blocks etc. We render a
-  // plain summary with the totals; the full doc-style is handled by the
-  // existing ProposalRenderer (out of scope for this sprint per the prompt).
-  const quote = snapshot.quote || {}
-  const cfg = quote.deal_room_display_config || {}
-  const sections = cfg.sections || {}
-  const sec = (k) => sections[k] === undefined ? true : !!sections[k]
+  const totals = snapshot.totals || {}
+  const sageLines = snapshot.sage_lines || []
+  const sageImpl = snapshot.sage_implementation || []
+  const partnerBlocks = snapshot.partner_blocks || []
   const fmt = (n) => '$' + Math.ceil(Number(n) || 0).toLocaleString('en-US')
+  const num = (n) => Number(n) || 0
 
   return (
     <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: 32, maxWidth: 880, margin: '0 auto' }}>
       <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: T.text }}>Proposal</h1>
       <div style={{ fontSize: 11, color: T.textMuted, marginTop: 4 }}>
-        {quote.name} v{quote.version} · {snapshot.snapshotted_at ? `Captured ${new Date(snapshot.snapshotted_at).toLocaleString()}` : ''}
+        {snapshot.quote_name}{snapshot.quote_version ? ` v${snapshot.quote_version}` : ''}
+        {snapshot.snapshotted_at ? ` · Captured ${new Date(snapshot.snapshotted_at).toLocaleString()}` : ''}
       </div>
 
       <hr style={{ margin: '20px 0', border: 0, borderTop: `1px solid ${T.borderLight}` }} />
 
-      <Section visible={sec('subscription')} title="Sage Subscription">
-        <Total label="Year-1 subtotal" value={fmt(quote.sage_subscription_total)} />
-      </Section>
-      <Section visible={sec('implementation')} title="Sage Implementation">
-        <Total label="Implementation total" value={fmt(quote.sage_implementation_total)} />
-      </Section>
-      <Section visible={sec('promo')} title="Promo & Incentives" hideIfEmpty={
-        !(Number(quote.free_months) > 0 || Number(quote.signing_bonus_amount) > 0 || Number(quote.signing_bonus_months) > 0)
-      }>
-        {Number(quote.free_months) > 0 && <div>{quote.free_months} free month{Number(quote.free_months) === 1 ? '' : 's'} ({quote.free_months_placement || 'back'})</div>}
-        {(Number(quote.signing_bonus_amount) > 0 || Number(quote.signing_bonus_months) > 0) && (
-          <div>Signing incentive included</div>
-        )}
-      </Section>
-      <Section visible={sec('partner_subscription')} title="Partner Subscription" hideIfEmpty={!Number(quote.partner_subscription_total)}>
-        <Total label="Partner subscription" value={fmt(quote.partner_subscription_total)} />
-      </Section>
-      <Section visible={sec('partner_implementation')} title="Partner Implementation" hideIfEmpty={!Number(quote.partner_implementation_total)}>
-        <Total label="Partner implementation" value={fmt(quote.partner_implementation_total)} />
-      </Section>
+      {sageLines.length > 0 && (
+        <Section title="Sage Subscription">
+          <LineTable lines={sageLines} fmt={fmt} num={num} />
+          <Total label="Year-1 subtotal" value={fmt(totals.sage_subscription)} />
+        </Section>
+      )}
+
+      {sageImpl.length > 0 && (
+        <Section title="Sage Implementation">
+          <LineTable
+            lines={sageImpl.map(i => ({ name: i.description || i.name || 'Implementation', quantity: i.quantity || 1, unit_price: i.unit_price || i.amount, extended: i.extended || i.amount }))}
+            fmt={fmt} num={num}
+          />
+          <Total label="Implementation total" value={fmt(totals.sage_implementation)} />
+        </Section>
+      )}
+
+      {(num(snapshot.free_months) > 0 || num(snapshot.signing_bonus_amount) > 0 || num(snapshot.signing_bonus_months) > 0) && (
+        <Section title="Promo & Incentives">
+          {num(snapshot.free_months) > 0 && (
+            <div style={{ fontSize: 13, color: T.text, padding: '4px 0' }}>
+              {snapshot.free_months} free month{num(snapshot.free_months) === 1 ? '' : 's'} ({snapshot.free_months_placement || 'back'})
+            </div>
+          )}
+          {num(snapshot.signing_bonus_amount) > 0 && (
+            <div style={{ fontSize: 13, color: T.text, padding: '4px 0' }}>Signing bonus: {fmt(snapshot.signing_bonus_amount)}</div>
+          )}
+          {num(snapshot.signing_bonus_months) > 0 && (
+            <div style={{ fontSize: 13, color: T.text, padding: '4px 0' }}>Signing bonus: {snapshot.signing_bonus_months} month{num(snapshot.signing_bonus_months) === 1 ? '' : 's'}</div>
+          )}
+        </Section>
+      )}
+
+      {partnerBlocks.map((pb, idx) => {
+        const block = pb.block || {}
+        const lines = pb.lines || []
+        const impl = pb.implementation || []
+        const subTotal = lines.reduce((s, l) => s + num(l.extended), 0)
+        const implTotal = impl.reduce((s, l) => s + num(l.extended || l.amount), 0)
+        if (!subTotal && !implTotal && lines.length === 0 && impl.length === 0) return null
+        return (
+          <Section key={block.id || idx} title={`Partner: ${block.partner_name || 'Partner'}`}>
+            {lines.length > 0 && (
+              <>
+                <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', marginTop: 4, marginBottom: 4 }}>Subscription</div>
+                <LineTable lines={lines.map(l => ({ name: l.name || l.description, quantity: l.quantity || 1, unit_price: l.unit_price, extended: l.extended }))} fmt={fmt} num={num} />
+              </>
+            )}
+            {impl.length > 0 && (
+              <>
+                <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', marginTop: 10, marginBottom: 4 }}>Implementation</div>
+                <LineTable lines={impl.map(l => ({ name: l.description || l.name, quantity: l.quantity || 1, unit_price: l.unit_price || l.amount, extended: l.extended || l.amount }))} fmt={fmt} num={num} />
+              </>
+            )}
+          </Section>
+        )
+      })}
+
+      {num(totals.partner_subscription) + num(totals.partner_implementation) > 0 && (
+        <Section title="Partner Totals">
+          {num(totals.partner_subscription) > 0 && <Total label="Partner subscription" value={fmt(totals.partner_subscription)} />}
+          {num(totals.partner_implementation) > 0 && <Total label="Partner implementation" value={fmt(totals.partner_implementation)} />}
+        </Section>
+      )}
 
       <div style={{ marginTop: 28, padding: '16px 20px', background: T.primaryLight, borderRadius: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span style={{ fontSize: 16, fontWeight: 800, color: T.text }}>Solution Total</span>
-        <span style={{ fontSize: 24, fontWeight: 900, color: T.primary }}>{fmt(quote.solution_total)}</span>
+        <span style={{ fontSize: 24, fontWeight: 900, color: T.primary }}>{fmt(totals.solution_total)}</span>
       </div>
 
       {!archived && (
@@ -535,9 +597,35 @@ function ProposalTabContent({ data, archived, onComment }) {
   )
 }
 
-function Section({ visible, title, hideIfEmpty, children }) {
-  if (!visible) return null
-  if (hideIfEmpty) return null
+function LineTable({ lines, fmt, num }) {
+  if (!lines || lines.length === 0) return null
+  return (
+    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 8 }}>
+      <thead>
+        <tr style={{ borderBottom: `1px solid ${T.borderLight}` }}>
+          <th style={{ textAlign: 'left', padding: '6px 4px', fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase' }}>Item</th>
+          <th style={{ textAlign: 'right', padding: '6px 4px', fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', width: 60 }}>Qty</th>
+          <th style={{ textAlign: 'right', padding: '6px 4px', fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', width: 100 }}>Unit</th>
+          <th style={{ textAlign: 'right', padding: '6px 4px', fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', width: 110 }}>Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {lines.map((l, i) => (
+          <tr key={l.id || i} style={{ borderBottom: `1px solid ${T.borderLight}` }}>
+            <td style={{ padding: '6px 4px', color: T.text, paddingLeft: l.is_bundle_child ? 18 : 4 }}>
+              {l.is_bundle_child ? '↳ ' : ''}{l.name || l.sku || '—'}
+            </td>
+            <td style={{ padding: '6px 4px', textAlign: 'right', fontFeatureSettings: '"tnum"' }}>{num(l.quantity).toLocaleString()}</td>
+            <td style={{ padding: '6px 4px', textAlign: 'right', fontFeatureSettings: '"tnum"', color: T.textSecondary }}>{l.unit_price != null ? fmt(l.unit_price) : '—'}</td>
+            <td style={{ padding: '6px 4px', textAlign: 'right', fontFeatureSettings: '"tnum"', fontWeight: 600 }}>{fmt(l.extended)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
+function Section({ title, children }) {
   return (
     <div style={{ marginBottom: 18 }}>
       <div style={{ fontSize: 13, fontWeight: 700, color: T.primary, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{title}</div>
