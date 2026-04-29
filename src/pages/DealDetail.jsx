@@ -2574,10 +2574,10 @@ function HomeDashboard({ dealId, deal, tasks, setTasks, userId, onAddTask, editM
   // excluded — they belong to the Home pipeline tab, not the deal home.
   const externalWidgets = [
     ...(registeredWidgets || [])
-      .filter(w => !BUILT_IN_IDS.has(w.id) && w.category === 'deal')
+      .filter(w => !BUILT_IN_IDS.has(w.id) && w.category === 'pipeline')
       .map(w => ({ id: w.id, title: w.title || w.name || w.id, w: 6, h: 4, minW: 3, minH: 2 })),
     ...(customWidgetDefs  || [])
-      .filter(w => w.widget_type === 'deal')
+      .filter(w => w.widget_type === 'pipeline')
       .map(w => ({ id: w.id, title: w.name || w.id, w: 6, h: 4, minW: 3, minH: 2 })),
   ]
   const widgetCatalog = [...HOME_WIDGET_REGISTRY, ...externalWidgets]
