@@ -1771,7 +1771,7 @@ export default function DealDetail() {
         {/* Next Steps lives in the header so it's always glanceable. The
             widget renders compact when populated and dashed when empty. */}
         <div style={{ marginBottom: 12 }}>
-          <NextStepsWidget deal={deal} setDeal={setDeal} compact />
+          <NextStepsWidget deal={deal} setDeal={setDeal} profile={profile} compact />
         </div>
 
         <TabBar tabs={tabs} active={tab} onChange={setTab} />
@@ -2470,68 +2470,173 @@ function BadgePopover({ options, selected, onPick, onClose }) {
   )
 }
 
-function NextStepsWidget({ deal, setDeal, compact = false }) {
+// Stoplight color tokens for the next-steps card. Keep in sync with the
+// deal_parse_next_steps_color trigger which writes one of these strings (or
+// null) into deals.next_steps_color.
+const NEXT_STEPS_COLOR_OPTIONS = [
+  { key: null,      label: 'Clear',  swatch: '#cbd5e1' },
+  { key: 'green',   label: 'Green',  swatch: '#28a745' },
+  { key: 'yellow',  label: 'Yellow', swatch: '#f59e0b' },
+  { key: 'red',     label: 'Red',    swatch: '#dc3545' },
+]
+
+function nextStepsAccent(color) {
+  if (color === 'red') return '#dc3545'
+  if (color === 'yellow') return '#f59e0b'
+  if (color === 'green') return '#28a745'
+  return null
+}
+
+function NextStepsWidget({ deal, setDeal, profile, compact = false }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(deal.next_steps || '')
   const [saving, setSaving] = useState(false)
+  const [colorPickerOpen, setColorPickerOpen] = useState(false)
+  // Cache of profile.id → initials so the by-line ("JP") works even when
+  // the color was set by a teammate. Lazily filled on demand.
+  const [initialsById, setInitialsById] = useState({})
   useEffect(() => { setDraft(deal.next_steps || '') }, [deal.next_steps])
 
-  async function save() {
+  // Fetch initials for whoever last touched the color (if not the current user
+  // and we don't already have it cached).
+  useEffect(() => {
+    const id = deal.next_steps_color_changed_by
+    if (!id) return
+    if (id === profile?.id) return
+    if (initialsById[id]) return
+    let cancelled = false
+    ;(async () => {
+      const { data } = await supabase.from('profiles').select('initials, full_name').eq('id', id).maybeSingle()
+      if (cancelled || !data) return
+      const fallback = (data.full_name || '').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
+      setInitialsById(prev => ({ ...prev, [id]: data.initials || fallback || '?' }))
+    })()
+    return () => { cancelled = true }
+  }, [deal.next_steps_color_changed_by, profile?.id])
+
+  async function saveText() {
     if ((draft || '') === (deal.next_steps || '')) { setEditing(false); return }
     setSaving(true)
     try {
       const { error } = await supabase.from('deals').update({ next_steps: draft || null }).eq('id', deal.id)
       if (!error) {
-        const { data: refreshed } = await supabase.from('deals').select('next_steps, next_steps_color, updated_at').eq('id', deal.id).single()
-        setDeal(prev => ({ ...prev, next_steps: refreshed?.next_steps ?? draft, next_steps_color: refreshed?.next_steps_color ?? null, updated_at: refreshed?.updated_at ?? prev.updated_at }))
+        const { data: refreshed } = await supabase.from('deals')
+          .select('next_steps, next_steps_color, next_steps_color_reason, next_steps_color_changed_at, next_steps_color_changed_by, next_steps_color_manual, updated_at')
+          .eq('id', deal.id).single()
+        setDeal(prev => ({ ...prev, ...(refreshed || {}) }))
       }
     } catch (e) { console.error('save next_steps failed', e) }
     setSaving(false)
     setEditing(false)
   }
 
+  async function saveColor(color, reason) {
+    const patch = {
+      next_steps_color: color,
+      next_steps_color_reason: reason ? reason.trim() : null,
+      next_steps_color_changed_at: new Date().toISOString(),
+      next_steps_color_changed_by: profile?.id || null,
+      // The trigger respects this flag — once set, the keyword auto-parser
+      // stops touching color until next_steps_color_manual is flipped back.
+      next_steps_color_manual: color != null,
+    }
+    const { error } = await supabase.from('deals').update(patch).eq('id', deal.id)
+    if (error) { console.error('save next_steps_color failed', error); alert('Save failed: ' + error.message); return }
+    setDeal(prev => ({ ...prev, ...patch }))
+    setColorPickerOpen(false)
+  }
+
   const populated = (deal.next_steps || '').trim().length > 0
-  const accentColor = deal.next_steps_color === 'red' ? T.error : deal.next_steps_color === 'green' ? T.success : T.border
+  const accentColor = nextStepsAccent(deal.next_steps_color) || T.border
   const pad = compact ? '8px 12px' : '14px 18px'
   const labelSize = compact ? 9 : 10
   const bodySize = compact ? 13 : 14
   const rows = compact ? 2 : 4
 
+  // Compose the by-line shown next to the color chip when a color is set.
+  const changedByInitials = deal.next_steps_color_changed_by
+    ? (deal.next_steps_color_changed_by === profile?.id ? (profile?.initials || '?') : (initialsById[deal.next_steps_color_changed_by] || '…'))
+    : null
+  const changedAtLabel = deal.next_steps_color_changed_at
+    ? new Date(deal.next_steps_color_changed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    : null
+
+  // Color chip + popover. The chip lives at the top-left of the card so
+  // the rep can click it without entering text-edit mode.
+  function ColorChip() {
+    return (
+      <div style={{ position: 'relative', display: 'inline-flex' }}>
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); setColorPickerOpen(v => !v) }}
+          title={deal.next_steps_color ? `Status: ${deal.next_steps_color} — click to change` : 'Click to set status color'}
+          aria-label="Set next-steps color"
+          style={{
+            width: 16, height: 16, borderRadius: '50%',
+            background: nextStepsAccent(deal.next_steps_color) || T.surfaceAlt,
+            border: `1px solid ${nextStepsAccent(deal.next_steps_color) ? 'transparent' : T.border}`,
+            cursor: 'pointer', padding: 0, flexShrink: 0,
+            boxShadow: deal.next_steps_color ? `0 0 0 2px ${nextStepsAccent(deal.next_steps_color)}22` : 'none',
+          }}
+        />
+        {colorPickerOpen && (
+          <ColorPickerPopover
+            current={deal.next_steps_color}
+            currentReason={deal.next_steps_color_reason}
+            onClose={() => setColorPickerOpen(false)}
+            onSave={saveColor}
+          />
+        )}
+      </div>
+    )
+  }
+
   if (editing) {
     return (
       <div style={{ padding: pad, border: `1px solid ${T.border}`, borderLeft: `4px solid ${accentColor}`, borderRadius: 8, background: T.surface }}>
-        <div style={{ fontSize: labelSize, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Next Steps</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+          <ColorChip />
+          <span style={{ fontSize: labelSize, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Next Steps</span>
+        </div>
         <textarea
           autoFocus
           value={draft}
           onChange={e => setDraft(e.target.value)}
-          onBlur={save}
-          onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') save(); if (e.key === 'Escape') { setDraft(deal.next_steps || ''); setEditing(false) } }}
+          onBlur={saveText}
+          onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') saveText(); if (e.key === 'Escape') { setDraft(deal.next_steps || ''); setEditing(false) } }}
           rows={rows}
-          placeholder="What's the next move? Use RED / GREEN keywords to color-tint this card."
+          placeholder="What's the next move?"
           style={{ ...inputStyle, fontFamily: T.font, fontSize: bodySize, lineHeight: 1.55, resize: 'vertical', width: '100%' }}
         />
-        <div style={{ marginTop: 4, fontSize: 10, color: T.textMuted }}>{saving ? 'Saving…' : 'Saves on blur or ⌘↵.'}</div>
+        <div style={{ marginTop: 4, fontSize: 10, color: T.textMuted }}>{saving ? 'Saving…' : 'Saves on blur or ⌘↵. Click the dot to set color + reason.'}</div>
       </div>
     )
   }
 
   if (!populated) {
     return (
-      <div onClick={() => setEditing(true)}
-        style={{ padding: pad, border: `1px dashed ${T.border}`, borderRadius: 8, color: T.textMuted, fontStyle: 'italic', cursor: 'pointer', background: T.surface, fontSize: bodySize }}>
-        + Add next steps
+      <div style={{ padding: pad, border: `1px dashed ${T.border}`, borderRadius: 8, background: T.surface, display: 'flex', alignItems: 'center', gap: 10 }}>
+        <ColorChip />
+        <button type="button" onClick={() => setEditing(true)}
+          style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: T.textMuted, fontStyle: 'italic', fontSize: bodySize, fontFamily: T.font, textAlign: 'left', flex: 1 }}>
+          + Add next steps
+        </button>
       </div>
     )
   }
 
   return (
-    <div onClick={() => setEditing(true)}
-      style={{ padding: pad, border: `1px solid ${T.border}`, borderLeft: `4px solid ${accentColor}`, borderRadius: 8, cursor: 'pointer', background: T.surface }}>
+    <div
+      style={{ padding: pad, border: `1px solid ${T.border}`, borderLeft: `4px solid ${accentColor}`, borderRadius: 8, background: T.surface }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <ColorChip />
         <span style={{ fontSize: labelSize, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', flexShrink: 0 }}>Next Steps</span>
-        {deal.next_steps_color && (
-          <Badge color={deal.next_steps_color === 'red' ? T.error : T.success}>{deal.next_steps_color}</Badge>
+        {deal.next_steps_color && changedByInitials && changedAtLabel && (
+          <span
+            title={deal.next_steps_color_reason || ''}
+            style={{ fontSize: 10, color: T.textMuted, fontWeight: 600, padding: '2px 6px', background: T.surfaceAlt, border: `1px solid ${T.borderLight}`, borderRadius: 4 }}>
+            {changedByInitials} · {changedAtLabel}
+          </span>
         )}
         {compact && (
           <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 'auto' }}>
@@ -2539,12 +2644,92 @@ function NextStepsWidget({ deal, setDeal, compact = false }) {
           </span>
         )}
       </div>
-      <div style={{ fontFamily: T.font, fontSize: bodySize, lineHeight: 1.55, whiteSpace: 'pre-wrap', color: T.text, marginTop: 4 }}>{deal.next_steps}</div>
-      {!compact && (
-        <div style={{ fontSize: 11, color: T.textMuted, marginTop: 6 }}>
-          Updated {deal.updated_at ? new Date(deal.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'} · click to edit
+      {deal.next_steps_color_reason && (
+        <div style={{ fontSize: 11, color: T.textSecondary, fontStyle: 'italic', marginTop: 4 }}>
+          {deal.next_steps_color_reason}
         </div>
       )}
+      <div onClick={() => setEditing(true)}
+        style={{ fontFamily: T.font, fontSize: bodySize, lineHeight: 1.55, whiteSpace: 'pre-wrap', color: T.text, marginTop: 4, cursor: 'pointer' }}>
+        {deal.next_steps}
+      </div>
+      {!compact && (
+        <div style={{ fontSize: 11, color: T.textMuted, marginTop: 6 }}>
+          Updated {deal.updated_at ? new Date(deal.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'} · click text to edit
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ColorPickerPopover({ current, currentReason, onClose, onSave }) {
+  const [picked, setPicked] = useState(current ?? null)
+  const [reason, setReason] = useState(currentReason || '')
+  const [saving, setSaving] = useState(false)
+  const wrapRef = useRef(null)
+
+  useEffect(() => {
+    function onDoc(e) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) onClose()
+    }
+    function onKey(e) { if (e.key === 'Escape') onClose() }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey) }
+  }, [onClose])
+
+  async function handleSave() {
+    setSaving(true)
+    try { await onSave(picked, reason) }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <div ref={wrapRef} onClick={(e) => e.stopPropagation()} style={{
+      position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 100,
+      width: 280, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8,
+      boxShadow: T.shadowMd, padding: 12, fontFamily: T.font,
+    }}>
+      <div style={{ fontSize: 10, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Status color</div>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+        {NEXT_STEPS_COLOR_OPTIONS.map(opt => {
+          const active = picked === opt.key
+          return (
+            <button
+              key={String(opt.key)}
+              type="button"
+              onClick={() => setPicked(opt.key)}
+              title={opt.label}
+              style={{
+                flex: 1, padding: '6px 4px', cursor: 'pointer',
+                background: active ? T.surfaceAlt : T.surface,
+                border: `2px solid ${active ? opt.swatch : T.border}`,
+                borderRadius: 6, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+                fontFamily: T.font,
+              }}
+            >
+              <span style={{
+                width: 14, height: 14, borderRadius: '50%',
+                background: opt.swatch,
+                opacity: opt.key == null ? 0.4 : 1,
+              }} />
+              <span style={{ fontSize: 10, fontWeight: 700, color: active ? T.text : T.textMuted }}>{opt.label}</span>
+            </button>
+          )
+        })}
+      </div>
+      <div style={{ fontSize: 10, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Reasoning</div>
+      <textarea
+        value={reason}
+        onChange={e => setReason(e.target.value)}
+        placeholder="Why this color? e.g. Champion confirmed budget"
+        rows={3}
+        style={{ ...inputStyle, fontFamily: T.font, fontSize: 12, lineHeight: 1.45, resize: 'vertical', width: '100%' }}
+      />
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginTop: 10 }}>
+        <Button onClick={onClose} disabled={saving} style={{ padding: '4px 10px', fontSize: 11 }}>Cancel</Button>
+        <Button primary onClick={handleSave} disabled={saving} style={{ padding: '4px 10px', fontSize: 11 }}>{saving ? 'Saving…' : 'Save'}</Button>
+      </div>
     </div>
   )
 }

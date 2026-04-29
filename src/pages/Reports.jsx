@@ -4,7 +4,7 @@ import { useAuth } from '../hooks/useAuth'
 import { useModules } from '../hooks/useModules'
 import { theme as T } from '../lib/theme'
 import { Card, Badge, Button, Spinner, inputStyle, labelStyle, EmptyState } from '../components/Shared'
-import { Navigate } from 'react-router-dom'
+import { Navigate, useNavigate } from 'react-router-dom'
 import { TABLES, getDerivedField, getDerivedGroups } from '../lib/widgetSchema'
 import { evalFormula } from '../lib/widgetQuery'
 import { evalTokens, formatValue, inferFormat } from '../lib/reportFormat'
@@ -515,22 +515,34 @@ export default function Reports() {
   }
 
   async function saveReport() {
-    if (!form.name.trim()) return
+    if (!form.name.trim()) { alert('Please enter a name for this report.'); return }
+    if (!profile?.org_id) { alert('Cannot save: profile not loaded yet. Refresh and try again.'); return }
+    if (!form.config?.base_entity) { alert('Cannot save: pick a base table first.'); return }
     setSaving(true)
-    const record = {
-      org_id: profile?.org_id, created_by: profile?.id,
-      name: form.name.trim(), description: form.description || null,
-      category: form.category || 'custom',
-      base_entity: form.config.base_entity,
-      query_config: form.config, is_prebuilt: false,
+    try {
+      const record = {
+        org_id: profile.org_id, created_by: profile.id,
+        name: form.name.trim(), description: form.description || null,
+        category: form.category || 'custom',
+        base_entity: form.config.base_entity,
+        query_config: form.config, is_prebuilt: false,
+      }
+      const result = editingId
+        ? await supabase.from('saved_reports').update(record).eq('id', editingId).select().single()
+        : await supabase.from('saved_reports').insert(record).select().single()
+      if (result.error) {
+        console.error('saveReport failed:', result.error)
+        alert('Save failed: ' + result.error.message)
+        return
+      }
+      await loadReports()
+      setMode('list')
+    } catch (e) {
+      console.error('saveReport threw:', e)
+      alert('Save failed: ' + (e?.message || 'unknown error'))
+    } finally {
+      setSaving(false)
     }
-    const result = editingId
-      ? await supabase.from('saved_reports').update(record).eq('id', editingId).select().single()
-      : await supabase.from('saved_reports').insert(record).select().single()
-    setSaving(false)
-    if (result.error) { alert('Save failed: ' + result.error.message); return }
-    await loadReports()
-    setMode('list')
   }
 
   async function deleteReport(id) {
@@ -1629,10 +1641,12 @@ function BuildViewV2({ form, setForm, editingId, baseFields, reports, saving, sa
       <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, background: T.bg }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', borderBottom: `1px solid ${T.border}`, background: T.surface, flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
-            <div style={{ fontSize: 10, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Report</div>
+            <div style={{ fontSize: 10, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Report name *</div>
             <input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
-              placeholder="Untitled report"
-              style={{ ...inputStyle, padding: '4px 8px', fontSize: 15, fontWeight: 700, border: '1px solid transparent', background: 'transparent' }} />
+              placeholder="Untitled report — click to name"
+              onFocus={e => { e.currentTarget.style.borderColor = T.primary; e.currentTarget.style.background = T.surface }}
+              onBlur={e => { e.currentTarget.style.borderColor = form.name.trim() ? T.border : T.error; e.currentTarget.style.background = T.surfaceAlt }}
+              style={{ ...inputStyle, padding: '4px 8px', fontSize: 15, fontWeight: 700, background: T.surfaceAlt, border: `1px solid ${form.name.trim() ? T.border : T.error}` }} />
           </div>
           <div style={{ padding: '4px 10px', background: T.surfaceAlt, borderRadius: 4, fontSize: 11, fontWeight: 600, color: T.text, border: `1px solid ${T.border}` }}>
             {TABLES[cfg.base_entity]?.label || cfg.base_entity}
@@ -2544,7 +2558,20 @@ function PreviewTable({ data, cfg, setCfg, baseFields }) {
 
 // ────────────────────────────────────────────────────────
 function RunView({ selectedReport, reportData, runningReport, runError, exportCsv, startEdit }) {
+  const navigate = useNavigate()
   const [exportRaw, setExportRaw] = useState(false)
+  // Sort + column-order state. Local only — not persisted to saved_reports.
+  // When reportData changes (re-run), reset both so we follow the report's
+  // intended column ordering from the builder.
+  const [sortBy, setSortBy] = useState(null) // { col, dir: 'asc'|'desc' } | null
+  const [orderedCols, setOrderedCols] = useState(reportData?.columns || [])
+  const [dragCol, setDragCol] = useState(null)
+  const [dragOverCol, setDragOverCol] = useState(null)
+  useEffect(() => {
+    setOrderedCols(reportData?.columns || [])
+    setSortBy(null)
+  }, [reportData])
+
   const cfg = selectedReport?.query_config || {}
   const base = cfg.base_entity || selectedReport?.base_entity || 'deals'
   const baseFields = TABLES[base]?.fields || {}
@@ -2574,6 +2601,87 @@ function RunView({ selectedReport, reportData, runningReport, runError, exportCs
     return formatCell(value, resolveFormat(c, cfg, baseFields, base), { fieldType: fieldType(c) })
   }
 
+  // Decide how a cell should be rendered for the user's "hyperlink companies
+  // and websites" ask. Returns a node or null (fall back to formatCell).
+  function renderLinkedCell(c, value, row) {
+    if (value == null || value === '') return null
+    const lc = String(c).toLowerCase()
+    // Website-like columns (`website`, `company_website`, etc.) → external link
+    if (lc === 'website' || lc.endsWith('_website') || lc.endsWith('.website')) {
+      const href = String(value).match(/^https?:\/\//) ? value : `https://${value}`
+      return (
+        <a href={href} target="_blank" rel="noopener noreferrer"
+          onClick={e => e.stopPropagation()}
+          style={{ color: T.primary, textDecoration: 'none' }}
+          onMouseEnter={e => e.currentTarget.style.textDecoration = 'underline'}
+          onMouseLeave={e => e.currentTarget.style.textDecoration = 'none'}>
+          {String(value).replace(/^https?:\/\//, '').replace(/\/$/, '')} ↗
+        </a>
+      )
+    }
+    // Company / deal name columns on a deals-based report → link to the deal page
+    const isDealRow = base === 'deals'
+    const isCompanyOrName = lc === 'company_name' || lc === 'name' || lc === 'company' || lc === 'deal_name'
+    if (isDealRow && isCompanyOrName && row?.id) {
+      return (
+        <a href={`/deal/${row.id}`}
+          onClick={e => { e.preventDefault(); e.stopPropagation(); navigate(`/deal/${row.id}`) }}
+          style={{ color: T.primary, textDecoration: 'none', fontWeight: 600 }}
+          onMouseEnter={e => e.currentTarget.style.textDecoration = 'underline'}
+          onMouseLeave={e => e.currentTarget.style.textDecoration = 'none'}>
+          {String(value)}
+        </a>
+      )
+    }
+    return null
+  }
+
+  // Sort rows according to the active sort column. Numbers + dates compared
+  // numerically; everything else stringwise. Nulls always sort last regardless
+  // of direction so empty cells stay out of the way.
+  const displayRows = useMemo(() => {
+    if (!reportData) return []
+    if (!sortBy) return reportData.rows
+    const { col, dir } = sortBy
+    const mult = dir === 'asc' ? 1 : -1
+    const ft = fieldType(col)
+    const isNum = ft === 'number' || ft === 'currency' || ft === 'percentage' || ft === 'score'
+    const isDate = ft === 'date' || ft === 'datetime'
+    return [...reportData.rows].sort((a, b) => {
+      const av = a[col], bv = b[col]
+      const aMissing = av == null || av === ''
+      const bMissing = bv == null || bv === ''
+      if (aMissing && bMissing) return 0
+      if (aMissing) return 1
+      if (bMissing) return -1
+      let cmp
+      if (isNum) cmp = (Number(av) || 0) - (Number(bv) || 0)
+      else if (isDate) cmp = new Date(av).getTime() - new Date(bv).getTime()
+      else cmp = String(av).localeCompare(String(bv), undefined, { numeric: true, sensitivity: 'base' })
+      return cmp * mult
+    })
+  }, [reportData, sortBy, base])
+
+  function toggleSort(c) {
+    setSortBy(prev => {
+      if (!prev || prev.col !== c) return { col: c, dir: 'asc' }
+      if (prev.dir === 'asc') return { col: c, dir: 'desc' }
+      return null // third click clears
+    })
+  }
+
+  // Move column `from` so it sits where `to` is. Used by the drag-drop handler.
+  function reorderCols(from, to) {
+    if (!from || !to || from === to) return
+    setOrderedCols(prev => {
+      const out = prev.filter(c => c !== from)
+      const idx = out.indexOf(to)
+      if (idx === -1) return prev
+      out.splice(idx, 0, from)
+      return out
+    })
+  }
+
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
@@ -2599,22 +2707,58 @@ function RunView({ selectedReport, reportData, runningReport, runError, exportCs
         </Card>
       ) : reportData ? (
         <Card>
-          <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 8 }}>{reportData.rows.length} {reportData.aggregate ? 'result' : 'row' + (reportData.rows.length === 1 ? '' : 's')}</div>
+          <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 8 }}>
+            {reportData.rows.length} {reportData.aggregate ? 'result' : 'row' + (reportData.rows.length === 1 ? '' : 's')}
+            {sortBy && <span> · sorted by {colLabel(sortBy.col)} {sortBy.dir === 'asc' ? '↑' : '↓'}</span>}
+          </div>
           <div style={{ overflow: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
               <thead>
                 <tr style={{ borderBottom: `1px solid ${T.border}` }}>
-                  {reportData.columns.map(c => (
-                    <th key={c} style={{ textAlign: 'left', padding: '6px 8px', fontSize: 10, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase' }}>{colLabel(c)}</th>
-                  ))}
+                  {orderedCols.map(c => {
+                    const isSorted = sortBy?.col === c
+                    const isDragOver = dragOverCol === c && dragCol && dragCol !== c
+                    return (
+                      <th
+                        key={c}
+                        draggable
+                        onDragStart={e => { setDragCol(c); e.dataTransfer.effectAllowed = 'move' }}
+                        onDragEnd={() => { setDragCol(null); setDragOverCol(null) }}
+                        onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (dragOverCol !== c) setDragOverCol(c) }}
+                        onDragLeave={() => { if (dragOverCol === c) setDragOverCol(null) }}
+                        onDrop={e => { e.preventDefault(); reorderCols(dragCol, c); setDragCol(null); setDragOverCol(null) }}
+                        onClick={() => toggleSort(c)}
+                        title="Click to sort · drag to reorder"
+                        style={{
+                          textAlign: 'left', padding: '6px 8px',
+                          fontSize: 10, fontWeight: 700, color: isSorted ? T.primary : '#8899aa',
+                          textTransform: 'uppercase', cursor: 'pointer',
+                          userSelect: 'none', whiteSpace: 'nowrap',
+                          background: isDragOver ? T.primaryLight : 'transparent',
+                          borderLeft: isDragOver ? `2px solid ${T.primary}` : '2px solid transparent',
+                          opacity: dragCol === c ? 0.4 : 1,
+                        }}
+                      >
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          {colLabel(c)}
+                          <SortIndicator dir={isSorted ? sortBy.dir : null} />
+                        </span>
+                      </th>
+                    )
+                  })}
                 </tr>
               </thead>
               <tbody>
-                {reportData.rows.slice(0, 500).map((row, i) => (
+                {displayRows.slice(0, 500).map((row, i) => (
                   <tr key={i} style={{ borderBottom: `1px solid ${T.borderLight}` }}>
-                    {reportData.columns.map(c => {
+                    {orderedCols.map(c => {
                       const val = row[c]
-                      return <td key={c} style={{ padding: '6px 8px', color: T.text, fontFeatureSettings: '"tnum"' }}>{renderCell(c, val)}</td>
+                      const linked = renderLinkedCell(c, val, row)
+                      return (
+                        <td key={c} style={{ padding: '6px 8px', color: T.text, fontFeatureSettings: '"tnum"' }}>
+                          {linked != null ? linked : renderCell(c, val)}
+                        </td>
+                      )
                     })}
                   </tr>
                 ))}
@@ -2625,5 +2769,18 @@ function RunView({ selectedReport, reportData, runningReport, runError, exportCs
         </Card>
       ) : null}
     </div>
+  )
+}
+
+// Up/down arrow indicator next to sortable column headers. Both arrows render
+// dimmed when the column isn't sorted, the active arrow lights up on sort.
+function SortIndicator({ dir }) {
+  const dim = '#cbd5e1'
+  const lit = T.primary
+  return (
+    <span style={{ display: 'inline-flex', flexDirection: 'column', lineHeight: 0.7, fontSize: 8 }} aria-hidden="true">
+      <span style={{ color: dir === 'asc' ? lit : dim }}>▲</span>
+      <span style={{ color: dir === 'desc' ? lit : dim }}>▼</span>
+    </span>
   )
 }

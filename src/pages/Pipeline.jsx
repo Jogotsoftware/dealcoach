@@ -303,8 +303,28 @@ export default function Pipeline() {
   async function savePipelineLayout(newLayout) {
     setPLayout(newLayout)
     const isAdmin = profile.role === 'admin' || profile.role === 'system_admin'
-    if (isAdmin && pOrgLayoutId) await supabase.from('org_widget_layouts').update({ layout: newLayout, widgets: pWidgets }).eq('id', pOrgLayoutId)
-    else if (pOrgLayoutId) await supabase.from('user_widget_overrides').upsert({ user_id: profile.id, org_layout_id: pOrgLayoutId, page: 'pipeline', layout: newLayout, widgets: pWidgets }, { onConflict: 'user_id,page' })
+    if (isAdmin) {
+      if (pOrgLayoutId) {
+        const { error } = await supabase.from('org_widget_layouts').update({ layout: newLayout, widgets: pWidgets }).eq('id', pOrgLayoutId)
+        if (error) console.error('savePipelineLayout update failed:', error.message)
+      } else {
+        // First save for this org — seed the row instead of failing silently.
+        const { data, error } = await supabase.from('org_widget_layouts').insert({
+          org_id: profile.org_id, page: 'pipeline', is_default: true, name: 'Pipeline',
+          layout: newLayout, widgets: pWidgets, created_by: profile.id,
+        }).select('id').single()
+        if (error) console.error('savePipelineLayout insert failed:', error.message)
+        else if (data) setPOrgLayoutId(data.id)
+      }
+    } else if (pOrgLayoutId) {
+      const { error } = await supabase.from('user_widget_overrides').upsert(
+        { user_id: profile.id, org_layout_id: pOrgLayoutId, page: 'pipeline', layout: newLayout, widgets: pWidgets },
+        { onConflict: 'user_id,page' },
+      )
+      if (error) console.error('savePipelineLayout user override failed:', error.message)
+    } else {
+      console.warn('savePipelineLayout: non-admin with no org layout — admin must create one first.')
+    }
   }
 
   // Computed
@@ -885,7 +905,12 @@ export default function Pipeline() {
           <h1 style={{ fontSize: 18, fontWeight: 800, margin: 0, color: T.text }}>Home</h1>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             <AddMenuButton onNewDeal={() => navigate('/deal/new')} onTranscript={() => setShowTranscript(true)} />
-            <EditDashboardButton editMode={editMode} onToggle={() => setEditMode(!editMode)} />
+            <EditDashboardButton editMode={editMode} onToggle={() => {
+              // Persist on lock — same path as the explicit Done button so users
+              // don't have to remember which control commits the layout.
+              if (editMode) savePipelineLayout(pLayout)
+              setEditMode(!editMode)
+            }} />
           </div>
         </div>
         {/* Home tabs — Pipeline and dashboards are all draggable + closable */}
