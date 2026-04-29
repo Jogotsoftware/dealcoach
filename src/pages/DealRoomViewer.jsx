@@ -223,7 +223,7 @@ export default function DealRoomViewer() {
           </div>
           <div style={{ textAlign: 'center' }}>
             <div style={{ fontSize: 22, fontWeight: 800, color: T.text }}>{deal?.company_name}</div>
-            <div style={{ fontSize: 12, color: T.textSecondary, marginTop: 2 }}>Welcome, {viewer.name || viewer.email}</div>
+            <div style={{ fontSize: 12, color: T.textSecondary, marginTop: 2 }}>Welcome, {viewer.name || viewer.email || 'guest'}</div>
           </div>
           <div style={{ textAlign: 'right' }}>
             {deal?.customer_logo_url && (

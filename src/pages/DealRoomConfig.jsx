@@ -59,6 +59,8 @@ export default function DealRoomConfig() {
   const [reply, setReply] = useState({})  // commentId → draft reply text
   const [noteDrafts, setNoteDrafts] = useState({ msp: '', library: '', proposal: '' })
   const [noteSavedAt, setNoteSavedAt] = useState({ msp: null, library: null, proposal: null })
+  const [commentFilter, setCommentFilter] = useState('unresolved')   // 'all' | 'unresolved' | 'resolved'
+  const [requestFilter, setRequestFilter] = useState('pending')       // 'pending' | 'accepted' | 'rejected' | 'all'
   const [tab, setTab] = useState(() => {
     if (typeof window === 'undefined') return 'msp'
     const h = (window.location.hash || '').replace('#', '')

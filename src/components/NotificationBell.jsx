@@ -89,7 +89,16 @@ export default function NotificationBell() {
           <path d="M13.73 21a2 2 0 0 1-3.46 0" />
         </svg>
         {unread > 0 && (
-          <span style={{ position: 'absolute', top: 2, right: 0, minWidth: 16, height: 16, borderRadius: 8, background: T.error, color: '#fff', fontSize: 9, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px', lineHeight: 1 }}>
+          <span style={{
+            position: 'absolute', top: -3, right: -4,
+            minWidth: 14, height: 14, borderRadius: 7,
+            background: T.error, color: '#fff',
+            fontSize: 9, fontWeight: 700,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: '0 4px', lineHeight: 1,
+            border: `2px solid ${T.surface}`,
+            boxSizing: 'content-box',
+          }}>
             {unread > 99 ? '99+' : unread}
           </span>
         )}
