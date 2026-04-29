@@ -71,6 +71,39 @@ function drSetPatch(quote, path, value) {
   return { deal_room_display_config: cfg }
 }
 
+// Compact icon button for the QuoteBuilder header. `accent` = primary-tinted (Save),
+// `danger` = red-on-hover (Delete). Same 28px square as the back button so the row aligns.
+function QbIconButton({ title, onClick, disabled, children, accent, danger }) {
+  const baseColor = accent ? T.primary : danger ? T.error : T.textMuted
+  return (
+    <button onClick={onClick} disabled={disabled} title={title}
+      style={{
+        width: 30, height: 30, padding: 0, borderRadius: 5,
+        border: `1px solid ${accent ? T.primary : T.border}`,
+        background: accent ? T.primary : T.surface,
+        color: accent ? '#fff' : baseColor,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.5 : 1,
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontFamily: T.font,
+        transition: 'background 0.1s, color 0.1s, border-color 0.1s',
+      }}
+      onMouseEnter={e => {
+        if (disabled) return
+        if (accent) return
+        if (danger) { e.currentTarget.style.background = T.errorLight; e.currentTarget.style.color = T.error; e.currentTarget.style.borderColor = T.error + '55' }
+        else { e.currentTarget.style.background = T.surfaceAlt; e.currentTarget.style.color = T.text }
+      }}
+      onMouseLeave={e => {
+        if (accent) return
+        e.currentTarget.style.background = T.surface
+        e.currentTarget.style.color = baseColor
+        e.currentTarget.style.borderColor = T.border
+      }}>
+      {children}
+    </button>
+  )
+}
+
 // ──────────────────────────────────────────────────────────
 // Top-level page
 // ──────────────────────────────────────────────────────────
@@ -256,71 +289,96 @@ export default function QuoteBuilder({
     <div>
       {!hideHeader && (
       <div style={embedded
-        ? { padding: '12px 24px', paddingRight: 72, borderBottom: `1px solid ${T.border}`, background: T.surface }
-        : { padding: '14px 24px', paddingRight: 72, borderBottom: `1px solid ${T.border}`, background: T.surface, position: 'sticky', top: 0, zIndex: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10, flexWrap: 'wrap' }}>
+        ? { padding: '10px 24px', paddingRight: 72, borderBottom: `1px solid ${T.border}`, background: T.surface }
+        : { padding: '12px 24px', paddingRight: 72, borderBottom: `1px solid ${T.border}`, background: T.surface, position: 'sticky', top: 0, zIndex: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           {!embedded && (
-            <button onClick={() => nav(`/deal/${dealId}/quotes`)} style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontSize: 12, color: T.primary, fontWeight: 600, fontFamily: T.font }}>&larr; Quotes</button>
+            <button onClick={() => nav(`/deal/${dealId}/quotes`)} title="Back to quotes" style={{ background: 'transparent', border: 'none', borderRadius: 6, padding: '4px 8px', cursor: 'pointer', color: T.textMuted, display: 'inline-flex', alignItems: 'center' }}
+              onMouseEnter={e => { e.currentTarget.style.background = T.surfaceAlt; e.currentTarget.style.color = T.text }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = T.textMuted }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
+            </button>
           )}
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            {headerQuotes && headerQuotes.length > 1 && onChangeQuote && (
-              <select
-                value={quoteId}
-                onChange={e => onChangeQuote(e.target.value)}
-                title="Switch active quote"
-                style={{ ...inputStyle, fontSize: 11, padding: '6px 8px', maxWidth: 200, cursor: 'pointer', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}
-              >
-                {headerQuotes.map(q => <option key={q.id} value={q.id}>{q.name} v{q.version}{q.is_primary ? ' · primary' : ''}</option>)}
-              </select>
-            )}
-            {onCreateQuote && (
-              <Button onClick={onCreateQuote} disabled={headerBusy} style={{ padding: '4px 10px', fontSize: 11 }} title="Create a new quote on this deal">+ New</Button>
-            )}
-            {onDuplicateQuote && (
-              <Button onClick={() => onDuplicateQuote(quoteId)} disabled={headerBusy} style={{ padding: '4px 10px', fontSize: 11 }} title="Duplicate this quote (lines, impl items, partner blocks)">Duplicate</Button>
-            )}
-            {onDeleteQuote && (
-              <Button danger onClick={() => onDeleteQuote(quoteId)} disabled={headerBusy} style={{ padding: '4px 10px', fontSize: 11 }} title="Delete this quote — cannot be undone">Delete</Button>
-            )}
+          {/* Quote selector when there are 2+ quotes — otherwise just edit the name inline */}
+          {headerQuotes && headerQuotes.length > 1 && onChangeQuote ? (
+            <select
+              value={quoteId}
+              onChange={e => onChangeQuote(e.target.value)}
+              title="Switch active quote"
+              style={{ ...inputStyle, fontSize: 14, fontWeight: 700, padding: '6px 10px', maxWidth: 260, cursor: 'pointer' }}
+            >
+              {headerQuotes.map(q => <option key={q.id} value={q.id}>{q.name}{q.is_primary ? ' · primary' : ''}</option>)}
+            </select>
+          ) : (
             <input
               defaultValue={quote.name}
               onBlur={e => { if (e.target.value !== quote.name) saveQuoteHeader({ name: e.target.value }) }}
-              style={{ ...inputStyle, fontSize: 16, fontWeight: 700, padding: '6px 10px', maxWidth: 280 }}
+              style={{ ...inputStyle, fontSize: 14, fontWeight: 700, padding: '6px 10px', maxWidth: 260 }}
             />
-            <Badge color={T.textMuted}>v{quote.version}</Badge>
-            <select
-              value={quote.status}
-              onChange={e => saveQuoteHeader({ status: e.target.value })}
-              style={{ ...inputStyle, fontSize: 11, padding: '4px 8px', maxWidth: 110, cursor: 'pointer', color: STATUS_COLORS[quote.status], fontWeight: 600, textTransform: 'uppercase' }}
-            >
-              {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-            {!quote.is_primary ? (
-              <Button onClick={setPrimary} style={{ padding: '4px 10px', fontSize: 11 }}>Set Primary</Button>
-            ) : (
-              <Badge color={T.primary}>Primary</Badge>
-            )}
-            <ContactPicker
-              contacts={contacts}
-              currentId={quote.signer_contact_id}
-              onChange={async (id) => { await saveQuoteHeader({ signer_contact_id: id }); }}
+          )}
+          {/* Inline rename when a selector is shown */}
+          {headerQuotes && headerQuotes.length > 1 && (
+            <input
+              defaultValue={quote.name}
+              onBlur={e => { if (e.target.value !== quote.name) saveQuoteHeader({ name: e.target.value }) }}
+              placeholder="Rename"
+              style={{ ...inputStyle, fontSize: 12, padding: '5px 8px', maxWidth: 160 }}
             />
-          </div>
+          )}
+          {/* Primary star toggle */}
+          <button
+            onClick={() => { if (!quote.is_primary) setPrimary() }}
+            disabled={quote.is_primary}
+            title={quote.is_primary ? 'Primary quote' : 'Set as primary quote'}
+            style={{
+              width: 28, height: 28, padding: 0, border: 'none', borderRadius: 4,
+              background: 'transparent', color: quote.is_primary ? T.warning : T.textMuted,
+              cursor: quote.is_primary ? 'default' : 'pointer',
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontFamily: T.font,
+            }}
+            onMouseEnter={e => { if (!quote.is_primary) { e.currentTarget.style.background = T.surfaceAlt; e.currentTarget.style.color = T.warning } }}
+            onMouseLeave={e => { if (!quote.is_primary) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = T.textMuted } }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill={quote.is_primary ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+            </svg>
+          </button>
+          <ContactPicker
+            contacts={contacts}
+            currentId={quote.signer_contact_id}
+            onChange={async (id) => { await saveQuoteHeader({ signer_contact_id: id }); }}
+          />
+
+          <div style={{ flex: 1 }} />
+
+          {/* Action icons */}
+          {onCreateQuote && (
+            <QbIconButton title="New quote" onClick={onCreateQuote} disabled={headerBusy}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </QbIconButton>
+          )}
+          {onDuplicateQuote && (
+            <QbIconButton title="Save as new quote (duplicate)" onClick={() => onDuplicateQuote(quoteId)} disabled={headerBusy}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            </QbIconButton>
+          )}
+          <QbIconButton title={savingFlash ? 'Saving…' : (savedAt ? `Saved ${savedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Save')}
+            onClick={handleSave} disabled={savingFlash} accent>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+          </QbIconButton>
+          <QbIconButton title="Preview proposal" onClick={() => nav(`/deal/${dealId}/quote/${quoteId}/proposal`)}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </QbIconButton>
           {headerExtraAction}
-          <Button onClick={() => nav(`/deal/${dealId}/quote/${quoteId}/proposal`)} style={{ padding: '10px 22px', fontSize: 13 }}>Preview</Button>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
-            <Button primary onClick={handleSave} disabled={savingFlash} style={{ padding: '8px 18px', fontSize: 13 }}>
-              {savingFlash ? 'Saving…' : 'Save'}
-            </Button>
-            {savedAt && !savingFlash && (
-              <span style={{ fontSize: 10, color: T.textMuted }}>Saved {savedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-            )}
-          </div>
-          {headerVisibilityToggle && (
-            <div style={{ display: 'flex', alignItems: 'center' }}>{headerVisibilityToggle}</div>
+          {headerVisibilityToggle}
+          {onDeleteQuote && (
+            <QbIconButton title="Delete this quote" onClick={() => onDeleteQuote(quoteId)} disabled={headerBusy} danger>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            </QbIconButton>
           )}
         </div>
-        {!forcedTab && <TabBar tabs={tabs} active={tab} onChange={setTab} />}
+        {/* Inner sub-tab bar — hidden when embedded inside the Deal Room (parent
+            already exposes Quote / Resources / Models / Project Plan as top-level tabs). */}
+        {!forcedTab && !embedded && <TabBar tabs={tabs} active={tab} onChange={setTab} />}
       </div>
       )}
 

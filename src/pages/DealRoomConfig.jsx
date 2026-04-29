@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
@@ -79,6 +79,21 @@ export default function DealRoomConfig({ embedded = false, dealId: dealIdProp } 
   }
 
   useEffect(() => { load(true) }, [dealId])
+
+  // Auto-create a blank quote the first time a deal-room has none. Guarded by a
+  // ref so multiple Quotes-tab visits within one session don't double-seed if
+  // the user manually deletes the only quote we just made.
+  const autoQuotedRef = useRef(false)
+  useEffect(() => {
+    if (loading) return
+    if (autoQuotedRef.current) return
+    if (!org?.id) return
+    if (quotes.length > 0) return
+    if (tab !== 'quotes') return
+    autoQuotedRef.current = true
+    createQuote()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, tab, quotes.length, org?.id])
 
   async function load(spinner = false) {
     if (spinner) setLoading(true)
@@ -702,6 +717,7 @@ export default function DealRoomConfig({ embedded = false, dealId: dealIdProp } 
             <div style={{ margin: '0 -24px' }}>
               <QuoteBuilder
                 embedded
+                forcedTab="quote"
                 dealId={dealId}
                 quoteId={selectedQuoteId}
                 headerQuotes={quotes}
@@ -711,16 +727,23 @@ export default function DealRoomConfig({ embedded = false, dealId: dealIdProp } 
                 onDeleteQuote={deleteQuote}
                 headerBusy={busy}
                 headerExtraAction={
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
-                    <Button primary onClick={refreshProposalSnapshot} disabled={snapshotting} style={{ padding: '8px 14px', fontSize: 12 }}>
-                      {snapshotting ? 'Snapshotting…' : 'Push to customer Proposal tab'}
-                    </Button>
-                    {room.proposal_snapshotted_at && (
-                      <span style={{ fontSize: 10, color: T.textMuted }}>
-                        Last pushed {relativeTime(room.proposal_snapshotted_at)}
-                      </span>
-                    )}
-                  </div>
+                  <button
+                    onClick={refreshProposalSnapshot}
+                    disabled={snapshotting}
+                    title={snapshotting ? 'Pushing snapshot…' : `Push to customer Proposal tab${room.proposal_snapshotted_at ? ` · last pushed ${relativeTime(room.proposal_snapshotted_at)}` : ''}`}
+                    style={{
+                      width: 30, height: 30, padding: 0, borderRadius: 5,
+                      border: `1px solid ${T.border}`, background: T.surface,
+                      color: room.proposal_snapshotted_at ? T.success : T.textMuted,
+                      cursor: snapshotting ? 'wait' : 'pointer', opacity: snapshotting ? 0.6 : 1,
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontFamily: T.font,
+                    }}
+                    onMouseEnter={e => { if (!snapshotting) { e.currentTarget.style.background = T.surfaceAlt; e.currentTarget.style.color = T.primary } }}
+                    onMouseLeave={e => { e.currentTarget.style.background = T.surface; e.currentTarget.style.color = room.proposal_snapshotted_at ? T.success : T.textMuted }}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M12 19V5"/><polyline points="5 12 12 5 19 12"/>
+                    </svg>
+                  </button>
                 }
                 headerVisibilityToggle={
                   <VisibilityToggleIcon
