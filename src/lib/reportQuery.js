@@ -4,7 +4,8 @@
 // limit. For anything more exotic, reports should be run from /reports directly.
 
 import { supabase } from './supabase'
-import { TABLES } from './widgetSchema'
+import { TABLES, DERIVED_FIELDS, getDerivedField } from './widgetSchema'
+import { evalTokens } from './reportFormat'
 
 function applyFilter(q, f) {
   if (!f?.field || !f?.operator) return q
@@ -36,11 +37,47 @@ export async function executeSavedReport(report, overrides = {}) {
   if (!report) throw new Error('No report provided')
   const cfg = report.query_config || {}
   const base = cfg.base_entity || report.base_entity || 'deals'
-  const declared = Array.isArray(cfg.fields) ? cfg.fields.filter(f => typeof f === 'string') : []
-  const defaults = Object.keys(TABLES[base]?.fields || {}).slice(0, 8)
-  const fields = (overrides.fields && overrides.fields.length) ? overrides.fields
-    : declared.length ? declared
+  const baseTableFields = TABLES[base]?.fields || {}
+  const declaredAll = Array.isArray(cfg.fields) ? cfg.fields : []
+  const declaredStrings = declaredAll.filter(f => typeof f === 'string')
+  const defaults = Object.keys(baseTableFields).slice(0, 8)
+  const stringFields = (overrides.fields && overrides.fields.length) ? overrides.fields
+    : declaredStrings.length ? declaredStrings
     : defaults
+
+  // Split string fields into real base columns vs derived field keys
+  const derivedKeys = []
+  const realBaseColumns = []
+  for (const k of stringFields) {
+    if (k in baseTableFields) realBaseColumns.push(k)
+    else if (getDerivedField(base, k)) derivedKeys.push(k)
+    else realBaseColumns.push(k) // unknown — let Postgres reject
+  }
+
+  // Calculated columns (token-based v2 or legacy formula)
+  const calcFields = declaredAll.filter(f => typeof f === 'object' && (Array.isArray(f.tokens) || typeof f.formula === 'string'))
+
+  // Compute extra columns + joins required by derived/calculated fields
+  const extraBaseCols = new Set()
+  const extraJoins = new Set()
+  for (const k of derivedKeys) {
+    const d = getDerivedField(base, k)
+    for (const c of (d?.requiresColumns || [])) extraBaseCols.add(c)
+    for (const j of (d?.requiresJoins || [])) extraJoins.add(j)
+  }
+  for (const cf of calcFields) {
+    if (Array.isArray(cf.tokens)) {
+      for (const t of cf.tokens) {
+        if (t.type === 'field') {
+          if (t.table === base || !t.table) {
+            if (t.column in baseTableFields) extraBaseCols.add(t.column)
+          } else {
+            extraJoins.add(t.table)
+          }
+        }
+      }
+    }
+  }
 
   // Conditions — support both legacy `filters: [...]` and `filter_groups: [{conditions:[]}]`
   const conditions = []
@@ -49,17 +86,44 @@ export async function executeSavedReport(report, overrides = {}) {
     for (const g of cfg.filter_groups) for (const c of (g.conditions || [])) conditions.push(c)
   }
 
-  const selectList = Array.from(new Set(['id', ...fields])).join(', ')
+  const baseColumnSet = new Set(['id', ...realBaseColumns, ...extraBaseCols])
+  const selectParts = [Array.from(baseColumnSet).join(', ')]
+  for (const t of extraJoins) selectParts.push(`${t}(*)`)
+  const selectList = selectParts.join(', ')
+
   let q = supabase.from(base).select(selectList)
-  for (const f of conditions) q = applyFilter(q, f)
+  // Only push base-table simple filters server-side; derived-field filters evaluated client-side
+  for (const f of conditions) {
+    if (f && f.field in baseTableFields) q = applyFilter(q, f)
+  }
   const orderBy = overrides.order_by || cfg.order_by
-  if (orderBy) q = q.order(orderBy, { ascending: (overrides.order_dir || cfg.order_dir) === 'asc' })
+  if (orderBy && (orderBy in baseTableFields)) q = q.order(orderBy, { ascending: (overrides.order_dir || cfg.order_dir) === 'asc' })
   const lim = Math.min(Math.max(Number(overrides.limit || cfg.limit || 500), 1), 5000)
   q = q.limit(lim)
 
   const { data, error } = await q
   if (error) throw error
-  return { rows: data || [], base_entity: base, fields }
+
+  const fieldOpts = cfg.field_options || {}
+  const rows = (data || []).map(row => {
+    const out = { ...row }
+    for (const k of derivedKeys) {
+      const d = getDerivedField(base, k)
+      if (d) out[k] = d.compute(row, fieldOpts[k] || {})
+    }
+    for (const cf of calcFields) {
+      const id = cf.id || cf.key || cf.label
+      if (Array.isArray(cf.tokens)) out[id] = evalTokens(cf.tokens, row)
+    }
+    return out
+  })
+
+  // The exposed `fields` list should include declared columns (real + derived) and calc ids
+  const fields = [
+    ...stringFields,
+    ...calcFields.map(cf => cf.id || cf.key || cf.label),
+  ]
+  return { rows, base_entity: base, fields }
 }
 
 export async function fetchSavedReport(id) {

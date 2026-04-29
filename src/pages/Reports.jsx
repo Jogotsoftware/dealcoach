@@ -5,8 +5,10 @@ import { useModules } from '../hooks/useModules'
 import { theme as T } from '../lib/theme'
 import { Card, Badge, Button, Spinner, inputStyle, labelStyle, EmptyState } from '../components/Shared'
 import { Navigate } from 'react-router-dom'
-import { TABLES } from '../lib/widgetSchema'
+import { TABLES, getDerivedField, getDerivedGroups } from '../lib/widgetSchema'
 import { evalFormula } from '../lib/widgetQuery'
+import { evalTokens, formatValue, inferFormat } from '../lib/reportFormat'
+import { CalculatedColumnEditor, FormatMenu, formatCell } from '../components/ReportFormatting'
 
 const CATEGORY_COLORS = { performance: T.primary, pipeline: T.success, forecast: T.warning, quality: '#8b5cf6', coaching: '#e67e22', custom: T.textMuted }
 
@@ -77,8 +79,10 @@ function emptyConfig() {
 }
 
 // For a column id, figure out its type so we can decide default total-agg
-function detectColumnType(id, baseFields, cfgFields) {
+function detectColumnType(id, baseFields, cfgFields, base = 'deals') {
   if (baseFields[id]) return baseFields[id].type
+  const derived = getDerivedField(base, id)
+  if (derived) return derived.type
   // Joined: deal_analysis_champion
   for (let i = id.length - 1; i > 0; i--) {
     const k = id.substring(0, i)
@@ -87,11 +91,35 @@ function detectColumnType(id, baseFields, cfgFields) {
       return TABLES[k].fields?.[fKey]?.type
     }
   }
-  const f = (cfgFields || []).find(x => typeof x === 'object' && (x.key === id || x.label === id))
-  if (f?.formula !== undefined) return 'number'
+  const f = (cfgFields || []).find(x => typeof x === 'object' && (x.id === id || x.key === id || x.label === id))
+  if (f?.tokens || f?.formula !== undefined) return 'number'
   return null
 }
-const NUMERIC_TYPES = new Set(['number', 'currency', 'percentage', 'score'])
+const NUMERIC_TYPES = new Set(['number', 'currency', 'percentage', 'score', 'integer', 'decimal', 'abbreviated'])
+
+// Resolve the format config for a column. cfg.column_formats[id] wins, otherwise
+// fall back to the derived-field default, calc column's saved format, or auto-suggest.
+function resolveFormat(id, cfg, baseFields, base = 'deals') {
+  const explicit = cfg?.column_formats?.[id]
+  if (explicit) return explicit
+  if (baseFields[id]) return inferFormat(id, baseFields[id])
+  const derived = getDerivedField(base, id)
+  if (derived) return derived.format || inferFormat(id, { type: derived.type })
+  // Calculated column saved format
+  const cf = (cfg?.fields || []).find(x => typeof x === 'object' && (x.id === id || x.key === id || x.label === id))
+  if (cf?.format) return cf.format
+  if (cf?.tokens || cf?.formula !== undefined) return { type: 'number' }
+  // Joined column: deal_analysis_champion
+  for (let i = id.length - 1; i > 0; i--) {
+    const k = id.substring(0, i)
+    if (TABLES[k]) {
+      const fKey = id.substring(i + 1)
+      const meta = TABLES[k].fields?.[fKey]
+      if (meta) return inferFormat(fKey, meta)
+    }
+  }
+  return null
+}
 
 // Evaluate a boolean filter expression: "1 AND 2 AND (3 OR 4)" where each number
 // refers to a 1-indexed filter. Returns a function (pass: bool[]) => bool.
@@ -237,14 +265,58 @@ function filterToPgrest(f) {
 export async function executeReportQueryStandalone(report) {
   const cfg = migrateConfig(report.query_config)
   const base = cfg.base_entity || report.base_entity || 'deals'
-  const rawFields = (cfg.fields || []).filter(f => typeof f === 'string')
+  const baseTableFields = TABLES[base]?.fields || {}
+  const allStringFields = (cfg.fields || []).filter(f => typeof f === 'string')
   const joinedFields = (cfg.fields || []).filter(f => typeof f === 'object' && f?.join && f?.field)
-  const formulaFields = (cfg.fields || []).filter(f => typeof f === 'object' && f?.formula)
-  const selectFields = rawFields.length ? rawFields : Object.keys(TABLES[base]?.fields || {}).slice(0, 8)
+  // Calculated columns — both legacy formula and v2 tokens shapes
+  const calcFields = (cfg.fields || []).filter(f => typeof f === 'object' && (Array.isArray(f.tokens) || typeof f.formula === 'string'))
+  const formulaFields = calcFields // alias for legacy code below
 
-  // Figure out which joined tables we need based on fields + filters
+  // String fields split into real columns and derived-field keys
+  const derivedKeys = []
+  const rawFields = []
+  for (const k of allStringFields) {
+    if (k in baseTableFields) rawFields.push(k)
+    else if (getDerivedField(base, k)) derivedKeys.push(k)
+    else rawFields.push(k) // unknown, let it flow
+  }
+  const selectFields = rawFields.length || derivedKeys.length ? rawFields : Object.keys(baseTableFields).slice(0, 8)
+
+  // Figure out which joined tables we need based on fields + filters + derived deps + calc-token deps
   const joinTables = new Set(joinedFields.map(f => f.join))
   for (const f of (cfg.filters || [])) if (f.join) joinTables.add(f.join)
+  // Extra base columns we need server-side for derived/calc computation
+  const extraBaseCols = new Set()
+  // Track derived deps from BOTH selected fields and filter-only references
+  const derivedDepKeys = new Set(derivedKeys)
+  for (const f of (cfg.filters || [])) {
+    if (!f.join && f.field && getDerivedField(base, f.field)) derivedDepKeys.add(f.field)
+  }
+  for (const k of derivedDepKeys) {
+    const d = getDerivedField(base, k)
+    for (const c of (d?.requiresColumns || [])) extraBaseCols.add(c)
+    for (const j of (d?.requiresJoins || [])) joinTables.add(j)
+  }
+  for (const cf of calcFields) {
+    if (Array.isArray(cf.tokens)) {
+      for (const t of cf.tokens) {
+        if (t.type === 'field') {
+          if (!t.table || t.table === base) {
+            if (t.column in baseTableFields) extraBaseCols.add(t.column)
+            else if (getDerivedField(base, t.column)) {
+              // Token references a derived field — also pull its dependencies
+              derivedDepKeys.add(t.column)
+              const d = getDerivedField(base, t.column)
+              for (const c of (d?.requiresColumns || [])) extraBaseCols.add(c)
+              for (const j of (d?.requiresJoins || [])) joinTables.add(j)
+            }
+          } else {
+            joinTables.add(t.table)
+          }
+        }
+      }
+    }
+  }
 
   const allowSets = [], denySets = []
   for (const cf of (cfg.cross_filters || [])) {
@@ -258,8 +330,11 @@ export async function executeReportQueryStandalone(report) {
     else allowSets.push({ field: cf.local_field, ids })
   }
 
-  // Build select clause with joined table expansions
-  const selectParts = [selectFields.join(', ') || '*']
+  // Build select clause with joined table expansions. Make sure we include id and any
+  // base-table columns required by derived/calc fields even if not user-visible.
+  const baseColSet = new Set([...selectFields, ...extraBaseCols])
+  if (selectFields.length || derivedKeys.length || calcFields.length) baseColSet.add('id')
+  const selectParts = [Array.from(baseColSet).join(', ') || '*']
   for (const t of joinTables) selectParts.push(`${t}(*)`)
   const select = selectParts.join(', ')
 
@@ -268,12 +343,14 @@ export async function executeReportQueryStandalone(report) {
   for (const d of denySets) if (d.ids.length) q = q.not(d.field, 'in', `(${d.ids.join(',')})`)
 
   // Server-side filters: apply only the simple ones on the base table.
-  // Joined-table filters + compound boolean logic are evaluated client-side.
-  const baseFilters = (cfg.filters || []).filter(f => !f.join)
+  // Joined-table filters, derived-field filters, and compound boolean logic are evaluated client-side.
+  const isDerivedFilter = (f) => !f.join && (f.derived || !!getDerivedField(base, f.field))
+  const baseFilters = (cfg.filters || []).filter(f => !f.join && !isDerivedFilter(f))
   const joinFilters = (cfg.filters || []).filter(f => f.join)
+  const derivedFilters = (cfg.filters || []).filter(isDerivedFilter)
   const usesComplexLogic = !!cfg.filter_expression && cfg.filter_expression.trim().length > 0
 
-  if (!usesComplexLogic && baseFilters.length && !joinFilters.length) {
+  if (!usesComplexLogic && baseFilters.length && !joinFilters.length && !derivedFilters.length) {
     // Simple AND path — push filters to Postgres
     for (const f of baseFilters) q = applyFilter(q, f)
   }
@@ -285,6 +362,7 @@ export async function executeReportQueryStandalone(report) {
   const { data, error } = await q
   if (error) throw error
 
+  const fieldOpts = cfg.field_options || {}
   let rows = (data || []).map(row => {
     const out = { ...row }
     // Flatten joined fields into namespaced columns: deal_analysis_champion
@@ -293,7 +371,19 @@ export async function executeReportQueryStandalone(report) {
       const val = Array.isArray(j) ? j[0]?.[jf.field] : j?.[jf.field]
       out[`${jf.join}_${jf.field}`] = val
     }
-    for (const ff of formulaFields) out[ff.key || ff.label] = evalFormula(ff.formula, row)
+    // Compute derived fields (Time, Score buckets, Flags, Counts, Status, Activity, Company)
+    // Computes any derived field referenced by either a selected field or a filter.
+    for (const k of derivedDepKeys) {
+      const d = getDerivedField(base, k)
+      if (d) out[k] = d.compute(row, fieldOpts[k] || {})
+    }
+    // Compute calculated columns — v2 tokens take precedence over legacy formula.
+    // Pass `out` (with derived fields already computed) so tokens can reference them.
+    for (const cf of calcFields) {
+      const id = cf.id || cf.key || cf.label
+      if (Array.isArray(cf.tokens)) out[id] = evalTokens(cf.tokens, out)
+      else if (typeof cf.formula === 'string') out[id] = evalFormula(cf.formula, out)
+    }
     return out
   })
 
@@ -348,11 +438,17 @@ export async function executeReportQueryStandalone(report) {
     const columns = [agg.group_by, 'count', ...aggList.filter(a => a.field).map(a => `${a.type}_${a.field}`)]
     return { columns, rows: groupRows.sort((a, b) => (b.count || 0) - (a.count || 0)), aggregate: true, data: rows }
   }
-  const columns = [
-    ...selectFields,
-    ...joinedFields.map(f => `${f.join}_${f.field}`),
-    ...formulaFields.map(f => f.key || f.label),
-  ]
+  // Columns the user actually selected (in the order they appear in cfg.fields)
+  const columns = []
+  for (const f of (cfg.fields || [])) {
+    if (typeof f === 'string') columns.push(f)
+    else if (typeof f === 'object') {
+      if (f.join && f.field) columns.push(`${f.join}_${f.field}`)
+      else columns.push(f.id || f.key || f.label)
+    }
+  }
+  // If user hadn't picked any columns, default to base-table first 8
+  if (!columns.length) columns.push(...selectFields)
   return { columns, rows, aggregate: false, data: rows }
 }
 
@@ -372,12 +468,6 @@ export default function Reports() {
   const [runError, setRunError] = useState(null)
 
   useEffect(() => { loadReports() }, [])
-  // If the user has no saved reports yet, drop them straight into the builder
-  // so the report writer is visible — not a tiny "+ Build Report" button in the corner.
-  useEffect(() => {
-    if (!loading && reports.length === 0 && mode === 'list') startNew()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, reports.length])
 
   // Accept ?draft=<base64url JSON> from the chatbot's "Open in builder" link.
   useEffect(() => {
@@ -492,14 +582,25 @@ export default function Reports() {
     }
   }
 
-  function exportCsv() {
+  function exportCsv(opts = {}) {
     if (!reportData) return
+    const raw = !!opts.raw
+    const cfg = selectedReport?.query_config || {}
+    const base = cfg.base_entity || selectedReport?.base_entity || 'deals'
+    const baseFs = TABLES[base]?.fields || {}
+    function fieldType(c) {
+      if (baseFs[c]?.type) return baseFs[c].type
+      const d = getDerivedField(base, c)
+      if (d) return d.type
+      return null
+    }
     const lines = [reportData.columns.join(',')]
     for (const row of reportData.rows) {
       lines.push(reportData.columns.map(c => {
         const v = row[c]
-        if (v == null) return ''
-        const s = typeof v === 'object' ? JSON.stringify(v) : String(v)
+        if (v == null || v === '') return ''
+        const formatted = formatCell(v, resolveFormat(c, cfg, baseFs, base), { forCsv: true, raw, fieldType: fieldType(c) })
+        const s = formatted == null ? '' : String(formatted)
         return s.includes(',') || s.includes('"') ? `"${s.replace(/"/g, '""')}"` : s
       }).join(','))
     }
@@ -518,10 +619,28 @@ export default function Reports() {
 
   return (
     <div>
-      <div style={{ padding: '12px 24px', borderBottom: `1px solid ${T.border}`, background: T.surface, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2 style={{ fontSize: 18, fontWeight: 700, color: T.text, margin: 0 }}>Reports</h2>
-        {mode === 'list' && <Button primary onClick={startNew}>+ Build Report</Button>}
-        {mode !== 'list' && <Button onClick={() => { setMode('list'); setSelectedReport(null); setReportData(null); setRunError(null) }}>&larr; Back to reports</Button>}
+      {/* Right padding clears the floating notification bell so header content
+          never sits underneath it. Match this `paddingRight: 72` across page headers. */}
+      <div style={{ padding: '12px 24px', paddingRight: 72, borderBottom: `1px solid ${T.border}`, background: T.surface, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {mode !== 'list' && (
+            <button onClick={() => { setMode('list'); setSelectedReport(null); setReportData(null); setRunError(null) }}
+              title="Back to reports"
+              style={{
+                width: 28, height: 28, padding: 0, border: 'none', background: 'transparent',
+                color: T.textMuted, cursor: 'pointer', borderRadius: 4,
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontFamily: T.font,
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = T.surfaceAlt; e.currentTarget.style.color = T.text }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = T.textMuted }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <polyline points="15 18 9 12 15 6"/>
+              </svg>
+            </button>
+          )}
+          <h2 style={{ fontSize: 18, fontWeight: 700, color: T.text, margin: 0 }}>Reports</h2>
+        </div>
+        {mode === 'list' && <Button primary onClick={startNew}>+ New</Button>}
       </div>
 
       <div style={{ padding: '16px 24px' }}>
@@ -632,7 +751,7 @@ function ListView({ reports, runReport, startEdit, deleteReport, duplicateReport
               : activeFolder === '__fav__'
                 ? "No favorites yet. Hit the ★ on any report to pin it here."
                 : `"${activeFolder}" is empty. Drag reports onto it from the list.`}
-            action={<Button primary onClick={startNew}>+ Build Report</Button>} />
+            action={<Button primary onClick={startNew}>+ New Report</Button>} />
         ) : (
           <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: 'hidden' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
@@ -1158,6 +1277,10 @@ function BuildViewV2({ form, setForm, editingId, baseFields, reports, saving, sa
   const [livePreview, setLivePreview] = useState(null)
   const [liveRunning, setLiveRunning] = useState(false)
   const [liveError, setLiveError] = useState(null)
+  // Calculated-column editor modal — null = closed; { editing: index, field: {} } = open
+  const [calcEditor, setCalcEditor] = useState(null)
+
+  const derivedGroups = useMemo(() => getDerivedGroups(cfg.base_entity), [cfg.base_entity])
 
   // All joinable tables for this base entity (full catalog)
   const availableRelations = useMemo(() => {
@@ -1208,9 +1331,33 @@ function BuildViewV2({ form, setForm, editingId, baseFields, reports, saving, sa
     setCfg({ filters: next, filter_expression: expr })
   }
 
-  function addFormulaField() {
-    const key = `calc_${Math.random().toString(36).slice(2, 6)}`
-    setCfg({ fields: [...cfg.fields, { key, label: 'Calculated', formula: '' }] })
+  function openCalcEditor(idx = null) {
+    if (idx == null) {
+      setCalcEditor({ editing: null, field: { type: 'calculated', tokens: [], label: 'Calculated', format: { type: 'number', precision: 0 } } })
+    } else {
+      const f = cfg.fields[idx]
+      // Migrate legacy formula → tokens (best effort): parse string operators
+      let field = f
+      if (!Array.isArray(f?.tokens) && typeof f?.formula === 'string') {
+        field = { type: 'calculated', id: f.key, label: f.label || 'Calculated', format: f.format || { type: 'number', precision: 0 }, tokens: parseLegacyFormulaToTokens(f.formula, cfg.base_entity, baseFields) }
+      }
+      setCalcEditor({ editing: idx, field })
+    }
+  }
+  function saveCalcField(field) {
+    setCfg(prev => {
+      const fields = [...(cfg.fields || [])]
+      if (calcEditor?.editing != null) fields[calcEditor.editing] = field
+      else fields.push(field)
+      return { fields }
+    })
+    setCalcEditor(null)
+  }
+  function deleteCalcField() {
+    if (calcEditor?.editing != null) {
+      setCfg({ fields: cfg.fields.filter((_, i) => i !== calcEditor.editing) })
+    }
+    setCalcEditor(null)
   }
   function updateField(idx, patch) { setCfg({ fields: cfg.fields.map((f, i) => i === idx ? (typeof f === 'string' ? f : { ...f, ...patch }) : f) }) }
   function removeField(idx) { setCfg({ fields: cfg.fields.filter((_, i) => i !== idx) }) }
@@ -1220,16 +1367,31 @@ function BuildViewV2({ form, setForm, editingId, baseFields, reports, saving, sa
     if (already) setCfg({ fields: cfg.fields.filter(f => !(typeof f === 'string' ? f === key && !join : typeof f === 'object' && f.field === key && f.join === join)) })
     else setCfg({ fields: [...cfg.fields, join ? { join, field: key, label: key } : key] })
   }
+  function toggleDerivedField(key) {
+    const already = cfg.fields.some(f => typeof f === 'string' && f === key)
+    if (already) setCfg({ fields: cfg.fields.filter(f => f !== key) })
+    else setCfg({ fields: [...cfg.fields, key] })
+  }
 
   function fieldChipLabel(f) {
-    if (typeof f === 'string') return baseFields[f]?.label || f
-    if (f.formula !== undefined) return f.label || 'Calculated'
+    if (typeof f === 'string') {
+      if (baseFields[f]?.label) return baseFields[f].label
+      const d = getDerivedField(cfg.base_entity, f)
+      if (d) return d.label
+      return f
+    }
+    if (f.tokens || f.formula !== undefined) return f.label || 'Calculated'
     if (f.join) return `${TABLES[f.join]?.label || f.join} · ${TABLES[f.join]?.fields?.[f.field]?.label || f.field}`
     return f.label || f.field
   }
   function fieldChipType(f) {
-    if (typeof f === 'string') return baseFields[f]?.type || 'text'
-    if (f.formula !== undefined) return 'formula'
+    if (typeof f === 'string') {
+      if (baseFields[f]?.type) return baseFields[f].type
+      const d = getDerivedField(cfg.base_entity, f)
+      if (d) return d.type
+      return 'text'
+    }
+    if (f.tokens || f.formula !== undefined) return 'formula'
     if (f.join) return TABLES[f.join]?.fields?.[f.field]?.type || 'text'
     return 'text'
   }
@@ -1367,9 +1529,9 @@ function BuildViewV2({ form, setForm, editingId, baseFields, reports, saving, sa
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
                   {cfg.fields.length === 0 && <div style={{ fontSize: 11, color: T.textMuted, fontStyle: 'italic', padding: 4 }}>No columns — first 8 shown by default.</div>}
                   {cfg.fields.map((f, i) => {
-                    const isFormula = typeof f === 'object' && f.formula !== undefined
+                    const isCalc = typeof f === 'object' && (Array.isArray(f.tokens) || typeof f.formula === 'string')
                     return (
-                      <div key={i} draggable={!isFormula}
+                      <div key={i} draggable
                         onDragStart={e => { e.dataTransfer.setData('text/plain', JSON.stringify({ kind: 'reorder', fromIdx: i })); e.dataTransfer.effectAllowed = 'move' }}
                         onDragOver={e => e.preventDefault()}
                         onDrop={e => {
@@ -1384,23 +1546,20 @@ function BuildViewV2({ form, setForm, editingId, baseFields, reports, saving, sa
                             }
                           } catch {}
                         }}
-                        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 8px', borderRadius: 4, background: isFormula ? T.primaryLight : T.surfaceAlt, border: `1px solid ${isFormula ? T.primary + '55' : T.borderLight}`, cursor: isFormula ? 'default' : 'grab' }}>
+                        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 8px', borderRadius: 4, background: isCalc ? T.primaryLight : T.surfaceAlt, border: `1px solid ${isCalc ? T.primary + '55' : T.borderLight}`, cursor: 'grab' }}>
                         <span style={{ fontSize: 10, color: T.textMuted }}>⋮⋮</span>
                         <span style={{ width: 6, height: 6, borderRadius: '50%', background: TYPE_COLORS[fieldChipType(f)] || T.textMuted, flexShrink: 0 }} />
-                        {isFormula ? (
-                          <>
-                            <input style={{ ...inputStyle, padding: '2px 6px', fontSize: 11, width: 90 }} value={f.label} onChange={e => updateField(i, { label: e.target.value })} />
-                            <input style={{ ...inputStyle, padding: '2px 6px', fontSize: 11, flex: 1, fontFamily: 'ui-monospace, monospace' }} value={f.formula} onChange={e => updateField(i, { formula: e.target.value })} placeholder="fit_score + deal_health_score" />
-                          </>
-                        ) : (
-                          <span style={{ flex: 1, fontSize: 12, fontWeight: 600, color: T.text, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fieldChipLabel(f)}</span>
-                        )}
+                        <span style={{ flex: 1, fontSize: 12, fontWeight: 600, color: T.text, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: isCalc ? 'pointer' : 'default' }}
+                          onClick={() => isCalc && openCalcEditor(i)}
+                          title={isCalc ? 'Click to edit formula' : ''}>
+                          {fieldChipLabel(f)}{isCalc && <span style={{ marginLeft: 6, fontSize: 9, color: T.primary, fontWeight: 800 }}>ƒ</span>}
+                        </span>
                         <button onClick={() => removeField(i)} style={{ background: 'none', border: 'none', color: T.textMuted, fontSize: 13, cursor: 'pointer', padding: 0 }}>×</button>
                       </div>
                     )
                   })}
                 </div>
-                <Button onClick={addFormulaField} style={{ padding: '4px 10px', fontSize: 11, marginBottom: 10 }}>+ Calculated column</Button>
+                <Button onClick={() => openCalcEditor(null)} style={{ padding: '4px 10px', fontSize: 11, marginBottom: 10 }}>+ Calculated column</Button>
 
                 <div style={{ fontSize: 9, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>{TABLES[cfg.base_entity]?.label || cfg.base_entity} fields</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginBottom: 10 }}>
@@ -1421,6 +1580,10 @@ function BuildViewV2({ form, setForm, editingId, baseFields, reports, saving, sa
                       )
                     })}
                 </div>
+
+                {derivedGroups.length > 0 && derivedGroups.map(g => (
+                  <DerivedGroup key={g.name} group={g} fieldSearch={fieldSearch} cfg={cfg} setCfg={setCfg} toggleDerivedField={toggleDerivedField} />
+                ))}
 
                 {joinableTables.length > 0 && (
                   <>
@@ -1452,7 +1615,7 @@ function BuildViewV2({ form, setForm, editingId, baseFields, reports, saving, sa
               <Section title={`Filters (${filterCount})`}>
                 {cfg.filters.length === 0 && <div style={{ fontSize: 11, color: T.textMuted, fontStyle: 'italic', padding: 4 }}>No filters yet.</div>}
                 {cfg.filters.map((f, i) => (
-                  <FilterCard key={i} index={i + 1} filter={f} baseFields={baseFields} joinableTables={joinableTables}
+                  <FilterCard key={i} index={i + 1} filter={f} baseFields={baseFields} joinableTables={joinableTables} baseEntity={cfg.base_entity}
                     onUpdate={patch => updateFilter(i, patch)} onRemove={() => removeFilter(i)} />
                 ))}
                 <Button onClick={() => addFilter()} style={{ padding: '4px 10px', fontSize: 11, marginTop: 6 }}>+ Add filter</Button>
@@ -1519,6 +1682,90 @@ function BuildViewV2({ form, setForm, editingId, baseFields, reports, saving, sa
           )}
         </div>
       </div>
+
+      {calcEditor && (
+        <CalculatedColumnEditor
+          field={calcEditor.field}
+          baseEntity={cfg.base_entity}
+          sampleRow={livePreview?.rows?.[0] || null}
+          onSave={saveCalcField}
+          onCancel={() => setCalcEditor(null)}
+          onDelete={calcEditor.editing != null ? deleteCalcField : null}
+        />
+      )}
+    </div>
+  )
+}
+
+// Best-effort migration of a legacy formula string (e.g. "fit_score + deal_health_score / 2")
+// into a token array. Splits on operators and parens; bare identifiers become field tokens
+// referencing the base table.
+function parseLegacyFormulaToTokens(formula, baseEntity, baseFields) {
+  if (!formula) return []
+  const tokens = []
+  const re = /\s*([()+\-*/]|\d+(?:\.\d+)?|[a-zA-Z_][a-zA-Z0-9_.]*)\s*/g
+  let m
+  while ((m = re.exec(formula)) != null) {
+    const part = m[1]
+    if (/^[+\-*/]$/.test(part)) tokens.push({ type: 'op', value: part })
+    else if (part === '(' || part === ')') tokens.push({ type: 'paren', value: part })
+    else if (/^\d/.test(part)) tokens.push({ type: 'literal', value: Number(part) })
+    else if (part.includes('.')) {
+      const [tbl, col] = part.split('.')
+      tokens.push({ type: 'field', table: tbl, column: col })
+    } else {
+      tokens.push({ type: 'field', table: baseEntity, column: part })
+    }
+  }
+  return tokens
+}
+
+// Sidebar group for a derived-field group (Time, Scores, Flags, etc.)
+function DerivedGroup({ group, fieldSearch, cfg, setCfg, toggleDerivedField }) {
+  const [expanded, setExpanded] = useState(false)
+  const fields = group.fields.filter(f =>
+    !fieldSearch ||
+    (f.label || '').toLowerCase().includes(fieldSearch.toLowerCase()) ||
+    f.key.includes(fieldSearch.toLowerCase()))
+  if (fieldSearch && fields.length === 0) return null
+  return (
+    <div style={{ marginBottom: 4 }}>
+      <div onClick={() => setExpanded(e => !e)}
+        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 6px', fontSize: 11, fontWeight: 700, cursor: 'pointer', color: T.text, background: T.surfaceAlt, borderRadius: 4 }}>
+        <span style={{ fontSize: 10, color: T.textMuted }}>{expanded || fieldSearch ? '▾' : '▸'}</span>
+        <span>{group.name}</span>
+        <span style={{ fontSize: 9, color: T.textMuted, fontWeight: 600 }}>({fields.length})</span>
+      </div>
+      {(expanded || fieldSearch) && fields.map(f => {
+        const selected = cfg.fields.some(x => typeof x === 'string' && x === f.key)
+        const isBucket = f.type === 'bucket'
+        const opts = (cfg.field_options || {})[f.key] || {}
+        return (
+          <div key={f.key}>
+            <div onClick={() => toggleDerivedField(f.key)} draggable
+              onDragStart={e => { e.dataTransfer.setData('text/plain', JSON.stringify({ kind: 'add', field: f.key })); e.dataTransfer.effectAllowed = 'copy' }}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 6px 3px 20px', fontSize: 11, cursor: 'grab', borderRadius: 4, background: selected ? T.primaryLight : 'transparent' }}
+              onMouseEnter={e => { if (!selected) e.currentTarget.style.background = T.surfaceAlt }}
+              onMouseLeave={e => { if (!selected) e.currentTarget.style.background = 'transparent' }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: TYPE_COLORS[f.type] || '#94a3b8', flexShrink: 0 }} />
+              <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: T.text }}>{f.label}</span>
+              {selected && <span style={{ fontSize: 10, color: T.primary, fontWeight: 700 }}>✓</span>}
+            </div>
+            {selected && isBucket && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px 6px 2px 28px' }}>
+                <span style={{ fontSize: 10, color: T.textMuted }}>Strong ≥</span>
+                <input type="number" value={opts.bucket?.strong ?? f.bucketDefaults?.strong ?? 80}
+                  onChange={e => setCfg({ field_options: { ...(cfg.field_options || {}), [f.key]: { ...opts, bucket: { ...(opts.bucket || f.bucketDefaults || {}), strong: Number(e.target.value) } } } })}
+                  style={{ ...inputStyle, padding: '2px 4px', fontSize: 10, width: 48 }} />
+                <span style={{ fontSize: 10, color: T.textMuted }}>Good ≥</span>
+                <input type="number" value={opts.bucket?.good ?? f.bucketDefaults?.good ?? 60}
+                  onChange={e => setCfg({ field_options: { ...(cfg.field_options || {}), [f.key]: { ...opts, bucket: { ...(opts.bucket || f.bucketDefaults || {}), good: Number(e.target.value) } } } })}
+                  style={{ ...inputStyle, padding: '2px 4px', fontSize: 10, width: 48 }} />
+              </div>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -1569,12 +1816,14 @@ function JoinedGroup({ table, fieldSearch, cfg, toggleField }) {
     </div>
   )
 }
-function FilterCard({ index, filter, baseFields, joinableTables, onUpdate, onRemove }) {
+function FilterCard({ index, filter, baseFields, joinableTables, onUpdate, onRemove, baseEntity = 'deals' }) {
   const joinTable = filter.join ? TABLES[filter.join] : null
-  const fieldMeta = filter.join ? joinTable?.fields?.[filter.field] : baseFields[filter.field]
+  const derived = !filter.join && filter.field ? getDerivedField(baseEntity, filter.field) : null
+  const fieldMeta = filter.join ? joinTable?.fields?.[filter.field] : (baseFields[filter.field] || (derived ? { type: derived.type, options: derived.options } : null))
   const options = fieldMeta?.options
   const isBool = fieldMeta?.type === 'boolean'
   const isNumeric = ['number', 'currency', 'score', 'percentage'].includes(fieldMeta?.type)
+  const derivedGroups = getDerivedGroups(baseEntity)
   return (
     <div style={{ border: `1px solid ${T.border}`, borderRadius: 6, padding: 8, marginBottom: 6, background: T.surface }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
@@ -1582,12 +1831,21 @@ function FilterCard({ index, filter, baseFields, joinableTables, onUpdate, onRem
         <button onClick={onRemove} style={{ background: 'none', border: 'none', color: T.textMuted, fontSize: 13, cursor: 'pointer', padding: 0 }}>×</button>
       </div>
       <select value={`${filter.join || ''}|${filter.field || ''}`}
-        onChange={e => { const [j, f] = e.target.value.split('|'); onUpdate({ join: j || null, field: f || '', value: '' }) }}
+        onChange={e => {
+          const [j, f] = e.target.value.split('|')
+          const isDerivedKey = !j && !!getDerivedField(baseEntity, f)
+          onUpdate({ join: j || null, field: f || '', value: '', derived: isDerivedKey })
+        }}
         style={{ ...inputStyle, padding: '4px 8px', fontSize: 11, marginBottom: 4 }}>
         <option value="|">— field —</option>
         <optgroup label="Base table">
           {Object.entries(baseFields).map(([k, m]) => <option key={k} value={`|${k}`}>{m.label || k}</option>)}
         </optgroup>
+        {derivedGroups.map(g => (
+          <optgroup key={g.name} label={g.name}>
+            {g.fields.map(f => <option key={f.key} value={`|${f.key}`}>{f.label}</option>)}
+          </optgroup>
+        ))}
         {joinableTables.map(jt => (
           <optgroup key={jt.key} label={jt.label}>
             {Object.entries(jt.fields).map(([k, m]) => <option key={k} value={`${jt.key}|${k}`}>{m.label || k}</option>)}
@@ -1680,8 +1938,31 @@ function PreviewTable({ data, cfg, setCfg, baseFields }) {
   function fmtNum(n) { return typeof n === 'number' ? n.toLocaleString() : (n ?? '') }
   const hasAnyFooterTotal = columns.some(c => totalAggFor(c) != null)
 
+  // Resolve effective format for a column (user override → derived → calc → auto-suggest)
+  function fmtFor(id) { return resolveFormat(id, cfg, baseFields, cfg.base_entity) }
+  function setColumnFormat(id, format) {
+    const next = { ...(cfg.column_formats || {}), [id]: format }
+    setCfg({ column_formats: next })
+  }
+  // Render a cell — formatted unless raw mode requested
+  function renderCellValue(id, value, opts = {}) {
+    const fieldType = (() => {
+      if (baseFields[id]?.type) return baseFields[id].type
+      const d = getDerivedField(cfg.base_entity, id)
+      if (d) return d.type
+      return null
+    })()
+    return formatCell(value, fmtFor(id), { fieldType, ...opts })
+  }
+  function fmtTotal(id, n) {
+    if (n == null) return ''
+    const f = fmtFor(id)
+    if (!f) return typeof n === 'number' ? n.toLocaleString() : String(n)
+    return formatValue(n, f)
+  }
+
   // Drag column → reorder in cfg.fields
-  const idOf = (f) => typeof f === 'string' ? f : (f.formula !== undefined ? (f.key || f.label) : `${f.join}_${f.field}`)
+  const idOf = (f) => typeof f === 'string' ? f : ((f.tokens || f.formula !== undefined) ? (f.id || f.key || f.label) : `${f.join}_${f.field}`)
   function reorderFields(draggedId, targetId) {
     if (!draggedId || draggedId === targetId) return
     const fields = [...(cfg.fields || [])]
@@ -1699,9 +1980,10 @@ function PreviewTable({ data, cfg, setCfg, baseFields }) {
     // Also clean up column-level state keyed by id
     const widths = { ...(cfg.column_widths || {}) }; delete widths[id]
     const totals = { ...(cfg.column_totals || {}) }; delete totals[id]
+    const formats = { ...(cfg.column_formats || {}) }; delete formats[id]
     // If sort was on this column, drop it
     const orderBy = cfg.order_by === id ? null : cfg.order_by
-    setCfg({ fields, column_widths: widths, column_totals: totals, order_by: orderBy })
+    setCfg({ fields, column_widths: widths, column_totals: totals, column_formats: formats, order_by: orderBy })
   }
 
   // Insert a sidebar-dragged field at a specific column position (or at the end)
@@ -1756,9 +2038,12 @@ function PreviewTable({ data, cfg, setCfg, baseFields }) {
   function HeaderCell({ id, label, width, last }) {
     const [resizing, setResizing] = useState(false)
     const [menuOpen, setMenuOpen] = useState(false)
+    const [fmtMenuOpen, setFmtMenuOpen] = useState(false)
     const currentAgg = totalAggFor(id)
-    const colType = detectColumnType(id, baseFields, cfg.fields)
+    const colType = detectColumnType(id, baseFields, cfg.fields, cfg.base_entity)
     const canTotal = NUMERIC_TYPES.has(colType) || colType === null // allow 'count' on non-numeric
+    const currentFormat = fmtFor(id)
+    const canFormat = NUMERIC_TYPES.has(colType) || colType === 'number' || (currentFormat && currentFormat.type !== 'text')
     function onResizeStart(e) {
       e.preventDefault(); e.stopPropagation()
       setResizing(true)
@@ -1807,14 +2092,14 @@ function PreviewTable({ data, cfg, setCfg, baseFields }) {
           background: dragCol === id ? T.primaryLight : T.surfaceAlt,
           borderRight: `1px solid ${T.borderLight}`,
         }}>
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', display: 'inline-block', maxWidth: width - 56 }}>{label}</span>
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', display: 'inline-block', maxWidth: width - 76 }}>{label}</span>
         <span
           onClick={e => { e.stopPropagation(); removeColumnById(id) }}
           draggable={false}
           onMouseDown={e => e.stopPropagation()}
           title={`Remove "${label}" from report`}
           style={{
-            position: 'absolute', right: canTotal ? 26 : 10, top: '50%', transform: 'translateY(-50%)',
+            position: 'absolute', right: (canTotal ? 26 : 10) + (canFormat ? 22 : 0), top: '50%', transform: 'translateY(-50%)',
             fontSize: 14, lineHeight: 1, color: T.textMuted,
             cursor: 'pointer', padding: '0 3px', borderRadius: 3,
             opacity: 0.35, transition: 'opacity 0.1s, color 0.1s',
@@ -1823,15 +2108,30 @@ function PreviewTable({ data, cfg, setCfg, baseFields }) {
           onMouseLeave={e => { e.currentTarget.style.opacity = 0.35; e.currentTarget.style.color = T.textMuted }}
         >×</span>
         {canTotal && (
-          <span onClick={e => { e.stopPropagation(); setMenuOpen(m => !m) }}
+          <span onClick={e => { e.stopPropagation(); setMenuOpen(m => !m); setFmtMenuOpen(false) }}
             title={currentAgg ? `Footer: ${currentAgg}` : 'Set footer total'}
             style={{
-              position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
+              position: 'absolute', right: canFormat ? 32 : 10, top: '50%', transform: 'translateY(-50%)',
               fontSize: 10, fontWeight: 700, color: currentAgg ? T.primary : T.textMuted,
               cursor: 'pointer', padding: '0 3px', borderRadius: 3,
               background: currentAgg ? T.primaryLight : 'transparent',
             }}>∑</span>
         )}
+        {canFormat && (
+          <span onClick={e => { e.stopPropagation(); setFmtMenuOpen(o => !o); setMenuOpen(false) }}
+            title={currentFormat ? `Format: ${currentFormat.type}` : 'Format'}
+            style={{
+              position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
+              fontSize: 9, fontWeight: 800, color: cfg.column_formats?.[id] ? T.primary : T.textMuted,
+              cursor: 'pointer', padding: '0 4px', borderRadius: 3,
+              background: cfg.column_formats?.[id] ? T.primaryLight : 'transparent',
+              fontFamily: T.mono,
+            }}>fmt</span>
+        )}
+        <FormatMenu open={fmtMenuOpen} onClose={() => setFmtMenuOpen(false)}
+          format={currentFormat || { type: 'number', precision: 0 }}
+          onChange={(f) => setColumnFormat(id, f)} />
+
         {menuOpen && (
           <>
             <div onClick={() => setMenuOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 500 }} />
@@ -1903,7 +2203,7 @@ function PreviewTable({ data, cfg, setCfg, baseFields }) {
                 <td style={{ padding: '5px 8px', color: T.textMuted, textAlign: 'right', fontFamily: T.mono, width: 40, minWidth: 40, maxWidth: 40 }}>{i + 1}</td>
                 {columns.map(c => {
                   const val = row[c]
-                  const disp = val == null ? '—' : typeof val === 'object' ? JSON.stringify(val).substring(0, 80) : String(val).substring(0, 140)
+                  const disp = renderCellValue(c, val)
                   const w = widthFor(c)
                   return <td key={c} style={{ padding: '5px 8px', color: T.text, fontFeatureSettings: '"tnum"', width: w, minWidth: w, maxWidth: w, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{disp}</td>
                 })}
@@ -1920,7 +2220,7 @@ function PreviewTable({ data, cfg, setCfg, baseFields }) {
                   return (
                     <td key={c} style={{ padding: '7px 8px', color: T.primary, fontFeatureSettings: '"tnum"', width: w, minWidth: w, maxWidth: w, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 800 }} title={`${agg}`}>
                       <span style={{ fontSize: 9, color: T.primary, opacity: 0.7, marginRight: 4, textTransform: 'uppercase' }}>{agg}</span>
-                      {fmtNum(v)}
+                      {agg === 'count' ? fmtNum(v) : fmtTotal(c, v)}
                     </td>
                   )
                 })}
@@ -1980,7 +2280,7 @@ function PreviewTable({ data, cfg, setCfg, baseFields }) {
                     <td style={{ padding: '5px 8px', color: T.textMuted, textAlign: 'right', width: 40, minWidth: 40, maxWidth: 40, paddingLeft: 8 + (depth + 1) * 16, fontFamily: T.mono }}>{i + 1}</td>
                     {columns.map(c => {
                       const val = row[c]
-                      const disp = val == null ? '—' : typeof val === 'object' ? JSON.stringify(val).substring(0, 80) : String(val).substring(0, 140)
+                      const disp = renderCellValue(c, val)
                       const w = widthFor(c)
                       return <td key={c} style={{ padding: '5px 8px', color: T.text, fontFeatureSettings: '"tnum"', width: w, minWidth: w, maxWidth: w, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{disp}</td>
                     })}
@@ -2014,7 +2314,7 @@ function PreviewTable({ data, cfg, setCfg, baseFields }) {
                   return (
                     <td key={c} style={{ padding: '7px 8px', color: T.primary, fontFeatureSettings: '"tnum"', width: w, minWidth: w, maxWidth: w, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 800 }}>
                       <span style={{ fontSize: 9, opacity: 0.7, marginRight: 4, textTransform: 'uppercase' }}>{a}</span>
-                      {fmtNum(v)}
+                      {agg === 'count' ? fmtNum(v) : fmtTotal(c, v)}
                     </td>
                   )
                 })}
@@ -2130,7 +2430,7 @@ function PreviewTable({ data, cfg, setCfg, baseFields }) {
                     <td style={{ padding: '5px 8px', color: T.textMuted, textAlign: 'right', fontFamily: T.mono, width: 40, minWidth: 40, maxWidth: 40 }}>{i + 1}</td>
                     {columns.map(c => {
                       const val = row[c]
-                      const disp = val == null ? '—' : typeof val === 'object' ? JSON.stringify(val).substring(0, 80) : String(val).substring(0, 140)
+                      const disp = renderCellValue(c, val)
                       const w = widthFor(c)
                       return <td key={c} style={{ padding: '5px 8px', color: T.text, fontFeatureSettings: '"tnum"', width: w, minWidth: w, maxWidth: w, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{disp}</td>
                     })}
@@ -2244,13 +2544,49 @@ function PreviewTable({ data, cfg, setCfg, baseFields }) {
 
 // ────────────────────────────────────────────────────────
 function RunView({ selectedReport, reportData, runningReport, runError, exportCsv, startEdit }) {
+  const [exportRaw, setExportRaw] = useState(false)
+  const cfg = selectedReport?.query_config || {}
+  const base = cfg.base_entity || selectedReport?.base_entity || 'deals'
+  const baseFields = TABLES[base]?.fields || {}
+
+  function colLabel(c) {
+    if (baseFields[c]?.label) return baseFields[c].label
+    const d = getDerivedField(base, c)
+    if (d) return d.label
+    const cf = (cfg.fields || []).find(x => typeof x === 'object' && (x.id === c || x.key === c || x.label === c))
+    if (cf?.label) return cf.label
+    for (let i = c.length - 1; i > 0; i--) {
+      const tk = c.substring(0, i)
+      if (TABLES[tk]) {
+        const fk = c.substring(i + 1)
+        if (TABLES[tk].fields?.[fk]) return `${TABLES[tk].label} · ${TABLES[tk].fields[fk].label || fk}`
+      }
+    }
+    return c.replace(/_/g, ' ')
+  }
+  function fieldType(c) {
+    if (baseFields[c]?.type) return baseFields[c].type
+    const d = getDerivedField(base, c)
+    if (d) return d.type
+    return null
+  }
+  function renderCell(c, value) {
+    return formatCell(value, resolveFormat(c, cfg, baseFields, base), { fieldType: fieldType(c) })
+  }
+
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
         <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: T.text }}>{selectedReport?.name}</h3>
         {selectedReport?.category && <Badge color={CATEGORY_COLORS[selectedReport.category] || T.primary}>{selectedReport.category}</Badge>}
         <div style={{ flex: 1 }} />
-        {reportData && <Button onClick={exportCsv} style={{ padding: '4px 12px', fontSize: 11 }}>Export CSV</Button>}
+        {reportData && (
+          <label style={{ fontSize: 11, color: T.textMuted, display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', userSelect: 'none' }}>
+            <input type="checkbox" checked={exportRaw} onChange={e => setExportRaw(e.target.checked)} />
+            Export raw values
+          </label>
+        )}
+        {reportData && <Button onClick={() => exportCsv({ raw: exportRaw })} style={{ padding: '4px 12px', fontSize: 11 }}>Export CSV</Button>}
         {selectedReport?.id && !selectedReport?.is_prebuilt && <Button onClick={() => startEdit(selectedReport)} style={{ padding: '4px 12px', fontSize: 11 }}>Edit</Button>}
       </div>
 
@@ -2269,7 +2605,7 @@ function RunView({ selectedReport, reportData, runningReport, runError, exportCs
               <thead>
                 <tr style={{ borderBottom: `1px solid ${T.border}` }}>
                   {reportData.columns.map(c => (
-                    <th key={c} style={{ textAlign: 'left', padding: '6px 8px', fontSize: 10, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase' }}>{c.replace(/_/g, ' ')}</th>
+                    <th key={c} style={{ textAlign: 'left', padding: '6px 8px', fontSize: 10, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase' }}>{colLabel(c)}</th>
                   ))}
                 </tr>
               </thead>
@@ -2278,8 +2614,7 @@ function RunView({ selectedReport, reportData, runningReport, runError, exportCs
                   <tr key={i} style={{ borderBottom: `1px solid ${T.borderLight}` }}>
                     {reportData.columns.map(c => {
                       const val = row[c]
-                      const disp = val == null ? '—' : typeof val === 'object' ? JSON.stringify(val).substring(0, 80) : String(val).substring(0, 120)
-                      return <td key={c} style={{ padding: '6px 8px', color: T.text, fontFeatureSettings: '"tnum"' }}>{disp}</td>
+                      return <td key={c} style={{ padding: '6px 8px', color: T.text, fontFeatureSettings: '"tnum"' }}>{renderCell(c, val)}</td>
                     })}
                   </tr>
                 ))}
