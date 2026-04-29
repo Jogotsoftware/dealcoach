@@ -1823,6 +1823,7 @@ export default function DealDetail() {
               userId={profile?.id}
               onAddTask={() => setShowAddTask(true)}
               editMode={editMode}
+              onExitEdit={() => setEditMode(false)}
             />
           </div>
         )}
@@ -2571,7 +2572,8 @@ const HOME_DEFAULT_LAYOUT = [
   { i: 'deal_age', x: 8, y: 0, w: 4, h: 3, minW: 2, minH: 2 },
 ]
 
-function HomeDashboard({ dealId, deal, tasks, setTasks, userId, onAddTask, editMode }) {
+function HomeDashboard({ dealId, deal, tasks, setTasks, userId, onAddTask, editMode, onExitEdit }) {
+  const [showAddWidgetMenu, setShowAddWidgetMenu] = useState(false)
   const isClosed = ['closed_won', 'closed_lost', 'disqualified'].includes(deal.stage)
   // One layout per user across every deal — the rep's chosen arrangement
   // travels with them. Drop the per-deal key.
@@ -2660,15 +2662,36 @@ function HomeDashboard({ dealId, deal, tasks, setTasks, userId, onAddTask, editM
       {editMode && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', marginBottom: 10, background: T.primaryLight, border: `1px solid ${T.primary}30`, borderRadius: 8, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 12, fontWeight: 700, color: T.primary, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Edit dashboard</span>
-          <span style={{ fontSize: 11, color: T.textMuted, flex: 1, minWidth: 200 }}>Drag titles to move · drag corners to resize · click × to remove</span>
-          {availableToAdd.length > 0 && (
-            <select onChange={e => { if (e.target.value) { addWidget(e.target.value); e.target.value = '' } }} defaultValue=""
-              style={{ ...inputStyle, padding: '5px 10px', fontSize: 12, cursor: 'pointer', maxWidth: 180 }}>
-              <option value="">+ Add widget…</option>
-              {availableToAdd.map(w => <option key={w.id} value={w.id}>{w.title}</option>)}
-            </select>
-          )}
-          <Button onClick={resetLayout} style={{ padding: '4px 10px', fontSize: 11 }}>Reset layout</Button>
+          <span style={{ fontSize: 11, color: T.textMuted, flex: 1, minWidth: 160 }}>Drag titles to move · drag corners to resize · click × to remove</span>
+
+          {/* + Add Widget dropdown button */}
+          <div style={{ position: 'relative' }}>
+            <Button onClick={() => setShowAddWidgetMenu(v => !v)} disabled={availableToAdd.length === 0} style={{ padding: '5px 12px', fontSize: 12 }}>
+              + Add widget
+            </Button>
+            {showAddWidgetMenu && availableToAdd.length > 0 && (
+              <>
+                <div style={{ position: 'fixed', inset: 0, zIndex: 999 }} onClick={() => setShowAddWidgetMenu(false)} />
+                <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, zIndex: 1000, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.18)', minWidth: 200, padding: '4px 0' }}>
+                  {availableToAdd.map(w => (
+                    <button key={w.id} onClick={() => { addWidget(w.id); setShowAddWidgetMenu(false) }}
+                      style={{ display: 'block', width: '100%', padding: '7px 14px', textAlign: 'left', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: T.font, fontSize: 12, fontWeight: 500, color: T.text }}
+                      onMouseEnter={e => e.currentTarget.style.background = T.surfaceAlt}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                      + {w.title}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          <Button onClick={resetLayout} style={{ padding: '5px 10px', fontSize: 12 }}>Reset</Button>
+
+          {/* Save / Done — exits edit mode. Layout writes are already
+              persisted on each drag/resize/add/remove, so this is just
+              an explicit affordance for the rep. */}
+          <Button primary onClick={onExitEdit} style={{ padding: '5px 14px', fontSize: 12 }}>Save & close</Button>
         </div>
       )}
 
@@ -2683,6 +2706,7 @@ function HomeDashboard({ dealId, deal, tasks, setTasks, userId, onAddTask, editM
         isDraggable={editMode}
         isResizable={editMode}
         draggableHandle=".home-widget-handle"
+        draggableCancel=".home-widget-close"
         onLayoutChange={(layout) => editMode && handleLayoutChange(layout)}
         onDragStop={(layout) => editMode && handleLayoutChange(layout)}
         onResizeStop={(layout) => editMode && handleLayoutChange(layout)}
@@ -2705,8 +2729,12 @@ function HomeDashboard({ dealId, deal, tasks, setTasks, userId, onAddTask, editM
                 }}>
                 <span style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{def.title}</span>
                 {editMode && (
-                  <button onClick={() => removeWidget(id)}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, fontSize: 16, lineHeight: 1, padding: 0 }}
+                  <button
+                    className="home-widget-close"
+                    onClick={(e) => { e.stopPropagation(); removeWidget(id) }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onTouchStart={(e) => e.stopPropagation()}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, fontSize: 18, lineHeight: 1, padding: '0 6px' }}
                     title="Remove widget"
                     onMouseEnter={e => e.currentTarget.style.color = T.error}
                     onMouseLeave={e => e.currentTarget.style.color = T.textMuted}>×</button>
