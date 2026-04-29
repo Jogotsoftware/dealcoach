@@ -1651,7 +1651,7 @@ export default function DealDetail() {
         @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.7 } }
       `}</style>
 
-      {/* Header \u2014 minimal: chevron + bare logo + title + clickable stage/forecast + website + actions */}
+      {/* Header \u2014 single row: back, bare logo, title + badges + website, +, pencil */}
       <div style={{ padding: '14px 24px', borderBottom: `1px solid ${T.border}`, background: T.surface }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
           <button onClick={() => navigate('/')} title="Back to pipeline"

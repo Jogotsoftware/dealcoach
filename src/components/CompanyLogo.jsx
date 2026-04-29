@@ -114,10 +114,14 @@ export default function CompanyLogo({
 
   return (
     <div {...editableProps} style={{
-      width: px, height: px, borderRadius: 6, background: '#f5f5f5',
-      border: editable && hover ? '1px dashed #5DADE2' : '1px solid #e1e4e8',
+      width: px, height: px,
+      borderRadius: bare ? 0 : 6,
+      background: bare ? 'transparent' : '#f5f5f5',
+      border: bare
+        ? (editable ? '1px dashed #cfd6dc' : 'none')
+        : (editable && hover ? '1px dashed #5DADE2' : '1px solid #e1e4e8'),
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontSize: px * 0.45, fontWeight: 700, color: '#666666', flexShrink: 0,
+      fontSize: px * 0.45, fontWeight: 700, color: bare ? '#a6b0bb' : '#666666', flexShrink: 0,
       cursor: editable ? (busy ? 'wait' : 'pointer') : 'default',
       position: 'relative',
     }}>
