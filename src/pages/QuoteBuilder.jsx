@@ -95,6 +95,11 @@ export default function QuoteBuilder({
   headerExtraAction = null,
   // Optional eye-icon visibility toggle (e.g. for the customer Proposal tab).
   headerVisibilityToggle = null,
+  // Hides the entire builder header (identity row + tabbar) so a parent surface
+  // can drop straight into a single tab's body — e.g. the Deal Room Models tab,
+  // which inherits the quote chosen on the Quotes tab and shouldn't show its
+  // own quote selector / save / status / contact controls.
+  hideHeader = false,
 } = {}) {
   // Embedded mode lets DealDetail's "Quotes" sub-tab mount the full builder
   // inline. The standalone /deal/:dealId/quote/:quoteId route still works —
@@ -249,6 +254,7 @@ export default function QuoteBuilder({
 
   return (
     <div>
+      {!hideHeader && (
       <div style={embedded
         ? { padding: '12px 24px', paddingRight: 72, borderBottom: `1px solid ${T.border}`, background: T.surface }
         : { padding: '14px 24px', paddingRight: 72, borderBottom: `1px solid ${T.border}`, background: T.surface, position: 'sticky', top: 0, zIndex: 10 }}>
@@ -316,6 +322,7 @@ export default function QuoteBuilder({
         </div>
         {!forcedTab && <TabBar tabs={tabs} active={tab} onChange={setTab} />}
       </div>
+      )}
 
       {showWarning && (
         <div style={{ margin: '10px 24px 0', padding: '8px 12px', background: T.errorLight, color: T.error, fontSize: 12, borderRadius: 4, border: `1px solid ${T.error}30`, display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -510,6 +517,29 @@ function SubscriptionSection({ quote, lines, products, productMap, bundleChildre
   const discountTotal = Number(quote.discount_total) || 0
   const percentTotal = Number(quote.percent_lines_total) || 0
   const sageSubscriptionTotal = Number(quote.sage_subscription_total) || 0
+
+  // Blended Discount % — internal metric. We exclude entity SKUs (which are
+  // typically heavily discounted as a sales tactic and skew the rate) and
+  // percent_of_total lines (they aren't list-priced) so the rep sees the
+  // effective discount on the rest of the bundle.
+  const blendedDiscountPct = (() => {
+    const eligible = lines.filter(l => {
+      if (l.parent_line_id) return false
+      const p = productMap[l.product_id]
+      if (!p) return false
+      if (p.is_entity) return false
+      if (p.pricing_method === 'percent_of_total') return false
+      return true
+    })
+    let listSum = 0
+    let netSum = 0
+    for (const l of eligible) {
+      listSum += (Number(l.quantity) || 0) * (Number(l.unit_price) || 0)
+      netSum += Number(l.extended) || 0
+    }
+    if (listSum <= 0) return null
+    return ((listSum - netSum) / listSum) * 100
+  })()
 
   const globalDiscountUiPct = Math.round((Number(quote.global_discount_pct) || 0) * 10000) / 100
 
@@ -767,7 +797,12 @@ function SubscriptionSection({ quote, lines, products, productMap, bundleChildre
       <div style={{ marginTop: 14, padding: '12px 16px', background: T.surfaceAlt, border: `1px solid ${T.border}`, borderRadius: 6, display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
         <FooterCell label="List subtotal" value={dollars(listSubtotal)} />
         <FooterCell label="Discount" value={discountTotal > 0 ? `−${dollars(discountTotal)}` : '—'} color={discountTotal > 0 ? T.success : T.textMuted} />
-        <FooterCell label="Percent surcharges" value={percentTotal !== 0 ? `${percentTotal > 0 ? '+' : ''}${dollars(percentTotal)}` : '—'} />
+        <FooterCell
+          label="Blended Discount"
+          value={blendedDiscountPct == null ? '—' : `${blendedDiscountPct.toFixed(1)}%`}
+          color={blendedDiscountPct == null ? T.textMuted : (blendedDiscountPct > 0 ? T.success : T.textMuted)}
+          title="Internal metric: weighted discount across non-entity SKUs (entity SKUs excluded since they're often heavily discounted and skew the rate)."
+        />
         <FooterCell label="Sage Subscription" value={dollars(sageSubscriptionTotal)} bold color={T.primary} />
       </div>
 
@@ -936,10 +971,10 @@ function ExcludeGlobalCheckbox({ line, product, onChange }) {
 
 const thStyle = { textAlign: 'left', padding: '8px 10px', fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em' }
 
-function FooterCell({ label, value, bold, color }) {
+function FooterCell({ label, value, bold, color, title }) {
   return (
-    <div>
-      <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</div>
+    <div title={title}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', cursor: title ? 'help' : undefined }}>{label}</div>
       <div style={{ fontSize: bold ? 18 : 14, fontWeight: bold ? 800 : 600, color: color || T.text, fontFeatureSettings: '"tnum"' }}>{value}</div>
     </div>
   )
