@@ -2023,17 +2023,6 @@ export default function DealDetail() {
           </div>
         )}
 
-        {/* ===== DEAL ROOM TAB ===== */}
-        {tab === 'deal_room' && (
-          <div>
-            <EmptyState
-              title="Deal Room"
-              message="The Deal Room is your customer-facing portal — Project Plan, Library, Proposal in one shareable URL. Configure it on its own page."
-              action={<Button primary onClick={() => navigate(`/deal/${id}/room`)}>Open Deal Room →</Button>}
-            />
-          </div>
-        )}
-
         {/* ===== QUOTES TAB ===== */}
         {tab === 'quotes' && (
           <div>
