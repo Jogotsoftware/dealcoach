@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
@@ -143,6 +143,12 @@ export default function Pipeline() {
   const [pWidgets, setPWidgets] = useState(PIPELINE_WIDGETS)
   const [pOrgLayoutId, setPOrgLayoutId] = useState(null)
   const [editMode, setEditMode] = useState(false)
+  // Mirror layout/widgets into refs so async save can read the freshest value
+  // without re-binding through closures on every render.
+  const pLayoutRef = useRef(pLayout)
+  const pWidgetsRef = useRef(pWidgets)
+  useEffect(() => { pLayoutRef.current = pLayout }, [pLayout])
+  useEffect(() => { pWidgetsRef.current = pWidgets }, [pWidgets])
 
   // Dashboard tabs — user-built dashboards from org_widget_layouts (non-deal scopes)
   const [dashboards, setDashboards] = useState([])
@@ -300,30 +306,35 @@ export default function Pipeline() {
     }
   }
 
-  async function savePipelineLayout(newLayout) {
-    setPLayout(newLayout)
+  // Persist the current pipeline layout. Reads the latest state via refs
+  // so rapid drag/resize streaming + Done clicks don't race off a stale
+  // closure value.
+  async function savePipelineLayout() {
+    const layout = pLayoutRef.current
+    const widgets = pWidgetsRef.current
+
     const isAdmin = profile.role === 'admin' || profile.role === 'system_admin'
     if (isAdmin) {
       if (pOrgLayoutId) {
-        const { error } = await supabase.from('org_widget_layouts').update({ layout: newLayout, widgets: pWidgets }).eq('id', pOrgLayoutId)
+        const { error } = await supabase.from('org_widget_layouts').update({ layout, widgets }).eq('id', pOrgLayoutId)
         if (error) console.error('savePipelineLayout update failed:', error.message)
       } else {
-        // First save for this org — seed the row instead of failing silently.
+        // First save for this org — seed the default row.
         const { data, error } = await supabase.from('org_widget_layouts').insert({
           org_id: profile.org_id, page: 'pipeline', is_default: true, name: 'Pipeline',
-          layout: newLayout, widgets: pWidgets, created_by: profile.id,
+          layout, widgets, created_by: profile.id,
         }).select('id').single()
         if (error) console.error('savePipelineLayout insert failed:', error.message)
         else if (data) setPOrgLayoutId(data.id)
       }
-    } else if (pOrgLayoutId) {
-      const { error } = await supabase.from('user_widget_overrides').upsert(
-        { user_id: profile.id, org_layout_id: pOrgLayoutId, page: 'pipeline', layout: newLayout, widgets: pWidgets },
-        { onConflict: 'user_id,page' },
-      )
-      if (error) console.error('savePipelineLayout user override failed:', error.message)
     } else {
-      console.warn('savePipelineLayout: non-admin with no org layout — admin must create one first.')
+      // Non-admins always save to user_widget_overrides, even if no org
+      // default exists yet — their personal arrangement should never be
+      // gated on an admin seeding the org first.
+      const payload = { user_id: profile.id, page: 'pipeline', layout, widgets }
+      if (pOrgLayoutId) payload.org_layout_id = pOrgLayoutId
+      const { error } = await supabase.from('user_widget_overrides').upsert(payload, { onConflict: 'user_id,page' })
+      if (error) console.error('savePipelineLayout user override failed:', error.message)
     }
   }
 
@@ -908,7 +919,7 @@ export default function Pipeline() {
             <EditDashboardButton editMode={editMode} onToggle={() => {
               // Persist on lock — same path as the explicit Done button so users
               // don't have to remember which control commits the layout.
-              if (editMode) savePipelineLayout(pLayout)
+              if (editMode) savePipelineLayout()
               setEditMode(!editMode)
             }} />
           </div>
@@ -977,7 +988,7 @@ export default function Pipeline() {
               ))}
             </select>
             <button onClick={() => { setPLayout(PIPELINE_LAYOUT); setPWidgets(PIPELINE_WIDGETS) }} style={{ background: 'none', border: '1px solid ' + T.border, borderRadius: 6, padding: '4px 10px', color: T.textMuted, fontSize: 11, cursor: 'pointer', fontFamily: T.font }}>Reset</button>
-            <button onClick={() => { setEditMode(false); savePipelineLayout(pLayout) }} style={{ background: '#5DADE2', border: 'none', borderRadius: 6, padding: '4px 14px', color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: T.font }}>Done</button>
+            <button onClick={() => { savePipelineLayout(); setEditMode(false) }} style={{ background: '#5DADE2', border: 'none', borderRadius: 6, padding: '4px 14px', color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: T.font }}>Done</button>
           </div>
         </div>
       )}
@@ -1010,12 +1021,20 @@ export default function Pipeline() {
             measureBeforeMount={false}
             onLayoutChange={(newLayout) => {
               if (!editMode) return
-              const merged = newLayout.map(item => {
-                const orig = pLayout.find(l => l.i === item.i)
-                return { ...item, minW: orig?.minW || 4, minH: orig?.minH || 2 }
+              // RGL only reports the items currently in `layouts` (visible
+              // widgets). Merge their new positions back into the full
+              // pLayout so hidden widgets keep their saved geometry.
+              setPLayout(prev => {
+                const byId = new Map(newLayout.map(item => [item.i, item]))
+                return prev.map(orig => {
+                  const upd = byId.get(orig.i)
+                  if (!upd) return orig
+                  return { ...orig, x: upd.x, y: upd.y, w: upd.w, h: upd.h }
+                })
               })
-              setPLayout(merged)
             }}
+            onDragStop={() => { if (editMode) savePipelineLayout() }}
+            onResizeStop={() => { if (editMode) savePipelineLayout() }}
           >
             {(() => {
               const wbc = { forecast_summary: '#3498db', pipeline_view: '#9b59b6', quota_tracker: '#f39c12', coaching_feedback: '#27ae60', scoreboard: '#f39c12', task_list: '#e74c3c', recent_activity: '#8899aa' }
