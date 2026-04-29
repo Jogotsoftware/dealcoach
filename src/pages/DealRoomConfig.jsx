@@ -160,6 +160,187 @@ export default function DealRoomConfig({ embedded = false, dealId: dealIdProp } 
     } finally { setSnapshotting(false) }
   }
 
+  // Create a new quote inline so the AE never has to leave the Deal Room.
+  // Mirrors QuotesList.createQuote — first quote becomes primary automatically.
+  async function createQuote() {
+    if (!org?.id) { setError('No org'); return }
+    setBusy(true)
+    setError('')
+    try {
+      const today = new Date().toISOString().slice(0, 10)
+      const nextNum = (quotes.length || 0) + 1
+      const { data, error: insErr } = await supabase.from('quotes').insert({
+        org_id: org.id,
+        deal_id: dealId,
+        name: `Quote ${nextNum}`,
+        version: 1,
+        status: 'draft',
+        is_primary: quotes.length === 0,
+        contract_start_date: today,
+        billing_cadence: 'annual',
+        free_months: 0,
+        free_months_placement: 'back',
+        global_discount_pct: 0,
+        signing_bonus_amount: 0,
+        signing_bonus_months: 0,
+        created_by: profile?.id,
+      }).select('id').single()
+      if (insErr) throw insErr
+      await load()
+      setSelectedQuoteId(data.id)
+    } catch (e) {
+      console.error('[DealRoomConfig] createQuote failed:', e)
+      setError(e?.message || 'Create failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function duplicateQuote(quoteId) {
+    const quote = quotes.find(q => q.id === quoteId)
+    if (!quote) return
+    if (!confirm(`Duplicate "${quote.name}"?`)) return
+    setBusy(true)
+    try {
+      // Re-fetch the full source row — the in-memory list only has light fields.
+      const { data: src, error: srcErr } = await supabase.from('quotes').select('*').eq('id', quote.id).single()
+      if (srcErr) throw srcErr
+
+      const { data: newQuote, error: qErr } = await supabase.from('quotes').insert({
+        org_id: src.org_id,
+        deal_id: src.deal_id,
+        name: `${src.name} (copy)`,
+        version: (src.version || 1) + 1,
+        is_primary: false,
+        status: 'draft',
+        notes: src.notes,
+        contract_term_id: src.contract_term_id,
+        contract_start_date: src.contract_start_date,
+        free_months: src.free_months,
+        free_months_placement: src.free_months_placement,
+        billing_cadence: src.billing_cadence,
+        global_discount_pct: src.global_discount_pct,
+        signing_bonus_amount: src.signing_bonus_amount,
+        signing_bonus_months: src.signing_bonus_months,
+        created_by: profile?.id,
+      }).select('id').single()
+      if (qErr) throw qErr
+
+      // Copy subscription lines (two-pass to re-link parent_line_id)
+      const { data: srcLines } = await supabase.from('quote_lines').select('*').eq('quote_id', src.id).order('line_order')
+      if (srcLines?.length) {
+        const idMap = new Map()
+        for (const ln of srcLines) {
+          const { data: insLine } = await supabase.from('quote_lines').insert({
+            quote_id: newQuote.id,
+            product_id: ln.product_id,
+            parent_line_id: null,
+            line_order: ln.line_order,
+            quantity: ln.quantity,
+            unit_price: ln.unit_price,
+            discount_pct: ln.discount_pct,
+            extended: ln.extended,
+            notes: ln.notes,
+            custom_fields: ln.custom_fields || {},
+            apply_global_discount: ln.apply_global_discount,
+          }).select('id').single()
+          if (insLine?.id) idMap.set(ln.id, insLine.id)
+        }
+        for (const ln of srcLines) {
+          if (!ln.parent_line_id) continue
+          const newId = idMap.get(ln.id)
+          const newParentId = idMap.get(ln.parent_line_id)
+          if (newId && newParentId) {
+            await supabase.from('quote_lines').update({ parent_line_id: newParentId }).eq('id', newId)
+          }
+        }
+      }
+
+      // Copy implementation items
+      const { data: srcImpl } = await supabase.from('quote_implementation_items').select('*').eq('quote_id', src.id)
+      if (srcImpl?.length) {
+        await supabase.from('quote_implementation_items').insert(srcImpl.map(i => ({
+          quote_id: newQuote.id,
+          source: i.source,
+          implementor_name: i.implementor_name,
+          name: i.name,
+          description: i.description,
+          total_amount: i.total_amount,
+          billing_type: i.billing_type,
+          tm_weeks: i.tm_weeks,
+          estimated_start_date: i.estimated_start_date,
+          estimated_completion_date: i.estimated_completion_date,
+          sort_order: i.sort_order,
+          notes: i.notes,
+        })))
+      }
+
+      // Copy partner blocks + lines
+      const { data: srcBlocks } = await supabase.from('quote_partner_blocks').select('*').eq('quote_id', src.id)
+      if (srcBlocks?.length) {
+        for (const b of srcBlocks) {
+          const { data: newBlock } = await supabase.from('quote_partner_blocks').insert({
+            quote_id: newQuote.id,
+            partner_name: b.partner_name,
+            term_years: b.term_years,
+            billing_cadence: b.billing_cadence,
+            partner_global_discount_pct: b.partner_global_discount_pct,
+            notes: b.notes,
+            sort_order: b.sort_order,
+          }).select('id').single()
+          if (!newBlock?.id) continue
+          const { data: srcPartnerLines } = await supabase.from('quote_partner_lines').select('*').eq('block_id', b.id)
+          if (srcPartnerLines?.length) {
+            await supabase.from('quote_partner_lines').insert(srcPartnerLines.map(l => ({
+              quote_id: newQuote.id,
+              block_id: newBlock.id,
+              sku: l.sku,
+              name: l.name,
+              description: l.description,
+              quantity: l.quantity,
+              unit_price: l.unit_price,
+              discount_pct: l.discount_pct,
+              extended: l.extended,
+              sort_order: l.sort_order,
+              notes: l.notes,
+            })))
+          }
+        }
+      }
+
+      try { await supabase.rpc('compute_quote', { p_quote_id: newQuote.id }) } catch (e) { console.warn('compute_quote on dup failed:', e) }
+      try { await supabase.rpc('compute_partner_lines', { p_quote_id: newQuote.id }) } catch (e) { console.warn('compute_partner_lines on dup failed:', e) }
+      try { await supabase.rpc('recompute_quote_totals', { p_quote_id: newQuote.id }) } catch (e) { console.warn('recompute on dup failed:', e) }
+
+      await load()
+      setSelectedQuoteId(newQuote.id)
+    } catch (e) {
+      console.error('[DealRoomConfig] duplicate failed:', e)
+      setError(e?.message || 'Duplicate failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function deleteQuote(quoteId) {
+    const quote = quotes.find(q => q.id === quoteId)
+    if (!quote) return
+    if (!confirm(`Delete "${quote.name}"? This cannot be undone.`)) return
+    setBusy(true)
+    try {
+      const { error: delErr } = await supabase.from('quotes').delete().eq('id', quote.id)
+      if (delErr) throw delErr
+      // If we just deleted the active one, fall back to whatever's left.
+      if (selectedQuoteId === quote.id) setSelectedQuoteId('')
+      await load()
+    } catch (e) {
+      console.error('[DealRoomConfig] delete failed:', e)
+      setError(e?.message || 'Delete failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function inviteViewer() {
     const email = inviteEmail.trim().toLowerCase()
     if (!email) return
@@ -327,7 +508,7 @@ export default function DealRoomConfig({ embedded = false, dealId: dealIdProp } 
         )}
 
         {/* Single share row — URL with inline copy + mode + expiration + enabled + Preview */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 24px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 24px', paddingRight: 72, flexWrap: 'wrap' }}>
           {archived && <Badge color={T.warning}>Archived</Badge>}
 
           {/* Share URL with inline copy icon */}
@@ -514,9 +695,9 @@ export default function DealRoomConfig({ embedded = false, dealId: dealIdProp } 
             savedAt={noteSavedAt.proposal}
           />
 
-          {/* Single unified header — the active-quote selector, snapshot push,
-              and visibility toggle all live INSIDE the embedded QuoteBuilder
-              header (no separate outer Card). */}
+          {/* Single unified header — the active-quote selector, + New / Duplicate /
+              Delete actions, snapshot push, and visibility toggle all live INSIDE
+              the embedded QuoteBuilder header (no separate outer Card). */}
           {selectedQuoteId ? (
             <div style={{ margin: '0 -24px' }}>
               <QuoteBuilder
@@ -525,6 +706,10 @@ export default function DealRoomConfig({ embedded = false, dealId: dealIdProp } 
                 quoteId={selectedQuoteId}
                 headerQuotes={quotes}
                 onChangeQuote={(id) => setSelectedQuoteId(id)}
+                onCreateQuote={createQuote}
+                onDuplicateQuote={duplicateQuote}
+                onDeleteQuote={deleteQuote}
+                headerBusy={busy}
                 headerExtraAction={
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
                     <Button primary onClick={refreshProposalSnapshot} disabled={snapshotting} style={{ padding: '8px 14px', fontSize: 12 }}>
@@ -554,8 +739,11 @@ export default function DealRoomConfig({ embedded = false, dealId: dealIdProp } 
                 label="the Proposal tab"
               />
             }>
-              <div style={{ padding: 28, textAlign: 'center', color: T.textMuted, fontSize: 13 }}>
-                No quotes yet — create one from the Quotes page to start building.
+              <div style={{ padding: 28, textAlign: 'center', color: T.textMuted, fontSize: 13, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+                <div>No quotes yet — start building one for this deal.</div>
+                <Button primary disabled={busy} onClick={createQuote} style={{ padding: '8px 18px', fontSize: 13 }}>
+                  + New Quote
+                </Button>
               </div>
             </Card>
           )}

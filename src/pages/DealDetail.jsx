@@ -1652,7 +1652,7 @@ export default function DealDetail() {
       `}</style>
 
       {/* Header \u2014 single row: back, bare logo, title + badges + website, +, pencil */}
-      <div style={{ padding: '14px 24px', borderBottom: `1px solid ${T.border}`, background: T.surface }}>
+      <div style={{ padding: '14px 24px', paddingRight: 72, borderBottom: `1px solid ${T.border}`, background: T.surface }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
           <button onClick={() => navigate('/')} title="Back to pipeline"
             style={{ background: T.surface, border: `1px solid ${T.border}`, cursor: 'pointer', color: T.textMuted, padding: '6px 10px', borderRadius: 6, fontFamily: T.font, height: 30, display: 'inline-flex', alignItems: 'center', gap: 4 }}>

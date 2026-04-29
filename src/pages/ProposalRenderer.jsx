@@ -139,7 +139,7 @@ export default function ProposalRenderer() {
       `}</style>
 
       {/* Toolbar (hidden on print) */}
-      <div className="no-print" style={{ padding: '12px 24px', borderBottom: `1px solid ${T.border}`, background: T.surface, display: 'flex', alignItems: 'center', gap: 12, position: 'sticky', top: 0, zIndex: 10 }}>
+      <div className="no-print" style={{ padding: '12px 24px', paddingRight: 72, borderBottom: `1px solid ${T.border}`, background: T.surface, display: 'flex', alignItems: 'center', gap: 12, position: 'sticky', top: 0, zIndex: 10 }}>
         <button onClick={() => nav(`/deal/${dealId}/quote/${quoteId}`)} style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontSize: 12, color: T.primary, fontWeight: 600, fontFamily: T.font }}>&larr; Back to Editor</button>
         <h2 style={{ fontSize: 16, fontWeight: 700, color: T.text, margin: 0, flex: 1 }}>Proposal Preview · {deal.company_name}</h2>
         <Button onClick={() => navigator.clipboard.writeText(window.location.href).then(() => alert('Link copied'))} style={{ padding: '6px 14px' }}>Copy share link</Button>

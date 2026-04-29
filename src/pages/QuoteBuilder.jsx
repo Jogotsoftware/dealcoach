@@ -84,6 +84,12 @@ export default function QuoteBuilder({
   // instead of in a separate parent Card.
   headerQuotes = null,
   onChangeQuote = null,
+  // Quote-management actions for embedded contexts that want full create/dup/del
+  // surfaced inline (e.g. Deal Room Quotes tab — no need to bounce out to /quotes).
+  onCreateQuote = null,
+  onDuplicateQuote = null,
+  onDeleteQuote = null,
+  headerBusy = false,
   // Slot for parent-supplied actions (e.g. "Push to customer Proposal tab" + last
   // pushed timestamp). Rendered between the identity row and the Preview button.
   headerExtraAction = null,
@@ -244,8 +250,8 @@ export default function QuoteBuilder({
   return (
     <div>
       <div style={embedded
-        ? { padding: '12px 24px', borderBottom: `1px solid ${T.border}`, background: T.surface }
-        : { padding: '14px 24px', borderBottom: `1px solid ${T.border}`, background: T.surface, position: 'sticky', top: 0, zIndex: 10 }}>
+        ? { padding: '12px 24px', paddingRight: 72, borderBottom: `1px solid ${T.border}`, background: T.surface }
+        : { padding: '14px 24px', paddingRight: 72, borderBottom: `1px solid ${T.border}`, background: T.surface, position: 'sticky', top: 0, zIndex: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10, flexWrap: 'wrap' }}>
           {!embedded && (
             <button onClick={() => nav(`/deal/${dealId}/quotes`)} style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontSize: 12, color: T.primary, fontWeight: 600, fontFamily: T.font }}>&larr; Quotes</button>
@@ -260,6 +266,15 @@ export default function QuoteBuilder({
               >
                 {headerQuotes.map(q => <option key={q.id} value={q.id}>{q.name} v{q.version}{q.is_primary ? ' · primary' : ''}</option>)}
               </select>
+            )}
+            {onCreateQuote && (
+              <Button onClick={onCreateQuote} disabled={headerBusy} style={{ padding: '4px 10px', fontSize: 11 }} title="Create a new quote on this deal">+ New</Button>
+            )}
+            {onDuplicateQuote && (
+              <Button onClick={() => onDuplicateQuote(quoteId)} disabled={headerBusy} style={{ padding: '4px 10px', fontSize: 11 }} title="Duplicate this quote (lines, impl items, partner blocks)">Duplicate</Button>
+            )}
+            {onDeleteQuote && (
+              <Button danger onClick={() => onDeleteQuote(quoteId)} disabled={headerBusy} style={{ padding: '4px 10px', fontSize: 11 }} title="Delete this quote — cannot be undone">Delete</Button>
             )}
             <input
               defaultValue={quote.name}

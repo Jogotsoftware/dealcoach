@@ -87,7 +87,7 @@ export default function NewDeal() {
   return (
     <div>
       <div style={{
-        padding: '14px 24px', borderBottom: `1px solid ${T.border}`,
+        padding: '14px 24px', paddingRight: 72, borderBottom: `1px solid ${T.border}`,
         display: 'flex', alignItems: 'center', gap: 12, background: T.surface,
       }}>
         <button

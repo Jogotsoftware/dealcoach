@@ -371,8 +371,32 @@ export default function Dashboards() {
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: '14px 24px', paddingRight: 72, borderBottom: `1px solid ${T.border}`, background: T.surface, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <div>
-            <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Dashboards</div>
-            <h2 style={{ fontSize: 20, fontWeight: 700, color: T.text, margin: '2px 0 0' }}>{currentViewLabel}</h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <h2 style={{ fontSize: 18, fontWeight: 700, color: T.text, margin: 0 }}>Dashboards</h2>
+              <div style={{ display: 'inline-flex', border: `1px solid ${T.border}`, borderRadius: 6, overflow: 'hidden' }}>
+                <button
+                  onClick={() => navigate('/reports')}
+                  style={{
+                    padding: '4px 12px', fontSize: 11, fontWeight: 600, fontFamily: T.font,
+                    border: 'none', background: T.surface, color: T.textMuted, cursor: 'pointer',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = T.surfaceAlt; e.currentTarget.style.color = T.text }}
+                  onMouseLeave={e => { e.currentTarget.style.background = T.surface; e.currentTarget.style.color = T.textMuted }}
+                  title="Open reports">
+                  Reports
+                </button>
+                <button
+                  onClick={() => {}}
+                  style={{
+                    padding: '4px 12px', fontSize: 11, fontWeight: 700, fontFamily: T.font,
+                    border: 'none', borderLeft: `1px solid ${T.border}`,
+                    background: T.primary, color: '#fff', cursor: 'default',
+                  }}>
+                  Dashboards
+                </button>
+              </div>
+            </div>
+            <h3 style={{ fontSize: 16, fontWeight: 600, color: T.text, margin: '6px 0 0' }}>{currentViewLabel}</h3>
             <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>{filtered.length} item{filtered.length === 1 ? '' : 's'}</div>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>

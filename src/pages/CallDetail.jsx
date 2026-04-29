@@ -114,7 +114,7 @@ export default function CallDetail() {
     <div style={{ fontFamily: T.font }}>
       {/* TOP: Header bar */}
       <div style={{
-        display: 'flex', alignItems: 'center', gap: 16, padding: '16px 24px',
+        display: 'flex', alignItems: 'center', gap: 16, padding: '16px 24px', paddingRight: 72,
         background: T.surface, borderBottom: `1px solid ${T.border}`,
         boxShadow: T.shadow, flexWrap: 'wrap',
       }}>

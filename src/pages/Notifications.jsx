@@ -119,7 +119,7 @@ export default function NotificationsPage() {
 
   return (
     <div>
-      <div style={{ padding: '14px 24px', borderBottom: `1px solid ${T.border}`, background: T.surface, display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{ padding: '14px 24px', paddingRight: 72, borderBottom: `1px solid ${T.border}`, background: T.surface, display: 'flex', alignItems: 'center', gap: 12 }}>
         <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: T.text, flex: 1 }}>Notifications</h2>
         <Button onClick={markAllRead}>Mark all as read</Button>
       </div>

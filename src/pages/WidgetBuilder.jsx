@@ -332,7 +332,7 @@ export default function WidgetBuilder() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
       {/* Top bar */}
-      <div style={{ padding: '10px 20px', borderBottom: '1px solid ' + T.border, background: T.surface, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, gap: 12 }}>
+      <div style={{ padding: '10px 20px', paddingRight: 72, borderBottom: '1px solid ' + T.border, background: T.surface, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, gap: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
           <button onClick={() => setEditing(null)} style={{ background: T.surfaceAlt, border: '1px solid ' + T.border, borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontSize: 12, color: T.primary, fontWeight: 600, fontFamily: T.font, flexShrink: 0 }}>&larr; Back</button>
           <input style={{ ...inputStyle, fontSize: 16, fontWeight: 700, padding: '6px 10px', maxWidth: 400 }} value={name} onChange={e => setName(e.target.value)} placeholder="Widget name" />
@@ -1020,7 +1020,7 @@ function PropertiesPanel({ selected, sections, onUpdateField, onUpdateSection, o
 function ListView({ widgets, onNew, onEdit, onClone, onDelete, toast }) {
   return (
     <div>
-      <div style={{ padding: '14px 24px', borderBottom: '1px solid ' + T.border, background: T.surface, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ padding: '14px 24px', paddingRight: 72, borderBottom: '1px solid ' + T.border, background: T.surface, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h2 style={{ fontSize: 18, fontWeight: 700, color: T.text, margin: 0 }}>Widget Library</h2>
         <Button primary onClick={onNew}>+ New Widget</Button>
       </div>
@@ -1068,7 +1068,7 @@ function ListView({ widgets, onNew, onEdit, onClone, onDelete, toast }) {
 function PresetPicker({ onBack, onPick }) {
   return (
     <div>
-      <div style={{ padding: '14px 24px', borderBottom: '1px solid ' + T.border, background: T.surface, display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{ padding: '14px 24px', paddingRight: 72, borderBottom: '1px solid ' + T.border, background: T.surface, display: 'flex', alignItems: 'center', gap: 12 }}>
         <button onClick={onBack} style={{ background: T.surfaceAlt, border: '1px solid ' + T.border, borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontSize: 12, color: T.primary, fontWeight: 600, fontFamily: T.font }}>&larr; Back</button>
         <h2 style={{ fontSize: 18, fontWeight: 700, color: T.text, margin: 0 }}>Choose a Starting Point</h2>
       </div>

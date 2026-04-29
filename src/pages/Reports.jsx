@@ -455,6 +455,7 @@ export async function executeReportQueryStandalone(report) {
 export default function Reports() {
   const { profile } = useAuth()
   const { hasModule, loading: modulesLoading } = useModules()
+  const navigate = useNavigate()
   const [reports, setReports] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedReport, setSelectedReport] = useState(null)
@@ -651,6 +652,29 @@ export default function Reports() {
             </button>
           )}
           <h2 style={{ fontSize: 18, fontWeight: 700, color: T.text, margin: 0 }}>Reports</h2>
+          {/* Quick switch between Reports and Dashboards */}
+          <div style={{ display: 'inline-flex', border: `1px solid ${T.border}`, borderRadius: 6, overflow: 'hidden', marginLeft: 6 }}>
+            <button
+              onClick={() => {}}
+              style={{
+                padding: '4px 12px', fontSize: 11, fontWeight: 700, fontFamily: T.font,
+                border: 'none', background: T.primary, color: '#fff', cursor: 'default',
+              }}>
+              Reports
+            </button>
+            <button
+              onClick={() => navigate('/dashboards')}
+              style={{
+                padding: '4px 12px', fontSize: 11, fontWeight: 600, fontFamily: T.font,
+                border: 'none', borderLeft: `1px solid ${T.border}`,
+                background: T.surface, color: T.textMuted, cursor: 'pointer',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = T.surfaceAlt; e.currentTarget.style.color = T.text }}
+              onMouseLeave={e => { e.currentTarget.style.background = T.surface; e.currentTarget.style.color = T.textMuted }}
+              title="Open dashboards">
+              Dashboards
+            </button>
+          </div>
         </div>
         {mode === 'list' && <Button primary onClick={startNew}>+ New</Button>}
       </div>
@@ -2578,6 +2602,9 @@ function RunView({ selectedReport, reportData, runningReport, runError, exportCs
   const [orderedCols, setOrderedCols] = useState(reportData?.columns || [])
   const [dragCol, setDragCol] = useState(null)
   const [dragOverCol, setDragOverCol] = useState(null)
+  // True between a drag-start and the trailing click that fires after drop.
+  // Guards onClick so a drag-to-reorder doesn't also trigger toggleSort.
+  const dragHappenedRef = useRef(false)
   useEffect(() => {
     setOrderedCols(reportData?.columns || [])
     setSortBy(null)
@@ -2733,12 +2760,31 @@ function RunView({ selectedReport, reportData, runningReport, runError, exportCs
                       <th
                         key={c}
                         draggable
-                        onDragStart={e => { setDragCol(c); e.dataTransfer.effectAllowed = 'move' }}
-                        onDragEnd={() => { setDragCol(null); setDragOverCol(null) }}
+                        onDragStart={e => {
+                          dragHappenedRef.current = true
+                          setDragCol(c)
+                          e.dataTransfer.effectAllowed = 'move'
+                          // Firefox refuses to start a drag without setData; Chrome
+                          // sometimes flakes too. Stash the column id even though
+                          // we read it from React state on drop.
+                          try { e.dataTransfer.setData('text/plain', c) } catch { /* ignore */ }
+                        }}
+                        onDragEnd={() => {
+                          setDragCol(null)
+                          setDragOverCol(null)
+                          // Clear the ref after the trailing click event has fired
+                          // so the next genuine click still toggles sort.
+                          setTimeout(() => { dragHappenedRef.current = false }, 0)
+                        }}
                         onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (dragOverCol !== c) setDragOverCol(c) }}
                         onDragLeave={() => { if (dragOverCol === c) setDragOverCol(null) }}
-                        onDrop={e => { e.preventDefault(); reorderCols(dragCol, c); setDragCol(null); setDragOverCol(null) }}
-                        onClick={() => toggleSort(c)}
+                        onDrop={e => {
+                          e.preventDefault()
+                          const src = dragCol || e.dataTransfer.getData('text/plain')
+                          reorderCols(src, c)
+                          setDragCol(null); setDragOverCol(null)
+                        }}
+                        onClick={() => { if (dragHappenedRef.current) return; toggleSort(c) }}
                         title="Click to sort · drag to reorder"
                         style={{
                           textAlign: 'left', padding: '6px 8px',

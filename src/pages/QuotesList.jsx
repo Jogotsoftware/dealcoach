@@ -237,7 +237,7 @@ export default function QuotesList() {
 
   return (
     <div>
-      <div style={{ padding: '14px 24px', borderBottom: `1px solid ${T.border}`, background: T.surface, display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{ padding: '14px 24px', paddingRight: 72, borderBottom: `1px solid ${T.border}`, background: T.surface, display: 'flex', alignItems: 'center', gap: 12 }}>
         <button onClick={() => nav(`/deal/${dealId}`)} style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontSize: 12, color: T.primary, fontWeight: 600, fontFamily: T.font }}>&larr; {deal?.company_name}</button>
         <div style={{ flex: 1 }}>
           <h2 style={{ fontSize: 18, fontWeight: 700, color: T.text, margin: 0 }}>Quotes</h2>
