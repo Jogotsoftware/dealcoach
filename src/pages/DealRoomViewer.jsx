@@ -339,34 +339,65 @@ export default function DealRoomViewer() {
 // ════════════════════════════════════════════
 function LibraryTabContent({ data, themeColor }) {
   if (!data) return <Spinner />
-  // themeColor reserved for future per-type accent overrides; resource type
-  // pills currently use intrinsic per-type colors from RESOURCE_TYPE_META.
-  void themeColor
+  void themeColor // reserved for future per-type accent overrides
   const { resources = [] } = data
   if (resources.length === 0) {
     return <div style={{ padding: 32, textAlign: 'center', color: T.textMuted, fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8 }}>No resources shared yet.</div>
   }
+  // Group by resource_type and render one table per group, in a friendly
+  // type ordering. Empty groups are skipped.
+  const TYPE_ORDER = ['demo', 'powerpoint', 'document', 'link', 'misc']
+  const grouped = TYPE_ORDER
+    .map(type => ({ type, items: resources.filter(r => (r.resource_type || 'misc') === type) }))
+    .filter(g => g.items.length > 0)
+
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 14 }}>
-      {resources.map(r => {
-        const meta = RESOURCE_TYPE_META[r.resource_type] || RESOURCE_TYPE_META.misc
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+      {grouped.map(({ type, items }) => {
+        const meta = RESOURCE_TYPE_META[type] || RESOURCE_TYPE_META.misc
         return (
-          <div key={r.id} style={{ background: T.surface, border: `1px solid ${T.border}`, borderLeft: `4px solid ${meta.color}`, borderRadius: 8, padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <span style={{ display: 'inline-block', alignSelf: 'flex-start', padding: '3px 10px', background: meta.color + '18', color: meta.color, fontSize: 10, fontWeight: 700, borderRadius: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{meta.label}</span>
-            <div style={{ fontSize: 15, fontWeight: 700, color: T.text, lineHeight: 1.3 }}>{r.title}</div>
-            {r.notes && <div style={{ fontSize: 12, color: T.textSecondary, lineHeight: 1.5 }}>{r.notes}</div>}
-            {r.storage_path && r.file_size && (
-              <div style={{ fontSize: 10, color: T.textMuted }}>
-                {Math.round(r.file_size / 1024)} KB · {r.mime_type || 'file'}
-              </div>
-            )}
-            <div style={{ marginTop: 'auto' }}>
-              {r.url && (
-                <a href={r.url} target="_blank" rel="noopener noreferrer"
-                  style={{ display: 'inline-block', padding: '8px 18px', background: meta.color, color: '#fff', fontSize: 12, fontWeight: 700, borderRadius: 6, textDecoration: 'none' }}>
-                  {meta.cta} →
-                </a>
-              )}
+          <div key={type} style={{ background: T.surface, border: `1px solid ${T.border}`, borderLeft: `4px solid ${meta.color}`, borderRadius: 8, overflow: 'hidden' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: meta.color + '0d', borderBottom: `1px solid ${T.borderLight}` }}>
+              <span style={{ padding: '3px 10px', background: meta.color + '22', color: meta.color, fontSize: 11, fontWeight: 800, borderRadius: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{meta.label}</span>
+              <span style={{ fontSize: 11, color: T.textMuted, fontWeight: 600 }}>
+                {items.length} {items.length === 1 ? 'item' : 'items'}
+              </span>
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ borderBottom: `1px solid ${T.border}`, background: T.surfaceAlt }}>
+                    <th style={{ textAlign: 'left',  padding: '10px 16px', fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', width: '32%' }}>Title</th>
+                    <th style={{ textAlign: 'left',  padding: '10px 16px', fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Notes</th>
+                    <th style={{ textAlign: 'right', padding: '10px 16px', fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', width: 170 }}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map(r => (
+                    <tr key={r.id} style={{ borderBottom: `1px solid ${T.borderLight}`, verticalAlign: 'top' }}>
+                      <td style={{ padding: '14px 16px' }}>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: T.text, lineHeight: 1.35 }}>{r.title}</div>
+                        {r.storage_path && r.file_size && (
+                          <div style={{ fontSize: 10, color: T.textMuted, marginTop: 4 }}>
+                            {Math.round(r.file_size / 1024)} KB · {r.mime_type || 'file'}
+                          </div>
+                        )}
+                      </td>
+                      <td style={{ padding: '14px 16px', fontSize: 12, color: T.textSecondary, lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>
+                        {r.notes || <span style={{ color: T.textMuted, fontStyle: 'italic' }}>—</span>}
+                      </td>
+                      <td style={{ padding: '14px 16px', textAlign: 'right' }}>
+                        {r.url ? (
+                          <a href={r.url} target="_blank" rel="noopener noreferrer"
+                            style={{ display: 'inline-block', padding: '8px 16px', background: meta.color, color: '#fff', fontSize: 12, fontWeight: 700, borderRadius: 6, textDecoration: 'none', whiteSpace: 'nowrap' }}>
+                            {meta.cta} →
+                          </a>
+                        ) : <span style={{ fontSize: 11, color: T.textMuted }}>—</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         )
