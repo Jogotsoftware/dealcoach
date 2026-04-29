@@ -14,6 +14,22 @@ const STATUS_OPTIONS = [
   { key: 'at_risk', label: 'At Risk' },
 ]
 
+// Default palette for stage colors
+const STAGE_COLOR_PRESETS = ['#5DADE2', '#6bb644', '#f59e0b', '#a855f7', '#ec4899', '#0ea5e9', '#10b981', '#dc6b2f', '#6b7280']
+
+// Display rule used wherever an MSP stage/milestone date is rendered:
+// date_label > formatted due_date > formatted start_date > 'TBD'
+export function displayMspDate(item, formatFn = formatDate) {
+  if (item?.date_label && String(item.date_label).trim()) return item.date_label
+  if (item?.due_date) return formatFn(item.due_date)
+  if (item?.start_date) return formatFn(item.start_date)
+  return 'TBD'
+}
+
+export function displayMspColor(item, parentStage, fallback = T.primary) {
+  return item?.color || parentStage?.color || fallback
+}
+
 export default function MSPPage() {
   const { dealId } = useParams()
   const navigate = useNavigate()
@@ -159,6 +175,23 @@ export default function MSPPage() {
     setSteps(prev => prev.map(s => s.id === stepId ? { ...s, notes } : s))
   }
 
+  async function updateDateLabel(stepId, dateLabel) {
+    const value = dateLabel?.trim() ? dateLabel : null
+    await supabase.from('msp_stages').update({ date_label: value }).eq('id', stepId)
+    setSteps(prev => prev.map(s => s.id === stepId ? { ...s, date_label: value } : s))
+  }
+
+  async function updateDuration(stepId, duration) {
+    const value = duration?.trim() ? duration : null
+    await supabase.from('msp_stages').update({ duration: value }).eq('id', stepId)
+    setSteps(prev => prev.map(s => s.id === stepId ? { ...s, duration: value } : s))
+  }
+
+  async function updateColor(stepId, color) {
+    await supabase.from('msp_stages').update({ color }).eq('id', stepId)
+    setSteps(prev => prev.map(s => s.id === stepId ? { ...s, color } : s))
+  }
+
   async function deleteStep(stepId) {
     if (!window.confirm('Delete this step?')) return
     await supabase.from('msp_stages').delete().eq('id', stepId)
@@ -298,9 +331,10 @@ export default function MSPPage() {
 
                         <div style={{
                           background: T.surface, border: `1px solid ${overdue ? T.error + '40' : T.border}`,
+                          borderLeft: `4px solid ${step.color || T.primary}`,
                           borderRadius: T.radius, boxShadow: T.shadow, padding: '12px 16px',
                         }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                             {/* Reorder */}
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
                               <button onClick={() => moveStep(si, -1)} disabled={si === 0}
@@ -309,8 +343,11 @@ export default function MSPPage() {
                                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, fontSize: 10, opacity: si === steps.length - 1 ? 0.3 : 1, padding: 0 }}>{'\u25BC'}</button>
                             </div>
 
+                            {/* Color swatch */}
+                            <ColorSwatch color={step.color || T.primary} onChange={(c) => updateColor(step.id, c)} />
+
                             {/* Name */}
-                            <div style={{ flex: 1 }}>
+                            <div style={{ flex: 1, minWidth: 160 }}>
                               {editingStep === step.id ? (
                                 <input style={{ ...inputStyle, padding: '4px 8px', fontSize: 13, fontWeight: 600 }}
                                   value={editingName} onChange={e => setEditingName(e.target.value)}
@@ -336,9 +373,28 @@ export default function MSPPage() {
                             {/* Due date */}
                             <input type="date" value={step.due_date?.split('T')[0] || ''}
                               onChange={e => updateDueDate(step.id, e.target.value)}
+                              title="Date picker (used when no Date label is set)"
                               style={{ ...inputStyle, width: 'auto', padding: '4px 8px', fontSize: 11 }} />
 
-                            {days != null && !step.is_completed && (
+                            {/* Date label override */}
+                            <input
+                              type="text" defaultValue={step.date_label || ''}
+                              onBlur={e => { if ((e.target.value || '') !== (step.date_label || '')) updateDateLabel(step.id, e.target.value) }}
+                              placeholder="Date label"
+                              title="Free-text override for date display (e.g. 'Mid May', 'Q3 2026'). Overrides the date picker in display."
+                              style={{ ...inputStyle, width: 110, padding: '4px 8px', fontSize: 11, fontStyle: step.date_label ? 'normal' : 'italic' }}
+                            />
+
+                            {/* Duration */}
+                            <input
+                              type="text" defaultValue={step.duration || ''}
+                              onBlur={e => { if ((e.target.value || '') !== (step.duration || '')) updateDuration(step.id, e.target.value) }}
+                              placeholder="Duration"
+                              title="Free-text duration (e.g. '1 Hour', '2 Weeks After Contract', 'TBD')"
+                              style={{ ...inputStyle, width: 100, padding: '4px 8px', fontSize: 11, fontStyle: step.duration ? 'normal' : 'italic' }}
+                            />
+
+                            {days != null && !step.is_completed && !step.date_label && (
                               <span style={{ fontSize: 11, fontWeight: 600, color: overdue ? T.error : days <= 7 ? T.warning : T.textMuted, whiteSpace: 'nowrap', fontFeatureSettings: '"tnum"' }}>
                                 {overdue ? `${Math.abs(days)}d late` : `${days}d`}
                               </span>
@@ -524,6 +580,49 @@ function StatusPicker({ step, onCycle, onSet }) {
                 </button>
               )
             })}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// Tiny color swatch button + popover with preset palette + hex input.
+// Matches the style of other small inline editors on the timeline row.
+function ColorSwatch({ color, onChange }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div style={{ position: 'relative', display: 'inline-block' }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        title="Stage color"
+        style={{
+          width: 18, height: 18, borderRadius: 4, background: color, cursor: 'pointer',
+          border: `1px solid ${T.borderLight}`, padding: 0, flexShrink: 0,
+        }}
+      />
+      {open && (
+        <>
+          <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 500 }} />
+          <div style={{
+            position: 'absolute', top: '100%', left: 0, marginTop: 4, padding: 8, background: T.surface,
+            border: `1px solid ${T.border}`, borderRadius: 6, boxShadow: T.shadow, zIndex: 501, width: 180,
+          }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 4, marginBottom: 6 }}>
+              {STAGE_COLOR_PRESETS.map(c => (
+                <button key={c} onClick={() => { onChange(c); setOpen(false) }}
+                  style={{
+                    width: 24, height: 24, borderRadius: 4, background: c, cursor: 'pointer',
+                    border: c.toLowerCase() === (color || '').toLowerCase() ? `2px solid ${T.text}` : `1px solid ${T.borderLight}`,
+                    padding: 0,
+                  }} />
+              ))}
+            </div>
+            <input
+              type="color" defaultValue={color || '#5DADE2'}
+              onChange={e => onChange(e.target.value)}
+              style={{ width: '100%', height: 28, padding: 0, border: `1px solid ${T.borderLight}`, borderRadius: 4, cursor: 'pointer' }}
+            />
           </div>
         </>
       )}

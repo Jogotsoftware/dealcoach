@@ -85,7 +85,6 @@ export default function QuoteBuilder() {
   const [tab, setTab] = useState('quote')
   const [savingFlash, setSavingFlash] = useState(false)
   const [savedAt, setSavedAt] = useState(null)
-  const [shareCopied, setShareCopied] = useState(false)
 
   const [deal, setDeal] = useState(null)
   const [quote, setQuote] = useState(null)
@@ -206,32 +205,6 @@ export default function QuoteBuilder() {
     } finally { setSavingFlash(false) }
   }
 
-  async function handleShareLink() {
-    let token = quote.share_token
-    if (!token) {
-      // Generate a URL-safe random token
-      const rand = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID().replace(/-/g, '') : Math.random().toString(36).slice(2)
-      token = rand + Math.random().toString(36).slice(2, 8)
-      try {
-        const { error: e } = await supabase.from('quotes').update({ share_token: token }).eq('id', quoteId)
-        if (e) throw e
-        setQuote(prev => ({ ...prev, share_token: token }))
-      } catch (e) {
-        console.error('share token save failed:', e)
-        setError(e?.message || 'Failed to generate share link')
-        return
-      }
-    }
-    const url = `${window.location.origin}/share/quote/${token}`
-    try {
-      await navigator.clipboard.writeText(url)
-      setShareCopied(true)
-      setTimeout(() => setShareCopied(false), 3000)
-    } catch {
-      // Fallback: prompt with the URL
-      window.prompt('Copy this share link:', url)
-    }
-  }
 
   if (loading) return <Spinner />
   if (error && !quote) return <div style={{ padding: 40, color: T.error }}>{error}</div>
@@ -277,14 +250,7 @@ export default function QuoteBuilder() {
             />
           </div>
           <Button onClick={() => nav(`/deal/${dealId}/quote/${quoteId}/proposal`)} style={{ padding: '10px 22px', fontSize: 13 }}>Preview</Button>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
-            <Button onClick={handleShareLink} style={{ padding: '8px 14px', fontSize: 12 }}>
-              {shareCopied ? 'Link copied ✓' : 'Share link'}
-            </Button>
-            {quote.share_token && !shareCopied && (
-              <span style={{ fontSize: 10, color: T.textMuted }}>Active</span>
-            )}
-          </div>
+          <Button onClick={() => nav(`/deal/${dealId}/room`)} style={{ padding: '10px 18px', fontSize: 13 }}>Open Deal Room</Button>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
             <Button primary onClick={handleSave} disabled={savingFlash} style={{ padding: '8px 18px', fontSize: 13 }}>
               {savingFlash ? 'Saving…' : 'Save'}
