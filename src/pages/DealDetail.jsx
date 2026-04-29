@@ -2573,7 +2573,9 @@ const HOME_DEFAULT_LAYOUT = [
 
 function HomeDashboard({ dealId, deal, tasks, setTasks, userId, onAddTask, editMode }) {
   const isClosed = ['closed_won', 'closed_lost', 'disqualified'].includes(deal.stage)
-  const storageKey = `deal.home.${dealId}`
+  // One layout per user across every deal — the rep's chosen arrangement
+  // travels with them. Drop the per-deal key.
+  const storageKey = 'deal.home.layout'
 
   // Load layout + visible widget list from localStorage (per-deal). Falls back
   // to the default layout. We persist {layout, widgets} as a single object.
@@ -2599,43 +2601,56 @@ function HomeDashboard({ dealId, deal, tasks, setTasks, userId, onAddTask, editM
     return { widgets: ['tasks', 'deal_age'], layout: HOME_DEFAULT_LAYOUT }
   })
 
-  function persist(next) {
-    setState(next)
+  function writeStorage(next) {
     try { localStorage.setItem(storageKey, JSON.stringify(next)) } catch { /* ignore */ }
   }
 
-  function onLayoutChange(newLayout) {
-    persist({ ...state, layout: newLayout })
+  // Functional setState everywhere so rapid-fire callbacks (RGL fires
+  // onLayoutChange continuously while dragging) don't race off stale state.
+  function handleLayoutChange(newLayout) {
+    setState(prev => {
+      const next = { ...prev, layout: newLayout }
+      writeStorage(next)
+      return next
+    })
   }
 
   function removeWidget(id) {
-    persist({
-      widgets: state.widgets.filter(x => x !== id),
-      layout:  state.layout.filter(x => x.i !== id),
+    setState(prev => {
+      const next = {
+        widgets: prev.widgets.filter(x => x !== id),
+        layout:  prev.layout.filter(x => x.i !== id),
+      }
+      writeStorage(next)
+      return next
     })
   }
 
   function addWidget(id) {
-    if (state.widgets.includes(id)) return
     const def = HOME_WIDGET_REGISTRY.find(w => w.id === id)
     if (!def) return
-    // Drop the new widget at the bottom of the current grid.
-    const maxY = state.layout.reduce((m, x) => Math.max(m, x.y + x.h), 0)
-    persist({
-      widgets: [...state.widgets, id],
-      layout:  [...state.layout, { i: id, x: 0, y: maxY, w: def.w, h: def.h, minW: def.minW, minH: def.minH }],
+    setState(prev => {
+      if (prev.widgets.includes(id)) return prev
+      const maxY = prev.layout.reduce((m, x) => Math.max(m, x.y + x.h), 0)
+      const next = {
+        widgets: [...prev.widgets, id],
+        layout:  [...prev.layout, { i: id, x: 0, y: maxY, w: def.w, h: def.h, minW: def.minW, minH: def.minH }],
+      }
+      writeStorage(next)
+      return next
     })
   }
 
   function resetLayout() {
     try { localStorage.removeItem(storageKey) } catch { /* ignore */ }
-    setState(isClosed
+    const next = isClosed
       ? { widgets: ['retrospective', 'tasks', 'deal_age'], layout: [
           { i: 'retrospective', x: 0, y: 0, w: 12, h: 4, minW: 6, minH: 3 },
           { i: 'tasks',         x: 0, y: 4, w: 8, h: 5, minW: 4, minH: 3 },
           { i: 'deal_age',      x: 8, y: 4, w: 4, h: 3, minW: 2, minH: 2 },
         ] }
-      : { widgets: ['tasks', 'deal_age'], layout: HOME_DEFAULT_LAYOUT })
+      : { widgets: ['tasks', 'deal_age'], layout: HOME_DEFAULT_LAYOUT }
+    setState(next)
   }
 
   const availableToAdd = HOME_WIDGET_REGISTRY.filter(w => !state.widgets.includes(w.id) && (w.id !== 'retrospective' || isClosed))
@@ -2668,7 +2683,9 @@ function HomeDashboard({ dealId, deal, tasks, setTasks, userId, onAddTask, editM
         isDraggable={editMode}
         isResizable={editMode}
         draggableHandle=".home-widget-handle"
-        onLayoutChange={(layout) => editMode && onLayoutChange(layout)}
+        onLayoutChange={(layout) => editMode && handleLayoutChange(layout)}
+        onDragStop={(layout) => editMode && handleLayoutChange(layout)}
+        onResizeStop={(layout) => editMode && handleLayoutChange(layout)}
         compactType="vertical"
       >
         {state.widgets.map(id => {
