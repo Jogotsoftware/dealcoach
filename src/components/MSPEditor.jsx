@@ -195,6 +195,21 @@ export default function MSPEditor({ dealId, mode = 'standalone', readonlyAdapter
     try {
       const { data: tplSteps } = await supabase.from('msp_template_stages').select('*').eq('template_id', templateId).order('stage_order')
       if (!tplSteps?.length) { setApplyingTemplate(false); return }
+
+      // Pull the current user's "default for every deal" team members. These get merged into
+      // every seeded stage's assigned_team_contacts on top of the template's per-stage defaults.
+      let userDefaults = []
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user) {
+          const { data } = await supabase.from('user_team_members')
+            .select('id, name, title')
+            .eq('user_id', user.id)
+            .eq('is_default_team', true)
+          userDefaults = (data || []).map(m => ({ id: m.id, name: m.name, title: m.title || null }))
+        }
+      } catch (e) { console.warn('default team lookup failed (non-fatal):', e?.message) }
+
       const today = new Date()
       for (const ts of tplSteps) {
         // Stages seeded from a template inherit a real date if the template
@@ -210,9 +225,17 @@ export default function MSPEditor({ dealId, mode = 'standalone', readonlyAdapter
           due_date: hasOffset ? dueDate.toISOString().split('T')[0] : null,
           notes: ts.notes || null, status: 'pending', is_completed: false,
           color: ts.color || null,
-          // Template's default team contacts auto-populate the stage's team chips.
-          // Stored as jsonb [{ id, name, title }] — same shape as live stages use.
-          assigned_team_contacts: Array.isArray(ts.default_team_contacts) ? ts.default_team_contacts : [],
+          // Stage-level defaults from the template + user-level "default for every deal"
+          // members merge into the stage's team chips. Dedupe by id so a member listed
+          // in both places only appears once.
+          assigned_team_contacts: (() => {
+            const stageDefaults = Array.isArray(ts.default_team_contacts) ? ts.default_team_contacts : []
+            const merged = [...stageDefaults]
+            for (const u of userDefaults) {
+              if (!merged.some(m => m?.id === u.id)) merged.push(u)
+            }
+            return merged
+          })(),
         }).select('id').single()
         if (newStage?.id) {
           try {
