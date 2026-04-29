@@ -196,8 +196,18 @@ export default function DealRoomViewer() {
     )
   }
 
-  const { viewer, deal, org, rep, ae_notes, archived } = meta
+  const { viewer, deal, org, rep, archived } = meta
   const themeColor = (meta.theme_color && /^#[0-9a-f]{3,8}$/i.test(meta.theme_color)) ? meta.theme_color : T.primary
+  // Resolve which note shows on the active tab. Per-tab note wins; otherwise
+  // the legacy room-wide ae_notes shows on every tab as a fallback.
+  const tabNoteByKey = {
+    msp:      meta.ae_notes_msp,
+    library:  meta.ae_notes_library,
+    proposal: meta.ae_notes_proposal,
+  }
+  const activeNote = (tabNoteByKey[tab] && tabNoteByKey[tab].trim())
+    ? tabNoteByKey[tab]
+    : (meta.ae_notes && meta.ae_notes.trim() ? meta.ae_notes : null)
 
   return (
     <div style={{ background: T.bg, minHeight: '100vh', fontFamily: T.font, color: T.text }}>
@@ -248,12 +258,12 @@ export default function DealRoomViewer() {
       </div>
 
       <main style={{ maxWidth: 1200, margin: '0 auto', padding: '24px' }}>
-        {ae_notes && ae_notes.trim() && (
+        {activeNote && (
           <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderLeft: `4px solid ${themeColor}`, borderRadius: 8, padding: '14px 18px', marginBottom: 18 }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
               Notes from {rep?.full_name || 'your AE'}
             </div>
-            <div style={{ fontSize: 13, color: T.text, lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{ae_notes}</div>
+            <div style={{ fontSize: 13, color: T.text, lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{activeNote}</div>
           </div>
         )}
         {tab === 'msp' && (
@@ -368,7 +378,7 @@ function LibraryTabContent({ data, themeColor }) {
 // ════════════════════════════════════════════
 // Proposal tab — render snapshot
 // ════════════════════════════════════════════
-function ProposalTabContent({ data, archived, onComment, themeColor }) {
+export function ProposalTabContent({ data, archived, onComment, themeColor }) {
   const accent = themeColor || T.primary
   if (!data) return <Spinner />
   const { snapshot, message } = data
@@ -703,6 +713,35 @@ function KvCard({ label, value }) {
     <div style={{ padding: '10px 12px', background: T.surfaceAlt, borderRadius: 6, borderLeft: `3px solid ${T.primary}` }}>
       <div style={{ fontSize: 9, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 3 }}>{label}</div>
       <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{value}</div>
+    </div>
+  )
+}
+
+// Minimal comment composer used at the bottom of the Proposal tab. Same
+// shape as the readonly composer inside MSPEditor — kept local here so we
+// don't have to expose internal MSPEditor helpers.
+function CommentComposer({ onSubmit, placeholder, count }) {
+  const [open, setOpen] = useState(false)
+  const [text, setText] = useState('')
+  return (
+    <div style={{ marginTop: 14, paddingTop: 10, borderTop: `1px dashed ${T.borderLight}` }}>
+      {!open ? (
+        <button onClick={() => setOpen(true)}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, fontSize: 12, padding: 0, fontFamily: T.font }}>
+          {count > 0 ? `${count} comment${count === 1 ? '' : 's'} · ` : ''}+ Add a comment
+        </button>
+      ) : (
+        <div style={{ display: 'flex', gap: 6 }}>
+          <textarea value={text} onChange={e => setText(e.target.value)} placeholder={placeholder} rows={2}
+            style={{ flex: 1, padding: 8, fontSize: 12, border: `1px solid ${T.border}`, borderRadius: 4, background: T.surface, color: T.text, fontFamily: T.font, resize: 'vertical' }} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <button onClick={async () => { if (text.trim()) { const ok = await onSubmit(text.trim()); if (ok !== false) { setText(''); setOpen(false) } } }}
+              style={{ padding: '6px 10px', fontSize: 11, fontWeight: 600, background: T.primary, color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontFamily: T.font }}>Post</button>
+            <button onClick={() => { setOpen(false); setText('') }}
+              style={{ padding: '6px 10px', fontSize: 11, fontWeight: 600, background: T.surface, color: T.textMuted, border: `1px solid ${T.border}`, borderRadius: 4, cursor: 'pointer', fontFamily: T.font }}>Cancel</button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

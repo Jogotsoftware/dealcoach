@@ -57,8 +57,8 @@ export default function DealRoomConfig() {
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteName, setInviteName] = useState('')
   const [reply, setReply] = useState({})  // commentId → draft reply text
-  const [aeNotesDraft, setAeNotesDraft] = useState('')
-  const [aeNotesSavedAt, setAeNotesSavedAt] = useState(null)
+  const [noteDrafts, setNoteDrafts] = useState({ msp: '', library: '', proposal: '' })
+  const [noteSavedAt, setNoteSavedAt] = useState({ msp: null, library: null, proposal: null })
   const [tab, setTab] = useState(() => {
     if (typeof window === 'undefined') return 'msp'
     const h = (window.location.hash || '').replace('#', '')
@@ -93,7 +93,14 @@ export default function DealRoomConfig() {
       if (roomRes.error) throw roomRes.error
       setDeal(dealRes.data)
       setRoom(roomRes.data)
-      setAeNotesDraft(roomRes.data?.ae_notes || '')
+      // Seed per-tab note drafts. If the per-tab columns are empty AND the
+      // legacy room-wide note is set, mirror it into MSP so the AE sees
+      // their existing copy on the most-visited tab while editing.
+      setNoteDrafts({
+        msp: roomRes.data?.ae_notes_msp ?? (roomRes.data?.ae_notes || ''),
+        library: roomRes.data?.ae_notes_library ?? '',
+        proposal: roomRes.data?.ae_notes_proposal ?? '',
+      })
       setQuotes(quotesRes.data || [])
       const primary = (quotesRes.data || []).find(q => q.is_primary)
       setSelectedQuoteId(primary?.id || quotesRes.data?.[0]?.id || '')
@@ -172,13 +179,18 @@ export default function DealRoomConfig() {
     } finally { setBusy(false) }
   }
 
-  async function saveAeNotes() {
-    const next = (aeNotesDraft || '').trim() || null
-    const current = room?.ae_notes || null
+  async function saveTabNote(tabKey) {
+    const col = `ae_notes_${tabKey}`
+    const next = (noteDrafts[tabKey] || '').trim() || null
+    const current = room?.[col] ?? null
     if (next === current) return
     try {
-      await saveRoom({ ae_notes: next })
-      setAeNotesSavedAt(Date.now())
+      const patch = { [col]: next }
+      // Once any per-tab note is set, retire the legacy room-wide note so it
+      // stops bleeding through as a fallback on tabs without their own copy.
+      if (room?.ae_notes) patch.ae_notes = null
+      await saveRoom(patch)
+      setNoteSavedAt(prev => ({ ...prev, [tabKey]: Date.now() }))
     } catch (e) { /* error already surfaced via setError in saveRoom */ }
   }
 
@@ -374,23 +386,15 @@ export default function DealRoomConfig() {
         {tab === 'msp' && (
           <>
             <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 14, marginBottom: 14 }}>
-              <Card title={`Notes from ${profile?.full_name || 'you'} (shown on every tab)`}>
-                <div style={{ fontSize: 11, color: T.textSecondary, marginBottom: 8 }}>
-                  A short personal note that appears at the top of every tab in the customer's Evaluation Room. Use it for context, a welcome message, or what to focus on.
-                </div>
-                <textarea
-                  value={aeNotesDraft}
-                  onChange={e => setAeNotesDraft(e.target.value)}
-                  onBlur={saveAeNotes}
-                  placeholder="e.g. Hey team — start with the Project Plan tab to align on dates, then review the proposal. Reach out anytime."
-                  rows={3}
-                  style={{ ...inputStyle, fontFamily: T.font, fontSize: 13, lineHeight: 1.55, resize: 'vertical' }}
-                />
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4, fontSize: 10, color: T.textMuted }}>
-                  <span>{(aeNotesDraft || '').length} characters{aeNotesSavedAt && Date.now() - aeNotesSavedAt < 4000 ? ' · saved' : ''}</span>
-                  <span>Saves automatically when you click outside the box.</span>
-                </div>
-              </Card>
+              <PerTabNoteEditor
+                tabKey="msp"
+                tabLabel="Project Plan"
+                aeName={profile?.full_name}
+                value={noteDrafts.msp}
+                onChange={(v) => setNoteDrafts(prev => ({ ...prev, msp: v }))}
+                onBlurSave={() => saveTabNote('msp')}
+                savedAt={noteSavedAt.msp}
+              />
               <Card title="Theme color">
                 <div style={{ fontSize: 11, color: T.textSecondary, marginBottom: 8 }}>
                   Sets the primary accent color the customer sees throughout the Evaluation Room.
@@ -409,6 +413,16 @@ export default function DealRoomConfig() {
 
         {/* ════════════ LIBRARY TAB (read-only summary) ════════════ */}
         {tab === 'library' && (
+          <>
+          <PerTabNoteEditor
+            tabKey="library"
+            tabLabel="Library"
+            aeName={profile?.full_name}
+            value={noteDrafts.library}
+            onChange={(v) => setNoteDrafts(prev => ({ ...prev, library: v }))}
+            onBlurSave={() => saveTabNote('library')}
+            savedAt={noteSavedAt.library}
+          />
           <Card
             title={`Library — what the customer sees (${resources.length} ${resources.length === 1 ? 'resource' : 'resources'})`}
             action={primaryQuoteId
@@ -442,10 +456,21 @@ export default function DealRoomConfig() {
               </div>
             )}
           </Card>
+          </>
         )}
 
         {/* ════════════ QUOTES TAB ════════════ */}
         {tab === 'quotes' && (
+          <>
+          <PerTabNoteEditor
+            tabKey="proposal"
+            tabLabel="Proposal"
+            aeName={profile?.full_name}
+            value={noteDrafts.proposal}
+            onChange={(v) => setNoteDrafts(prev => ({ ...prev, proposal: v }))}
+            onBlurSave={() => saveTabNote('proposal')}
+            savedAt={noteSavedAt.proposal}
+          />
           <Card title="What the customer will see in the Proposal tab">
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, marginBottom: 14 }}>
               <Stat label="Project Plan" value={`${stages.length} stages, ${milestones.length} milestones`} />
@@ -467,6 +492,7 @@ export default function DealRoomConfig() {
               {selectedQuoteId && <Button onClick={() => nav(`/deal/${dealId}/quote/${selectedQuoteId}`)} style={{ padding: '6px 14px', fontSize: 12 }}>Open quote →</Button>}
             </div>
           </Card>
+          </>
         )}
 
         {/* ════════════ MODELS TAB ════════════ */}
@@ -621,6 +647,36 @@ export default function DealRoomConfig() {
         )}
       </div>
     </div>
+  )
+}
+
+// Per-tab AE note editor card. Three of these live across the MSP, Library,
+// and Quotes tabs. Each writes into its own deal_rooms.ae_notes_<tab> column
+// so the note appears only on the matching tab in the customer viewer.
+function PerTabNoteEditor({ tabKey, tabLabel, aeName, value, onChange, onBlurSave, savedAt }) {
+  const justSaved = savedAt && Date.now() - savedAt < 4000
+  return (
+    <Card title={`Notes from ${aeName || 'you'} (shown only on the ${tabLabel} tab)`}>
+      <div style={{ fontSize: 11, color: T.textSecondary, marginBottom: 8 }}>
+        A short personal note pinned to the top of the {tabLabel} tab in the customer's Evaluation Room.
+      </div>
+      <textarea
+        value={value || ''}
+        onChange={e => onChange(e.target.value)}
+        onBlur={onBlurSave}
+        placeholder={
+          tabKey === 'msp'      ? 'e.g. Here\'s our current plan — let me know if any of these dates need to shift.' :
+          tabKey === 'library'  ? 'e.g. Start with the demo videos at the top, then dig into the docs as you have questions.' :
+                                  'e.g. Pricing reflects the multi-year commit we discussed. Questions on Year-1 vs Year-2 — drop a comment below.'
+        }
+        rows={3}
+        style={{ ...inputStyle, fontFamily: T.font, fontSize: 13, lineHeight: 1.55, resize: 'vertical' }}
+      />
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4, fontSize: 10, color: T.textMuted }}>
+        <span>{(value || '').length} characters{justSaved ? ' · saved' : ''}</span>
+        <span>Saves automatically when you click outside the box.</span>
+      </div>
+    </Card>
   )
 }
 

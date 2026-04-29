@@ -15,6 +15,7 @@ import { useOrg } from '../contexts/OrgContext'
 import { theme as T } from '../lib/theme'
 import { Spinner } from '../components/Shared'
 import MSPEditor from '../components/MSPEditor'
+import { ProposalTabContent } from './DealRoomViewer'
 
 const RESOURCE_TYPE_META = {
   demo:       { label: 'Demo',       color: '#a855f7', cta: 'Watch demo' },
@@ -118,7 +119,10 @@ export default function DealRoomPreview() {
 
   const themeColor = (room.theme_color && /^#[0-9a-f]{3,8}$/i.test(room.theme_color)) ? room.theme_color : T.primary
   const archived = !!room.expires_at && new Date(room.expires_at).getTime() <= Date.now()
-  const aeNotes = room.ae_notes || ''
+  const tabNoteByKey = { msp: room.ae_notes_msp, library: room.ae_notes_library, proposal: room.ae_notes_proposal }
+  const activeNote = (tabNoteByKey[tab] && tabNoteByKey[tab].trim())
+    ? tabNoteByKey[tab]
+    : (room.ae_notes && room.ae_notes.trim() ? room.ae_notes : null)
   const pendingByTarget = new Map(pendingRequests.map(r => [`${r.target_table}:${r.target_id}`, r]))
   const commentCountsMap = new Map(Object.entries(commentCounts))
 
@@ -175,12 +179,12 @@ export default function DealRoomPreview() {
       </div>
 
       <main style={{ maxWidth: 1200, margin: '0 auto', padding: '24px' }}>
-        {aeNotes && aeNotes.trim() && (
+        {activeNote && (
           <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderLeft: `4px solid ${themeColor}`, borderRadius: 8, padding: '14px 18px', marginBottom: 18 }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
               Notes from {profile?.full_name || 'your AE'}
             </div>
-            <div style={{ fontSize: 13, color: T.text, lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{aeNotes}</div>
+            <div style={{ fontSize: 13, color: T.text, lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{activeNote}</div>
           </div>
         )}
 
@@ -202,7 +206,16 @@ export default function DealRoomPreview() {
 
         {tab === 'library' && <PreviewLibrary resources={resources} />}
 
-        {tab === 'proposal' && <PreviewProposal snapshot={room.proposal_snapshot} themeColor={themeColor} />}
+        {tab === 'proposal' && (
+          room.proposal_snapshot
+            ? <ProposalTabContent
+                data={{ snapshot: room.proposal_snapshot, snapshotted_at: room.proposal_snapshotted_at }}
+                archived
+                onComment={async () => { alert('Preview mode — interactions are disabled.'); return false }}
+                themeColor={themeColor}
+              />
+            : <div style={{ padding: 40, textAlign: 'center', color: T.textMuted, fontSize: 14, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8 }}>No proposal snapshot yet. Snapshot one from the Quotes tab to see the customer view here.</div>
+        )}
       </main>
 
       <footer style={{ background: T.surface, borderTop: `1px solid ${T.border}`, padding: '16px 24px', marginTop: 32 }}>
@@ -247,35 +260,3 @@ function PreviewLibrary({ resources }) {
   )
 }
 
-function PreviewProposal({ snapshot, themeColor }) {
-  if (!snapshot) {
-    return <div style={{ padding: 40, textAlign: 'center', color: T.textMuted, fontSize: 14, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8 }}>No proposal snapshot yet. Snapshot one from the Quotes tab to see the customer view here.</div>
-  }
-  const totals = snapshot.totals || {}
-  const fmt = (n) => '$' + Math.round(Number(n) || 0).toLocaleString('en-US')
-  return (
-    <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: 28 }}>
-      <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 4 }}>Preview — proposal snapshot only. The full customer-facing layout renders on the public viewer.</div>
-      <h2 style={{ margin: 0 }}>{snapshot.quote_name}{snapshot.quote_version ? ` v${snapshot.quote_version}` : ''}</h2>
-      <div style={{ marginTop: 16, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
-        {totals.sage_subscription != null && <Kv label="Sage subscription" value={fmt(totals.sage_subscription)} />}
-        {totals.sage_implementation != null && <Kv label="Implementation" value={fmt(totals.sage_implementation)} />}
-        {totals.partner_subscription != null && <Kv label="Partner subscription" value={fmt(totals.partner_subscription)} />}
-        {totals.partner_implementation != null && <Kv label="Partner implementation" value={fmt(totals.partner_implementation)} />}
-      </div>
-      <div style={{ marginTop: 28, padding: '18px 22px', background: themeColor + '18', border: `2px solid ${themeColor}`, borderRadius: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ fontSize: 18, fontWeight: 800, color: T.text }}>Solution Total</span>
-        <span style={{ fontSize: 26, fontWeight: 900, color: themeColor }}>{fmt(totals.solution_total)}</span>
-      </div>
-    </div>
-  )
-}
-
-function Kv({ label, value }) {
-  return (
-    <div style={{ padding: '10px 12px', background: T.surfaceAlt, borderRadius: 6 }}>
-      <div style={{ fontSize: 9, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 3 }}>{label}</div>
-      <div style={{ fontSize: 15, fontWeight: 800, color: T.text, fontFeatureSettings: '"tnum"' }}>{value}</div>
-    </div>
-  )
-}
