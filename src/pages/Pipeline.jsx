@@ -795,7 +795,7 @@ export default function Pipeline() {
   // Empty state — brand new user with zero deals: guide them to the first action.
   if (!deals.length) return (
     <div style={{ padding: '16px 24px' }}>
-      <div style={{ padding: '16px 24px', borderBottom: '1px solid ' + T.border, display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: T.surface, marginLeft: -24, marginRight: -24, marginTop: -16, marginBottom: 24 }}>
+      <div style={{ padding: '16px 24px', paddingRight: 72, borderBottom: '1px solid ' + T.border, display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: T.surface, marginLeft: -24, marginRight: -24, marginTop: -16, marginBottom: 24 }}>
         <h1 style={{ fontSize: 18, fontWeight: 800, margin: 0, color: T.text }}>Pipeline</h1>
       </div>
       <div style={{ maxWidth: 640, margin: '40px auto', background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: 32, boxShadow: T.shadow }}>
@@ -829,8 +829,8 @@ export default function Pipeline() {
         .react-resizable-handle::after { content: ""; position: absolute; right: 3px; bottom: 3px; width: 8px; height: 8px; border-right: 2px solid rgba(136,153,170,0.4); border-bottom: 2px solid rgba(136,153,170,0.4); }
       `}</style>
 
-      {/* Header */}
-      <div style={{ padding: '12px 24px 0', borderBottom: '1px solid ' + T.border, background: T.surface }}>
+      {/* Header — paddingRight: 72 reserves a clear lane for the floating notification bell */}
+      <div style={{ padding: '12px 24px 0', paddingRight: 72, borderBottom: '1px solid ' + T.border, background: T.surface }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <h1 style={{ fontSize: 18, fontWeight: 800, margin: 0, color: T.text }}>Home</h1>

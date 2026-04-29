@@ -401,10 +401,9 @@ export default function CoachAdmin() {
 
   return (
     <div>
-      <div style={{ padding: '14px 24px', borderBottom: `1px solid ${T.border}`, background: T.surface }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+      <div style={{ padding: '14px 24px', paddingRight: 72, borderBottom: `1px solid ${T.border}`, background: T.surface }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
           <h2 style={{ fontSize: 18, fontWeight: 700, color: T.text, margin: 0 }}>Coach Admin</h2>
-          <Button primary onClick={() => nav('/coach/builder')} style={{ padding: '5px 12px', fontSize: 11 }}>Coach Builder</Button>
           <select style={{ ...inputStyle, width: 'auto', padding: '6px 12px', cursor: 'pointer', fontWeight: 600, maxWidth: 250 }}
             value={selectedCoachId || ''} onChange={e => setSelectedCoachId(e.target.value)}>
             {allCoaches.map(c => <option key={c.id} value={c.id}>{c.name}{c.created_by === profile?.id ? '' : ' (shared)'}</option>)}
@@ -412,15 +411,54 @@ export default function CoachAdmin() {
           {coach && coach.created_by !== profile?.id && (
             <span style={{ fontSize: 11, color: T.textMuted, fontStyle: 'italic' }}>Owner: {coach.owner_name || 'Another admin'}</span>
           )}
-          <div style={{ flex: 1 }} />
-          <Button primary onClick={() => setShowCreateCoach(true)} style={{ padding: '6px 14px', fontSize: 12 }}>+ New Coach</Button>
         </div>
-        <TabBar tabs={tabs} active={tab} onChange={setTab} />
+        {/* Top tabs (sections) */}
+        <div style={{ display: 'flex', gap: 0, borderBottom: `1px solid ${T.borderLight}`, marginBottom: 0 }}>
+          {NAV.map(s => {
+            const active = s.key === activeTopKey
+            return (
+              <button key={s.key} onClick={() => selectTopTab(s.key)}
+                style={{
+                  padding: '8px 16px', border: 'none', background: 'transparent', cursor: 'pointer',
+                  fontFamily: T.font, fontSize: 13, fontWeight: 700,
+                  color: active ? T.primary : T.textMuted,
+                  borderBottom: active ? `2px solid ${T.primary}` : '2px solid transparent',
+                  marginBottom: -1,
+                }}>
+                {s.label}
+              </button>
+            )
+          })}
+        </div>
+        {/* Sub-tabs row */}
+        <div style={{ display: 'flex', gap: 4, padding: '8px 0 0', flexWrap: 'wrap' }}>
+          {activeSubs.map(t => {
+            const active = !t.navTo && t.key === tab
+            return (
+              <button key={t.key} onClick={() => selectSubTab(t.key)}
+                style={{
+                  padding: '4px 12px', borderRadius: 14, fontSize: 11, fontWeight: 600,
+                  border: `1px solid ${active ? T.primary : T.border}`,
+                  background: active ? T.primaryLight : T.surface,
+                  color: active ? T.primary : T.textSecondary,
+                  cursor: 'pointer', fontFamily: T.font,
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                }}>
+                {t.label}
+                {t.navTo && (
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M7 17 17 7M9 7h8v8"/>
+                  </svg>
+                )}
+              </button>
+            )
+          })}
+        </div>
       </div>
 
       <div style={{ padding: '16px 24px' }}>
-        {/* Create Coach Form */}
-        {showCreateCoach && (
+        {/* Create Coach Form — moved into Coaches > Sharing sub-tab */}
+        {showCreateCoach && tab === 'sharing' && (
           <Card title="Create New Coach" style={{ marginBottom: 16 }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
               <div><label style={labelStyle}>Name *</label><input style={inputStyle} value={newCoach.name} onChange={e => setNewCoach(p => ({ ...p, name: e.target.value }))} placeholder="Coach name" autoFocus /></div>
@@ -1339,6 +1377,12 @@ export default function CoachAdmin() {
         {/* ═══ SHARING ═══ */}
         {tab === 'sharing' && coach && (
           <>
+            <Card title="Add a coach" style={{ marginBottom: 14 }}>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                <div style={{ fontSize: 12, color: T.textMuted, flex: 1 }}>Spin up a fresh coach for your org, or import one via a share token below.</div>
+                <Button primary onClick={() => setShowCreateCoach(true)} style={{ padding: '6px 14px', fontSize: 12 }}>+ New Coach</Button>
+              </div>
+            </Card>
             <Card title="Share This Coach">
               <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 12 }}>
                 Generate a share token so other users can add this coach to their Settings. Tokens can be limited by use count and expiry.
