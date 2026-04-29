@@ -301,10 +301,7 @@ export default function DealRoomViewer() {
       <footer style={{ background: T.surface, borderTop: `1px solid ${T.border}`, padding: '16px 24px', marginTop: 32 }}>
         <div style={{ maxWidth: 1200, margin: '0 auto', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           {!archived && (
-            <>
-              <button onClick={() => setTeammateModal(true)} style={{ padding: '8px 14px', border: `1px solid ${T.border}`, borderRadius: 6, background: T.surface, color: T.text, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: T.font }}>+ Add a teammate</button>
-              <button onClick={() => setEmailModal(true)} style={{ padding: '8px 14px', border: `1px solid ${T.border}`, borderRadius: 6, background: T.surface, color: T.text, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: T.font }}>Email your AE</button>
-            </>
+            <button onClick={() => setTeammateModal(true)} style={{ padding: '8px 14px', border: `1px solid ${T.border}`, borderRadius: 6, background: T.surface, color: T.text, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: T.font }}>+ Add a teammate</button>
           )}
           <div style={{ flex: 1 }} />
         </div>
@@ -977,8 +974,14 @@ function RepContactIcons({ rep, themeColor }) {
       </svg>
     )})
   }
+  const firstName = (rep.full_name || '').split(/\s+/)[0]
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} title={rep.full_name ? `Your AE: ${rep.full_name}` : undefined}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }} title={rep.full_name ? `Your AE: ${rep.full_name}` : undefined}>
+      {firstName && (
+        <span style={{ fontSize: 12, fontWeight: 600, color: T.textMuted, whiteSpace: 'nowrap' }}>
+          Contact <span style={{ color: T.text }}>{firstName}</span>
+        </span>
+      )}
       {items.map(it => (
         <a key={it.key} href={it.href} aria-label={it.label} title={it.label}
           style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: 6, border: `1px solid ${T.border}`, background: T.surface, color: accent, textDecoration: 'none' }}>
