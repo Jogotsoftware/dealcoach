@@ -581,16 +581,31 @@ export default function DealRoomConfig({ embedded = false, dealId: dealIdProp } 
 
         {/* ════════════ MODELS TAB ════════════ */}
         {tab === 'models' && (
-          <Card title="Models">
-            <div style={{ padding: 28, textAlign: 'center', color: T.textMuted, fontSize: 13 }}>
-              ROI, payment schedules, and TCO live inside QuoteBuilder under the <strong>Models</strong> tab. Engagement analytics for this room (read time per tab, scroll depth, hot pages) will land here in a future sprint.
-              {primaryQuoteId && (
-                <div style={{ marginTop: 14 }}>
-                  <Button primary onClick={() => nav(`/deal/${dealId}/quote/${primaryQuoteId}#models`)} style={{ padding: '6px 14px', fontSize: 12 }}>Open Models in QuoteBuilder →</Button>
+          <>
+            {/* Quote selector header so the AE can switch which quote drives
+                ROI / Payment Schedule / TCO without leaving the Deal Room. */}
+            {quotes.length > 0 && (
+              <Card title="Modeling">
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <label style={{ fontSize: 11, color: T.textMuted, fontWeight: 600 }}>Quote:</label>
+                  <select value={selectedQuoteId} onChange={e => setSelectedQuoteId(e.target.value)} style={{ ...inputStyle, fontSize: 12, padding: '6px 8px', maxWidth: 280, cursor: 'pointer' }}>
+                    {quotes.map(q => <option key={q.id} value={q.id}>{q.name} v{q.version}{q.is_primary ? ' · primary' : ''}</option>)}
+                  </select>
                 </div>
-              )}
-            </div>
-          </Card>
+              </Card>
+            )}
+            {selectedQuoteId ? (
+              <div style={{ margin: '14px -24px 0' }}>
+                <QuoteBuilder embedded forcedTab="models" dealId={dealId} quoteId={selectedQuoteId} />
+              </div>
+            ) : (
+              <Card title="Models">
+                <div style={{ padding: 28, textAlign: 'center', color: T.textMuted, fontSize: 13 }}>
+                  Build a quote first — ROI, payment schedules, and TCO are computed from quote data.
+                </div>
+              </Card>
+            )}
+          </>
         )}
 
         {/* ════════════ INBOX TAB ════════════ */}

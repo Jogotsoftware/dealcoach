@@ -74,10 +74,12 @@ function drSetPatch(quote, path, value) {
 // ──────────────────────────────────────────────────────────
 // Top-level page
 // ──────────────────────────────────────────────────────────
-export default function QuoteBuilder({ dealId: dealIdProp, quoteId: quoteIdProp, embedded = false } = {}) {
+export default function QuoteBuilder({ dealId: dealIdProp, quoteId: quoteIdProp, embedded = false, forcedTab = null } = {}) {
   // Embedded mode lets DealDetail's "Quotes" sub-tab mount the full builder
   // inline. The standalone /deal/:dealId/quote/:quoteId route still works —
   // useParams falls through when no prop is passed.
+  // forcedTab pins the inner sub-tab (e.g. 'models') and hides the inner
+  // TabBar — used when a parent surface only wants one slice of the builder.
   const params = useParams()
   const dealId = dealIdProp || params.dealId
   const quoteId = quoteIdProp || params.quoteId
@@ -87,7 +89,7 @@ export default function QuoteBuilder({ dealId: dealIdProp, quoteId: quoteIdProp,
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [tab, setTab] = useState('quote')
+  const [tab, setTab] = useState(forcedTab || 'quote')
   const [savingFlash, setSavingFlash] = useState(false)
   const [savedAt, setSavedAt] = useState(null)
 
@@ -268,7 +270,7 @@ export default function QuoteBuilder({ dealId: dealIdProp, quoteId: quoteIdProp,
             )}
           </div>
         </div>
-        <TabBar tabs={tabs} active={tab} onChange={setTab} />
+        {!forcedTab && <TabBar tabs={tabs} active={tab} onChange={setTab} />}
       </div>
 
       {showWarning && (
