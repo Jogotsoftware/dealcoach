@@ -293,7 +293,15 @@ export default function DealRoomViewer() {
         )}
 
         {tab === 'proposal' && (
-          <ProposalTabContent data={proposal} archived={archived} onComment={submitComment} themeColor={themeColor} columnVisibility={meta.proposal_column_visibility} />
+          <ProposalTabContent
+            data={proposal}
+            archived={archived}
+            onComment={submitComment}
+            themeColor={themeColor}
+            themeColorSecondary={meta.theme_color_secondary}
+            themeColorTertiary={meta.theme_color_tertiary}
+            columnVisibility={meta.proposal_column_visibility}
+          />
         )}
       </main>
 
@@ -406,8 +414,14 @@ function LibraryTabContent({ data, themeColor }) {
 // ════════════════════════════════════════════
 // Proposal tab — render snapshot
 // ════════════════════════════════════════════
-export function ProposalTabContent({ data, archived, onComment, themeColor, columnVisibility }) {
-  const accent = themeColor || T.primary
+export function ProposalTabContent({ data, archived, onComment, themeColor, themeColorSecondary, themeColorTertiary, columnVisibility }) {
+  const accent     = themeColor          || T.primary
+  // Secondary drives the "positive / final" accent: Net Price column tint,
+  // Year 1 Total band background. Defaults to a calm emerald.
+  const accentPos  = themeColorSecondary || '#10b981'
+  // Tertiary drives the "deduction" accent: Discount columns, signing-bonus
+  // negatives in the totals tape. Defaults to platform error red.
+  const accentNeg  = themeColorTertiary  || T.error
   if (!data) return <Spinner />
   const { snapshot, message } = data
   // Per-column visibility: AE can hide individual columns from the customer
@@ -497,9 +511,9 @@ export function ProposalTabContent({ data, archived, onComment, themeColor, colu
           { key: 'list',            label: 'List',      visible: visKey('list'),                width: COL_WIDTHS.list,       headBg: undefined,   cellBg: undefined },
           { key: 'qty',             label: 'Qty',       visible: visKey('qty'),                 width: COL_WIDTHS.qty,        headBg: undefined,   cellBg: undefined },
           { key: 'total_list',      label: 'Total List', visible: visKey('total_list'),         width: COL_WIDTHS.totalList,  headBg: undefined,   cellBg: undefined },
-          { key: 'discount_pct',    label: 'Disc. %',   visible: visKey('discount_pct'),        width: COL_WIDTHS.discount,   headBg: '#fde9d9',   cellBg: '#fdf2e9' },
-          { key: 'discount_amount', label: 'Disc. $',   visible: visKey('discount_amount'),     width: COL_WIDTHS.discount + 16, headBg: '#fde9d9', cellBg: '#fdf2e9' },
-          { key: 'net_price',       label: 'Net Price', visible: visKey('net_price'),           width: COL_WIDTHS.totalPrice, headBg: '#e2f0d9',   cellBg: '#eaf3e0' },
+          { key: 'discount_pct',    label: 'Disc. %',   visible: visKey('discount_pct'),        width: COL_WIDTHS.discount,   headBg: accentNeg + '22',   cellBg: accentNeg + '12' },
+          { key: 'discount_amount', label: 'Disc. $',   visible: visKey('discount_amount'),     width: COL_WIDTHS.discount + 16, headBg: accentNeg + '22', cellBg: accentNeg + '12' },
+          { key: 'net_price',       label: 'Net Price', visible: visKey('net_price'),           width: COL_WIDTHS.totalPrice, headBg: accentPos + '22',   cellBg: accentPos + '14' },
         ].filter(c => c.always || c.visible)
         const colCount = cols.length
         const lastCol = cols[colCount - 1]
@@ -582,11 +596,11 @@ export function ProposalTabContent({ data, archived, onComment, themeColor, colu
                   </tr>
                   {annualDiscountAmount > 0 && (
                     <tr>
-                      <td colSpan={labelSpan} style={{ ...cellRight, color: T.error, fontWeight: 700 }}>Discount Amount ({blendedDiscountPct.toFixed(0)}%)</td>
-                      <td style={{ ...cellRight, color: T.error, fontWeight: 800 }}>({money(annualDiscountAmount)})</td>
+                      <td colSpan={labelSpan} style={{ ...cellRight, color: accentNeg, fontWeight: 700 }}>Discount Amount ({blendedDiscountPct.toFixed(0)}%)</td>
+                      <td style={{ ...cellRight, color: accentNeg, fontWeight: 800 }}>({money(annualDiscountAmount)})</td>
                     </tr>
                   )}
-                  <tr style={{ background: '#eaf3e0' }}>
+                  <tr style={{ background: accentPos + '14' }}>
                     <td colSpan={labelSpan} style={{ ...cellRight, fontWeight: 800 }}>Net Annual Subscription Total</td>
                     <td style={{ ...cellRight, fontWeight: 900 }}>{money(annualNetTotal)}</td>
                   </tr>
@@ -608,7 +622,7 @@ export function ProposalTabContent({ data, archived, onComment, themeColor, colu
                   <th style={{ ...cellHead, textAlign: 'left' }}>Item</th>
                   <th style={{ ...cellHead, width: COL_WIDTHS.qty }}>Qty</th>
                   <th style={{ ...cellHead, width: COL_WIDTHS.list }}>Rate</th>
-                  <th style={{ ...cellHead, width: COL_WIDTHS.totalPrice, background: '#e2f0d9' }}>Total</th>
+                  <th style={{ ...cellHead, width: COL_WIDTHS.totalPrice, background: accentPos + '22' }}>Total</th>
                 </tr>
               </thead>
               <tbody>
@@ -630,12 +644,12 @@ export function ProposalTabContent({ data, archived, onComment, themeColor, colu
                     </td>
                     <td style={cellRight}>{num(i.quantity || 1).toLocaleString()}</td>
                     <td style={{ ...cellRight, color: T.textSecondary }}>{i.unit_price != null ? money(i.unit_price) : (i.tm_weeks ? `${i.tm_weeks} wk` : '—')}</td>
-                    <td style={{ ...cellRight, background: '#eaf3e0', fontWeight: 700 }}>{money(implValue(i))}</td>
+                    <td style={{ ...cellRight, background: accentPos + '14', fontWeight: 700 }}>{money(implValue(i))}</td>
                   </tr>
                 ))}
               </tbody>
               <tfoot>
-                <tr style={{ background: '#eaf3e0' }}>
+                <tr style={{ background: accentPos + '14' }}>
                   <td colSpan={3} style={{ ...cellRight, fontWeight: 800 }}>Implementation Total</td>
                   <td style={{ ...cellRight, fontWeight: 900 }}>{money(implTotal)}</td>
                 </tr>
@@ -664,7 +678,7 @@ export function ProposalTabContent({ data, archived, onComment, themeColor, colu
                       <th style={{ ...cellHead, textAlign: 'left' }}>Subscription</th>
                       <th style={{ ...cellHead, width: COL_WIDTHS.qty }}>Qty</th>
                       <th style={{ ...cellHead, width: COL_WIDTHS.list }}>Unit</th>
-                      <th style={{ ...cellHead, width: COL_WIDTHS.totalPrice, background: '#e2f0d9' }}>Total</th>
+                      <th style={{ ...cellHead, width: COL_WIDTHS.totalPrice, background: accentPos + '22' }}>Total</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -673,12 +687,12 @@ export function ProposalTabContent({ data, archived, onComment, themeColor, colu
                         <td style={{ padding: '10px 10px', color: T.text, fontWeight: 600 }}>{l.name || l.description || '—'}</td>
                         <td style={cellRight}>{num(l.quantity || 1).toLocaleString()}</td>
                         <td style={{ ...cellRight, color: T.textSecondary }}>{l.unit_price != null ? money(l.unit_price) : '—'}</td>
-                        <td style={{ ...cellRight, background: '#eaf3e0', fontWeight: 700 }}>{money(l.extended)}</td>
+                        <td style={{ ...cellRight, background: accentPos + '14', fontWeight: 700 }}>{money(l.extended)}</td>
                       </tr>
                     ))}
                   </tbody>
                   <tfoot>
-                    <tr style={{ background: '#eaf3e0' }}>
+                    <tr style={{ background: accentPos + '14' }}>
                       <td colSpan={3} style={{ ...cellRight, fontWeight: 800 }}>Partner Subscription Total</td>
                       <td style={{ ...cellRight, fontWeight: 900 }}>{money(partnerSub)}</td>
                     </tr>
@@ -694,7 +708,7 @@ export function ProposalTabContent({ data, archived, onComment, themeColor, colu
                       <th style={{ ...cellHead, textAlign: 'left' }}>Implementation</th>
                       <th style={{ ...cellHead, width: COL_WIDTHS.qty }}>Qty</th>
                       <th style={{ ...cellHead, width: COL_WIDTHS.list }}>Rate</th>
-                      <th style={{ ...cellHead, width: COL_WIDTHS.totalPrice, background: '#e2f0d9' }}>Total</th>
+                      <th style={{ ...cellHead, width: COL_WIDTHS.totalPrice, background: accentPos + '22' }}>Total</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -703,12 +717,12 @@ export function ProposalTabContent({ data, archived, onComment, themeColor, colu
                         <td style={{ padding: '10px 10px', color: T.text, fontWeight: 600 }}>{l.description || l.name || 'Implementation'}</td>
                         <td style={cellRight}>{num(l.quantity || 1).toLocaleString()}</td>
                         <td style={{ ...cellRight, color: T.textSecondary }}>{(l.unit_price || l.amount) != null ? money(l.unit_price || l.amount) : '—'}</td>
-                        <td style={{ ...cellRight, background: '#eaf3e0', fontWeight: 700 }}>{money(l.extended || l.amount)}</td>
+                        <td style={{ ...cellRight, background: accentPos + '14', fontWeight: 700 }}>{money(l.extended || l.amount)}</td>
                       </tr>
                     ))}
                   </tbody>
                   <tfoot>
-                    <tr style={{ background: '#eaf3e0' }}>
+                    <tr style={{ background: accentPos + '14' }}>
                       <td colSpan={3} style={{ ...cellRight, fontWeight: 800 }}>Partner Implementation Total</td>
                       <td style={{ ...cellRight, fontWeight: 900 }}>{money(partnerImpl)}</td>
                     </tr>
@@ -727,7 +741,7 @@ export function ProposalTabContent({ data, archived, onComment, themeColor, colu
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <tbody>
               {freeMonths > 0 && (
-                <tr style={{ background: '#fdf2e9', borderBottom: `1px solid ${T.borderLight}` }}>
+                <tr style={{ background: accentNeg + '12', borderBottom: `1px solid ${T.borderLight}` }}>
                   <td style={{ padding: '12px 14px', fontWeight: 700, color: T.text }}>
                     {freeMonths} Free Month{freeMonths === 1 ? '' : 's'}
                     <span style={{ marginLeft: 8, fontWeight: 500, color: T.textSecondary, fontSize: 12, textTransform: 'capitalize' }}>
@@ -740,7 +754,7 @@ export function ProposalTabContent({ data, archived, onComment, themeColor, colu
                 </tr>
               )}
               {signingBonusValue > 0 && (
-                <tr style={{ background: '#fdf2e9' }}>
+                <tr style={{ background: accentNeg + '12' }}>
                   <td style={{ padding: '12px 14px', fontWeight: 700, color: T.text }}>
                     {signMonth ? `${signMonth} ` : ''}Signing Bonus
                   </td>
@@ -783,9 +797,9 @@ export function ProposalTabContent({ data, archived, onComment, themeColor, colu
       )}
 
       {/* Year 1 Total */}
-      <div style={{ marginTop: 28, padding: '18px 22px', background: '#fff3a3', border: '2px solid #d4b500', borderRadius: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ marginTop: 28, padding: '18px 22px', background: accentPos + '1f', border: `2px solid ${accentPos}`, borderRadius: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span style={{ fontSize: 18, fontWeight: 800, color: T.text, letterSpacing: '0.02em' }}>Year 1 Total</span>
-        <span style={{ fontSize: 26, fontWeight: 900, color: T.text, fontFeatureSettings: '"tnum"' }}>{money(year1Total)}</span>
+        <span style={{ fontSize: 26, fontWeight: 900, color: accentPos, fontFeatureSettings: '"tnum"' }}>{money(year1Total)}</span>
       </div>
     </div>
   )
