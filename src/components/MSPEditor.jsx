@@ -16,9 +16,31 @@ const STATUS_OPTIONS = [
 ]
 const STAGE_COLOR_PRESETS = ['#5DADE2', '#6bb644', '#f59e0b', '#a855f7', '#ec4899', '#0ea5e9', '#10b981', '#dc6b2f', '#6b7280']
 
+// Format a YYYY-MM-DD-ish string as the Monday of its containing week.
+// Used by the week_of date_mode so reps can commit to a week without
+// pinning a specific calendar day.
+function formatWeekOf(d) {
+  if (!d) return 'TBD'
+  const date = new Date(typeof d === 'string' && d.length === 10 ? d + 'T00:00:00' : d)
+  if (Number.isNaN(date.getTime())) return 'TBD'
+  const dow = date.getDay() // 0=Sun, 1=Mon
+  const offset = dow === 0 ? -6 : 1 - dow // align to Monday
+  const monday = new Date(date)
+  monday.setDate(date.getDate() + offset)
+  return `Week of ${monday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+}
+
+function formatMonthOf(d) {
+  if (!d) return 'TBD'
+  const date = new Date(typeof d === 'string' && d.length === 10 ? d + 'T00:00:00' : d)
+  if (Number.isNaN(date.getTime())) return 'TBD'
+  return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+}
+
 // Display rule used wherever an MSP stage/milestone date is rendered.
-// Honors `date_mode` first (single | range | free_text), then falls back to
-// the legacy heuristic for older rows that don't have a mode set.
+// Honors `date_mode` first (single | range | free_text | week_of | month_of),
+// then falls back to the legacy heuristic for older rows that don't have a
+// mode set.
 export function displayMspDate(item, formatFn = formatDate) {
   const mode = item?.date_mode
   if (mode === 'free_text') return item?.date_label?.trim() || 'TBD'
@@ -28,6 +50,8 @@ export function displayMspDate(item, formatFn = formatDate) {
     if (item?.end_date) return formatFn(item.end_date)
     return 'TBD'
   }
+  if (mode === 'week_of') return formatWeekOf(item?.due_date)
+  if (mode === 'month_of') return formatMonthOf(item?.due_date)
   if (mode === 'single') {
     if (item?.due_date) return formatFn(item.due_date)
     return 'TBD'
@@ -370,13 +394,17 @@ export default function MSPEditor({ dealId, mode = 'standalone', readonlyAdapter
   }
   async function updateDateMode(stepId, mode) {
     if (!isWritable) return
-    if (!['single', 'range', 'free_text'].includes(mode)) return
+    if (!['single', 'range', 'free_text', 'week_of', 'month_of'].includes(mode)) return
     // Clear the columns that don't apply to the new mode so display logic
-    // doesn't pick up stale values.
+    // doesn't pick up stale values. week_of / month_of reuse due_date for
+    // the picked anchor date and clear the rest.
     const patch = { date_mode: mode }
     if (mode === 'single')    { patch.start_date = null; patch.end_date = null; patch.date_label = null }
     if (mode === 'range')     { patch.due_date = null;   patch.date_label = null }
     if (mode === 'free_text') { patch.due_date = null;   patch.start_date = null; patch.end_date = null }
+    if (mode === 'week_of' || mode === 'month_of') {
+      patch.start_date = null; patch.end_date = null; patch.date_label = null
+    }
     await supabase.from('msp_stages').update(patch).eq('id', stepId)
     setSteps(prev => prev.map(s => s.id === stepId ? { ...s, ...patch } : s))
   }
@@ -774,10 +802,11 @@ export default function MSPEditor({ dealId, mode = 'standalone', readonlyAdapter
                                 </div>
                               )}
 
-                              {/* Milestones — hidden in embedded mode (Deal Room config)
-                                  per UX: AEs build the high-level project plan there, not
-                                  the granular milestones. Standalone editor still shows them. */}
-                              {!isEmbedded && (
+                              {/* Milestones — only render in the standalone AE editor.
+                                  Hidden in embedded mode (Deal Room config) per UX, and
+                                  hidden in readonly mode (customer Project Plan + AE preview)
+                                  per beta feedback — that section was dead noise to the customer. */}
+                              {!isEmbedded && !isReadonly && (
                                 <MilestonesSection
                                   stage={step}
                                   milestones={milestones.filter(m => m.msp_stage_id === step.id)}
@@ -1251,8 +1280,10 @@ function ContactChips({ stepId, clients, team, dealId, userId, onChangeClients, 
 function DateModeEditor({ step, onUpdateMode, onUpdateDueDate, onUpdateRange, onUpdateDateLabel }) {
   const mode = step.date_mode || (step.start_date && step.end_date ? 'range' : (step.date_label ? 'free_text' : 'single'))
   const MODES = [
-    { k: 'single',    l: 'Date',     title: 'Single date — pick one calendar day' },
-    { k: 'range',     l: 'Range',    title: 'Date range — pick start and end dates' },
+    { k: 'single',    l: 'Date',      title: 'Single date — pick one calendar day' },
+    { k: 'range',     l: 'Range',     title: 'Date range — pick start and end dates' },
+    { k: 'week_of',   l: 'Week of',   title: 'Week of — pick any day, displays as "Week of <Monday>"' },
+    { k: 'month_of',  l: 'Month of',  title: 'Month of — pick any day, displays as "<Month> <Year>"' },
     { k: 'free_text', l: 'Free text', title: 'Free text — e.g. "Mid May", "Q3 2026", "TBD"' },
   ]
   const startStr = step.start_date ? new Date(step.start_date).toISOString().split('T')[0] : ''
@@ -1270,16 +1301,17 @@ function DateModeEditor({ step, onUpdateMode, onUpdateDueDate, onUpdateRange, on
                 border: 'none', borderLeft: i > 0 ? `1px solid ${T.border}` : 'none',
                 background: active ? T.primary : T.surface,
                 color: active ? '#fff' : T.textMuted,
-                cursor: 'pointer',
+                cursor: 'pointer', whiteSpace: 'nowrap',
               }}>
               {o.l}
             </button>
           )
         })}
       </div>
-      {mode === 'single' && (
+      {(mode === 'single' || mode === 'week_of' || mode === 'month_of') && (
         <input type="date" value={dueStr}
           onChange={e => onUpdateDueDate(e.target.value)}
+          title={mode === 'week_of' ? 'Pick any day in the target week' : mode === 'month_of' ? 'Pick any day in the target month' : 'Due date'}
           style={{ ...inputStyle, width: 'auto', padding: '4px 8px', fontSize: 11 }} />
       )}
       {mode === 'range' && (
