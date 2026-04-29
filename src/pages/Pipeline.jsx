@@ -47,6 +47,57 @@ function MoreMenuItem({ label, onClick }) {
   )
 }
 
+// Combined "+" icon → menu with New Deal / Add Transcript
+function AddMenuButton({ onNewDeal, onTranscript }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div style={{ position: 'relative' }}>
+      <button onClick={() => setOpen(o => !o)} title="Create new"
+        style={{
+          width: 32, height: 32, padding: 0, background: T.primary, border: 'none', borderRadius: 6,
+          color: '#fff', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontFamily: T.font,
+        }}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
+      </button>
+      {open && (
+        <>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 999 }} onClick={() => setOpen(false)} />
+          <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, zIndex: 1000, background: T.surface, border: '1px solid ' + T.border, borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.18)', minWidth: 180, padding: '4px 0' }}>
+            <MoreMenuItem label="+ New Deal" onClick={() => { setOpen(false); onNewDeal() }} />
+            <MoreMenuItem label="Add Transcript" onClick={() => { setOpen(false); onTranscript() }} />
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// Pencil icon → toggle dashboard edit mode (lock icon when active)
+function EditDashboardButton({ editMode, onToggle }) {
+  return (
+    <button onClick={onToggle} title={editMode ? 'Lock dashboard' : 'Edit dashboard'}
+      style={{
+        width: 32, height: 32, padding: 0,
+        background: editMode ? T.primaryLight : T.surface,
+        border: `1px solid ${editMode ? T.primary : T.border}`, borderRadius: 6,
+        color: editMode ? T.primary : T.textMuted, cursor: 'pointer',
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontFamily: T.font,
+      }}>
+      {editMode ? (
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+        </svg>
+      ) : (
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>
+        </svg>
+      )}
+    </button>
+  )
+}
+
 // Fiscal helpers (now use fyEndMonth from OrgContext, passed in at call sites)
 function isInCurrentMonth(dateStr) { if (!dateStr) return false; const d = new Date(dateStr), n = new Date(); return d.getMonth() === n.getMonth() && d.getFullYear() === n.getFullYear() }
 function isInCurrentQuarter(dateStr, fyEndMonth = 12) {
@@ -141,7 +192,6 @@ export default function Pipeline() {
     ids.splice(targetIdx, 0, draggedId)
     setHomeTabOrder(ids)
   }
-  const [showMoreMenu, setShowMoreMenu] = useState(false)
   const [customWidgetDefs, setCustomWidgetDefs] = useState([])
 
   // Force WidthProvider remeasure after sidebar animation
@@ -832,34 +882,11 @@ export default function Pipeline() {
       {/* Header — paddingRight: 72 reserves a clear lane for the floating notification bell */}
       <div style={{ padding: '12px 24px 0', paddingRight: 72, borderBottom: '1px solid ' + T.border, background: T.surface }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <h1 style={{ fontSize: 18, fontWeight: 800, margin: 0, color: T.text }}>Home</h1>
-            {profile?.org_id && dashboardTab === '__pipeline__' && (
-              <div style={{ display: 'flex', gap: 4 }}>
-                {['my', 'all'].map(f => (
-                  <button key={f} onClick={() => setDealFilter(f)} style={{
-                    padding: '4px 12px', borderRadius: 4, fontSize: 11, fontWeight: 600, border: 'none', cursor: 'pointer',
-                    background: dealFilter === f ? T.primary : T.surfaceAlt, color: dealFilter === f ? '#fff' : T.textMuted,
-                  }}>{f === 'my' ? 'My Deals' : 'All Deals'}</button>
-                ))}
-              </div>
-            )}
+          <h1 style={{ fontSize: 18, fontWeight: 800, margin: 0, color: T.text }}>Home</h1>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <AddMenuButton onNewDeal={() => navigate('/deal/new')} onTranscript={() => setShowTranscript(true)} />
+            <EditDashboardButton editMode={editMode} onToggle={() => setEditMode(!editMode)} />
           </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <Button onClick={() => setShowTranscript(true)}>Transcript</Button>
-          <Button primary onClick={() => navigate('/deal/new')}>+ New Deal</Button>
-          <div style={{ position: 'relative' }}>
-            <button onClick={() => setShowMoreMenu(!showMoreMenu)} style={{ background: 'none', border: '1px solid ' + T.border, borderRadius: 6, padding: '6px 12px', cursor: 'pointer', color: T.textMuted, fontSize: 18, lineHeight: 1 }}>{'\u2026'}</button>
-            {showMoreMenu && (
-              <>
-                <div style={{ position: 'fixed', inset: 0, zIndex: 999 }} onClick={() => setShowMoreMenu(false)} />
-                <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, zIndex: 1000, background: T.surface, border: '1px solid ' + T.border, borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.3)', minWidth: 200, padding: '4px 0' }}>
-                  <MoreMenuItem label={editMode ? 'Lock Dashboard' : 'Edit Dashboard'} onClick={() => { setEditMode(!editMode); setShowMoreMenu(false) }} />
-                </div>
-              </>
-            )}
-          </div>
-        </div>
         </div>
         {/* Home tabs — Pipeline and dashboards are all draggable + closable */}
         <div style={{ display: 'flex', gap: 0, marginTop: 12, alignItems: 'flex-end', overflow: 'auto', position: 'relative' }}>

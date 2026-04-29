@@ -733,6 +733,16 @@ export default function CoachAdmin() {
               </div>
             )}
 
+            {/* ══════════ CALL SCORING (placeholder) ══════════ */}
+            {tab === 'call_scoring' && (
+              <Card title="Call Scoring">
+                <div style={{ padding: 28, textAlign: 'center', color: T.textMuted, fontSize: 13, lineHeight: 1.6 }}>
+                  Per-call scoring rubrics live here. Configure how each call type (discovery, demo, scoping, etc.) is graded — engagement quality, MEDDPICC coverage, talk ratios, objection handling.
+                  <div style={{ fontSize: 12, color: T.textMuted, fontStyle: 'italic', marginTop: 12 }}>Coming soon. Today, deal-level rubrics in <strong style={{ color: T.text }}>Deal Scoring</strong> drive what process-transcript reads on each call.</div>
+                </div>
+              </Card>
+            )}
+
             {/* ══════════ MSP TEMPLATES ══════════ */}
             {tab === 'templates' && (
               <div>
