@@ -196,3 +196,329 @@ export const SECTION_TYPES = ['metric', 'table', 'card', 'grid', 'list']
 export const OPERATORS = ['equals', 'not_equals', 'less_than', 'greater_than', 'contains', 'is_empty', 'is_not_empty', 'is_unknown', 'in_list']
 export const CLICK_ACTIONS = ['none', 'navigate_deal', 'open_url', 'copy']
 export const AGGREGATES = ['none', 'count', 'sum', 'avg', 'min', 'max']
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Derived / virtual fields — computed at query time from base + joined data.
+// Registered per base table. Each field declares:
+//   key, label, type, group  — display
+//   requiresColumns           — base-table columns the compute depends on
+//   requiresJoins             — joined tables the compute depends on
+//   compute(row, opts)        — JS function returning the derived value
+//   format                    — default format for the formatter
+//   options?                  — for badge-like enums, possible values
+//   bucketDefaults?           — for score buckets, the default thresholds
+//
+// Buckets and recency thresholds are configurable per-report via cfg.field_options[key].
+// ─────────────────────────────────────────────────────────────────────────────
+
+const dayMs = 86_400_000
+function toDate(v) { return v ? new Date(v) : null }
+function diffDays(a, b) {
+  const da = toDate(a), db = toDate(b)
+  if (!da || !db) return null
+  return Math.floor((db.getTime() - da.getTime()) / dayMs)
+}
+function startOfDay(d = new Date()) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x }
+
+function bucketize(score, thresholds) {
+  if (score == null || !Number.isFinite(Number(score))) return null
+  const n = Number(score)
+  const strong = thresholds?.strong ?? 80
+  const good = thresholds?.good ?? 60
+  if (n >= strong) return 'Strong'
+  if (n >= good) return 'Good'
+  return 'Weak'
+}
+
+function arr(row, table) {
+  const v = row?.[table]
+  if (Array.isArray(v)) return v
+  if (v && typeof v === 'object') return [v]
+  return []
+}
+
+function parseRevenueBand(rev) {
+  if (rev == null || rev === '' || rev === 'Unknown') return null
+  const s = String(rev).toLowerCase().replace(/[$,\s]/g, '')
+  // Try to extract a numeric value with a suffix
+  const m = s.match(/^([\d.]+)([kmb]?)/)
+  if (!m) return null
+  const n = parseFloat(m[1]) * (m[2] === 'k' ? 1e3 : m[2] === 'm' ? 1e6 : m[2] === 'b' ? 1e9 : 1)
+  if (!Number.isFinite(n)) return null
+  if (n < 10e6) return '<$10M'
+  if (n < 50e6) return '$10M-$50M'
+  if (n < 250e6) return '$50M-$250M'
+  if (n < 1e9) return '$250M-$1B'
+  return '$1B+'
+}
+
+function parseEmployeeBand(emp) {
+  if (emp == null || emp === '' || emp === 'Unknown') return null
+  // Already a range like "51-200" or a number "150"
+  const num = parseInt(String(emp).replace(/[,\s]/g, ''), 10)
+  if (Number.isFinite(num)) {
+    if (num <= 50) return '1-50'
+    if (num <= 250) return '51-250'
+    if (num <= 1000) return '251-1000'
+    if (num <= 5000) return '1001-5000'
+    return '5000+'
+  }
+  // Try matching banded ranges
+  const m = String(emp).match(/(\d+)\s*[-–]\s*(\d+)/)
+  if (m) {
+    const lo = parseInt(m[1], 10)
+    if (lo <= 50) return '1-50'
+    if (lo <= 250) return '51-250'
+    if (lo <= 1000) return '251-1000'
+    if (lo <= 5000) return '1001-5000'
+    return '5000+'
+  }
+  return null
+}
+
+export const DERIVED_FIELDS = {
+  deals: [
+    // ── Time ─────────────────────────────────────────────────────────────────
+    { key: 'close_month', label: 'Close month', type: 'text', group: 'Time',
+      requiresColumns: ['target_close_date'],
+      compute: (r) => r?.target_close_date ? String(r.target_close_date).slice(0, 7) : null,
+      format: { type: 'text' },
+    },
+    { key: 'close_quarter', label: 'Close quarter', type: 'text', group: 'Time',
+      requiresColumns: ['target_close_date'],
+      compute: (r) => {
+        const d = toDate(r?.target_close_date); if (!d) return null
+        return `Q${Math.floor(d.getMonth() / 3) + 1} ${d.getFullYear()}`
+      },
+      format: { type: 'text' },
+    },
+    { key: 'close_year', label: 'Close year', type: 'number', group: 'Time',
+      requiresColumns: ['target_close_date'],
+      compute: (r) => { const d = toDate(r?.target_close_date); return d ? d.getFullYear() : null },
+      format: { type: 'integer' },
+    },
+    { key: 'days_to_close', label: 'Days to close', type: 'number', group: 'Time',
+      requiresColumns: ['target_close_date'],
+      compute: (r) => diffDays(startOfDay(), toDate(r?.target_close_date)),
+      format: { type: 'custom', precision: 0, suffix: ' days' },
+    },
+    { key: 'deal_age_days', label: 'Deal age (days)', type: 'number', group: 'Time',
+      requiresColumns: ['created_at', 'closed_at'],
+      compute: (r) => {
+        const start = toDate(r?.created_at); if (!start) return null
+        const end = r?.closed_at ? toDate(r.closed_at) : new Date()
+        return Math.max(0, Math.floor((end.getTime() - start.getTime()) / dayMs))
+      },
+      format: { type: 'custom', precision: 0, suffix: ' days' },
+    },
+    { key: 'days_in_current_stage', label: 'Days in current stage', type: 'number', group: 'Time',
+      requiresColumns: ['stage_changed_at'],
+      compute: (r) => {
+        const t = toDate(r?.stage_changed_at); if (!t) return null
+        return Math.max(0, Math.floor((Date.now() - t.getTime()) / dayMs))
+      },
+      format: { type: 'custom', precision: 0, suffix: ' days' },
+    },
+    { key: 'days_since_last_call', label: 'Days since last call', type: 'number', group: 'Time',
+      requiresJoins: ['conversations'],
+      compute: (r) => {
+        const calls = arr(r, 'conversations')
+        const dates = calls.map(c => toDate(c.call_date)).filter(Boolean)
+        if (!dates.length) return null
+        const max = Math.max(...dates.map(d => d.getTime()))
+        return Math.max(0, Math.floor((Date.now() - max) / dayMs))
+      },
+      format: { type: 'custom', precision: 0, suffix: ' days' },
+    },
+    { key: 'days_since_next_steps_update', label: 'Days since next steps update', type: 'number', group: 'Time',
+      requiresColumns: ['updated_at'],
+      compute: (r) => {
+        const t = toDate(r?.updated_at); if (!t) return null
+        return Math.max(0, Math.floor((Date.now() - t.getTime()) / dayMs))
+      },
+      format: { type: 'custom', precision: 0, suffix: ' days' },
+    },
+
+    // ── Score buckets ────────────────────────────────────────────────────────
+    { key: 'fit_score_bucket', label: 'Fit score (bucket)', type: 'bucket', group: 'Scores',
+      requiresColumns: ['fit_score'],
+      bucketDefaults: { strong: 80, good: 60 },
+      compute: (r, opts) => bucketize(r?.fit_score, opts?.bucket),
+      format: { type: 'text' },
+    },
+    { key: 'health_score_bucket', label: 'Health score (bucket)', type: 'bucket', group: 'Scores',
+      requiresColumns: ['deal_health_score'],
+      bucketDefaults: { strong: 80, good: 60 },
+      compute: (r, opts) => bucketize(r?.deal_health_score, opts?.bucket),
+      format: { type: 'text' },
+    },
+    { key: 'icp_fit_bucket', label: 'ICP fit (bucket)', type: 'bucket', group: 'Scores',
+      requiresColumns: ['icp_fit_score'],
+      bucketDefaults: { strong: 80, good: 60 },
+      compute: (r, opts) => bucketize(r?.icp_fit_score, opts?.bucket),
+      format: { type: 'text' },
+    },
+
+    // ── Boolean flags ────────────────────────────────────────────────────────
+    { key: 'has_compelling_event', label: 'Has compelling event', type: 'boolean', group: 'Flags',
+      requiresJoins: ['compelling_events'],
+      compute: (r) => arr(r, 'compelling_events').length > 0,
+      format: { type: 'text' },
+    },
+    { key: 'has_champion', label: 'Has identified champion', type: 'boolean', group: 'Flags',
+      requiresJoins: ['contacts'],
+      compute: (r) => arr(r, 'contacts').some(c => c?.is_champion === true),
+      format: { type: 'text' },
+    },
+    { key: 'has_economic_buyer', label: 'Has identified economic buyer', type: 'boolean', group: 'Flags',
+      requiresJoins: ['contacts'],
+      compute: (r) => arr(r, 'contacts').some(c => c?.is_economic_buyer === true),
+      format: { type: 'text' },
+    },
+    { key: 'has_competitor', label: 'Has competitor identified', type: 'boolean', group: 'Flags',
+      requiresJoins: ['deal_competitors'],
+      compute: (r) => arr(r, 'deal_competitors').length > 0,
+      format: { type: 'text' },
+    },
+    { key: 'has_msp', label: 'Has Project Plan', type: 'boolean', group: 'Flags',
+      requiresJoins: ['msp_stages'],
+      compute: (r) => arr(r, 'msp_stages').length > 0,
+      format: { type: 'text' },
+    },
+    { key: 'icp_fit', label: 'ICP fit', type: 'boolean', group: 'Flags',
+      requiresColumns: ['icp_fit_score'],
+      compute: (r) => Number(r?.icp_fit_score) >= 60,
+      format: { type: 'text' },
+    },
+
+    // ── Counts ───────────────────────────────────────────────────────────────
+    { key: 'pain_points_count', label: 'Pain points count', type: 'number', group: 'Counts',
+      requiresJoins: ['deal_pain_points'],
+      compute: (r) => arr(r, 'deal_pain_points').length,
+      format: { type: 'integer' },
+    },
+    { key: 'risks_count', label: 'Risks count', type: 'number', group: 'Counts',
+      requiresJoins: ['deal_risks'],
+      compute: (r) => arr(r, 'deal_risks').length,
+      format: { type: 'integer' },
+    },
+    { key: 'competitors_count', label: 'Competitors count', type: 'number', group: 'Counts',
+      requiresJoins: ['deal_competitors'],
+      compute: (r) => arr(r, 'deal_competitors').length,
+      format: { type: 'integer' },
+    },
+    { key: 'contacts_count', label: 'Contacts count', type: 'number', group: 'Counts',
+      requiresJoins: ['contacts'],
+      compute: (r) => arr(r, 'contacts').length,
+      format: { type: 'integer' },
+    },
+    { key: 'calls_count', label: 'Calls count', type: 'number', group: 'Counts',
+      requiresJoins: ['conversations'],
+      compute: (r) => arr(r, 'conversations').length,
+      format: { type: 'integer' },
+    },
+    { key: 'open_tasks_count', label: 'Open tasks count', type: 'number', group: 'Counts',
+      requiresJoins: ['tasks'],
+      compute: (r) => arr(r, 'tasks').filter(t => !t?.completed).length,
+      format: { type: 'integer' },
+    },
+    { key: 'msp_stages_count', label: 'Project Plan stages count', type: 'number', group: 'Counts',
+      requiresJoins: ['msp_stages'],
+      compute: (r) => arr(r, 'msp_stages').length,
+      format: { type: 'integer' },
+    },
+
+    // ── Status flags ────────────────────────────────────────────────────────
+    { key: 'next_steps_color_chip', label: 'Next steps color', type: 'color_chip', group: 'Status',
+      requiresColumns: ['next_steps_color'],
+      compute: (r) => r?.next_steps_color || null,
+      options: ['red', 'green'],
+      format: { type: 'text' },
+    },
+    { key: 'forecast_stage_alignment', label: 'Forecast vs stage alignment', type: 'badge', group: 'Status',
+      requiresColumns: ['forecast_category', 'stage'],
+      compute: (r) => {
+        const fc = String(r?.forecast_category || '').toLowerCase()
+        const stg = String(r?.stage || '').toLowerCase()
+        if (fc === 'commit' && (stg === 'qualify' || stg === 'discovery')) return 'Misaligned'
+        return 'Aligned'
+      },
+      options: ['Aligned', 'Misaligned'],
+      format: { type: 'text' },
+    },
+    { key: 'msp_completion_pct', label: 'Project Plan completion %', type: 'percentage', group: 'Status',
+      requiresJoins: ['msp_stages'],
+      compute: (r) => {
+        const stages = arr(r, 'msp_stages')
+        if (!stages.length) return null
+        const done = stages.filter(s => s?.status === 'completed').length
+        return done / stages.length
+      },
+      format: { type: 'percentage', precision: 0 },
+    },
+
+    // ── Activity recency ─────────────────────────────────────────────────────
+    { key: 'is_stale', label: 'Stale', type: 'boolean', group: 'Activity',
+      requiresColumns: ['updated_at'],
+      compute: (r, opts) => {
+        const t = toDate(r?.updated_at); if (!t) return null
+        const days = Math.floor((Date.now() - t.getTime()) / dayMs)
+        return days >= (opts?.staleDays ?? 14)
+      },
+      format: { type: 'text' },
+    },
+    { key: 'is_hot', label: 'Hot', type: 'boolean', group: 'Activity',
+      requiresColumns: ['updated_at'],
+      compute: (r, opts) => {
+        const t = toDate(r?.updated_at); if (!t) return null
+        const days = Math.floor((Date.now() - t.getTime()) / dayMs)
+        return days <= (opts?.hotDays ?? 3)
+      },
+      format: { type: 'text' },
+    },
+
+    // ── Company context (banded from company_profile) ────────────────────────
+    { key: 'industry', label: 'Industry', type: 'text', group: 'Company',
+      requiresJoins: ['company_profile'],
+      compute: (r) => arr(r, 'company_profile')[0]?.industry || null,
+      format: { type: 'text' },
+    },
+    { key: 'revenue', label: 'Revenue (raw)', type: 'text', group: 'Company',
+      requiresJoins: ['company_profile'],
+      compute: (r) => arr(r, 'company_profile')[0]?.revenue || null,
+      format: { type: 'text' },
+    },
+    { key: 'employee_count', label: 'Employees (raw)', type: 'text', group: 'Company',
+      requiresJoins: ['company_profile'],
+      compute: (r) => arr(r, 'company_profile')[0]?.employee_count || null,
+      format: { type: 'text' },
+    },
+    { key: 'revenue_band', label: 'Revenue band', type: 'badge', group: 'Company',
+      requiresJoins: ['company_profile'],
+      compute: (r) => parseRevenueBand(arr(r, 'company_profile')[0]?.revenue),
+      options: ['<$10M', '$10M-$50M', '$50M-$250M', '$250M-$1B', '$1B+'],
+      format: { type: 'text' },
+    },
+    { key: 'employee_band', label: 'Employee band', type: 'badge', group: 'Company',
+      requiresJoins: ['company_profile'],
+      compute: (r) => parseEmployeeBand(arr(r, 'company_profile')[0]?.employee_count),
+      options: ['1-50', '51-250', '251-1000', '1001-5000', '5000+'],
+      format: { type: 'text' },
+    },
+  ],
+}
+
+// Lookup helper — derived field by base + key.
+export function getDerivedField(base, key) {
+  return (DERIVED_FIELDS[base] || []).find(f => f.key === key) || null
+}
+
+// Returns derived fields grouped by their `group`, preserving the registry order.
+export function getDerivedGroups(base) {
+  const groups = new Map()
+  for (const f of DERIVED_FIELDS[base] || []) {
+    if (!groups.has(f.group)) groups.set(f.group, [])
+    groups.get(f.group).push(f)
+  }
+  return [...groups.entries()].map(([name, fields]) => ({ name, fields }))
+}

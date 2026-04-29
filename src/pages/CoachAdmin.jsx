@@ -16,7 +16,13 @@ const CATEGORIES = ['discovery', 'methodology', 'communication', 'qualification'
 export default function CoachAdmin() {
   const { profile } = useAuth()
   const nav = useNavigate()
-  const [tab, setTab] = useState('overview')
+  const [tab, setTab] = useState(() => {
+    try { return localStorage.getItem('coach.subtab') || 'overview' } catch { return 'overview' }
+  })
+  function setTabPersist(t) {
+    setTab(t)
+    try { localStorage.setItem('coach.subtab', t) } catch {}
+  }
   const [loading, setLoading] = useState(true)
   const [allCoaches, setAllCoaches] = useState([])
   const [selectedCoachId, setSelectedCoachId] = useState(null)
@@ -344,20 +350,50 @@ export default function CoachAdmin() {
   const DOC_TYPES = ['battle_card', 'roi_model', 'discovery_guide', 'objection_handling', 'pricing', 'methodology', 'qualifying_framework', 'custom']
   const CALL_TYPE_KEYS = ['qdc', 'functional_discovery', 'demo', 'scoping', 'proposal', 'negotiation', 'sync', 'custom']
 
-  const tabs = [
-    { key: 'overview', label: 'Overview' },
-    { key: 'rules', label: 'Rules' },
-    { key: 'prompts', label: `Call Prompts (${prompts.length})` },
-    { key: 'docs', label: `Documents (${docs.length})` },
-    { key: 'scoring', label: `Scoring (${scoringConfigs.length})` },
-    { key: 'rep_scoring', label: `Rep Scoring (${repScoringConfigs.length})` },
-    { key: 'templates', label: `Project Plan Templates (${mspTemplates.length})` },
-    { key: 'emails', label: `Email Templates (${emailTemplatesAdmin.length})` },
-    { key: 'research', label: 'Research' },
-    { key: 'slides', label: 'Slides' },
-    { key: 'icp', label: 'ICP' },
-    { key: 'sharing', label: 'Sharing' },
+  // Grouped two-row navigation. Top tabs are sections, each section reveals a row of sub-tabs.
+  // Sub-tab keys map 1:1 to the existing `tab === '<key>'` render switches below.
+  // 'builder' is a navigation sub-tab — clicking it goes to /coach/builder instead of switching tabs.
+  const NAV = [
+    { key: 'setup', label: 'Set Up', subs: [
+      { key: 'overview', label: 'Behavior' },
+      { key: 'rules', label: 'Rules' },
+      { key: 'prompts', label: `Call Prompts (${prompts.length})` },
+      { key: 'icp', label: 'ICP' },
+      { key: 'research', label: 'Research' },
+    ]},
+    { key: 'scoring', label: 'Scoring', subs: [
+      { key: 'scoring', label: `Deal Scoring (${scoringConfigs.length})` },
+      { key: 'rep_scoring', label: `Rep Scoring (${repScoringConfigs.length})` },
+      { key: 'call_scoring', label: 'Call Scoring' },
+    ]},
+    { key: 'templates', label: 'Templates', subs: [
+      { key: 'templates', label: `Project Plan Templates (${mspTemplates.length})` },
+      { key: 'emails', label: `Email Templates (${emailTemplatesAdmin.length})` },
+      { key: 'slides', label: 'Presentations' },
+    ]},
+    { key: 'coaches', label: 'Coaches', subs: [
+      { key: 'builder', label: 'Build Wizard', navTo: '/coach/builder' },
+      { key: 'sharing', label: 'Sharing' },
+    ]},
   ]
+  // Resolve which top tab the current sub-tab belongs to. Falls back to first.
+  const activeTopKey = NAV.find(s => s.subs.some(t => t.key === tab))?.key || NAV[0].key
+  const activeSubs = NAV.find(s => s.key === activeTopKey)?.subs || []
+  function selectTopTab(topKey) {
+    const section = NAV.find(s => s.key === topKey)
+    if (!section) return
+    const firstSub = section.subs.find(s => !s.navTo) || section.subs[0]
+    if (firstSub) {
+      if (firstSub.navTo) nav(firstSub.navTo)
+      else setTabPersist(firstSub.key)
+    }
+  }
+  function selectSubTab(subKey) {
+    const section = NAV.find(s => s.key === activeTopKey)
+    const sub = section?.subs.find(t => t.key === subKey)
+    if (sub?.navTo) { nav(sub.navTo); return }
+    setTabPersist(subKey)
+  }
 
   const EMAIL_TYPES = ['sc_briefing', 'scoping_kt', 'exec_alignment', 'follow_up', 'internal_update', 'custom']
   const RECIPIENT_TYPES = ['internal', 'external', 'client', 'partner']
@@ -751,6 +787,7 @@ export default function CoachAdmin() {
                             <div style={{ color: T.textMuted, fontSize: 13, textAlign: 'center', padding: 16 }}>No stages. Click "+ Stage" to add one.</div>
                           ) : tplStages.map((s, si) => (
                               <TemplateStageRow key={s.id} stage={s} index={si}
+                                ownerUserId={profile?.id}
                                 onUpdate={(field, val) => updateTemplateStage(s.id, field, val)}
                                 onDelete={() => deleteTemplateStage(s.id)}
                                 onDragStart={e => { e.dataTransfer.setData('text/plain', s.id); e.dataTransfer.effectAllowed = 'move' }}
@@ -1958,18 +1995,68 @@ function ScoringConfigEditor({ config, onSaved }) {
   )
 }
 
-function TemplateStageRow({ stage, index, onUpdate, onDelete, onDragStart, onDragOver, onDrop }) {
+function TemplateStageRow({ stage, index, ownerUserId, onUpdate, onDelete, onDragStart, onDragOver, onDrop }) {
   const [expanded, setExpanded] = useState(false)
   const [callType, setCallType] = useState(stage.call_type || '')
   const [purpose, setPurpose] = useState(stage.purpose || '')
   const [notes, setNotes] = useState(stage.notes || '')
   const [attendees, setAttendees] = useState(stage.attendee_roles || [])
   const [color, setColor] = useState(stage.color || '#5DADE2')
+  const [defaultTeam, setDefaultTeam] = useState(Array.isArray(stage.default_team_contacts) ? stage.default_team_contacts : [])
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [teamOptions, setTeamOptions] = useState([])
+  const [showQuickAdd, setShowQuickAdd] = useState(false)
+  const [draft, setDraft] = useState({ name: '', title: '', email: '', phone: '' })
+  const [savingMember, setSavingMember] = useState(false)
 
   function toggleRole(r) {
     const next = attendees.includes(r) ? attendees.filter(x => x !== r) : [...attendees, r]
     setAttendees(next)
     onUpdate('attendee_roles', next)
+  }
+
+  async function refreshTeamOptions() {
+    if (!ownerUserId) return
+    const { data } = await supabase.from('user_team_members').select('id, name, title').eq('user_id', ownerUserId).order('name')
+    setTeamOptions(data || [])
+  }
+  async function openTeamPicker() {
+    setPickerOpen(true)
+    setShowQuickAdd(false)
+    await refreshTeamOptions()
+  }
+  function addTeamMember(m) {
+    if (defaultTeam.some(c => c.id === m.id)) { setPickerOpen(false); return }
+    const next = [...defaultTeam, { id: m.id, name: m.name, title: m.title || null }]
+    setDefaultTeam(next)
+    onUpdate('default_team_contacts', next)
+    setPickerOpen(false)
+  }
+  function removeTeamMember(id) {
+    const next = defaultTeam.filter(c => c.id !== id)
+    setDefaultTeam(next)
+    onUpdate('default_team_contacts', next)
+  }
+  async function quickSaveMember() {
+    if (!draft.name.trim() || savingMember || !ownerUserId) return
+    setSavingMember(true)
+    try {
+      const { data } = await supabase.from('user_team_members').insert({
+        user_id: ownerUserId,
+        name: draft.name.trim(),
+        title: draft.title.trim() || null,
+        email: draft.email.trim() || null,
+        phone: draft.phone.trim() || null,
+        member_type: 'team',
+      }).select('id, name, title').single()
+      if (data) {
+        await refreshTeamOptions()
+        addTeamMember(data)
+      }
+      setShowQuickAdd(false)
+      setDraft({ name: '', title: '', email: '', phone: '' })
+    } catch (e) { console.error('quickSave team member failed:', e?.message) }
+    finally { setSavingMember(false) }
   }
 
   return (
@@ -1978,11 +2065,11 @@ function TemplateStageRow({ stage, index, onUpdate, onDelete, onDragStart, onDra
       onDragStart={onDragStart}
       onDragOver={onDragOver}
       onDrop={onDrop}
-      style={{ background: T.surfaceAlt, borderRadius: 6, border: `1px solid ${T.borderLight}`, borderLeft: `4px solid ${color}`, marginBottom: 4, overflow: 'hidden', cursor: 'grab' }}>
+      style={{ background: T.surfaceAlt, borderRadius: 6, border: `1px solid ${T.borderLight}`, borderLeft: `4px solid ${color}`, marginBottom: 4, overflow: 'visible', cursor: 'grab' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px' }}>
         <span style={{ color: T.textMuted, fontSize: 12, cursor: 'grab' }} title="Drag to reorder">⋮⋮</span>
         <span style={{ width: 24, height: 24, borderRadius: '50%', background: color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{index + 1}</span>
-        <input style={{ ...inputStyle, flex: 1, padding: '4px 8px', fontSize: 13, fontWeight: 600 }}
+        <input style={{ ...inputStyle, flex: 1, padding: '4px 8px', fontSize: 13, fontWeight: 600, color }}
           defaultValue={stage.stage_name} onBlur={e => onUpdate('stage_name', e.target.value)} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <input type="number" style={{ ...inputStyle, width: 60, padding: '4px 6px', fontSize: 12, textAlign: 'center' }}
@@ -2028,7 +2115,7 @@ function TemplateStageRow({ stage, index, onUpdate, onDelete, onDragStart, onDra
               onBlur={e => onUpdate('notes', e.target.value || null)}
               placeholder="Rep-facing notes for running this stage..." />
           </div>
-          <div>
+          <div style={{ marginBottom: 10 }}>
             <label style={labelStyle}>Attendee Roles</label>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
               {MSP_ATTENDEE_ROLES.map(r => {
@@ -2041,6 +2128,69 @@ function TemplateStageRow({ stage, index, onUpdate, onDelete, onDragStart, onDra
                 )
               })}
             </div>
+          </div>
+
+          {/* Default team contacts — auto-populate this stage's "Team:" chips
+              for every deal that applies this template. */}
+          <div style={{ position: 'relative' }}>
+            <label style={labelStyle}>Default team contacts</label>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
+              {defaultTeam.map(c => (
+                <span key={c.id}
+                  onClick={() => removeTeamMember(c.id)}
+                  title={c.title ? `${c.title} — click to remove` : 'Click to remove'}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 10, background: T.surfaceAlt, border: `1px solid ${T.borderLight}`, fontSize: 11, color: T.textSecondary, fontFamily: T.font, cursor: 'pointer' }}>
+                  {c.name}
+                </span>
+              ))}
+              <button onClick={openTeamPicker}
+                style={{ fontSize: 10, padding: '2px 6px', border: `1px dashed ${T.border}`, background: 'transparent', borderRadius: 10, cursor: 'pointer', color: T.textMuted, fontFamily: T.font }}>
+                + add
+              </button>
+              <span style={{ fontSize: 10, color: T.textMuted, marginLeft: 6 }}>
+                These auto-fill the "Team:" chips on every deal that uses this template.
+              </span>
+            </div>
+            {pickerOpen && (
+              <>
+                <div onClick={() => setPickerOpen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.2)', zIndex: 700 }} />
+                <div style={{ position: 'absolute', left: 0, top: '100%', marginTop: 6, zIndex: 701, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, boxShadow: '0 10px 40px rgba(0,0,0,0.2)', width: 380, maxHeight: 380, overflow: 'auto' }}>
+                  <div style={{ padding: 10, borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontWeight: 700, fontSize: 13, color: T.text }}>Add team contact</span>
+                    <button onClick={() => setShowQuickAdd(s => !s)}
+                      title="Quick-add a new team member"
+                      style={{ width: 24, height: 24, borderRadius: '50%', border: `1px solid ${showQuickAdd ? T.primary : T.border}`, background: showQuickAdd ? T.primary : T.surface, color: showQuickAdd ? '#fff' : T.primary, cursor: 'pointer', fontSize: 14, fontWeight: 700, fontFamily: T.font, lineHeight: 1, padding: 0 }}>+</button>
+                  </div>
+                  {showQuickAdd && (
+                    <div style={{ padding: 12, background: T.surfaceAlt, borderBottom: `1px solid ${T.borderLight}`, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                      <input autoFocus value={draft.name} onChange={e => setDraft(p => ({ ...p, name: e.target.value }))} placeholder="Name" style={{ ...inputStyle, padding: '5px 8px', fontSize: 12, gridColumn: '1 / -1' }} />
+                      <input value={draft.title} onChange={e => setDraft(p => ({ ...p, title: e.target.value }))} placeholder="Role / title" style={{ ...inputStyle, padding: '5px 8px', fontSize: 12, gridColumn: '1 / -1' }} />
+                      <input value={draft.email} onChange={e => setDraft(p => ({ ...p, email: e.target.value }))} placeholder="Email" type="email" style={{ ...inputStyle, padding: '5px 8px', fontSize: 12 }} />
+                      <input value={draft.phone} onChange={e => setDraft(p => ({ ...p, phone: e.target.value }))} placeholder="Phone" style={{ ...inputStyle, padding: '5px 8px', fontSize: 12 }} />
+                      <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end', gap: 6, marginTop: 4 }}>
+                        <button onClick={() => { setShowQuickAdd(false); setDraft({ name: '', title: '', email: '', phone: '' }) }}
+                          style={{ padding: '5px 10px', fontSize: 11, background: T.surface, color: T.textMuted, border: `1px solid ${T.border}`, borderRadius: 4, cursor: 'pointer', fontFamily: T.font }}>Cancel</button>
+                        <button onClick={quickSaveMember} disabled={!draft.name.trim() || savingMember}
+                          style={{ padding: '5px 12px', fontSize: 11, fontWeight: 700, background: !draft.name.trim() || savingMember ? T.borderLight : T.primary, color: '#fff', border: 'none', borderRadius: 4, cursor: !draft.name.trim() || savingMember ? 'not-allowed' : 'pointer', fontFamily: T.font }}>
+                          {savingMember ? 'Saving…' : 'Save & add'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {teamOptions.length === 0 ? (
+                    <div style={{ padding: 20, textAlign: 'center', color: T.textMuted, fontSize: 12 }}>No team members yet. Use + to create one.</div>
+                  ) : teamOptions.map(o => (
+                    <button key={o.id} onClick={() => addTeamMember(o)}
+                      style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2, width: '100%', padding: '8px 12px', border: 'none', borderBottom: `1px solid ${T.borderLight}`, background: 'transparent', cursor: 'pointer', fontFamily: T.font, textAlign: 'left' }}
+                      onMouseEnter={e => e.currentTarget.style.background = T.surfaceAlt}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{o.name}</span>
+                      {o.title && <span style={{ fontSize: 11, color: T.textMuted }}>{o.title}</span>}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
