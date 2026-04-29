@@ -1895,7 +1895,10 @@ function FilterCard({ index, filter, baseFields, joinableTables, onUpdate, onRem
 function PreviewTable({ data, cfg, setCfg, baseFields }) {
   const rows = data?.rows || []
   const columns = data?.columns || []
-  const [dragCol, setDragCol] = useState(null)              // column id being dragged in header
+  // Native HTML5 drag carries the source column id in dataTransfer — using a ref
+  // (instead of useState) so dragStart doesn't trigger a parent rerender and
+  // unmount the inline HeaderCell mid-drag (which silently kills the drag).
+  const dragColRef = useRef(null)
   const [dropOverTop, setDropOverTop] = useState(false)     // hover state on group drop zone
   const [collapsed, setCollapsed] = useState(new Set())     // collapsed group keys
   const widthsRef = useRef(cfg.column_widths || {})
@@ -2082,7 +2085,11 @@ function PreviewTable({ data, cfg, setCfg, baseFields }) {
     return (
       <th data-rcol={id}
         draggable
-        onDragStart={e => { setDragCol(id); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', id) }}
+        onDragStart={e => {
+          dragColRef.current = id
+          e.dataTransfer.effectAllowed = 'move'
+          e.dataTransfer.setData('text/plain', id)
+        }}
         onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move' }}
         onDrop={e => {
           e.preventDefault(); e.stopPropagation()
@@ -2092,18 +2099,21 @@ function PreviewTable({ data, cfg, setCfg, baseFields }) {
             const targetIdx = columns.indexOf(id)
             insertFieldFromSidebar(d, targetIdx >= 0 ? targetIdx : null)
           } else {
-            // Existing-column drag → reorder
-            reorderFields(dragCol, id)
+            // Existing-column drag → reorder. Source id comes from dataTransfer
+            // (parseDrag returns it as d.id for non-JSON payloads), with the
+            // ref as a fallback for browsers that strip the payload.
+            const src = (d && d.id) || dragColRef.current
+            reorderFields(src, id)
           }
-          setDragCol(null)
+          dragColRef.current = null
         }}
-        onDragEnd={() => setDragCol(null)}
+        onDragEnd={() => { dragColRef.current = null }}
         style={{
           textAlign: 'left', padding: '6px 8px', fontSize: 10, fontWeight: 700,
           color: '#8899aa', textTransform: 'uppercase', whiteSpace: 'nowrap',
           width, minWidth: width, maxWidth: width, position: 'relative',
           cursor: 'grab', userSelect: 'none',
-          background: dragCol === id ? T.primaryLight : T.surfaceAlt,
+          background: T.surfaceAlt,
           borderRight: `1px solid ${T.borderLight}`,
         }}>
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', display: 'inline-block', maxWidth: width - 76 }}>{label}</span>
@@ -2514,10 +2524,11 @@ function PreviewTable({ data, cfg, setCfg, baseFields }) {
                 insertFieldFromSidebar(d)
                 setCfg(patch)
               }
-            } else if (dragCol) {
-              groupByColumn(dragCol)
+            } else {
+              const src = (d && d.id) || dragColRef.current
+              if (src) groupByColumn(src)
             }
-            setDragCol(null)
+            dragColRef.current = null
           }}
           style={{
             padding: 8, marginBottom: 8, borderRadius: 6,
