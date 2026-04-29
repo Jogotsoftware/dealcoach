@@ -56,6 +56,14 @@ export default function DealRoomPreview() {
       setDeal(dealRes.data)
       setRoom(roomRes.data)
 
+      // If the currently-selected tab is hidden by the AE, jump to the first visible tab
+      const visibleOrder = [
+        roomRes.data?.show_msp_tab !== false ? 'msp' : null,
+        roomRes.data?.show_library_tab !== false ? 'library' : null,
+        roomRes.data?.show_proposal_tab !== false ? 'proposal' : null,
+      ].filter(Boolean)
+      setTab(prev => visibleOrder.includes(prev) ? prev : (visibleOrder[0] || 'msp'))
+
       const roomId = roomRes.data.id
       const [stagesRes, milestonesRes, resRes, reqsRes, commentsRes] = await Promise.all([
         supabase.from('msp_stages').select('*').eq('deal_id', dealId).order('stage_order'),
@@ -161,14 +169,14 @@ export default function DealRoomPreview() {
         </div>
       )}
 
-      {/* Tab bar */}
+      {/* Tab bar — mirrors what the customer sees: hidden tabs are skipped */}
       <div style={{ background: T.surface, borderBottom: `1px solid ${T.border}`, padding: '0 24px' }}>
         <div style={{ display: 'flex', gap: 0, maxWidth: 1200, margin: '0 auto', alignItems: 'center' }}>
           {[
-            { key: 'msp', label: 'Project Plan' },
-            { key: 'library', label: 'Library' },
-            { key: 'proposal', label: 'Proposal' },
-          ].map(t => (
+            { key: 'msp', label: 'Project Plan', visible: room?.show_msp_tab !== false },
+            { key: 'library', label: 'Library', visible: room?.show_library_tab !== false },
+            { key: 'proposal', label: 'Proposal', visible: room?.show_proposal_tab !== false },
+          ].filter(t => t.visible).map(t => (
             <button key={t.key} onClick={() => setTab(t.key)}
               style={{ padding: '14px 24px', border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: T.font, fontSize: 13, fontWeight: 600, color: tab === t.key ? themeColor : T.textMuted, borderBottom: tab === t.key ? `3px solid ${themeColor}` : '3px solid transparent', marginBottom: -1 }}>
               {t.label}

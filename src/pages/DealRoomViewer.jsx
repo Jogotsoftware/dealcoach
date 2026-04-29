@@ -119,8 +119,10 @@ export default function DealRoomViewer() {
         return
       }
       setMeta(res)
-      // Pre-load default tab
-      await loadTab('msp', res)
+      // Pre-load the first visible tab (MSP if visible, else first allowed)
+      const initial = (Array.isArray(res.tabs) && res.tabs.length > 0) ? (res.tabs.includes('msp') ? 'msp' : res.tabs[0]) : 'msp'
+      setTab(initial)
+      await loadTab(initial, res)
     } catch (e) {
       console.error('validate failed:', e)
       setError(e?.message || 'Failed to load room')
@@ -239,14 +241,14 @@ export default function DealRoomViewer() {
         </div>
       )}
 
-      {/* Tab bar */}
+      {/* Tab bar — only tabs the AE has marked visible are rendered */}
       <div style={{ background: T.surface, borderBottom: `1px solid ${T.border}`, padding: '0 24px' }}>
         <div style={{ display: 'flex', gap: 0, maxWidth: 1200, margin: '0 auto', alignItems: 'center' }}>
           {[
             { key: 'msp', label: 'Project Plan' },
             { key: 'library', label: 'Library' },
             { key: 'proposal', label: 'Proposal' },
-          ].map(t => (
+          ].filter(t => !Array.isArray(meta.tabs) || meta.tabs.includes(t.key)).map(t => (
             <button key={t.key} onClick={() => selectTab(t.key)}
               style={{ padding: '14px 24px', border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: T.font, fontSize: 13, fontWeight: 600, color: tab === t.key ? themeColor : T.textMuted, borderBottom: tab === t.key ? `3px solid ${themeColor}` : '3px solid transparent', marginBottom: -1 }}>
               {t.label}

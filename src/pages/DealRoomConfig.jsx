@@ -66,6 +66,7 @@ export default function DealRoomConfig({ embedded = false, dealId: dealIdProp } 
   const [noteSavedAt, setNoteSavedAt] = useState({ msp: null, library: null, proposal: null })
   const [commentFilter, setCommentFilter] = useState('unresolved')   // 'all' | 'unresolved' | 'resolved'
   const [requestFilter, setRequestFilter] = useState('pending')       // 'pending' | 'accepted' | 'rejected' | 'all'
+  const [themeOpen, setThemeOpen] = useState(false)
   const [tab, setTab] = useState(() => {
     if (typeof window === 'undefined') return 'msp'
     const h = (window.location.hash || '').replace('#', '')
@@ -395,6 +396,39 @@ export default function DealRoomConfig({ embedded = false, dealId: dealIdProp } 
 
           <div style={{ flex: 1 }} />
 
+          {/* Theme colors — button opens a popover with the triad picker */}
+          <div style={{ position: 'relative' }}>
+            <button onClick={() => setThemeOpen(o => !o)} title="Edit customer theme colors"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', border: `1px solid ${T.border}`, borderRadius: 6, background: T.surface, color: T.text, cursor: 'pointer', fontFamily: T.font, fontSize: 12, fontWeight: 600 }}>
+              {/* Three-stripe icon hinting at the triad */}
+              <span style={{ display: 'inline-flex', gap: 2 }}>
+                <span style={{ width: 6, height: 14, borderRadius: 2, background: room?.theme_color || T.primary }} />
+                <span style={{ width: 6, height: 14, borderRadius: 2, background: room?.theme_color_secondary || T.success }} />
+                <span style={{ width: 6, height: 14, borderRadius: 2, background: room?.theme_color_tertiary || T.warning }} />
+              </span>
+              Theme
+            </button>
+            {themeOpen && (
+              <>
+                <div onClick={() => setThemeOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 500 }} />
+                <div style={{ position: 'absolute', right: 0, top: '110%', zIndex: 501, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, boxShadow: '0 10px 30px rgba(0,0,0,0.15)', padding: 14, width: 340 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 4 }}>Customer theme colors</div>
+                  <div style={{ fontSize: 11, color: T.textSecondary, marginBottom: 10 }}>
+                    Three colors drive every customer-facing accent. Click any swatch for advanced color picking.
+                  </div>
+                  <ThemeColorTriad
+                    primary={room?.theme_color || ''}
+                    secondary={room?.theme_color_secondary || ''}
+                    tertiary={room?.theme_color_tertiary || ''}
+                    onChangePrimary={(hex) => saveRoom({ theme_color: hex || null })}
+                    onChangeSecondary={(hex) => saveRoom({ theme_color_secondary: hex || null })}
+                    onChangeTertiary={(hex) => saveRoom({ theme_color_tertiary: hex || null })}
+                  />
+                </div>
+              </>
+            )}
+          </div>
+
           {/* Preview customer view — sleek icon button */}
           <button onClick={openCustomerPreview} title="Preview customer view"
             style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', border: `1px solid ${T.border}`, borderRadius: 6, background: T.surface, color: T.text, cursor: 'pointer', fontFamily: T.font, fontSize: 12, fontWeight: 600 }}>
@@ -433,31 +467,18 @@ export default function DealRoomConfig({ embedded = false, dealId: dealIdProp } 
         {/* ════════════ MSP TAB ════════════ */}
         {tab === 'msp' && (
           <>
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 14, marginBottom: 14 }}>
-              <PerTabNoteEditor
-                tabKey="msp"
-                tabLabel="Project Plan"
-                aeName={profile?.full_name}
-                value={noteDrafts.msp}
-                onChange={(v) => setNoteDrafts(prev => ({ ...prev, msp: v }))}
-                onBlurSave={() => saveTabNote('msp')}
-                savedAt={noteSavedAt.msp}
-              />
-              <Card title="Theme colors">
-                <div style={{ fontSize: 11, color: T.textSecondary, marginBottom: 10 }}>
-                  Three colors drive every customer-facing accent. Click any swatch for advanced color picking.
-                </div>
-                <ThemeColorTriad
-                  primary={room?.theme_color || ''}
-                  secondary={room?.theme_color_secondary || ''}
-                  tertiary={room?.theme_color_tertiary || ''}
-                  onChangePrimary={(hex) => saveRoom({ theme_color: hex || null })}
-                  onChangeSecondary={(hex) => saveRoom({ theme_color_secondary: hex || null })}
-                  onChangeTertiary={(hex) => saveRoom({ theme_color_tertiary: hex || null })}
-                />
-              </Card>
-            </div>
-            <Card title="Project Plan" action={<Button onClick={() => nav(`/deal/${dealId}/msp`)} style={{ padding: '4px 10px', fontSize: 11 }}>Open standalone editor</Button>}>
+            <TabVisibilityToggle
+              visible={room?.show_msp_tab !== false}
+              onChange={(v) => saveRoom({ show_msp_tab: v })}
+            />
+            <PerTabNoteEditor
+              tabKey="msp"
+              value={noteDrafts.msp}
+              onChange={(v) => setNoteDrafts(prev => ({ ...prev, msp: v }))}
+              onBlurSave={() => saveTabNote('msp')}
+              savedAt={noteSavedAt.msp}
+            />
+            <Card title="Project Plan">
               <MSPEditor dealId={dealId} mode="embedded" />
             </Card>
           </>
@@ -466,10 +487,12 @@ export default function DealRoomConfig({ embedded = false, dealId: dealIdProp } 
         {/* ════════════ LIBRARY TAB (read-only summary) ════════════ */}
         {tab === 'library' && (
           <>
+          <TabVisibilityToggle
+            visible={room?.show_library_tab !== false}
+            onChange={(v) => saveRoom({ show_library_tab: v })}
+          />
           <PerTabNoteEditor
             tabKey="library"
-            tabLabel="Library"
-            aeName={profile?.full_name}
             value={noteDrafts.library}
             onChange={(v) => setNoteDrafts(prev => ({ ...prev, library: v }))}
             onBlurSave={() => saveTabNote('library')}
@@ -484,10 +507,12 @@ export default function DealRoomConfig({ embedded = false, dealId: dealIdProp } 
         {/* ════════════ QUOTES TAB ════════════ */}
         {tab === 'quotes' && (
           <>
+          <TabVisibilityToggle
+            visible={room?.show_proposal_tab !== false}
+            onChange={(v) => saveRoom({ show_proposal_tab: v })}
+          />
           <PerTabNoteEditor
             tabKey="proposal"
-            tabLabel="Proposal"
-            aeName={profile?.full_name}
             value={noteDrafts.proposal}
             onChange={(v) => setNoteDrafts(prev => ({ ...prev, proposal: v }))}
             onBlurSave={() => saveTabNote('proposal')}
@@ -782,13 +807,33 @@ function FilterChips({ value, onChange, options }) {
 // Per-tab AE note editor card. Three of these live across the MSP, Library,
 // and Quotes tabs. Each writes into its own deal_rooms.ae_notes_<tab> column
 // so the note appears only on the matching tab in the customer viewer.
-function PerTabNoteEditor({ tabKey, tabLabel, aeName, value, onChange, onBlurSave, savedAt }) {
-  const justSaved = savedAt && Date.now() - savedAt < 4000
+// Per-tab visibility toggle — slim banner that flips the show_*_tab column on
+// deal_rooms. Hidden tabs are stripped from the customer's Evaluation Room.
+function TabVisibilityToggle({ visible, onChange }) {
   return (
-    <Card title={`Notes from ${aeName || 'you'} (shown only on the ${tabLabel} tab)`}>
-      <div style={{ fontSize: 11, color: T.textSecondary, marginBottom: 8 }}>
-        A short personal note pinned to the top of the {tabLabel} tab in the customer's Evaluation Room.
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+      padding: '8px 14px', marginBottom: 12,
+      background: visible ? T.surfaceAlt : T.warningLight,
+      border: `1px solid ${visible ? T.borderLight : T.warning + '40'}`,
+      borderRadius: 6, fontFamily: T.font,
+    }}>
+      <div style={{ fontSize: 12, color: visible ? T.textSecondary : T.warning, fontWeight: 600 }}>
+        {visible ? 'Visible to the customer' : 'Hidden — the customer will not see this tab'}
       </div>
+      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, fontWeight: 600, color: T.text }}>
+        <input type="checkbox" checked={visible} onChange={e => onChange(e.target.checked)} style={{ cursor: 'pointer' }} />
+        Show tab
+      </label>
+    </div>
+  )
+}
+
+function PerTabNoteEditor({ tabKey, value, onChange, onBlurSave, savedAt }) {
+  const justSaved = savedAt && Date.now() - savedAt < 2000
+  return (
+    <div style={{ position: 'relative', marginBottom: 14 }}>
+      <label style={{ ...labelStyle, marginBottom: 4 }}>Notes for client</label>
       <textarea
         value={value || ''}
         onChange={e => onChange(e.target.value)}
@@ -798,14 +843,13 @@ function PerTabNoteEditor({ tabKey, tabLabel, aeName, value, onChange, onBlurSav
           tabKey === 'library'  ? 'e.g. Start with the demo videos at the top, then dig into the docs as you have questions.' :
                                   'e.g. Pricing reflects the multi-year commit we discussed. Questions on Year-1 vs Year-2 — drop a comment below.'
         }
-        rows={3}
-        style={{ ...inputStyle, fontFamily: T.font, fontSize: 13, lineHeight: 1.55, resize: 'vertical' }}
+        rows={2}
+        style={{ ...inputStyle, fontFamily: T.font, fontSize: 13, lineHeight: 1.5, resize: 'vertical' }}
       />
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4, fontSize: 10, color: T.textMuted }}>
-        <span>{(value || '').length} characters{justSaved ? ' · saved' : ''}</span>
-        <span>Saves automatically when you click outside the box.</span>
-      </div>
-    </Card>
+      {justSaved && (
+        <span style={{ position: 'absolute', top: 0, right: 0, fontSize: 10, color: T.textMuted }}>saved</span>
+      )}
+    </div>
   )
 }
 
