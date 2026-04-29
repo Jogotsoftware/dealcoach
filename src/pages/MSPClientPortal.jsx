@@ -120,7 +120,6 @@ export default function MSPClientPortal() {
   const progressSteps = steps.filter(s => !s.is_tweener)
   const completedSteps = progressSteps.filter(s => s.is_completed).length
   const progressPct = progressSteps.length > 0 ? Math.round((completedSteps / progressSteps.length) * 100) : 0
-  const showPoweredBy = link?.show_powered_by === true
 
   return (
     <div style={{ minHeight: '100vh', background: '#f8f9fa', fontFamily: T.font }}>
@@ -242,11 +241,6 @@ export default function MSPClientPortal() {
           </div>
         )}
 
-        {showPoweredBy && (
-          <div style={{ textAlign: 'center', marginTop: 48, paddingTop: 24, borderTop: '1px solid #e5e7eb' }}>
-            <div style={{ fontSize: 11, color: T.textMuted }}>Powered by Revenue Instruments</div>
-          </div>
-        )}
       </div>
     </div>
   )

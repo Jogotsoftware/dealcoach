@@ -275,7 +275,6 @@ export default function DealRoomViewer() {
             </>
           )}
           <div style={{ flex: 1 }} />
-          <span style={{ fontSize: 11, color: T.textMuted }}>Powered by {org?.name || 'Revenue Instruments'}</span>
         </div>
       </footer>
 
