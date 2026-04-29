@@ -73,7 +73,8 @@ export default function DealRoomViewer() {
   const [view, setView] = useState('timeline')
 
   // Modals
-  const [changeModal, setChangeModal] = useState(null)  // { kind: 'stage'|'milestone', item, parent }
+  const [changeModal, setChangeModal] = useState(null)  // { kind: 'stage'|'milestone', item, parent, targetTable }
+  const [eventDetail, setEventDetail] = useState(null)  // same shape — read-only details first, then optionally → changeModal
   const [emailModal, setEmailModal] = useState(false)
   const [teammateModal, setTeammateModal] = useState(false)
 
@@ -284,6 +285,10 @@ export default function DealRoomViewer() {
                 pendingRequestsByTarget: buildPendingMap(msp.pending_requests),
                 commentCountsByRef: buildCommentCountMap(msp.comment_counts),
                 onRequestChange: (payload) => setChangeModal(payload),
+                // Calendar event clicks now open a read-only detail view first;
+                // the explicit "Request a change" button inside that modal is
+                // what escalates into the existing change-request flow.
+                onViewEvent: (payload) => setEventDetail(payload),
                 onComment: (refKind, refId, text) => submitComment('msp', text, { reference_kind: refKind, reference_id: refId }),
               }}
             />
@@ -316,6 +321,20 @@ export default function DealRoomViewer() {
           <div style={{ flex: 1 }} />
         </div>
       </footer>
+
+      {eventDetail && !changeModal && (
+        <EventDetailModal
+          payload={eventDetail}
+          themeColor={themeColor}
+          archived={archived}
+          onClose={() => setEventDetail(null)}
+          onRequestChange={() => {
+            // Hand the same payload off to the change-request flow.
+            setChangeModal(eventDetail)
+            setEventDetail(null)
+          }}
+        />
+      )}
 
       {changeModal && (
         <ChangeRequestModal
@@ -845,6 +864,61 @@ function KvCard({ label, value }) {
 // ════════════════════════════════════════════
 // Modals
 // ════════════════════════════════════════════
+function EventDetailModal({ payload, themeColor, archived, onClose, onRequestChange }) {
+  const isStage = payload.kind === 'stage'
+  const item = payload.item || {}
+  const parent = payload.parent
+  const accent = themeColor || T.primary
+  const title = isStage ? (item.stage_name || 'Stage') : (item.milestone_name || 'Milestone')
+  const statusColor = STATUS_COLORS[item.status] || T.textMuted
+
+  // Pull the same fields the change-request modal exposes — show whatever has
+  // a value so the customer can see context before deciding to flag a change.
+  const rows = [
+    { label: 'Status',     value: item.status, render: (v) => v ? <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 999, background: statusColor + '22', color: statusColor, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{String(v).replace(/_/g, ' ')}</span> : null },
+    { label: 'Date label', value: item.date_label },
+    { label: 'Start date', value: item.start_date, render: (v) => v ? formatDate(v) : null },
+    { label: 'End date',   value: item.end_date,   render: (v) => v ? formatDate(v) : null },
+    { label: 'Due date',   value: item.due_date,   render: (v) => v ? formatDate(v) : null },
+    { label: 'Duration',   value: item.duration },
+    { label: 'Notes',      value: item.notes, render: (v) => v ? <div style={{ whiteSpace: 'pre-wrap', fontSize: 12, color: T.text, lineHeight: 1.5 }}>{v}</div> : null },
+  ].filter(r => r.value !== null && r.value !== undefined && String(r.value).trim() !== '')
+
+  return (
+    <ModalShell title={`${isStage ? 'Stage' : 'Milestone'} · ${title}`} onClose={onClose}>
+      {!isStage && parent?.stage_name && (
+        <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 12 }}>
+          under <span style={{ color: T.text, fontWeight: 600 }}>{parent.stage_name}</span>
+        </div>
+      )}
+
+      {rows.length === 0 ? (
+        <div style={{ padding: 16, textAlign: 'center', fontSize: 12, color: T.textMuted, background: T.surfaceAlt, borderRadius: 6 }}>
+          No additional details captured for this item.
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 14 }}>
+          {rows.map(r => (
+            <div key={r.label}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{r.label}</div>
+              <div style={{ fontSize: 13, color: T.text }}>
+                {r.render ? r.render(r.value) : String(r.value)}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18, paddingTop: 14, borderTop: `1px solid ${T.borderLight}` }}>
+        <button onClick={onClose} style={modalSecondaryBtn}>Close</button>
+        {!archived && (
+          <button onClick={onRequestChange} style={{ ...modalPrimaryBtn, background: accent }}>Request a change</button>
+        )}
+      </div>
+    </ModalShell>
+  )
+}
+
 function ChangeRequestModal({ payload, onClose, onSubmit }) {
   const fields = payload.kind === 'stage' ? STAGE_FIELDS : MILESTONE_FIELDS
   const [field, setField] = useState(fields[0].key)

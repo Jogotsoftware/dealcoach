@@ -489,6 +489,9 @@ export default function MSPEditor({ dealId, mode = 'standalone', readonlyAdapter
   const pendingByTarget = readonlyAdapter?.pendingRequestsByTarget || new Map()
   const commentCounts = readonlyAdapter?.commentCountsByRef || new Map()
   const requestChange = readonlyAdapter?.onRequestChange || (() => {})
+  // Customer flow: prefer onViewEvent (read-only details modal) when the host
+  // wires it; falls back to the legacy onRequestChange path otherwise.
+  const viewEvent = readonlyAdapter?.onViewEvent || requestChange
   const submitComment = readonlyAdapter?.onComment || (async () => false)
   const calendarThemeColor = readonlyAdapter?.themeColor || T.primary
 
@@ -561,11 +564,12 @@ export default function MSPEditor({ dealId, mode = 'standalone', readonlyAdapter
                   onSelectEvent={(evt) => {
                     const r = evt.resource || {}
                     if (isReadonly) {
-                      // Customer flow: clicking an event opens "request change" modal
+                      // Customer flow: clicking an event opens the details modal —
+                      // requesting a change is now an explicit action inside it.
                       if (r.kind === 'stage' && r.stage) {
-                        requestChange({ kind: 'stage', item: r.stage, parent: null, targetTable: 'msp_stages' })
+                        viewEvent({ kind: 'stage', item: r.stage, parent: null, targetTable: 'msp_stages' })
                       } else if (r.kind === 'milestone' && r.milestone) {
-                        requestChange({ kind: 'milestone', item: r.milestone, parent: r.parentStage, targetTable: 'msp_milestones' })
+                        viewEvent({ kind: 'milestone', item: r.milestone, parent: r.parentStage, targetTable: 'msp_milestones' })
                       }
                       return
                     }
