@@ -82,6 +82,26 @@ export default function OrgSettings() {
               await refreshOrg()
             }}
           />
+
+          <div style={{ height: 1, background: T.borderLight, margin: '18px 0' }} />
+
+          <LogoUploader
+            bucket="proposal-logos"
+            pathPrefix={org?.id}
+            filename="org-icon"
+            currentUrl={org?.icon_url}
+            currentPath={org?.icon_storage_path}
+            label="Top-bar icon"
+            helpText="Small square icon shown in the platform's top-left tile. PNG or SVG. SVG preferred for crisp rendering at any size."
+            onSaved={async (publicUrl, path) => {
+              await supabase.from('organizations').update({ icon_url: publicUrl, icon_storage_path: path }).eq('id', org.id)
+              await refreshOrg()
+            }}
+            onRemoved={async () => {
+              await supabase.from('organizations').update({ icon_url: null, icon_storage_path: null }).eq('id', org.id)
+              await refreshOrg()
+            }}
+          />
         </Card>
 
         <Card title="Fiscal Year">

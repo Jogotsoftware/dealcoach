@@ -80,13 +80,18 @@ export default function Layout() {
             whiteSpace: 'nowrap', overflow: 'hidden',
           }}
         >
-          <div style={{
-            width: 28, height: 28, borderRadius: 6, background: T.primary,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontWeight: 800, fontSize: 13, color: '#fff', flexShrink: 0,
-          }}>
-            {(org?.name || 'R').charAt(0).toUpperCase()}
-          </div>
+          {org?.icon_url ? (
+            <img src={org.icon_url} alt={org?.name || ''}
+              style={{ width: 28, height: 28, borderRadius: 6, objectFit: 'contain', flexShrink: 0, background: 'transparent' }} />
+          ) : (
+            <div style={{
+              width: 28, height: 28, borderRadius: 6, background: T.primary,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontWeight: 800, fontSize: 13, color: '#fff', flexShrink: 0,
+            }}>
+              {(org?.name || 'R').charAt(0).toUpperCase()}
+            </div>
+          )}
           {sidebarExpanded && <span style={{ fontSize: 16, fontWeight: 700, color: '#fff' }}>{org?.name || 'Revenue Instruments'}</span>}
         </div>
 
