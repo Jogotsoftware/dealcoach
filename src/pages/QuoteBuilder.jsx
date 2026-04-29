@@ -1777,6 +1777,13 @@ export function ResourcesTab({ deal, onDealUpdated }) {
     } catch (e) { console.error(e) }
   }
 
+  // Group resources by type, in friendly order — matches the customer-facing
+  // viewer layout so the rep sees what they're configuring.
+  const TYPE_ORDER = ['demo', 'powerpoint', 'document', 'link', 'misc']
+  const grouped = TYPE_ORDER
+    .map(type => ({ type, items: resources.filter(r => (r.resource_type || 'misc') === type) }))
+    .filter(g => g.items.length > 0)
+
   return (
     <div>
       <Card title="Files & Links" action={
@@ -1798,14 +1805,64 @@ export function ResourcesTab({ deal, onDealUpdated }) {
             No resources yet. Add demos, links, PowerPoints, documents, or anything else relevant to this deal.
           </div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
-            {resources.map(r => (
-              <ResourceCard key={r.id} resource={r}
-                onEdit={() => setEditing({ ...r, _file: null })}
-                onDelete={() => del(r)}
-                onSaveToLibrary={() => saveToLibrary(r)}
-              />
-            ))}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+            {grouped.map(({ type, items }) => {
+              const meta = RESOURCE_TYPE_META[type] || RESOURCE_TYPE_META.misc
+              return (
+                <div key={type} style={{ background: T.surface, border: `1px solid ${T.border}`, borderLeft: `4px solid ${meta.color}`, borderRadius: 6, overflow: 'hidden' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: meta.color + '0d', borderBottom: `1px solid ${T.borderLight}` }}>
+                    <span style={{ padding: '3px 10px', background: meta.color + '22', color: meta.color, fontSize: 10, fontWeight: 800, borderRadius: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{meta.label}</span>
+                    <span style={{ fontSize: 11, color: T.textMuted, fontWeight: 600 }}>
+                      {items.length} {items.length === 1 ? 'item' : 'items'}
+                    </span>
+                  </div>
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                      <thead>
+                        <tr style={{ borderBottom: `1px solid ${T.border}`, background: T.surfaceAlt }}>
+                          <th style={{ textAlign: 'left',  padding: '8px 14px', fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', width: '28%' }}>Title</th>
+                          <th style={{ textAlign: 'left',  padding: '8px 14px', fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Notes</th>
+                          <th style={{ textAlign: 'right', padding: '8px 14px', fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', width: 240 }}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {items.map(r => (
+                          <tr key={r.id} style={{ borderBottom: `1px solid ${T.borderLight}`, verticalAlign: 'top' }}>
+                            <td style={{ padding: '12px 14px' }}>
+                              <div style={{ fontSize: 13, fontWeight: 700, color: T.text, lineHeight: 1.35 }}>{r.title}</div>
+                              {r.storage_path && r.file_size != null && (
+                                <div style={{ fontSize: 10, color: T.textMuted, marginTop: 4 }}>
+                                  {Math.round(r.file_size / 1024)} KB · {r.mime_type || 'file'}
+                                </div>
+                              )}
+                              {!r.storage_path && r.url && (
+                                <div style={{ fontSize: 10, color: T.textMuted, marginTop: 4, wordBreak: 'break-all', fontFamily: T.mono }}>{r.url}</div>
+                              )}
+                            </td>
+                            <td style={{ padding: '12px 14px', fontSize: 12, color: T.textSecondary, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
+                              {r.notes || <span style={{ color: T.textMuted, fontStyle: 'italic' }}>—</span>}
+                            </td>
+                            <td style={{ padding: '12px 14px', textAlign: 'right' }}>
+                              <div style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                                {r.url && (
+                                  <a href={r.url} target="_blank" rel="noopener noreferrer"
+                                    style={{ fontSize: 11, fontWeight: 600, color: T.primary, padding: '4px 10px', border: `1px solid ${T.border}`, borderRadius: 4, textDecoration: 'none', background: T.surface }}>
+                                    {r.storage_path ? 'Download' : 'Open'}
+                                  </a>
+                                )}
+                                <Button onClick={() => setEditing({ ...r, _file: null })} style={{ padding: '4px 10px', fontSize: 11 }}>Edit</Button>
+                                <Button onClick={() => saveToLibrary(r)} style={{ padding: '4px 10px', fontSize: 11 }} title="Save to your team library so anyone can re-use it on another deal">★ Library</Button>
+                                <Button danger onClick={() => del(r)} style={{ padding: '4px 10px', fontSize: 11 }}>Delete</Button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )
+            })}
           </div>
         )}
       </Card>
