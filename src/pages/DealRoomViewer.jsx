@@ -787,14 +787,6 @@ export function ProposalTabContent({ data, archived, onComment, themeColor, colu
         <span style={{ fontSize: 18, fontWeight: 800, color: T.text, letterSpacing: '0.02em' }}>Year 1 Total</span>
         <span style={{ fontSize: 26, fontWeight: 900, color: T.text, fontFeatureSettings: '"tnum"' }}>{money(year1Total)}</span>
       </div>
-
-      <div style={{ marginTop: 10, fontSize: 11, color: T.textMuted, textAlign: 'right' }}>
-        Need a printable PDF version? Ask your AE — they can generate a document-style proposal.
-      </div>
-
-      {!archived && (
-        <CommentComposer onSubmit={(text) => onComment('proposal', text)} placeholder="Comment on this proposal…" count={0} />
-      )}
     </div>
   )
 }
@@ -812,35 +804,6 @@ function KvCard({ label, value }) {
     <div style={{ padding: '10px 12px', background: T.surfaceAlt, borderRadius: 6, borderLeft: `3px solid ${T.primary}` }}>
       <div style={{ fontSize: 9, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 3 }}>{label}</div>
       <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{value}</div>
-    </div>
-  )
-}
-
-// Minimal comment composer used at the bottom of the Proposal tab. Same
-// shape as the readonly composer inside MSPEditor — kept local here so we
-// don't have to expose internal MSPEditor helpers.
-function CommentComposer({ onSubmit, placeholder, count }) {
-  const [open, setOpen] = useState(false)
-  const [text, setText] = useState('')
-  return (
-    <div style={{ marginTop: 14, paddingTop: 10, borderTop: `1px dashed ${T.borderLight}` }}>
-      {!open ? (
-        <button onClick={() => setOpen(true)}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, fontSize: 12, padding: 0, fontFamily: T.font }}>
-          {count > 0 ? `${count} comment${count === 1 ? '' : 's'} · ` : ''}+ Add a comment
-        </button>
-      ) : (
-        <div style={{ display: 'flex', gap: 6 }}>
-          <textarea value={text} onChange={e => setText(e.target.value)} placeholder={placeholder} rows={2}
-            style={{ flex: 1, padding: 8, fontSize: 12, border: `1px solid ${T.border}`, borderRadius: 4, background: T.surface, color: T.text, fontFamily: T.font, resize: 'vertical' }} />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <button onClick={async () => { if (text.trim()) { const ok = await onSubmit(text.trim()); if (ok !== false) { setText(''); setOpen(false) } } }}
-              style={{ padding: '6px 10px', fontSize: 11, fontWeight: 600, background: T.primary, color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontFamily: T.font }}>Post</button>
-            <button onClick={() => { setOpen(false); setText('') }}
-              style={{ padding: '6px 10px', fontSize: 11, fontWeight: 600, background: T.surface, color: T.textMuted, border: `1px solid ${T.border}`, borderRadius: 4, cursor: 'pointer', fontFamily: T.font }}>Cancel</button>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
