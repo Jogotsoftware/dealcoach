@@ -1630,7 +1630,7 @@ const RESOURCE_TYPE_META = {
   misc:       { label: 'Other',      color: T.textMuted, accept: '',                                                  allowFile: true,  allowUrl: true },
 }
 
-export function ResourcesTab({ deal, onDealUpdated }) {
+export function ResourcesTab({ deal, onDealUpdated, headerExtra = null }) {
   const { org } = useOrg()
   const { profile } = useAuth()
   const [resources, setResources] = useState([])
@@ -1789,7 +1789,8 @@ export function ResourcesTab({ deal, onDealUpdated }) {
   return (
     <div>
       <Card title="Files & Links" action={
-        <div style={{ display: 'flex', gap: 6 }}>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          {headerExtra}
           <Button onClick={() => setShowLibrary(true)} style={{ padding: '4px 10px', fontSize: 11 }}>From library</Button>
           <Button primary onClick={newResource} style={{ padding: '4px 10px', fontSize: 11 }}>+ Add Resource</Button>
         </div>

@@ -467,10 +467,6 @@ export default function DealRoomConfig({ embedded = false, dealId: dealIdProp } 
         {/* ════════════ MSP TAB ════════════ */}
         {tab === 'msp' && (
           <>
-            <TabVisibilityToggle
-              visible={room?.show_msp_tab !== false}
-              onChange={(v) => saveRoom({ show_msp_tab: v })}
-            />
             <PerTabNoteEditor
               tabKey="msp"
               value={noteDrafts.msp}
@@ -478,7 +474,13 @@ export default function DealRoomConfig({ embedded = false, dealId: dealIdProp } 
               onBlurSave={() => saveTabNote('msp')}
               savedAt={noteSavedAt.msp}
             />
-            <Card title="Project Plan">
+            <Card title="Project Plan" action={
+              <VisibilityToggleIcon
+                visible={room?.show_msp_tab !== false}
+                onChange={(v) => saveRoom({ show_msp_tab: v })}
+                label="the Project Plan tab"
+              />
+            }>
               <MSPEditor dealId={dealId} mode="embedded" />
             </Card>
           </>
@@ -487,10 +489,6 @@ export default function DealRoomConfig({ embedded = false, dealId: dealIdProp } 
         {/* ════════════ LIBRARY TAB (read-only summary) ════════════ */}
         {tab === 'library' && (
           <>
-          <TabVisibilityToggle
-            visible={room?.show_library_tab !== false}
-            onChange={(v) => saveRoom({ show_library_tab: v })}
-          />
           <PerTabNoteEditor
             tabKey="library"
             value={noteDrafts.library}
@@ -499,18 +497,26 @@ export default function DealRoomConfig({ embedded = false, dealId: dealIdProp } 
             savedAt={noteSavedAt.library}
           />
           {/* Full Library editor: + New, From library, Save to library on each card.
-              The Deal Room IS where this lives — no link out to QuoteBuilder. */}
-          <ResourcesTab deal={deal} onDealUpdated={() => load()} />
+              The Deal Room IS where this lives — no link out to QuoteBuilder.
+              The visibility toggle lives next to the "Files & Links" card title
+              inside ResourcesTab via the headerExtra prop. */}
+          <ResourcesTab
+            deal={deal}
+            onDealUpdated={() => load()}
+            headerExtra={
+              <VisibilityToggleIcon
+                visible={room?.show_library_tab !== false}
+                onChange={(v) => saveRoom({ show_library_tab: v })}
+                label="the Library tab"
+              />
+            }
+          />
           </>
         )}
 
         {/* ════════════ QUOTES TAB ════════════ */}
         {tab === 'quotes' && (
           <>
-          <TabVisibilityToggle
-            visible={room?.show_proposal_tab !== false}
-            onChange={(v) => saveRoom({ show_proposal_tab: v })}
-          />
           <PerTabNoteEditor
             tabKey="proposal"
             value={noteDrafts.proposal}
@@ -520,8 +526,15 @@ export default function DealRoomConfig({ embedded = false, dealId: dealIdProp } 
           />
 
           {/* Quote selector + snapshot trigger sit above the embedded builder.
-              The full QuoteBuilder mounts inline below — no link out. */}
-          <Card title="Quote">
+              The full QuoteBuilder mounts inline below — no link out. The
+              visibility toggle lives in the Card title row. */}
+          <Card title="Quote" action={
+            <VisibilityToggleIcon
+              visible={room?.show_proposal_tab !== false}
+              onChange={(v) => saveRoom({ show_proposal_tab: v })}
+              label="the Proposal tab"
+            />
+          }>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               <label style={{ fontSize: 11, color: T.textMuted, fontWeight: 600 }}>Active quote:</label>
               <select value={selectedQuoteId} onChange={e => setSelectedQuoteId(e.target.value)} style={{ ...inputStyle, fontSize: 12, padding: '6px 8px', maxWidth: 280, cursor: 'pointer' }}>
@@ -819,30 +832,39 @@ function FilterChips({ value, onChange, options }) {
   )
 }
 
+// Compact eye-icon toggle that lives next to a section's title and controls
+// whether the customer sees that section. Replaces the older standalone
+// "Visible to the customer / Show tab" banner.
+export function VisibilityToggleIcon({ visible, onChange, label = 'this section' }) {
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); onChange(!visible) }}
+      title={visible ? `Visible to the customer — click to hide ${label}` : `Hidden from the customer — click to show ${label}`}
+      style={{
+        background: 'transparent', border: 'none', cursor: 'pointer',
+        padding: '2px 4px', display: 'inline-flex', alignItems: 'center',
+        color: visible ? T.success : T.textMuted,
+      }}
+      onMouseEnter={e => e.currentTarget.style.color = visible ? T.success : T.warning}
+      onMouseLeave={e => e.currentTarget.style.color = visible ? T.success : T.textMuted}
+    >
+      {visible ? (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+        </svg>
+      ) : (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+          <line x1="1" y1="1" x2="23" y2="23"/>
+        </svg>
+      )}
+    </button>
+  )
+}
+
 // Per-tab AE note editor card. Three of these live across the MSP, Library,
 // and Quotes tabs. Each writes into its own deal_rooms.ae_notes_<tab> column
 // so the note appears only on the matching tab in the customer viewer.
-// Per-tab visibility toggle — slim banner that flips the show_*_tab column on
-// deal_rooms. Hidden tabs are stripped from the customer's Evaluation Room.
-function TabVisibilityToggle({ visible, onChange }) {
-  return (
-    <div style={{
-      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
-      padding: '8px 14px', marginBottom: 12,
-      background: visible ? T.surfaceAlt : T.warningLight,
-      border: `1px solid ${visible ? T.borderLight : T.warning + '40'}`,
-      borderRadius: 6, fontFamily: T.font,
-    }}>
-      <div style={{ fontSize: 12, color: visible ? T.textSecondary : T.warning, fontWeight: 600 }}>
-        {visible ? 'Visible to the customer' : 'Hidden — the customer will not see this tab'}
-      </div>
-      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, fontWeight: 600, color: T.text }}>
-        <input type="checkbox" checked={visible} onChange={e => onChange(e.target.checked)} style={{ cursor: 'pointer' }} />
-        Show tab
-      </label>
-    </div>
-  )
-}
 
 function PerTabNoteEditor({ tabKey, value, onChange, onBlurSave, savedAt }) {
   const justSaved = savedAt && Date.now() - savedAt < 2000
