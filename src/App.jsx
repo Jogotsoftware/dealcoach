@@ -89,6 +89,7 @@ export default function App() {
           <Routes>
             {/* Public routes */}
             <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
+            <Route path="/projectplan/shared/:token" element={<MSPClientPortal />} />
             <Route path="/msp/shared/:token" element={<MSPClientPortal />} />
             <Route path="/room/:shareToken" element={<DealRoomViewer />} />
             <Route path="/invite/:token" element={<AcceptInvite />} />

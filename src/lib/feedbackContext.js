@@ -21,7 +21,7 @@ export function detectFeatureArea(pathname) {
   if (pathname === '/admin') return 'admin_console'
   if (pathname === '/admin/feedback') return 'admin_feedback'
   if (pathname.startsWith('/widgets')) return 'widget_builder'
-  if (pathname.startsWith('/msp/shared/')) return 'msp_client_portal'
+  if (pathname.startsWith('/projectplan/shared/') || pathname.startsWith('/msp/shared/')) return 'msp_client_portal'
   if (pathname.startsWith('/partner')) return 'partner_hub'
   return 'other'
 }

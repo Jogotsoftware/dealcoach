@@ -55,8 +55,35 @@ export default function MSPClientPortal() {
   const [resources, setResources] = useState([])
   const [portal, setPortal] = useState(null)
   const [link, setLink] = useState(null)
+  const [livePulse, setLivePulse] = useState(0)
 
   useEffect(() => { loadPortal() }, [token])
+
+  // Realtime mirror — once we know the deal_id, subscribe to msp_stages and
+  // msp_resources changes so edits made by the AE in the Deal Room config
+  // mirror live into this customer view without a refresh. We re-fetch on
+  // each event for simplicity (small payloads, low frequency).
+  useEffect(() => {
+    if (!link?.deal_id) return
+    const dealId = link.deal_id
+    async function refetch() {
+      try {
+        const [stepsRes, resRes] = await Promise.all([
+          supabase.from('msp_stages').select('*').eq('deal_id', dealId).order('stage_order'),
+          supabase.from('msp_resources').select('*').eq('deal_id', dealId).order('created_at'),
+        ])
+        setSteps(stepsRes.data || [])
+        setResources(resRes.data || [])
+        setLivePulse(p => p + 1)
+      } catch (e) { console.warn('live mirror refetch failed:', e?.message) }
+    }
+    const channel = supabase
+      .channel(`msp-portal-${dealId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'msp_stages', filter: `deal_id=eq.${dealId}` }, refetch)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'msp_resources', filter: `deal_id=eq.${dealId}` }, refetch)
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [link?.deal_id])
 
   async function loadPortal() {
     setLoading(true)
@@ -132,9 +159,20 @@ export default function MSPClientPortal() {
           </a>
         )}
         {portal?.company_logo_url && <img src={portal.company_logo_url} alt="" style={{ height: 40, marginBottom: 12 }} />}
-        <div style={{ fontSize: 12, fontWeight: 600, color: primaryColor, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: primaryColor, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
           {portal?.portal_title || 'Project Plan'}
+          <span title={livePulse ? `${livePulse} live update${livePulse === 1 ? '' : 's'} received` : 'Live — updates appear automatically'}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+              padding: '2px 8px', borderRadius: 999, fontSize: 9, fontWeight: 800,
+              background: '#16a34a22', color: '#16a34a',
+              transition: 'transform 0.2s', transform: livePulse ? 'scale(1.05)' : 'scale(1)',
+            }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#16a34a', animation: 'live-pulse 1.6s ease-in-out infinite' }} />
+            LIVE
+          </span>
         </div>
+        <style>{`@keyframes live-pulse { 0%,100% { opacity: 0.45 } 50% { opacity: 1 } }`}</style>
         <div style={{ fontSize: 24, fontWeight: 700, color: T.text }}>{deal?.company_name || 'Implementation Plan'}</div>
         {portal?.portal_subtitle && <div style={{ fontSize: 14, color: T.textSecondary, marginTop: 4 }}>{portal.portal_subtitle}</div>}
 
@@ -177,7 +215,8 @@ export default function MSPClientPortal() {
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{
-                    fontSize: 14, fontWeight: 600, color: T.text,
+                    fontSize: 14, fontWeight: 600,
+                    color: step.color || T.text,
                     textDecoration: step.is_completed ? 'line-through' : 'none',
                     opacity: step.is_completed ? 0.6 : 1,
                   }}>

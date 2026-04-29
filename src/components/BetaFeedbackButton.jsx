@@ -4,7 +4,7 @@ import { theme as T } from '../lib/theme'
 import BetaFeedbackModal from './BetaFeedbackModal'
 
 const HIDDEN_ROUTES = ['/login']
-const HIDDEN_PREFIXES = ['/msp/shared/', '/partner']
+const HIDDEN_PREFIXES = ['/projectplan/shared/', '/msp/shared/', '/partner']
 
 export default function BetaFeedbackButton({ dealContext }) {
   const [open, setOpen] = useState(false)
