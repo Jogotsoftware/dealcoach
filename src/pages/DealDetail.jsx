@@ -1762,6 +1762,29 @@ export default function DealDetail() {
                   <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, zIndex: 1000, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.18)', minWidth: 200, padding: '4px 0' }}>
                     <MoreMenuItem label="Edit deal details" onClick={() => { setShowEditModal(true); setShowEditMenu(false) }} />
                     <MoreMenuItem label={editMode ? 'Lock home dashboard' : 'Edit home dashboard'} onClick={() => { setEditMode(!editMode); setShowEditMenu(false) }} />
+                    <div style={{ height: 1, background: T.borderLight, margin: '4px 0' }} />
+                    <MoreMenuItem
+                      label="Delete deal…"
+                      danger
+                      onClick={async () => {
+                        setShowEditMenu(false)
+                        const expected = (deal.company_name || '').trim()
+                        // Require the rep to type the company name so deletes
+                        // (which cascade across 50+ tables) can't fire by accident.
+                        const typed = window.prompt(
+                          `This permanently deletes this deal and all related data (transcripts, project plan, quotes, contacts, deal room, tasks, notes, etc.) and cannot be undone.\n\nType the company name to confirm:\n${expected}`,
+                          ''
+                        )
+                        if (typed == null) return
+                        if (typed.trim().toLowerCase() !== expected.toLowerCase()) {
+                          alert('Typed company name did not match — deal not deleted.')
+                          return
+                        }
+                        const { error } = await supabase.from('deals').delete().eq('id', deal.id)
+                        if (error) { alert('Delete failed: ' + error.message); return }
+                        navigate('/')
+                      }}
+                    />
                   </div>
                 </>
               )}

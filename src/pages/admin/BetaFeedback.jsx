@@ -92,7 +92,7 @@ export default function BetaFeedback() {
 
   return (
     <div>
-      <div style={{ padding: '14px 24px', borderBottom: `1px solid ${T.border}`, background: T.surface, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ padding: '14px 24px', paddingRight: 72, borderBottom: `1px solid ${T.border}`, background: T.surface, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h2 style={{ fontSize: 18, fontWeight: 700, color: T.text, margin: 0 }}>Beta Feedback ({filtered.length})</h2>
         <div style={{ display: 'flex', gap: 6 }}>
           {selected.size > 0 && (

@@ -433,6 +433,15 @@ export function ProposalTabContent({ data, archived, onComment, themeColor, them
     const v = columnVisibility[k]
     return v === undefined || v === null ? true : !!v
   }
+  // Per-section visibility: AE can hide sub-sections (Promo, Free Months,
+  // Signing Bonus, Contract Terms, Term Template) from the customer proposal.
+  // Stored on the quote as deal_room_display_config.sections.<key> and
+  // copied into the snapshot at snapshot time.
+  const sections = (snapshot && snapshot.display_config && snapshot.display_config.sections) || {}
+  const sectionVisible = (k) => {
+    const v = sections[k]
+    return v === undefined || v === null ? true : !!v
+  }
   if (!snapshot) {
     return (
       <div style={{ padding: 40, textAlign: 'center', color: T.textMuted, fontSize: 14, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8 }}>
@@ -736,52 +745,61 @@ export function ProposalTabContent({ data, archived, onComment, themeColor, them
         )
       })}
 
-      {/* Promo & Incentives */}
-      {(freeMonths > 0 || signingBonusValue > 0) && (
-        <div style={{ marginTop: 28 }}>
-          <ProposalSectionHeader>Promo & Incentives</ProposalSectionHeader>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-            <tbody>
-              {freeMonths > 0 && (
-                <tr style={{ background: accentNeg + '12', borderBottom: `1px solid ${T.borderLight}` }}>
-                  <td style={{ padding: '12px 14px', fontWeight: 700, color: T.text }}>
-                    {freeMonths} Free Month{freeMonths === 1 ? '' : 's'}
-                    <span style={{ marginLeft: 8, fontWeight: 500, color: T.textSecondary, fontSize: 12, textTransform: 'capitalize' }}>
-                      (applied to {freeMonthsPlacement} of term)
-                    </span>
-                  </td>
-                  <td style={{ padding: '12px 14px', textAlign: 'right', fontFeatureSettings: '"tnum"', fontWeight: 800, color: T.error, width: 160 }}>
-                    {moneyNeg(freeMonthsValue)}
-                  </td>
-                </tr>
-              )}
-              {signingBonusValue > 0 && (
-                <tr style={{ background: accentNeg + '12' }}>
-                  <td style={{ padding: '12px 14px', fontWeight: 700, color: T.text }}>
-                    {signMonth ? `${signMonth} ` : ''}Signing Bonus
-                  </td>
-                  <td style={{ padding: '12px 14px', textAlign: 'right', fontFeatureSettings: '"tnum"', fontWeight: 800, color: T.error, width: 160 }}>
-                    {moneyNeg(signingBonusValue)}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
+      {/* Promo & Incentives — gated by sections.terms (whole Terms & Promo card),
+          sections.promo (this Promo & Incentives sub-section), and per-row
+          flags sections.free_months / sections.signing_bonus. */}
+      {sectionVisible('terms') && sectionVisible('promo') && (() => {
+        const showFreeMonths = freeMonths > 0 && sectionVisible('free_months')
+        const showSigningBonus = signingBonusValue > 0 && sectionVisible('signing_bonus')
+        if (!showFreeMonths && !showSigningBonus) return null
+        return (
+          <div style={{ marginTop: 28 }}>
+            <ProposalSectionHeader>Promo & Incentives</ProposalSectionHeader>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <tbody>
+                {showFreeMonths && (
+                  <tr style={{ background: accentNeg + '12', borderBottom: `1px solid ${T.borderLight}` }}>
+                    <td style={{ padding: '12px 14px', fontWeight: 700, color: T.text }}>
+                      {freeMonths} Free Month{freeMonths === 1 ? '' : 's'}
+                      <span style={{ marginLeft: 8, fontWeight: 500, color: T.textSecondary, fontSize: 12, textTransform: 'capitalize' }}>
+                        (applied to {freeMonthsPlacement} of term)
+                      </span>
+                    </td>
+                    <td style={{ padding: '12px 14px', textAlign: 'right', fontFeatureSettings: '"tnum"', fontWeight: 800, color: T.error, width: 160 }}>
+                      {moneyNeg(freeMonthsValue)}
+                    </td>
+                  </tr>
+                )}
+                {showSigningBonus && (
+                  <tr style={{ background: accentNeg + '12' }}>
+                    <td style={{ padding: '12px 14px', fontWeight: 700, color: T.text }}>
+                      {signMonth ? `${signMonth} ` : ''}Signing Bonus
+                    </td>
+                    <td style={{ padding: '12px 14px', textAlign: 'right', fontFeatureSettings: '"tnum"', fontWeight: 800, color: T.error, width: 160 }}>
+                      {moneyNeg(signingBonusValue)}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )
+      })()}
 
-      {/* Contract Terms */}
-      {term && (
+      {/* Contract Terms — gated by sections.terms (whole Terms & Promo) and
+          sections.contract (Contract column). The Term name/length/yoy caps
+          are further gated by sections.term_template. */}
+      {term && sectionVisible('terms') && sectionVisible('contract') && (
         <div style={{ marginTop: 28 }}>
           <ProposalSectionHeader>Contract Terms</ProposalSectionHeader>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
-            {term.name && (
+            {sectionVisible('term_template') && term.name && (
               <KvCard label="Term" value={term.name} />
             )}
-            {term.term_years != null && (
+            {sectionVisible('term_template') && term.term_years != null && (
               <KvCard label="Length" value={`${term.term_years} year${num(term.term_years) === 1 ? '' : 's'}`} />
             )}
-            {term.yoy_caps && (
+            {sectionVisible('term_template') && term.yoy_caps && (
               <KvCard label="Year-over-Year Caps" value={Array.isArray(term.yoy_caps)
                 ? term.yoy_caps.map(c => typeof c === 'number' ? `${c}%` : String(c)).join(' / ')
                 : (typeof term.yoy_caps === 'object' ? JSON.stringify(term.yoy_caps) : String(term.yoy_caps))} />
@@ -790,7 +808,7 @@ export function ProposalTabContent({ data, archived, onComment, themeColor, them
               <KvCard label="Billing Cadence" value={String(snapshot.billing_cadence).replace(/_/g, ' ')} />
             )}
           </div>
-          {term.description && (
+          {sectionVisible('term_template') && term.description && (
             <div style={{ marginTop: 12, padding: '12px 14px', background: T.surfaceAlt, borderRadius: 6, fontSize: 12, color: T.textSecondary, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
               {term.description}
             </div>

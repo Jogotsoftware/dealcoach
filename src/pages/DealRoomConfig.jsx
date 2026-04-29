@@ -187,17 +187,6 @@ export default function DealRoomConfig({ embedded = false, dealId: dealIdProp } 
     } finally { setBusy(false) }
   }
 
-  async function toggleProposalColumn(columnKey) {
-    const current = room?.proposal_column_visibility || {}
-    // Default visible (true) when missing → flipping it for the first time
-    // means "hide" (false). Subsequent toggles flip back and forth.
-    const isCurrentlyVisible = current[columnKey] === undefined ? true : !!current[columnKey]
-    const next = { ...current, [columnKey]: !isCurrentlyVisible }
-    try {
-      await saveRoom({ proposal_column_visibility: next })
-    } catch (e) { /* error already surfaced via setError in saveRoom */ }
-  }
-
   async function saveTabNote(tabKey) {
     const col = `ae_notes_${tabKey}`
     const next = (noteDrafts[tabKey] || '').trim() || null
@@ -525,70 +514,52 @@ export default function DealRoomConfig({ embedded = false, dealId: dealIdProp } 
             savedAt={noteSavedAt.proposal}
           />
 
-          {/* Quote selector + snapshot trigger sit above the embedded builder.
-              The full QuoteBuilder mounts inline below — no link out. The
-              visibility toggle lives in the Card title row. */}
-          <Card title="Quote" action={
-            <VisibilityToggleIcon
-              visible={room?.show_proposal_tab !== false}
-              onChange={(v) => saveRoom({ show_proposal_tab: v })}
-              label="the Proposal tab"
-            />
-          }>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-              <label style={{ fontSize: 11, color: T.textMuted, fontWeight: 600 }}>Active quote:</label>
-              <select value={selectedQuoteId} onChange={e => setSelectedQuoteId(e.target.value)} style={{ ...inputStyle, fontSize: 12, padding: '6px 8px', maxWidth: 280, cursor: 'pointer' }}>
-                {quotes.length === 0 && <option value="">No quotes yet</option>}
-                {quotes.map(q => <option key={q.id} value={q.id}>{q.name} v{q.version}{q.is_primary ? ' · primary' : ''}</option>)}
-              </select>
-              <Button primary onClick={refreshProposalSnapshot} disabled={!selectedQuoteId || snapshotting} style={{ padding: '6px 14px', fontSize: 12 }}>
-                {snapshotting ? 'Snapshotting…' : 'Push to customer Proposal tab'}
-              </Button>
-              {room.proposal_snapshotted_at && (
-                <span style={{ fontSize: 11, color: T.textMuted }}>
-                  Last pushed {relativeTime(room.proposal_snapshotted_at)}
-                </span>
-              )}
+          {/* Single unified header — the active-quote selector, snapshot push,
+              and visibility toggle all live INSIDE the embedded QuoteBuilder
+              header (no separate outer Card). */}
+          {selectedQuoteId ? (
+            <div style={{ margin: '0 -24px' }}>
+              <QuoteBuilder
+                embedded
+                dealId={dealId}
+                quoteId={selectedQuoteId}
+                headerQuotes={quotes}
+                onChangeQuote={(id) => setSelectedQuoteId(id)}
+                headerExtraAction={
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
+                    <Button primary onClick={refreshProposalSnapshot} disabled={snapshotting} style={{ padding: '8px 14px', fontSize: 12 }}>
+                      {snapshotting ? 'Snapshotting…' : 'Push to customer Proposal tab'}
+                    </Button>
+                    {room.proposal_snapshotted_at && (
+                      <span style={{ fontSize: 10, color: T.textMuted }}>
+                        Last pushed {relativeTime(room.proposal_snapshotted_at)}
+                      </span>
+                    )}
+                  </div>
+                }
+                headerVisibilityToggle={
+                  <VisibilityToggleIcon
+                    visible={room?.show_proposal_tab !== false}
+                    onChange={(v) => saveRoom({ show_proposal_tab: v })}
+                    label="the Proposal tab"
+                  />
+                }
+              />
             </div>
-          </Card>
-
-          {/* Embedded full QuoteBuilder for the selected quote */}
-          {selectedQuoteId && (
-            <div style={{ margin: '14px -24px 0' }}>
-              <QuoteBuilder embedded dealId={dealId} quoteId={selectedQuoteId} />
-            </div>
+          ) : (
+            <Card title="Quote" action={
+              <VisibilityToggleIcon
+                visible={room?.show_proposal_tab !== false}
+                onChange={(v) => saveRoom({ show_proposal_tab: v })}
+                label="the Proposal tab"
+              />
+            }>
+              <div style={{ padding: 28, textAlign: 'center', color: T.textMuted, fontSize: 13 }}>
+                No quotes yet — create one from the Quotes page to start building.
+              </div>
+            </Card>
           )}
 
-          <Card title="Proposal table columns the customer sees">
-            <div style={{ fontSize: 11, color: T.textSecondary, marginBottom: 10 }}>
-              Toggle individual columns off if you don't want the customer to see per-line list / discount detail. Solution column is always visible.
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {PROPOSAL_COLUMNS.map(col => {
-                const vis = room?.proposal_column_visibility || {}
-                const visible = vis[col.key] === undefined ? true : !!vis[col.key]
-                return (
-                  <button
-                    key={col.key}
-                    onClick={() => toggleProposalColumn(col.key)}
-                    title={visible ? 'Visible to the customer — click to hide' : 'Hidden from the customer — click to show'}
-                    style={{
-                      padding: '6px 12px', fontSize: 12, fontWeight: 600, fontFamily: T.font,
-                      border: `1px solid ${visible ? T.primary : T.border}`,
-                      borderRadius: 6,
-                      background: visible ? T.primaryLight : T.surface,
-                      color: visible ? T.primary : T.textMuted,
-                      cursor: 'pointer',
-                      display: 'inline-flex', alignItems: 'center', gap: 6,
-                    }}
-                  >
-                    <span style={{ fontSize: 12 }}>{visible ? '👁' : '⊘'}</span>
-                    {col.label}
-                  </button>
-                )
-              })}
-            </div>
-          </Card>
           </>
         )}
 
@@ -889,17 +860,6 @@ function PerTabNoteEditor({ tabKey, value, onChange, onBlurSave, savedAt }) {
     </div>
   )
 }
-
-// Proposal table columns that AEs can toggle on/off per room. Mirrors the
-// switch statement inside DealRoomViewer.ProposalTabContent — keep in sync.
-const PROPOSAL_COLUMNS = [
-  { key: 'list',            label: 'List' },
-  { key: 'qty',             label: 'Qty' },
-  { key: 'total_list',      label: 'Total List' },
-  { key: 'discount_pct',    label: 'Discount %' },
-  { key: 'discount_amount', label: 'Discount $' },
-  { key: 'net_price',       label: 'Net Price' },
-]
 
 // Resource type metadata mirroring what the customer sees in the public
 // viewer's Library tab. Kept local to avoid an import cycle with

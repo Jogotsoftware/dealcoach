@@ -78,7 +78,7 @@ export default function AdminConsole() {
   return (
     <OrgScopeContext.Provider value={{ orgId: scopedOrgId, setOrgId: setScopedOrgId, orgName: scopedOrg?.name || null }}>
       <div style={{ fontFamily: T.font, color: T.text, fontSize: 13, minHeight: '100vh', background: T.bg }}>
-        <div style={{ padding: '12px 24px', borderBottom: `1px solid ${T.border}`, background: T.surface }}>
+        <div style={{ padding: '12px 24px', paddingRight: 72, borderBottom: `1px solid ${T.border}`, background: T.surface }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <h1 style={{ fontSize: 18, fontWeight: 800, margin: 0, color: T.text }}>Platform Admin</h1>

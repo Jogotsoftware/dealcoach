@@ -179,7 +179,7 @@ export default function OrgDetail() {
   return (
     <div>
       {/* Header */}
-      <div style={{ padding: '16px 24px', borderBottom: `1px solid ${T.border}`, background: T.surface }}>
+      <div style={{ padding: '16px 24px', paddingRight: 72, borderBottom: `1px solid ${T.border}`, background: T.surface }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
           <button onClick={() => nav('/admin')} style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontSize: 12, color: T.primary, fontWeight: 600, fontFamily: T.font }}>&larr; Back</button>
           <div style={{ width: 40, height: 40, borderRadius: 8, background: org.primary_color || T.primary, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 18, color: '#fff' }}>

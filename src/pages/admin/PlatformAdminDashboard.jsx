@@ -87,7 +87,7 @@ export default function PlatformAdminDashboard() {
 
   return (
     <div>
-      <div style={{ padding: '14px 24px', borderBottom: `1px solid ${T.border}`, background: T.surface, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ padding: '14px 24px', paddingRight: 72, borderBottom: `1px solid ${T.border}`, background: T.surface, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h2 style={{ fontSize: 18, fontWeight: 700, color: T.text, margin: 0 }}>Platform Admin</h2>
         <div style={{ display: 'flex', gap: 8 }}>
           <Button onClick={() => nav('/admin/invitations')} style={{ padding: '6px 14px', fontSize: 12 }}>Invitations</Button>

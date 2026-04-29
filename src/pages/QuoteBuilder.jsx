@@ -74,7 +74,22 @@ function drSetPatch(quote, path, value) {
 // ──────────────────────────────────────────────────────────
 // Top-level page
 // ──────────────────────────────────────────────────────────
-export default function QuoteBuilder({ dealId: dealIdProp, quoteId: quoteIdProp, embedded = false, forcedTab = null } = {}) {
+export default function QuoteBuilder({
+  dealId: dealIdProp,
+  quoteId: quoteIdProp,
+  embedded = false,
+  forcedTab = null,
+  // When the parent owns a quote selector (Deal Room Quotes tab), pass the quote
+  // list + change handler so the picker renders inside this single unified header
+  // instead of in a separate parent Card.
+  headerQuotes = null,
+  onChangeQuote = null,
+  // Slot for parent-supplied actions (e.g. "Push to customer Proposal tab" + last
+  // pushed timestamp). Rendered between the identity row and the Preview button.
+  headerExtraAction = null,
+  // Optional eye-icon visibility toggle (e.g. for the customer Proposal tab).
+  headerVisibilityToggle = null,
+} = {}) {
   // Embedded mode lets DealDetail's "Quotes" sub-tab mount the full builder
   // inline. The standalone /deal/:dealId/quote/:quoteId route still works —
   // useParams falls through when no prop is passed.
@@ -236,6 +251,16 @@ export default function QuoteBuilder({ dealId: dealIdProp, quoteId: quoteIdProp,
             <button onClick={() => nav(`/deal/${dealId}/quotes`)} style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontSize: 12, color: T.primary, fontWeight: 600, fontFamily: T.font }}>&larr; Quotes</button>
           )}
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            {headerQuotes && headerQuotes.length > 1 && onChangeQuote && (
+              <select
+                value={quoteId}
+                onChange={e => onChangeQuote(e.target.value)}
+                title="Switch active quote"
+                style={{ ...inputStyle, fontSize: 11, padding: '6px 8px', maxWidth: 200, cursor: 'pointer', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}
+              >
+                {headerQuotes.map(q => <option key={q.id} value={q.id}>{q.name} v{q.version}{q.is_primary ? ' · primary' : ''}</option>)}
+              </select>
+            )}
             <input
               defaultValue={quote.name}
               onBlur={e => { if (e.target.value !== quote.name) saveQuoteHeader({ name: e.target.value }) }}
@@ -260,6 +285,7 @@ export default function QuoteBuilder({ dealId: dealIdProp, quoteId: quoteIdProp,
               onChange={async (id) => { await saveQuoteHeader({ signer_contact_id: id }); }}
             />
           </div>
+          {headerExtraAction}
           <Button onClick={() => nav(`/deal/${dealId}/quote/${quoteId}/proposal`)} style={{ padding: '10px 22px', fontSize: 13 }}>Preview</Button>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
             <Button primary onClick={handleSave} disabled={savingFlash} style={{ padding: '8px 18px', fontSize: 13 }}>
@@ -269,6 +295,9 @@ export default function QuoteBuilder({ dealId: dealIdProp, quoteId: quoteIdProp,
               <span style={{ fontSize: 10, color: T.textMuted }}>Saved {savedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
             )}
           </div>
+          {headerVisibilityToggle && (
+            <div style={{ display: 'flex', alignItems: 'center' }}>{headerVisibilityToggle}</div>
+          )}
         </div>
         {!forcedTab && <TabBar tabs={tabs} active={tab} onChange={setTab} />}
       </div>
@@ -474,6 +503,7 @@ function SubscriptionSection({ quote, lines, products, productMap, bundleChildre
     qty: drGet(quote, 'columns.qty', true),
     list: drGet(quote, 'columns.list', true),
     discount: drGet(quote, 'columns.discount', true),
+    discount_amount: drGet(quote, 'columns.discount_amount', true),
     price: drGet(quote, 'columns.price', true),
   }
   async function toggleColVis(key) {
@@ -674,9 +704,9 @@ function SubscriptionSection({ quote, lines, products, productMap, bundleChildre
               <ColTH label="Qty" colKey="qty" visible={colVis.qty} onToggle={() => toggleColVis('qty')} align="right" />
               <ColTH label="List" colKey="list" visible={colVis.list} onToggle={() => toggleColVis('list')} align="right" />
               <ColTH label="Disc %" colKey="discount" visible={colVis.discount} onToggle={() => toggleColVis('discount')} align="right" />
+              <ColTH label="Disc $" colKey="discount_amount" visible={colVis.discount_amount} onToggle={() => toggleColVis('discount_amount')} align="right" />
               <th style={{ ...thStyle, textAlign: 'center' }}>Exclude Global</th>
               <ColTH label="Price" colKey="price" visible={colVis.price} onToggle={() => toggleColVis('price')} align="right" />
-              <th style={{ ...thStyle, textAlign: 'center', whiteSpace: 'nowrap' }} title="Show row in customer DealRoom view">Deal Room</th>
               <th style={thStyle}></th>
             </tr>
           </thead>
@@ -755,17 +785,15 @@ function SubscriptionSection({ quote, lines, products, productMap, bundleChildre
   )
 }
 
-// Column header with a small "show in deal room" checkbox below the label
+// Column header with an inline eye-icon visibility toggle next to the label.
+// Open eye = column visible in customer deal room, slashed eye = hidden.
 function ColTH({ label, colKey, visible, onToggle, align = 'left' }) {
   return (
     <th style={{ ...thStyle, textAlign: align, padding: '6px 10px' }}>
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: align === 'right' ? 'flex-end' : align === 'center' ? 'center' : 'flex-start', gap: 2 }}>
-        <span>{label}</span>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 9, fontWeight: 500, color: visible ? T.success : T.textMuted, cursor: 'pointer', textTransform: 'none', letterSpacing: 0 }} title="Show this column in the customer Deal Room view">
-          <input type="checkbox" checked={visible} onChange={onToggle} style={{ margin: 0, width: 11, height: 11 }} />
-          Show
-        </label>
-      </div>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, justifyContent: align === 'right' ? 'flex-end' : align === 'center' ? 'center' : 'flex-start', whiteSpace: 'nowrap' }}>
+        {label}
+        <DealRoomToggle visible={visible} onToggle={onToggle} size={13} inline />
+      </span>
     </th>
   )
 }
@@ -777,15 +805,16 @@ function SubscriptionLineRow({ line, product, preview, isChild, isDraggingThis, 
   const maxRepDisc = product?.max_rep_discount_pct != null ? Number(product.max_rep_discount_pct) * 100 : null
 
   // Live price preview — flat lines compute client-side; percent lines show server's value.
-  const livePrice = (() => {
-    if (isChild) return 0
-    if (isPercent) return Number(line.extended) || 0
+  // Also expose the discount $ savings amount per line for the new Disc $ column.
+  const { livePrice, liveDiscountAmount } = (() => {
+    if (isChild) return { livePrice: 0, liveDiscountAmount: 0 }
+    if (isPercent) return { livePrice: Number(line.extended) || 0, liveDiscountAmount: 0 }
     const qty = preview.quantity != null ? Number(preview.quantity) : Number(line.quantity)
     const unit = preview.unit_price != null ? Number(preview.unit_price) : Number(line.unit_price)
     const lineDisc = preview.discount_pct != null ? Number(preview.discount_pct) : Number(line.discount_pct)
     const explicitOverride = (line.apply_global_discount === false) || (line.apply_global_discount == null && product?.excluded_from_global_discount)
     const effectiveDisc = lineDisc > 0 || explicitOverride ? lineDisc : globalDiscount
-    return qty * unit * (1 - effectiveDisc)
+    return { livePrice: qty * unit * (1 - effectiveDisc), liveDiscountAmount: qty * unit * effectiveDisc }
   })()
 
   const draggable = !isChild
@@ -838,6 +867,9 @@ function SubscriptionLineRow({ line, product, preview, isChild, isDraggingThis, 
           <span title={nonDiscountable ? 'Non-discountable per price book' : ''} style={{ color: T.textMuted }}>—</span>
         )}
       </td>
+      <td style={{ padding: '6px 10px', textAlign: 'right', fontFeatureSettings: '"tnum"', color: liveDiscountAmount > 0 ? T.success : T.textMuted }}>
+        {isChild ? '—' : (liveDiscountAmount > 0 ? `−${dollars(liveDiscountAmount)}` : '—')}
+      </td>
       <td style={{ padding: '6px 10px', textAlign: 'center' }}>
         {!isChild ? (
           <ExcludeGlobalCheckbox line={line} product={product} onChange={async (excluded) => {
@@ -848,16 +880,6 @@ function SubscriptionLineRow({ line, product, preview, isChild, isDraggingThis, 
       </td>
       <td style={{ padding: '6px 10px', textAlign: 'right', fontFeatureSettings: '"tnum"', fontWeight: 600 }}>
         {isChild ? <span style={{ color: T.textMuted }}>$0</span> : dollars(livePrice)}
-      </td>
-      <td style={{ padding: '6px 10px', textAlign: 'center' }}>
-        {!isChild && (
-          <input
-            type="checkbox"
-            checked={line.show_in_deal_room !== false}
-            onChange={e => onPersistImmediate({ show_in_deal_room: e.target.checked })}
-            title="Show this line in the customer DealRoom view"
-          />
-        )}
       </td>
       <td style={{ padding: '4px 6px', textAlign: 'center' }}>
         {!isChild && (
@@ -1190,12 +1212,38 @@ function ImplementationSection({ quote, quoteId, implItems, implementorDefault, 
   )
 }
 
-function DealRoomToggle({ visible, onToggle, label = 'Show in deal room' }) {
+// Eye-icon visibility toggle. Open eye = visible to customer, slashed eye =
+// hidden. Drop-in replacement for the previous "[ ] SHOW IN DEAL ROOM"
+// checkbox — same { visible, onToggle, label } API.
+function DealRoomToggle({ visible, onToggle, label = 'Show in deal room', size = 16, inline = false }) {
   return (
-    <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 600, color: visible ? T.success : T.textMuted, cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.04em' }} title={label}>
-      <input type="checkbox" checked={visible} onChange={onToggle} style={{ margin: 0 }} />
-      {label}
-    </label>
+    <button
+      type="button"
+      onClick={onToggle}
+      title={visible ? `Visible in customer deal room — click to hide` : `Hidden from customer deal room — click to show`}
+      aria-label={label}
+      aria-pressed={visible}
+      style={{
+        background: 'transparent', border: 'none', padding: inline ? 0 : 4, marginLeft: inline ? 6 : 0,
+        cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        color: visible ? T.primary : T.textMuted, borderRadius: 4, lineHeight: 0,
+        verticalAlign: inline ? 'middle' : 'baseline',
+      }}
+    >
+      {visible ? (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+          <circle cx="12" cy="12" r="3"/>
+        </svg>
+      ) : (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+          <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+          <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/>
+          <line x1="1" y1="1" x2="23" y2="23"/>
+        </svg>
+      )}
+    </button>
   )
 }
 
@@ -1305,6 +1353,11 @@ function TermsSection({ quote, contractTerms, saveQuoteHeader, onChanged }) {
 
   const sectionVisible = drGet(quote, 'sections.terms', true)
   const promoVisible = drGet(quote, 'sections.promo', true)
+  // Sub-section visibility (eye toggles next to each sub-label inside Terms & Promo).
+  const contractVisible      = drGet(quote, 'sections.contract', true)
+  const termTemplateVisible  = drGet(quote, 'sections.term_template', true)
+  const freeMonthsVisible    = drGet(quote, 'sections.free_months', true)
+  const signingBonusVisible  = drGet(quote, 'sections.signing_bonus', true)
 
   async function save(patch) { await saveQuoteHeader(patch); await onChanged() }
 
@@ -1341,7 +1394,10 @@ function TermsSection({ quote, contractTerms, saveQuoteHeader, onChanged }) {
     <Card title="Terms & Promo" action={<DealRoomToggle visible={sectionVisible} onToggle={() => save(drSetPatch(quote, 'sections.terms', !sectionVisible))} />}>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}>
         <div>
-          <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', marginBottom: 8 }}>Contract</div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', marginBottom: 8, display: 'inline-flex', alignItems: 'center' }}>
+            Contract
+            <DealRoomToggle visible={contractVisible} onToggle={() => save(drSetPatch(quote, 'sections.contract', !contractVisible))} size={13} inline />
+          </div>
           <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
             {[1, 3, 5].map(yr => (
               <button key={yr} onClick={() => setTermFilter(yr)} style={{ padding: '5px 12px', fontSize: 12, fontWeight: 600, border: `1px solid ${termFilter === yr ? T.primary : T.border}`, borderRadius: 4, background: termFilter === yr ? T.primary : T.surface, color: termFilter === yr ? '#fff' : T.text, cursor: 'pointer', fontFamily: T.font }}>{yr}-year</button>
@@ -1364,7 +1420,10 @@ function TermsSection({ quote, contractTerms, saveQuoteHeader, onChanged }) {
             </>
           ) : (
             <>
-              <label style={labelStyle}>Term template</label>
+              <label style={{ ...labelStyle, display: 'inline-flex', alignItems: 'center' }}>
+                Term template
+                <DealRoomToggle visible={termTemplateVisible} onToggle={() => save(drSetPatch(quote, 'sections.term_template', !termTemplateVisible))} size={13} inline />
+              </label>
               <select
                 style={{ ...inputStyle, cursor: 'pointer', marginBottom: 10 }}
                 value={selectedTerm && selectedTerm.term_years === termFilter ? selectedTerm.id : ''}
@@ -1407,7 +1466,10 @@ function TermsSection({ quote, contractTerms, saveQuoteHeader, onChanged }) {
             <span style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase' }}>Promo &amp; Incentives</span>
             <DealRoomToggle visible={promoVisible} onToggle={() => save(drSetPatch(quote, 'sections.promo', !promoVisible))} />
           </div>
-          <label style={labelStyle}>Free months (0–12)</label>
+          <label style={{ ...labelStyle, display: 'inline-flex', alignItems: 'center' }}>
+            Free months (0–12)
+            <DealRoomToggle visible={freeMonthsVisible} onToggle={() => save(drSetPatch(quote, 'sections.free_months', !freeMonthsVisible))} size={13} inline />
+          </label>
           <div style={{ display: 'flex', gap: 6, alignItems: 'stretch' }}>
             <input type="number" min="0" max="12" step="1" style={{ ...inputStyle, width: 80, flex: '0 0 80px' }} defaultValue={quote.free_months}
               onBlur={e => {
@@ -1428,7 +1490,10 @@ function TermsSection({ quote, contractTerms, saveQuoteHeader, onChanged }) {
           )}
 
           <div style={{ marginTop: 14, paddingTop: 10, borderTop: `1px solid ${T.borderLight}` }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: T.text, marginBottom: 6 }}>Signing bonus</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6, display: 'inline-flex', alignItems: 'center' }}>
+              Signing bonus
+              <DealRoomToggle visible={signingBonusVisible} onToggle={() => save(drSetPatch(quote, 'sections.signing_bonus', !signingBonusVisible))} size={13} inline />
+            </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
               <div>
                 <label style={labelStyle}>Lump sum</label>
@@ -1506,7 +1571,7 @@ function PartnersTab({ quote, quoteId, partnerBlocks, partnerLines, implItems, s
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-        <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: T.text }}>Partner Subscriptions</h3>
+        <h3 style={{ margin: 0, fontSize: 12, fontWeight: 800, color: '#1a1a2e', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Partner Subscriptions</h3>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <DealRoomToggle visible={sectionVisible} onToggle={() => saveQuoteHeader(drSetPatch(quote, 'sections.partners', !sectionVisible))} />
           <Button primary onClick={addBlock}>+ Add Partner Block</Button>

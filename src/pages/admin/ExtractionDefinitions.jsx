@@ -62,7 +62,7 @@ export default function ExtractionDefinitions() {
 
   return (
     <div>
-      <div style={{ padding: '14px 24px', borderBottom: `1px solid ${T.border}`, background: T.surface }}>
+      <div style={{ padding: '14px 24px', paddingRight: 72, borderBottom: `1px solid ${T.border}`, background: T.surface }}>
         <h2 style={{ fontSize: 18, fontWeight: 700, color: T.text, margin: 0 }}>Extraction Definitions & AI Rules</h2>
         <div style={{ fontSize: 12, color: T.textMuted, marginTop: 4 }}>Locked platform rules that govern how the AI extracts and validates data. Changes are versioned and audited.</div>
       </div>
