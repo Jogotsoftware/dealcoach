@@ -293,9 +293,7 @@ export default function MSPCalendar({
                   views={{ month: true }}
                   startAccessor="start"
                   endAccessor="end"
-                  components={isMulti
-                    ? { event: MyEvent, toolbar: NoToolbar }
-                    : { event: MyEvent }}
+                  components={{ event: MyEvent, toolbar: NoToolbar }}
                   eventPropGetter={eventPropGetter}
                   dayPropGetter={dayPropGetter}
                   onSelectEvent={onSelectEvent}
