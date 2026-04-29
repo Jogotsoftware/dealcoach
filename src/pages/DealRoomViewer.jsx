@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useParams, useLocation } from 'react-router-dom'
 import { theme as T, formatDate } from '../lib/theme'
 import { Spinner } from '../components/Shared'
-import MSPCalendar from '../components/MSPCalendar'
+import MSPEditor from '../components/MSPEditor'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -34,14 +34,17 @@ const MILESTONE_FIELDS = [
   { key: 'notes',          label: 'Notes',      kind: 'textarea' },
 ]
 
-function displayDate(item) {
-  if (item?.date_label && String(item.date_label).trim()) return item.date_label
-  if (item?.due_date) return formatDate(item.due_date)
-  if (item?.start_date) return formatDate(item.start_date)
-  return 'TBD'
+// Helpers used to massage the dealroom-access edge function payload into the
+// shape MSPEditor's readonlyAdapter expects.
+function buildPendingMap(pendingRequests = []) {
+  const m = new Map()
+  for (const r of pendingRequests) m.set(`${r.target_table}:${r.target_id}`, r)
+  return m
 }
-function displayColor(item, parent) {
-  return item?.color || parent?.color || T.primary
+function buildCommentCountMap(commentCounts = {}) {
+  const m = new Map()
+  for (const [k, v] of Object.entries(commentCounts || {})) m.set(k, v)
+  return m
 }
 
 async function callDealRoom(action, magicToken, body = {}) {
@@ -80,19 +83,23 @@ export default function DealRoomViewer() {
     if (!meta) return
     const company = meta.deal?.company_name
     document.title = company ? `Evaluation Room · ${company}` : 'Evaluation Room'
-    // Favicon: prefer a PNG dropped at /evaluation-room.png if present, else
-    // fall back to the gradient-S SVG that ships with the app. Both files
-    // live under public/. Customers always see this icon — never the AE org
-    // logo, never the platform default.
+    // Favicon: probe for /evaluation-room.png first (drop a real PNG there
+    // for pixel-perfect rendering); fall back to the gradient-S SVG that
+    // ships with the app. Customers always see this icon — never the AE
+    // org logo, never the platform default.
     const head = document.head
     const previous = []
     head.querySelectorAll('link[rel~="icon"]').forEach(l => { previous.push({ node: l, parent: l.parentNode }); l.remove() })
     const link = document.createElement('link')
     link.rel = 'icon'
-    link.type = 'image/svg+xml'
-    link.href = '/evaluation-room.svg'
     head.appendChild(link)
+    let cancelled = false
+    const probe = new Image()
+    probe.onload = () => { if (!cancelled) { link.type = 'image/png'; link.href = '/evaluation-room.png' } }
+    probe.onerror = () => { if (!cancelled) { link.type = 'image/svg+xml'; link.href = '/evaluation-room.svg' } }
+    probe.src = '/evaluation-room.png'
     return () => {
+      cancelled = true
       link.remove()
       previous.forEach(({ node, parent }) => parent && parent.appendChild(node))
     }
@@ -250,15 +257,25 @@ export default function DealRoomViewer() {
           </div>
         )}
         {tab === 'msp' && (
-          <MspTabContent
-            data={msp}
-            archived={archived}
-            view={view}
-            onView={setView}
-            onComment={submitComment}
-            onRequestChange={(payload) => setChangeModal(payload)}
-            themeColor={themeColor}
-          />
+          msp ? (
+            <MSPEditor
+              dealId={meta.deal_room_id /* used as cache key only in readonly */}
+              mode="readonly"
+              injectedData={{
+                stages: msp.stages || [],
+                milestones: msp.milestones || [],
+                company_name: deal?.company_name,
+              }}
+              readonlyAdapter={{
+                archived,
+                themeColor,
+                pendingRequestsByTarget: buildPendingMap(msp.pending_requests),
+                commentCountsByRef: buildCommentCountMap(msp.comment_counts),
+                onRequestChange: (payload) => setChangeModal(payload),
+                onComment: (refKind, refId, text) => submitComment('msp', text, { reference_kind: refKind, reference_id: refId }),
+              }}
+            />
+          ) : <Spinner />
         )}
 
         {tab === 'library' && (
@@ -302,157 +319,6 @@ export default function DealRoomViewer() {
       {teammateModal && (
         <TeammateModal onClose={() => setTeammateModal(false)}
           onSubmit={async (e, n) => { const link = await addTeammate(e, n); if (link) { setTeammateModal(false); navigator.clipboard?.writeText(link).catch(() => {}); alert(`Send this to ${e}:\n\n${link}\n\n(copied to clipboard)`) } }} />
-      )}
-    </div>
-  )
-}
-
-// ════════════════════════════════════════════
-// MSP tab
-// ════════════════════════════════════════════
-function MspTabContent({ data, archived, view, onView, onComment, onRequestChange, themeColor }) {
-  if (!data) return <Spinner />
-  const accent = themeColor || T.primary
-  const { stages = [], milestones = [], pending_requests = [], comment_counts = {} } = data
-  const pendingByTarget = useMemo(() => {
-    const m = new Map()
-    for (const r of pending_requests) m.set(`${r.target_table}:${r.target_id}`, r)
-    return m
-  }, [pending_requests])
-
-  return (
-    <div>
-      <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
-        {[{ k: 'timeline', l: 'Timeline' }, { k: 'calendar', l: 'Calendar' }].map(v => (
-          <button key={v.k} onClick={() => onView(v.k)}
-            style={{ padding: '5px 12px', fontSize: 11, fontWeight: 600, border: `1px solid ${view === v.k ? accent : T.border}`, borderRadius: 4, background: view === v.k ? accent : T.surface, color: view === v.k ? '#fff' : T.text, cursor: 'pointer', fontFamily: T.font }}>
-            {v.l}
-          </button>
-        ))}
-      </div>
-
-      {view === 'calendar' && (
-        <MSPCalendar
-          stages={stages}
-          milestones={milestones}
-          readOnly
-          onSelectEvent={(evt) => {
-            const r = evt.resource || {}
-            if (r.kind === 'stage') onRequestChange({ kind: 'stage', item: r.stage, parent: null, targetTable: 'msp_stages' })
-            else if (r.kind === 'milestone') onRequestChange({ kind: 'milestone', item: r.milestone, parent: r.parentStage, targetTable: 'msp_milestones' })
-          }}
-        />
-      )}
-
-      {view === 'timeline' && stages.length === 0 && (
-        <div style={{ padding: 32, textAlign: 'center', color: T.textMuted, fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8 }}>
-          No stages yet — your AE is preparing this section.
-        </div>
-      )}
-
-      {view === 'timeline' && stages.map(stage => {
-        const stageReq = pendingByTarget.get(`msp_stages:${stage.id}`)
-        const stageMs = milestones.filter(m => m.msp_stage_id === stage.id)
-        const color = displayColor(stage)
-        const dateText = displayDate(stage)
-        return (
-          <div key={stage.id} style={{ marginBottom: 14, background: T.surface, border: `1px solid ${T.border}`, borderLeft: `4px solid ${color}`, borderRadius: 8, padding: 16 }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
-              <div style={{ flex: 1, minWidth: 220 }}>
-                <div style={{ fontSize: 16, fontWeight: 700, color: T.text }}>{stage.stage_name}</div>
-                <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 4, fontSize: 12, color: T.textSecondary, flexWrap: 'wrap' }}>
-                  <span><strong>Date:</strong> {dateText}</span>
-                  {stage.duration && <span><strong>Duration:</strong> {stage.duration}</span>}
-                  <StatusPill status={stage.status} />
-                </div>
-                {stage.notes && <div style={{ marginTop: 8, fontSize: 12, color: T.textSecondary, whiteSpace: 'pre-wrap' }}>{stage.notes}</div>}
-              </div>
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                {stageReq ? (
-                  <span style={{ padding: '4px 10px', background: T.warningLight, color: T.warning, fontSize: 10, fontWeight: 600, borderRadius: 999, border: `1px solid ${T.warning}30` }}>Change requested · pending review</span>
-                ) : !archived && (
-                  <button onClick={() => onRequestChange({ kind: 'stage', item: stage, parent: null, targetTable: 'msp_stages' })}
-                    style={{ padding: '4px 10px', fontSize: 11, border: `1px solid ${T.border}`, borderRadius: 4, background: T.surface, color: accent, fontWeight: 600, cursor: 'pointer', fontFamily: T.font }}>
-                    Request change
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {stageMs.length > 0 && (
-              <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px dashed ${T.borderLight}` }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', marginBottom: 6 }}>Milestones</div>
-                {stageMs.map(m => {
-                  const mReq = pendingByTarget.get(`msp_milestones:${m.id}`)
-                  const mColor = displayColor(m, stage)
-                  return (
-                    <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', marginBottom: 4, background: T.surfaceAlt, borderRadius: 4, borderLeft: `3px solid ${mColor}`, flexWrap: 'wrap' }}>
-                      <div style={{ flex: 1, minWidth: 200 }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{m.milestone_name}</div>
-                        <div style={{ display: 'flex', gap: 10, fontSize: 11, color: T.textSecondary, marginTop: 2 }}>
-                          <span>{displayDate(m)}</span>
-                          <StatusPill status={m.status} />
-                        </div>
-                      </div>
-                      {mReq ? (
-                        <span style={{ padding: '2px 8px', background: T.warningLight, color: T.warning, fontSize: 10, fontWeight: 600, borderRadius: 999, border: `1px solid ${T.warning}30` }}>Change requested</span>
-                      ) : !archived && (
-                        <button onClick={() => onRequestChange({ kind: 'milestone', item: m, parent: stage, targetTable: 'msp_milestones' })}
-                          style={{ padding: '3px 8px', fontSize: 10, border: `1px solid ${T.border}`, borderRadius: 4, background: T.surface, color: accent, fontWeight: 600, cursor: 'pointer', fontFamily: T.font }}>
-                          Request change
-                        </button>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-
-            {/* Per-item comment composer */}
-            {!archived && (
-              <CommentComposer
-                onSubmit={(text) => onComment('msp', text, { reference_kind: 'msp_stage', reference_id: stage.id })}
-                placeholder="Comment on this stage…"
-                count={comment_counts[`msp_stage:${stage.id}`] || 0}
-              />
-            )}
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
-function StatusPill({ status }) {
-  const c = STATUS_COLORS[status] || T.textMuted
-  return (
-    <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: 10, fontWeight: 700, color: c, background: c + '18', border: `1px solid ${c}30`, textTransform: 'uppercase' }}>
-      {(status || '').replace('_', ' ')}
-    </span>
-  )
-}
-
-function CommentComposer({ onSubmit, placeholder, count }) {
-  const [open, setOpen] = useState(false)
-  const [text, setText] = useState('')
-  return (
-    <div style={{ marginTop: 10, paddingTop: 8, borderTop: `1px dashed ${T.borderLight}` }}>
-      {!open ? (
-        <button onClick={() => setOpen(true)}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, fontSize: 11, padding: 0, fontFamily: T.font }}>
-          {count > 0 ? `${count} comment${count === 1 ? '' : 's'} · ` : ''}+ Add a comment
-        </button>
-      ) : (
-        <div style={{ display: 'flex', gap: 6 }}>
-          <textarea value={text} onChange={e => setText(e.target.value)} placeholder={placeholder} rows={2}
-            style={{ flex: 1, padding: 8, fontSize: 12, border: `1px solid ${T.border}`, borderRadius: 4, background: T.surface, color: T.text, fontFamily: T.font, resize: 'vertical' }} />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <button onClick={async () => { if (text.trim()) { const ok = await onSubmit(text.trim()); if (ok) { setText(''); setOpen(false) } } }}
-              style={{ padding: '6px 10px', fontSize: 11, fontWeight: 600, background: T.primary, color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontFamily: T.font }}>Post</button>
-            <button onClick={() => { setOpen(false); setText('') }}
-              style={{ padding: '6px 10px', fontSize: 11, fontWeight: 600, background: T.surface, color: T.textMuted, border: `1px solid ${T.border}`, borderRadius: 4, cursor: 'pointer', fontFamily: T.font }}>Cancel</button>
-          </div>
-        </div>
       )}
     </div>
   )

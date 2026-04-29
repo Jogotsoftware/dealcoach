@@ -4,9 +4,9 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { useOrg } from '../contexts/OrgContext'
 import { theme as T, formatDate } from '../lib/theme'
-import { Card, Badge, Button, Spinner, EmptyState, inputStyle, labelStyle } from '../components/Shared'
+import { Card, Badge, Button, Spinner, inputStyle, labelStyle } from '../components/Shared'
 import CompanyLogo from '../components/CompanyLogo'
-import MSPCalendar from '../components/MSPCalendar'
+import MSPEditor from '../components/MSPEditor'
 
 const APP_BASE = (typeof window !== 'undefined' && window.location.origin) || ''
 
@@ -177,26 +177,11 @@ export default function DealRoomConfig() {
     try { await navigator.clipboard.writeText(url); alert('Link copied — paste it into a message to your team or your customer.') } catch { window.prompt('Copy this URL:', url) }
   }
 
-  async function openCustomerPreview() {
-    // The AE doesn't have a magic_token; passing none means the public viewer
-    // will show the "invalid token" page. For preview, we'll create a temp
-    // viewer for the AE's email if profile is available — or just open the URL
-    // and let them paste in a token if needed.
-    if (!profile?.email) { window.open(`${APP_BASE}/room/${room.share_token}`, '_blank'); return }
-    try {
-      const { data: existing } = await supabase.from('deal_room_viewers').select('magic_token').eq('deal_room_id', room.id).eq('email', profile.email.toLowerCase()).maybeSingle()
-      let token = existing?.magic_token
-      if (!existing) {
-        const { data: created } = await supabase.from('deal_room_viewers').insert({
-          deal_room_id: room.id, email: profile.email.toLowerCase(), name: profile.full_name || 'AE Preview', added_by: 'rep',
-        }).select('magic_token').single()
-        token = created?.magic_token
-      }
-      window.open(`${APP_BASE}/room/${room.share_token}?t=${token}`, '_blank')
-    } catch (e) {
-      console.error('preview failed:', e)
-      window.open(`${APP_BASE}/room/${room.share_token}`, '_blank')
-    }
+  function openCustomerPreview() {
+    // Authenticated AE preview route. Does NOT create a viewer row, does NOT
+    // log a view, and does NOT fire first-view notifications. Reads room
+    // data via RLS using the AE's session.
+    window.open(`${APP_BASE}/deal/${dealId}/room/preview`, '_blank')
   }
 
   async function aeReply(parentComment, text) {
@@ -394,35 +379,11 @@ export default function DealRoomConfig() {
           </div>
         </Card>
 
-        {/* Card 3: Project Plan (calendar view + open editor link) */}
-        <Card title="Project Plan" action={<Button onClick={() => nav(`/deal/${dealId}/msp`)} style={{ padding: '4px 10px', fontSize: 11 }}>Open full Project Plan editor</Button>}>
-          <div style={{ fontSize: 11, color: T.textSecondary, marginBottom: 10 }}>
-            Calendar view shows the rolling 6-month window the customer will see. Click an event to jump to it in the Project Plan editor.
-          </div>
-          {stages.length === 0 ? (
-            <EmptyState title="No project plan stages yet" message="Build your stages and milestones in the Project Plan editor." action={<Button primary onClick={() => nav(`/deal/${dealId}/msp`)}>Open Project Plan editor</Button>} />
-          ) : (
-            <MSPCalendar
-              stages={stages}
-              milestones={milestones}
-              onSelectEvent={(evt) => {
-                // Send the AE to the MSP editor — they edit there, not here
-                nav(`/deal/${dealId}/msp`)
-              }}
-              onMoveStage={async (stage, newStart, newEnd) => {
-                const startStr = newStart.toISOString().split('T')[0]
-                const endStr = newEnd.toISOString().split('T')[0]
-                await supabase.from('msp_stages').update({ start_date: startStr, end_date: endStr, due_date: endStr }).eq('id', stage.id)
-                await load()
-              }}
-              onResizeStage={async (stage, newStart, newEnd) => {
-                const startStr = newStart.toISOString().split('T')[0]
-                const endStr = newEnd.toISOString().split('T')[0]
-                await supabase.from('msp_stages').update({ start_date: startStr, end_date: endStr, due_date: endStr }).eq('id', stage.id)
-                await load()
-              }}
-            />
-          )}
+        {/* Card 3: Project Plan — full editor embedded inline. The standalone
+            /deal/:dealId/msp page is the same editor with a header — both
+            mount the same MSPEditor component. */}
+        <Card title="Project Plan" action={<Button onClick={() => nav(`/deal/${dealId}/msp`)} style={{ padding: '4px 10px', fontSize: 11 }}>Open standalone editor</Button>}>
+          <MSPEditor dealId={dealId} mode="embedded" />
         </Card>
 
         {/* Card 4: Viewers & Activity */}

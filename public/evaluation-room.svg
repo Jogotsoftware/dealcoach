@@ -1,14 +1,22 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none">
   <defs>
-    <linearGradient id="g" x1="20%" y1="0%" x2="80%" y2="100%">
-      <stop offset="0%" stop-color="#a855f7"/>
-      <stop offset="40%" stop-color="#22d3ee"/>
+    <linearGradient id="g" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#a259ff"/>
+      <stop offset="48%" stop-color="#22d3ee"/>
       <stop offset="100%" stop-color="#22c55e"/>
     </linearGradient>
   </defs>
-  <rect width="64" height="64" rx="13" fill="#000"/>
-  <text x="22" y="46" font-family="-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="42" font-weight="900" fill="url(#g)" text-anchor="middle">s</text>
-  <g transform="translate(46 24)" fill="url(#g)">
-    <path d="M 0 -7 L 1.6 -2 L 7 -1 L 1.6 0 L 0 5 L -1.6 0 L -7 -1 L -1.6 -2 Z" transform="rotate(0)"/>
-  </g>
+  <path
+    d="M 50 10
+       C 22 10, 10 32, 30 42
+       C 50 50, 60 60, 50 74
+       C 38 88, 16 84, 10 78"
+    stroke="url(#g)" stroke-width="17" stroke-linecap="round" stroke-linejoin="round"/>
+  <path
+    d="M 80 32
+       C 80 32, 82 46, 92 50
+       C 82 54, 80 68, 80 68
+       C 80 68, 78 54, 68 50
+       C 78 46, 80 32, 80 32 Z"
+    fill="url(#g)"/>
 </svg>

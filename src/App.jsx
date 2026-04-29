@@ -16,6 +16,7 @@ import QuoteBuilder from './pages/QuoteBuilder'
 import ProposalRenderer from './pages/ProposalRenderer'
 import DealRoomConfig from './pages/DealRoomConfig'
 import DealRoomViewer from './pages/DealRoomViewer'
+import DealRoomPreview from './pages/DealRoomPreview'
 import NotificationsPage from './pages/Notifications'
 import CallDetail from './pages/CallDetail'
 import CoachAdmin from './pages/CoachAdmin'
@@ -107,6 +108,7 @@ export default function App() {
                 <Route path="/deal/:dealId/quote/:quoteId" element={<ErrorBoundary label="quote builder"><QuoteBuilder /></ErrorBoundary>} />
                 <Route path="/deal/:dealId/quote/:quoteId/proposal" element={<ErrorBoundary label="proposal preview"><ProposalRenderer /></ErrorBoundary>} />
                 <Route path="/deal/:dealId/room" element={<ErrorBoundary label="deal room"><DealRoomConfig /></ErrorBoundary>} />
+                <Route path="/deal/:dealId/room/preview" element={<ErrorBoundary label="deal room preview"><DealRoomPreview /></ErrorBoundary>} />
                 <Route path="/notifications" element={<ErrorBoundary label="notifications"><NotificationsPage /></ErrorBoundary>} />
                 <Route path="/coach" element={<ErrorBoundary label="coach admin"><CoachAdmin /></ErrorBoundary>} />
                 <Route path="/coach/builder" element={<ErrorBoundary label="coach builder"><CoachBuilder /></ErrorBoundary>} />
