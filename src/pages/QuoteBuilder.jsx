@@ -74,8 +74,13 @@ function drSetPatch(quote, path, value) {
 // ──────────────────────────────────────────────────────────
 // Top-level page
 // ──────────────────────────────────────────────────────────
-export default function QuoteBuilder() {
-  const { dealId, quoteId } = useParams()
+export default function QuoteBuilder({ dealId: dealIdProp, quoteId: quoteIdProp, embedded = false } = {}) {
+  // Embedded mode lets DealDetail's "Quotes" sub-tab mount the full builder
+  // inline. The standalone /deal/:dealId/quote/:quoteId route still works —
+  // useParams falls through when no prop is passed.
+  const params = useParams()
+  const dealId = dealIdProp || params.dealId
+  const quoteId = quoteIdProp || params.quoteId
   const nav = useNavigate()
   const { profile } = useAuth()
   const { org } = useOrg()
@@ -221,9 +226,13 @@ export default function QuoteBuilder() {
 
   return (
     <div>
-      <div style={{ padding: '14px 24px', borderBottom: `1px solid ${T.border}`, background: T.surface, position: 'sticky', top: 0, zIndex: 10 }}>
+      <div style={embedded
+        ? { padding: '12px 24px', borderBottom: `1px solid ${T.border}`, background: T.surface }
+        : { padding: '14px 24px', borderBottom: `1px solid ${T.border}`, background: T.surface, position: 'sticky', top: 0, zIndex: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10, flexWrap: 'wrap' }}>
-          <button onClick={() => nav(`/deal/${dealId}/quotes`)} style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontSize: 12, color: T.primary, fontWeight: 600, fontFamily: T.font }}>&larr; Quotes</button>
+          {!embedded && (
+            <button onClick={() => nav(`/deal/${dealId}/quotes`)} style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontSize: 12, color: T.primary, fontWeight: 600, fontFamily: T.font }}>&larr; Quotes</button>
+          )}
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <input
               defaultValue={quote.name}
@@ -250,7 +259,6 @@ export default function QuoteBuilder() {
             />
           </div>
           <Button onClick={() => nav(`/deal/${dealId}/quote/${quoteId}/proposal`)} style={{ padding: '10px 22px', fontSize: 13 }}>Preview</Button>
-          <Button onClick={() => nav(`/deal/${dealId}/room`)} style={{ padding: '10px 18px', fontSize: 13 }}>Open Deal Room</Button>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
             <Button primary onClick={handleSave} disabled={savingFlash} style={{ padding: '8px 18px', fontSize: 13 }}>
               {savingFlash ? 'Saving…' : 'Save'}
@@ -1620,7 +1628,7 @@ const RESOURCE_TYPE_META = {
   misc:       { label: 'Other',      color: T.textMuted, accept: '',                                                  allowFile: true,  allowUrl: true },
 }
 
-function ResourcesTab({ deal, onDealUpdated }) {
+export function ResourcesTab({ deal, onDealUpdated }) {
   const { org } = useOrg()
   const { profile } = useAuth()
   const [resources, setResources] = useState([])

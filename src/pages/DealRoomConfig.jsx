@@ -7,6 +7,7 @@ import { theme as T, formatDate } from '../lib/theme'
 import { Card, Badge, Button, Spinner, inputStyle, labelStyle } from '../components/Shared'
 import CompanyLogo from '../components/CompanyLogo'
 import MSPEditor from '../components/MSPEditor'
+import QuoteBuilder, { ResourcesTab } from './QuoteBuilder'
 
 const APP_BASE = (typeof window !== 'undefined' && window.location.origin) || ''
 
@@ -335,56 +336,73 @@ export default function DealRoomConfig({ embedded = false, dealId: dealIdProp } 
           </div>
         )}
 
-        {/* When embedded, show the Preview button as a small inline action above the share row */}
-        {embedded && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 24px 0', flexWrap: 'wrap' }}>
-            {archived && <Badge color={T.warning}>Archived</Badge>}
-            <div style={{ flex: 1 }} />
-            <Button onClick={openCustomerPreview} style={{ padding: '6px 14px', fontSize: 12 }}>Preview customer view ↗</Button>
-          </div>
-        )}
+        {/* Single share row — URL with inline copy + mode + expiration + enabled + Preview */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 24px', flexWrap: 'wrap' }}>
+          {archived && <Badge color={T.warning}>Archived</Badge>}
 
-        {/* Row 2: share row */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 24px 10px', flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 280 }}>
-            <span style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase' }}>Share</span>
+          {/* Share URL with inline copy icon */}
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 0, border: `1px solid ${T.border}`, borderRadius: 6, background: T.surface, overflow: 'hidden' }}>
             <input readOnly value={shareUrl}
               onClick={e => e.target.select()}
-              style={{ ...inputStyle, fontFamily: T.mono, fontSize: 11, flex: 1, padding: '5px 8px' }} />
-            <Button primary onClick={copyShareUrl} style={{ padding: '5px 12px', fontSize: 11, whiteSpace: 'nowrap' }}>Share With Your Team</Button>
+              style={{ border: 'none', outline: 'none', padding: '6px 10px', fontFamily: T.mono, fontSize: 11, color: T.text, width: 220, background: 'transparent' }} />
+            <button onClick={copyShareUrl} title="Copy link"
+              style={{ background: 'transparent', border: 'none', borderLeft: `1px solid ${T.borderLight}`, cursor: 'pointer', padding: '6px 10px', color: T.textMuted, display: 'inline-flex', alignItems: 'center' }}
+              onMouseEnter={e => e.currentTarget.style.color = T.primary}
+              onMouseLeave={e => e.currentTarget.style.color = T.textMuted}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+              </svg>
+            </button>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <span style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', marginRight: 2 }}>Mode</span>
+          {/* Mode pills */}
+          <div style={{ display: 'inline-flex', border: `1px solid ${T.border}`, borderRadius: 6, overflow: 'hidden' }}>
             {[
               { k: 'open_token', l: 'Open' },
               { k: 'magic_link', l: 'Magic' },
-            ].map(m => (
+            ].map((m, i) => (
               <button key={m.k}
                 onClick={() => saveRoom({ access_mode: m.k })}
-                style={{ padding: '4px 10px', fontSize: 11, fontWeight: 600, border: `1px solid ${room.access_mode === m.k ? T.primary : T.border}`, borderRadius: 4, background: room.access_mode === m.k ? T.primaryLight : T.surface, color: room.access_mode === m.k ? T.primary : T.textMuted, cursor: 'pointer', fontFamily: T.font }}>
+                style={{ padding: '6px 10px', fontSize: 11, fontWeight: 600, border: 'none', borderLeft: i > 0 ? `1px solid ${T.border}` : 'none', background: room.access_mode === m.k ? T.primary : T.surface, color: room.access_mode === m.k ? '#fff' : T.textMuted, cursor: 'pointer', fontFamily: T.font }}>
                 {m.l}
               </button>
             ))}
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {/* Expiration — empty input means "no expiration"; clearing it null's the column */}
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             <span style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase' }}>Expires</span>
             <input type="date" defaultValue={room.expires_at ? new Date(room.expires_at).toISOString().split('T')[0] : ''}
-              onBlur={e => {
+              onChange={e => {
                 const v = e.target.value ? new Date(e.target.value + 'T23:59:59').toISOString() : null
                 if (v !== room.expires_at) saveRoom({ expires_at: v })
               }}
-              style={{ ...inputStyle, padding: '4px 8px', fontSize: 11, width: 132 }} />
-            <span style={{ fontSize: 10, color: T.textMuted, whiteSpace: 'nowrap' }}>
-              {!room.expires_at ? 'No expiration' : (expiringInDays >= 0 ? `${expiringInDays}d left` : `${Math.abs(expiringInDays)}d ago`)}
-            </span>
+              title={room.expires_at ? `Expires ${new Date(room.expires_at).toLocaleDateString()}` : 'No expiration set'}
+              style={{ ...inputStyle, padding: '4px 8px', fontSize: 11, width: 132, color: room.expires_at ? T.text : T.textMuted }} />
+            {room.expires_at && (
+              <span style={{ fontSize: 10, color: expiringInDays < 0 ? T.error : T.textMuted, whiteSpace: 'nowrap' }}>
+                {expiringInDays >= 0 ? `${expiringInDays}d left` : `${Math.abs(expiringInDays)}d ago`}
+              </span>
+            )}
           </div>
 
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 11 }}>
-            <input type="checkbox" checked={room.enabled} onChange={e => saveRoom({ enabled: e.target.checked })} disabled={busy} />
-            {room.enabled ? <Badge color={T.success}>Enabled</Badge> : <Badge color={T.error}>Disabled</Badge>}
-          </label>
+          {/* Enabled toggle */}
+          <button onClick={() => saveRoom({ enabled: !room.enabled })} disabled={busy}
+            title={room.enabled ? 'Click to disable customer access' : 'Click to enable customer access'}
+            style={{ padding: '4px 10px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', border: `1px solid ${room.enabled ? T.success : T.error}40`, borderRadius: 999, background: room.enabled ? T.success + '18' : T.error + '18', color: room.enabled ? T.success : T.error, cursor: 'pointer', fontFamily: T.font }}>
+            {room.enabled ? 'Enabled' : 'Disabled'}
+          </button>
+
+          <div style={{ flex: 1 }} />
+
+          {/* Preview customer view — sleek icon button */}
+          <button onClick={openCustomerPreview} title="Preview customer view"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', border: `1px solid ${T.border}`, borderRadius: 6, background: T.surface, color: T.text, cursor: 'pointer', fontFamily: T.font, fontSize: 12, fontWeight: 600 }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+            </svg>
+            Preview
+          </button>
         </div>
 
         {/* Row 3: sub-tabs */}
@@ -457,39 +475,9 @@ export default function DealRoomConfig({ embedded = false, dealId: dealIdProp } 
             onBlurSave={() => saveTabNote('library')}
             savedAt={noteSavedAt.library}
           />
-          <Card
-            title={`Library — what the customer sees (${resources.length} ${resources.length === 1 ? 'resource' : 'resources'})`}
-            action={primaryQuoteId
-              ? <Button primary onClick={() => nav(`/deal/${dealId}/quote/${primaryQuoteId}#resources`)} style={{ padding: '4px 12px', fontSize: 11 }}>Edit resources in QuoteBuilder →</Button>
-              : <Button primary onClick={() => nav(`/deal/${dealId}/quotes`)} style={{ padding: '4px 12px', fontSize: 11 }}>Build a quote first</Button>}
-          >
-            <div style={{ fontSize: 11, color: T.textSecondary, marginBottom: 12 }}>
-              Read-only preview of the cards the customer sees in the Library tab of their Evaluation Room. Add, edit, and reorder resources in QuoteBuilder; this view auto-syncs.
-            </div>
-            {resources.length === 0 ? (
-              <div style={{ padding: 28, textAlign: 'center', color: T.textMuted, fontSize: 13, background: T.surfaceAlt, borderRadius: 8 }}>
-                No resources yet. {primaryQuoteId
-                  ? <>Add demos, decks, links, and documents in <a onClick={() => nav(`/deal/${dealId}/quote/${primaryQuoteId}#resources`)} style={{ color: T.primary, cursor: 'pointer', textDecoration: 'underline' }}>QuoteBuilder Resources</a>.</>
-                  : 'Build a quote first, then add resources from its Resources tab.'}
-              </div>
-            ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 14 }}>
-                {resources.map(r => {
-                  const meta = LIBRARY_RESOURCE_META[r.resource_type] || LIBRARY_RESOURCE_META.misc
-                  return (
-                    <div key={r.id} style={{ background: T.surface, border: `1px solid ${T.border}`, borderLeft: `4px solid ${meta.color}`, borderRadius: 8, padding: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      <span style={{ display: 'inline-block', alignSelf: 'flex-start', padding: '3px 10px', background: meta.color + '18', color: meta.color, fontSize: 10, fontWeight: 700, borderRadius: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{meta.label}</span>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: T.text, lineHeight: 1.3 }}>{r.title}</div>
-                      {r.notes && <div style={{ fontSize: 12, color: T.textSecondary, lineHeight: 1.5 }}>{r.notes}</div>}
-                      {r.storage_path && r.file_size != null && (
-                        <div style={{ fontSize: 10, color: T.textMuted }}>{Math.round(r.file_size / 1024)} KB · {r.mime_type || 'file'}</div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </Card>
+          {/* Full Library editor: + New, From library, Save to library on each card.
+              The Deal Room IS where this lives — no link out to QuoteBuilder. */}
+          <ResourcesTab deal={deal} onDealUpdated={() => load()} />
           </>
         )}
 
@@ -505,27 +493,33 @@ export default function DealRoomConfig({ embedded = false, dealId: dealIdProp } 
             onBlurSave={() => saveTabNote('proposal')}
             savedAt={noteSavedAt.proposal}
           />
-          <Card title="What the customer will see in the Proposal tab">
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, marginBottom: 14 }}>
-              <Stat label="Project Plan" value={`${stages.length} stages, ${milestones.length} milestones`} />
-              <Stat label="Library" value={`${resources.length} resources`} note="Manage in QuoteBuilder Resources tab" />
-              <Stat label="Proposal"
-                value={room.proposal_snapshotted_at ? `Last refreshed ${relativeTime(room.proposal_snapshotted_at)}` : 'No proposal shared yet'}
-                note={room.proposal_snapshot_quote_id ? (() => { const q = quotes.find(x => x.id === room.proposal_snapshot_quote_id); return q ? `${q.name} v${q.version}` : '' })() : ''}
-              />
-            </div>
+
+          {/* Quote selector + snapshot trigger sit above the embedded builder.
+              The full QuoteBuilder mounts inline below — no link out. */}
+          <Card title="Quote">
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-              <label style={{ fontSize: 11, color: T.textMuted, fontWeight: 600 }}>Quote:</label>
+              <label style={{ fontSize: 11, color: T.textMuted, fontWeight: 600 }}>Active quote:</label>
               <select value={selectedQuoteId} onChange={e => setSelectedQuoteId(e.target.value)} style={{ ...inputStyle, fontSize: 12, padding: '6px 8px', maxWidth: 280, cursor: 'pointer' }}>
                 {quotes.length === 0 && <option value="">No quotes yet</option>}
                 {quotes.map(q => <option key={q.id} value={q.id}>{q.name} v{q.version}{q.is_primary ? ' · primary' : ''}</option>)}
               </select>
               <Button primary onClick={refreshProposalSnapshot} disabled={!selectedQuoteId || snapshotting} style={{ padding: '6px 14px', fontSize: 12 }}>
-                {snapshotting ? 'Snapshotting…' : 'Refresh proposal snapshot'}
+                {snapshotting ? 'Snapshotting…' : 'Push to customer Proposal tab'}
               </Button>
-              {selectedQuoteId && <Button onClick={() => nav(`/deal/${dealId}/quote/${selectedQuoteId}`)} style={{ padding: '6px 14px', fontSize: 12 }}>Open quote →</Button>}
+              {room.proposal_snapshotted_at && (
+                <span style={{ fontSize: 11, color: T.textMuted }}>
+                  Last pushed {relativeTime(room.proposal_snapshotted_at)}
+                </span>
+              )}
             </div>
           </Card>
+
+          {/* Embedded full QuoteBuilder for the selected quote */}
+          {selectedQuoteId && (
+            <div style={{ margin: '14px -24px 0' }}>
+              <QuoteBuilder embedded dealId={dealId} quoteId={selectedQuoteId} />
+            </div>
+          )}
 
           <Card title="Proposal table columns the customer sees">
             <div style={{ fontSize: 11, color: T.textSecondary, marginBottom: 10 }}>
