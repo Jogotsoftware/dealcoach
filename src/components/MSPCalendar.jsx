@@ -6,8 +6,35 @@ import { theme as T } from '../lib/theme'
 
 const localizer = momentLocalizer(moment)
 
+const RANGE_OPTIONS = [
+  { key: '1mo', label: '1 month',  months: 1, gridCols: 1 },
+  { key: '3mo', label: '3 months', months: 3, gridCols: 3 },
+  { key: '6mo', label: '6 months', months: 6, gridCols: 3 },
+]
+
+// Hides the per-mini-calendar toolbar — navigation lives in the parent
+// range pills instead.
+function NoToolbar() { return null }
+
+// Patterns used to detect the kickoff and go-live stages by name. Stages
+// in between (chronologically) form the "implementation band" that gets
+// shaded on the month grid. Patterns are case-insensitive substring matches.
+const KICKOFF_PATTERNS = ['kick off', 'kick-off', 'kickoff', 'project kick', 'project start']
+const GOLIVE_PATTERNS  = ['go live', 'go-live', 'golive', 'launch', 'cutover', 'production cutover']
+
+function matchesAny(name, patterns) {
+  const n = String(name || '').toLowerCase()
+  return patterns.some(p => n.includes(p))
+}
+
+function stageDateRange(s) {
+  const start = s.start_date ? new Date(s.start_date) : (s.due_date ? new Date(s.due_date) : null)
+  const end = s.end_date ? new Date(s.end_date) : start
+  return { start, end }
+}
+
 /**
- * MSPCalendar — rolling 6-month calendar view of MSP stages and milestones.
+ * MSPCalendar — rolling N-month calendar view of MSP stages and milestones.
  *
  * Props:
  *   stages: array of msp_stages rows (id, stage_name, color, start_date, end_date,
@@ -19,6 +46,8 @@ const localizer = momentLocalizer(moment)
  *   readOnly: boolean — disable drag/resize/slot-select when true (customer view)
  *   onMoveStage(stage, newStart, newEnd): optional, drag-to-reschedule (AE-only)
  *   onResizeStage(stage, newStart, newEnd): optional, resize-to-extend (AE-only)
+ *   themeColor: optional hex used to tint the implementation band (the days
+ *               between project kickoff and go-live)
  */
 export default function MSPCalendar({
   stages = [],
@@ -27,9 +56,35 @@ export default function MSPCalendar({
   readOnly = false,
   onMoveStage,
   onResizeStage,
+  themeColor,
 }) {
-  const [view, setView] = useState(Views.MONTH)
+  const [range, setRange] = useState(() => {
+    try { return localStorage.getItem('msp.calendar.range') || '6mo' } catch { return '6mo' }
+  })
+  const rangeMeta = RANGE_OPTIONS.find(r => r.key === range) || RANGE_OPTIONS[2]
   const [date, setDate] = useState(new Date())
+  const accent = themeColor || T.primary
+
+  function setRangePersist(next) {
+    setRange(next)
+    try { localStorage.setItem('msp.calendar.range', next) } catch { /* ignore */ }
+  }
+
+  // Derive the implementation band (kickoff start → go-live end) so we can
+  // shade the day cells underneath. NULL when either end is missing.
+  const implRange = useMemo(() => {
+    const kickoff = stages.find(s => matchesAny(s.stage_name, KICKOFF_PATTERNS))
+    const golive  = stages.find(s => matchesAny(s.stage_name, GOLIVE_PATTERNS))
+    if (!kickoff || !golive) return null
+    const { start: kStart } = stageDateRange(kickoff)
+    const { end: gEnd }     = stageDateRange(golive)
+    if (!kStart || !gEnd) return null
+    if (gEnd < kStart) return null
+    return { start: new Date(kStart.getFullYear(), kStart.getMonth(), kStart.getDate()),
+             end:   new Date(gEnd.getFullYear(),   gEnd.getMonth(),   gEnd.getDate()),
+             kickoffName: kickoff.stage_name,
+             goliveName:  golive.stage_name }
+  }, [stages])
 
   // Build events list. Stages with start+end render as bars; due_date-only stages
   // render as single-day. Milestones render on their due_date.
@@ -120,44 +175,137 @@ export default function MSPCalendar({
     )
   }
 
+  // Tint days that fall between kickoff and go-live so the customer sees
+  // the implementation window at a glance. Only applies in MONTH view —
+  // AGENDA is a list and doesn't have day cells.
+  function dayPropGetter(d) {
+    if (!implRange) return {}
+    const day = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+    if (day >= implRange.start && day <= implRange.end) {
+      return {
+        style: {
+          background: accent + '14',
+          boxShadow: `inset 0 0 0 1px ${accent}30`,
+        },
+      }
+    }
+    return {}
+  }
+
+  // Build the list of month-start dates anchored at `date`. The first
+  // calendar starts at the current month, then advances forward by 1
+  // month for each subsequent slot.
+  const monthStarts = useMemo(() => {
+    const base = new Date(date.getFullYear(), date.getMonth(), 1)
+    const out = []
+    for (let i = 0; i < rangeMeta.months; i++) {
+      out.push(new Date(base.getFullYear(), base.getMonth() + i, 1))
+    }
+    return out
+  }, [date, rangeMeta.months])
+
+  function shiftDate(delta) {
+    setDate(prev => new Date(prev.getFullYear(), prev.getMonth() + delta, 1))
+  }
+  function goToday() {
+    setDate(new Date())
+  }
+
+  const headerLabel = rangeMeta.months === 1
+    ? moment(monthStarts[0]).format('MMMM YYYY')
+    : `${moment(monthStarts[0]).format('MMM YYYY')} – ${moment(monthStarts[monthStarts.length - 1]).format('MMM YYYY')}`
+
+  const isMulti = rangeMeta.months > 1
+
   return (
     <div style={{ display: 'grid', gridTemplateColumns: floating.length > 0 ? 'minmax(0, 1fr) 220px' : '1fr', gap: 12 }}>
       <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: 8 }}>
-        {/* react-big-calendar comes with its own toolbar. Inject style overrides. */}
+        {/* Range toggle + navigation */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 4px 8px', flexWrap: 'wrap' }}>
+          {RANGE_OPTIONS.map(o => (
+            <button key={o.key} onClick={() => setRangePersist(o.key)}
+              style={{
+                padding: '5px 12px', fontSize: 11, fontWeight: 600, fontFamily: T.font,
+                border: `1px solid ${range === o.key ? accent : T.border}`,
+                borderRadius: 4,
+                background: range === o.key ? accent : T.surface,
+                color: range === o.key ? '#fff' : T.text,
+                cursor: 'pointer',
+              }}>
+              {o.label}
+            </button>
+          ))}
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 8 }}>
+            <button onClick={() => shiftDate(-1)} title="Previous month"
+              style={{ padding: '5px 10px', fontSize: 12, border: `1px solid ${T.border}`, borderRadius: 4, background: T.surface, color: T.text, cursor: 'pointer', fontFamily: T.font }}>‹</button>
+            <button onClick={goToday} title="Jump to current month"
+              style={{ padding: '5px 10px', fontSize: 11, fontWeight: 600, border: `1px solid ${T.border}`, borderRadius: 4, background: T.surface, color: T.text, cursor: 'pointer', fontFamily: T.font }}>Today</button>
+            <button onClick={() => shiftDate(1)} title="Next month"
+              style={{ padding: '5px 10px', fontSize: 12, border: `1px solid ${T.border}`, borderRadius: 4, background: T.surface, color: T.text, cursor: 'pointer', fontFamily: T.font }}>›</button>
+          </div>
+          <span style={{ fontSize: 12, fontWeight: 600, color: T.textMuted, marginLeft: 6 }}>{headerLabel}</span>
+          {implRange && (
+            <div style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 4, background: accent + '18', border: `1px solid ${accent}40`, fontSize: 11, color: accent, fontWeight: 600 }}>
+              <span style={{ width: 10, height: 10, background: accent, opacity: 0.6, borderRadius: 2 }} />
+              Implementation window: {implRange.kickoffName} → {implRange.goliveName}
+            </div>
+          )}
+        </div>
         <style>{`
           .rbc-calendar { font-family: ${T.font}; }
-          .rbc-toolbar { font-size: 12px; padding: 4px 0; }
-          .rbc-toolbar button { font-family: ${T.font}; font-size: 12px; padding: 4px 10px; }
-          .rbc-toolbar button.rbc-active { background: ${T.primary}; color: #fff; }
-          .rbc-month-view, .rbc-time-view { border: 1px solid ${T.borderLight}; border-radius: 6px; }
-          .rbc-header { padding: 6px 4px; font-size: 11px; font-weight: 600; color: ${T.textMuted}; text-transform: uppercase; letter-spacing: 0.04em; }
-          .rbc-today { background: ${T.primary}10; }
+          .rbc-month-view, .rbc-time-view, .rbc-agenda-view { border: 1px solid ${T.borderLight}; border-radius: 6px; }
+          .rbc-header { padding: 4px 4px; font-size: 10px; font-weight: 600; color: ${T.textMuted}; text-transform: uppercase; letter-spacing: 0.04em; }
+          .rbc-today { background: ${accent}10; }
           .rbc-event { cursor: pointer; }
-          .rbc-event-content { font-size: 11px; }
-          .rbc-show-more { font-size: 10px; color: ${T.primary}; }
+          .rbc-event-content { font-size: 10px; }
+          .rbc-show-more { font-size: 10px; color: ${accent}; }
+          .rbc-month-row { min-height: 0; }
+          .rbc-date-cell { font-size: 10px; padding: 2px 4px; }
         `}</style>
-        <Calendar
-          localizer={localizer}
-          events={events}
-          view={view}
-          onView={setView}
-          date={date}
-          onNavigate={setDate}
-          views={[Views.MONTH, Views.WEEK, Views.AGENDA]}
-          defaultView={Views.MONTH}
-          startAccessor="start"
-          endAccessor="end"
-          components={{ event: MyEvent }}
-          eventPropGetter={eventPropGetter}
-          onSelectEvent={onSelectEvent}
-          selectable={!readOnly}
-          draggableAccessor={() => !readOnly}
-          resizable={!readOnly}
-          onEventDrop={handleEventDrop}
-          onEventResize={handleEventResize}
-          style={{ height: 600 }}
-          popup
-        />
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: `repeat(${rangeMeta.gridCols}, minmax(0, 1fr))`,
+          gap: 10,
+        }}>
+          {monthStarts.map((monthStart) => {
+            const monthLabel = moment(monthStart).format('MMMM YYYY')
+            // Each mini-calendar: smaller height when multi, full when single.
+            const miniHeight = isMulti ? (rangeMeta.months <= 3 ? 360 : 320) : 600
+            return (
+              <div key={monthStart.toISOString()} style={{ minWidth: 0 }}>
+                {isMulti && (
+                  <div style={{ fontSize: 12, fontWeight: 700, color: T.text, padding: '2px 4px 6px', textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    {monthLabel}
+                  </div>
+                )}
+                <Calendar
+                  localizer={localizer}
+                  events={events}
+                  view={Views.MONTH}
+                  onView={() => { /* locked to month view */ }}
+                  date={monthStart}
+                  onNavigate={() => { /* navigation handled by parent toolbar */ }}
+                  views={{ month: true }}
+                  startAccessor="start"
+                  endAccessor="end"
+                  components={isMulti
+                    ? { event: MyEvent, toolbar: NoToolbar }
+                    : { event: MyEvent }}
+                  eventPropGetter={eventPropGetter}
+                  dayPropGetter={dayPropGetter}
+                  onSelectEvent={onSelectEvent}
+                  selectable={!readOnly}
+                  draggableAccessor={() => !readOnly}
+                  resizable={!readOnly}
+                  onEventDrop={handleEventDrop}
+                  onEventResize={handleEventResize}
+                  style={{ height: miniHeight }}
+                  popup
+                />
+              </div>
+            )
+          })}
+        </div>
       </div>
 
       {floating.length > 0 && (

@@ -358,6 +358,7 @@ export default function MSPEditor({ dealId, mode = 'standalone', readonlyAdapter
   const commentCounts = readonlyAdapter?.commentCountsByRef || new Map()
   const requestChange = readonlyAdapter?.onRequestChange || (() => {})
   const submitComment = readonlyAdapter?.onComment || (async () => false)
+  const calendarThemeColor = readonlyAdapter?.themeColor || T.primary
 
   return (
     <div>
@@ -415,6 +416,7 @@ export default function MSPEditor({ dealId, mode = 'standalone', readonlyAdapter
                   stages={steps}
                   milestones={milestones}
                   readOnly={isReadonly}
+                  themeColor={calendarThemeColor}
                   onSelectEvent={(evt) => {
                     const r = evt.resource || {}
                     if (isReadonly) {
