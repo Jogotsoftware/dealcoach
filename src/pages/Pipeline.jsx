@@ -889,7 +889,7 @@ export default function Pipeline() {
           </div>
         </div>
         {/* Home tabs — Pipeline and dashboards are all draggable + closable */}
-        <div style={{ display: 'flex', gap: 0, marginTop: 12, alignItems: 'flex-end', overflow: 'auto', position: 'relative' }}>
+        <div style={{ display: 'flex', gap: 0, marginTop: 12, alignItems: 'flex-end', overflowX: 'auto', overflowY: 'hidden', position: 'relative' }}>
           {visibleTabs.map(t => (
             <DashboardTab key={t.id}
               id={t.id}
@@ -906,8 +906,21 @@ export default function Pipeline() {
             />
           ))}
           <button onClick={() => navigate('/dashboards')}
-            style={{ background: 'none', border: 'none', color: T.textMuted, fontSize: 11, padding: '8px 14px', cursor: 'pointer', fontFamily: T.font, fontWeight: 600 }}
-            title="Create or manage dashboards">+ Dashboard</button>
+            title="Create or manage dashboards"
+            aria-label="Add dashboard"
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer', fontFamily: T.font,
+              padding: '8px 12px', color: T.textMuted, marginBottom: -1,
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              borderBottom: '2px solid transparent',
+            }}
+            onMouseEnter={e => e.currentTarget.style.color = T.text}
+            onMouseLeave={e => e.currentTarget.style.color = T.textMuted}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+          </button>
         </div>
       </div>
 
