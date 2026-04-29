@@ -59,6 +59,16 @@ export default function DealRoomConfig() {
   const [reply, setReply] = useState({})  // commentId → draft reply text
   const [aeNotesDraft, setAeNotesDraft] = useState('')
   const [aeNotesSavedAt, setAeNotesSavedAt] = useState(null)
+  const [tab, setTab] = useState(() => {
+    if (typeof window === 'undefined') return 'msp'
+    const h = (window.location.hash || '').replace('#', '')
+    return ['msp', 'library', 'quotes', 'models', 'inbox'].includes(h) ? h : 'msp'
+  })
+
+  function selectTab(next) {
+    setTab(next)
+    try { window.history.replaceState(null, '', `#${next}`) } catch { /* ignore */ }
+  }
 
   useEffect(() => { load(true) }, [dealId])
 
@@ -72,7 +82,7 @@ export default function DealRoomConfig() {
         supabase.from('quotes').select('id, name, version, is_primary, status').eq('deal_id', dealId).order('created_at', { ascending: false }),
         supabase.from('msp_stages').select('*').eq('deal_id', dealId).order('stage_order'),
         supabase.from('msp_milestones').select('*').eq('deal_id', dealId).order('milestone_order'),
-        supabase.from('deal_resources').select('id, resource_type, title').eq('deal_id', dealId),
+        supabase.from('deal_resources').select('id, resource_type, title, notes, url, storage_path, mime_type, file_size, sort_order').eq('deal_id', dealId).order('sort_order').order('created_at'),
         // viewers + views read deal_room_id from the room we'll fetch, but we don't have it yet — fetch by deal_room_id in a follow-up
         Promise.resolve({ data: [] }),
         Promise.resolve({ data: [] }),
@@ -249,28 +259,109 @@ export default function DealRoomConfig() {
   const pendingRequests = requests.filter(r => r.status === 'pending')
   const decidedRequests = requests.filter(r => r.status !== 'pending')
 
+  const unresolvedCommentCount = comments.filter(c => c.author_kind === 'viewer' && !c.resolved && !c.parent_comment_id).length
+  const inboxBadge = unresolvedCommentCount + pendingRequests.length
+  const primaryQuoteId = (quotes.find(q => q.is_primary) || quotes[0])?.id || null
+
+  const TABS = [
+    { key: 'msp',     label: 'Project Plan' },
+    { key: 'library', label: 'Library' },
+    { key: 'quotes',  label: 'Quotes' },
+    { key: 'models',  label: 'Models' },
+    { key: 'inbox',   label: 'Inbox' },
+  ]
+
   return (
     <div>
-      {/* Header */}
-      <div style={{ padding: '14px 24px', borderBottom: `1px solid ${T.border}`, background: T.surface }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <button onClick={() => nav(`/deal/${dealId}`)} style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontSize: 12, color: T.primary, fontWeight: 600, fontFamily: T.font }}>&larr; {deal?.company_name}</button>
+      {/* ════════════ Sticky header strip ════════════ */}
+      <div style={{ position: 'sticky', top: 0, zIndex: 20, background: T.surface, borderBottom: `1px solid ${T.border}` }}>
+        {/* Row 1: identity + preview */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 24px 8px' }}>
+          <button onClick={() => nav(`/deal/${dealId}`)}
+            title="Back to deal"
+            style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 22, color: T.textMuted, padding: '0 4px', lineHeight: 1, fontFamily: T.font }}>
+            ‹
+          </button>
           <CompanyLogo
             logoUrl={null}
             customerLogoUrl={deal?.customer_logo_url}
             companyName={deal?.company_name}
-            size="lg"
+            size="md"
+            bare
             editable
             dealId={deal?.id}
             currentStoragePath={deal?.customer_logo_storage_path}
             onUploaded={(url, path) => setDeal(prev => prev ? { ...prev, customer_logo_url: url, customer_logo_storage_path: path } : prev)}
           />
-          <div style={{ flex: 1 }}>
-            <h2 style={{ fontSize: 20, fontWeight: 700, color: T.text, margin: 0 }}>Deal Room</h2>
-            <div style={{ fontSize: 13, color: T.textSecondary }}>{deal?.company_name}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <h2 style={{ fontSize: 18, fontWeight: 700, color: T.text, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              Deal Room — {deal?.company_name}
+            </h2>
           </div>
           {archived && <Badge color={T.warning}>Archived</Badge>}
-          <Button onClick={openCustomerPreview} style={{ padding: '8px 16px' }}>Preview customer view →</Button>
+          <Button onClick={openCustomerPreview} style={{ padding: '8px 16px', fontSize: 12 }}>Preview customer view ↗</Button>
+        </div>
+
+        {/* Row 2: share row */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 24px 10px', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 280 }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase' }}>Share</span>
+            <input readOnly value={shareUrl}
+              onClick={e => e.target.select()}
+              style={{ ...inputStyle, fontFamily: T.mono, fontSize: 11, flex: 1, padding: '5px 8px' }} />
+            <Button primary onClick={copyShareUrl} style={{ padding: '5px 12px', fontSize: 11, whiteSpace: 'nowrap' }}>Share With Your Team</Button>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', marginRight: 2 }}>Mode</span>
+            {[
+              { k: 'open_token', l: 'Open' },
+              { k: 'magic_link', l: 'Magic' },
+            ].map(m => (
+              <button key={m.k}
+                onClick={() => saveRoom({ access_mode: m.k })}
+                style={{ padding: '4px 10px', fontSize: 11, fontWeight: 600, border: `1px solid ${room.access_mode === m.k ? T.primary : T.border}`, borderRadius: 4, background: room.access_mode === m.k ? T.primaryLight : T.surface, color: room.access_mode === m.k ? T.primary : T.textMuted, cursor: 'pointer', fontFamily: T.font }}>
+                {m.l}
+              </button>
+            ))}
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase' }}>Expires</span>
+            <input type="date" defaultValue={room.expires_at ? new Date(room.expires_at).toISOString().split('T')[0] : ''}
+              onBlur={e => {
+                const v = e.target.value ? new Date(e.target.value + 'T23:59:59').toISOString() : null
+                if (v !== room.expires_at) saveRoom({ expires_at: v })
+              }}
+              style={{ ...inputStyle, padding: '4px 8px', fontSize: 11, width: 132 }} />
+            <span style={{ fontSize: 10, color: T.textMuted, whiteSpace: 'nowrap' }}>
+              {!room.expires_at ? 'No expiration' : (expiringInDays >= 0 ? `${expiringInDays}d left` : `${Math.abs(expiringInDays)}d ago`)}
+            </span>
+          </div>
+
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 11 }}>
+            <input type="checkbox" checked={room.enabled} onChange={e => saveRoom({ enabled: e.target.checked })} disabled={busy} />
+            {room.enabled ? <Badge color={T.success}>Enabled</Badge> : <Badge color={T.error}>Disabled</Badge>}
+          </label>
+        </div>
+
+        {/* Row 3: sub-tabs */}
+        <div style={{ display: 'flex', gap: 0, padding: '0 24px', borderTop: `1px solid ${T.borderLight}` }}>
+          {TABS.map(t => {
+            const active = tab === t.key
+            const showBadge = t.key === 'inbox' && inboxBadge > 0
+            return (
+              <button key={t.key} onClick={() => selectTab(t.key)}
+                style={{ padding: '11px 18px', border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: T.font, fontSize: 13, fontWeight: 600, color: active ? T.primary : T.textMuted, borderBottom: active ? `3px solid ${T.primary}` : '3px solid transparent', marginBottom: -1, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                {t.label}
+                {showBadge && (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 18, height: 18, padding: '0 6px', borderRadius: 9, background: T.error, color: '#fff', fontSize: 10, fontWeight: 800, fontFeatureSettings: '"tnum"' }}>
+                    {inboxBadge}
+                  </span>
+                )}
+              </button>
+            )
+          })}
         </div>
       </div>
 
@@ -279,249 +370,269 @@ export default function DealRoomConfig() {
       )}
 
       <div style={{ padding: '16px 24px' }}>
-        {/* Card 1: Share & Access */}
-        <Card title="Share & Access">
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}>
-            <div>
-              <label style={labelStyle}>Share URL</label>
-              <div style={{ display: 'flex', gap: 6 }}>
-                <input readOnly value={shareUrl} style={{ ...inputStyle, fontFamily: T.mono, fontSize: 11, flex: 1 }} />
-                <Button primary onClick={copyShareUrl} style={{ padding: '6px 14px', fontSize: 11, whiteSpace: 'nowrap' }}>Share With Your Team</Button>
-              </div>
-              <div style={{ marginTop: 12 }}>
-                <label style={labelStyle}>Access mode</label>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  {[
-                    { k: 'magic_link', l: 'Magic link (default)' },
-                    { k: 'open_token', l: 'Open link' },
-                  ].map(m => (
-                    <label key={m.k} style={{ flex: 1, padding: '6px 10px', border: `1px solid ${room.access_mode === m.k ? T.primary : T.border}`, borderRadius: 4, cursor: 'pointer', fontSize: 12, fontWeight: 600, color: room.access_mode === m.k ? T.primary : T.text, background: room.access_mode === m.k ? T.primaryLight : T.surface, textAlign: 'center' }}>
-                      <input type="radio" checked={room.access_mode === m.k} onChange={() => saveRoom({ access_mode: m.k })} style={{ display: 'none' }} />
-                      {m.l}
-                    </label>
-                  ))}
+        {/* ════════════ MSP TAB ════════════ */}
+        {tab === 'msp' && (
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 14, marginBottom: 14 }}>
+              <Card title={`Notes from ${profile?.full_name || 'you'} (shown on every tab)`}>
+                <div style={{ fontSize: 11, color: T.textSecondary, marginBottom: 8 }}>
+                  A short personal note that appears at the top of every tab in the customer's Evaluation Room. Use it for context, a welcome message, or what to focus on.
                 </div>
-              </div>
+                <textarea
+                  value={aeNotesDraft}
+                  onChange={e => setAeNotesDraft(e.target.value)}
+                  onBlur={saveAeNotes}
+                  placeholder="e.g. Hey team — start with the Project Plan tab to align on dates, then review the proposal. Reach out anytime."
+                  rows={3}
+                  style={{ ...inputStyle, fontFamily: T.font, fontSize: 13, lineHeight: 1.55, resize: 'vertical' }}
+                />
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4, fontSize: 10, color: T.textMuted }}>
+                  <span>{(aeNotesDraft || '').length} characters{aeNotesSavedAt && Date.now() - aeNotesSavedAt < 4000 ? ' · saved' : ''}</span>
+                  <span>Saves automatically when you click outside the box.</span>
+                </div>
+              </Card>
+              <Card title="Theme color">
+                <div style={{ fontSize: 11, color: T.textSecondary, marginBottom: 8 }}>
+                  Sets the primary accent color the customer sees throughout the Evaluation Room.
+                </div>
+                <ThemeColorPicker
+                  value={room?.theme_color || ''}
+                  onChange={(hex) => saveRoom({ theme_color: hex || null })}
+                />
+              </Card>
             </div>
+            <Card title="Project Plan" action={<Button onClick={() => nav(`/deal/${dealId}/msp`)} style={{ padding: '4px 10px', fontSize: 11 }}>Open standalone editor</Button>}>
+              <MSPEditor dealId={dealId} mode="embedded" />
+            </Card>
+          </>
+        )}
 
-            <div>
-              <label style={labelStyle}>Expires</label>
-              <input type="date" defaultValue={room.expires_at ? new Date(room.expires_at).toISOString().split('T')[0] : ''}
-                onBlur={e => {
-                  const v = e.target.value ? new Date(e.target.value + 'T23:59:59').toISOString() : null
-                  if (v !== room.expires_at) saveRoom({ expires_at: v })
-                }}
-                style={inputStyle} />
-              <div style={{ fontSize: 11, color: T.textMuted, marginTop: 4 }}>
-                {!room.expires_at ? 'No expiration' : (expiringInDays >= 0 ? `Active for ${expiringInDays} day${expiringInDays === 1 ? '' : 's'}` : `Expired ${Math.abs(expiringInDays)} day${Math.abs(expiringInDays) === 1 ? '' : 's'} ago — archived`)}
-              </div>
-
-              <div style={{ marginTop: 14 }}>
-                <label style={{ ...labelStyle, marginBottom: 8 }}>Enabled (kill switch)</label>
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 12 }}>
-                  <input type="checkbox" checked={room.enabled} onChange={e => saveRoom({ enabled: e.target.checked })} disabled={busy} />
-                  {room.enabled ? <Badge color={T.success}>Active</Badge> : <Badge color={T.error}>Disabled</Badge>}
-                </label>
-              </div>
+        {/* ════════════ LIBRARY TAB (read-only summary) ════════════ */}
+        {tab === 'library' && (
+          <Card
+            title={`Library — what the customer sees (${resources.length} ${resources.length === 1 ? 'resource' : 'resources'})`}
+            action={primaryQuoteId
+              ? <Button primary onClick={() => nav(`/deal/${dealId}/quote/${primaryQuoteId}#resources`)} style={{ padding: '4px 12px', fontSize: 11 }}>Edit resources in QuoteBuilder →</Button>
+              : <Button primary onClick={() => nav(`/deal/${dealId}/quotes`)} style={{ padding: '4px 12px', fontSize: 11 }}>Build a quote first</Button>}
+          >
+            <div style={{ fontSize: 11, color: T.textSecondary, marginBottom: 12 }}>
+              Read-only preview of the cards the customer sees in the Library tab of their Evaluation Room. Add, edit, and reorder resources in QuoteBuilder; this view auto-syncs.
             </div>
-          </div>
-        </Card>
-
-        {/* Card 1.5: Notes from you (shown across every tab) */}
-        <Card title={`Notes from ${profile?.full_name || 'you'} (shown on every tab)`}>
-          <div style={{ fontSize: 11, color: T.textSecondary, marginBottom: 8 }}>
-            A short personal note that appears at the top of every tab in the customer's Deal Room. Use it for context, a welcome message, or what to focus on.
-          </div>
-          <textarea
-            value={aeNotesDraft}
-            onChange={e => setAeNotesDraft(e.target.value)}
-            onBlur={saveAeNotes}
-            placeholder="e.g. Hey team — start with the Project Plan tab to align on dates, then review the proposal. Reach out anytime."
-            rows={4}
-            style={{ ...inputStyle, fontFamily: T.font, fontSize: 13, lineHeight: 1.55, resize: 'vertical' }}
-          />
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4, fontSize: 10, color: T.textMuted }}>
-            <span>{(aeNotesDraft || '').length} characters{aeNotesSavedAt && Date.now() - aeNotesSavedAt < 4000 ? ' · saved' : ''}</span>
-            <span>Saves automatically when you click outside the box.</span>
-          </div>
-        </Card>
-
-        {/* Card 1.6: Theme color */}
-        <Card title="Evaluation Room theme color">
-          <div style={{ fontSize: 11, color: T.textSecondary, marginBottom: 10 }}>
-            Sets the primary accent color the customer sees — tab highlights, request-change buttons, contact icons, the Year 1 Total band. Pick anything from the spectrum or use one of the quick presets.
-          </div>
-          <ThemeColorPicker
-            value={room?.theme_color || ''}
-            onChange={(hex) => saveRoom({ theme_color: hex || null })}
-          />
-        </Card>
-
-        {/* Card 2: What customer will see */}
-        <Card title="What the customer will see">
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, marginBottom: 14 }}>
-            <Stat label="Project Plan" value={`${stages.length} stages, ${milestones.length} milestones`} />
-            <Stat label="Library" value={`${resources.length} resources`} note="Manage in QuoteBuilder Resources tab" />
-            <Stat label="Proposal"
-              value={room.proposal_snapshotted_at ? `Last refreshed ${relativeTime(room.proposal_snapshotted_at)}` : 'No proposal shared yet'}
-              note={room.proposal_snapshot_quote_id ? (() => { const q = quotes.find(x => x.id === room.proposal_snapshot_quote_id); return q ? `${q.name} v${q.version}` : '' })() : ''}
-            />
-          </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <label style={{ fontSize: 11, color: T.textMuted, fontWeight: 600 }}>Quote:</label>
-            <select value={selectedQuoteId} onChange={e => setSelectedQuoteId(e.target.value)} style={{ ...inputStyle, fontSize: 12, padding: '6px 8px', maxWidth: 280, cursor: 'pointer' }}>
-              {quotes.length === 0 && <option value="">No quotes yet</option>}
-              {quotes.map(q => <option key={q.id} value={q.id}>{q.name} v{q.version}{q.is_primary ? ' · primary' : ''}</option>)}
-            </select>
-            <Button primary onClick={refreshProposalSnapshot} disabled={!selectedQuoteId || snapshotting} style={{ padding: '6px 14px', fontSize: 12 }}>
-              {snapshotting ? 'Snapshotting…' : 'Refresh proposal snapshot'}
-            </Button>
-          </div>
-        </Card>
-
-        {/* Card 3: Project Plan — full editor embedded inline. The standalone
-            /deal/:dealId/msp page is the same editor with a header — both
-            mount the same MSPEditor component. */}
-        <Card title="Project Plan" action={<Button onClick={() => nav(`/deal/${dealId}/msp`)} style={{ padding: '4px 10px', fontSize: 11 }}>Open standalone editor</Button>}>
-          <MSPEditor dealId={dealId} mode="embedded" />
-        </Card>
-
-        {/* Card 4: Viewers & Activity */}
-        <Card title="Viewers & Activity">
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}>
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', marginBottom: 6 }}>Invite viewer</div>
-              <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-                <input value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="email@company.com"
-                  style={{ ...inputStyle, fontSize: 12, padding: '6px 10px', flex: 1 }} />
-                <input value={inviteName} onChange={e => setInviteName(e.target.value)} placeholder="Name"
-                  style={{ ...inputStyle, fontSize: 12, padding: '6px 10px', flex: 1 }} />
-                <Button primary onClick={inviteViewer} disabled={!inviteEmail.trim() || busy} style={{ padding: '6px 12px', fontSize: 11 }}>+ Invite</Button>
+            {resources.length === 0 ? (
+              <div style={{ padding: 28, textAlign: 'center', color: T.textMuted, fontSize: 13, background: T.surfaceAlt, borderRadius: 8 }}>
+                No resources yet. {primaryQuoteId
+                  ? <>Add demos, decks, links, and documents in <a onClick={() => nav(`/deal/${dealId}/quote/${primaryQuoteId}#resources`)} style={{ color: T.primary, cursor: 'pointer', textDecoration: 'underline' }}>QuoteBuilder Resources</a>.</>
+                  : 'Build a quote first, then add resources from its Resources tab.'}
               </div>
-              <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', marginBottom: 6 }}>Viewers ({viewers.length})</div>
-              <div style={{ maxHeight: 220, overflowY: 'auto', border: `1px solid ${T.borderLight}`, borderRadius: 6 }}>
-                <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr style={{ borderBottom: `1px solid ${T.border}`, background: T.surfaceAlt }}>
-                      <th style={{ ...thStyle, padding: '6px 8px' }}>Email</th>
-                      <th style={{ ...thStyle, padding: '6px 8px' }}>Name</th>
-                      <th style={{ ...thStyle, padding: '6px 8px', textAlign: 'right' }}>Views</th>
-                      <th style={{ ...thStyle, padding: '6px 8px' }}>Last seen</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {viewers.length === 0 ? (
-                      <tr><td colSpan={4} style={{ padding: 12, textAlign: 'center', color: T.textMuted, fontSize: 11 }}>No viewers yet</td></tr>
-                    ) : viewers.map(v => (
-                      <tr key={v.id} style={{ borderBottom: `1px solid ${T.borderLight}` }}>
-                        <td style={{ padding: '6px 8px', fontFamily: T.mono, fontSize: 11 }}>{v.email}</td>
-                        <td style={{ padding: '6px 8px' }}>{v.name || '—'}</td>
-                        <td style={{ padding: '6px 8px', textAlign: 'right', fontFeatureSettings: '"tnum"' }}>{v.view_count || 0}</td>
-                        <td style={{ padding: '6px 8px', fontSize: 11, color: T.textMuted }}>{v.last_viewed_at ? relativeTime(v.last_viewed_at) : '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', marginBottom: 6 }}>Recent activity</div>
-              <div style={{ maxHeight: 280, overflowY: 'auto', fontSize: 12 }}>
-                {recentViews.length === 0 ? (
-                  <div style={{ padding: 12, textAlign: 'center', color: T.textMuted, fontSize: 11 }}>No activity yet</div>
-                ) : recentViews.map(v => (
-                  <div key={v.id} style={{ padding: '6px 8px', borderBottom: `1px solid ${T.borderLight}`, display: 'flex', justifyContent: 'space-between' }}>
-                    <span><strong>{v.viewer_email}</strong>{v.tab ? ` opened ${v.tab}` : ' opened the room'}</span>
-                    <span style={{ color: T.textMuted, fontSize: 11 }}>{relativeTime(v.viewed_at)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </Card>
-
-        {/* Card 5: Inbox */}
-        <Card title="Inbox">
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}>
-            {/* Comments */}
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', marginBottom: 6 }}>Comments ({viewerComments.length})</div>
-              {viewerComments.length === 0 ? (
-                <div style={{ padding: 16, textAlign: 'center', color: T.textMuted, fontSize: 12 }}>No comments yet</div>
-              ) : viewerComments.map(c => {
-                const replies = aeReplies(c.id)
-                const draft = reply[c.id] || ''
-                return (
-                  <div key={c.id} style={{ marginBottom: 10, padding: 10, background: T.surfaceAlt, borderRadius: 6, borderLeft: `3px solid ${c.resolved ? T.success : T.primary}` }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                      <strong style={{ fontSize: 12 }}>{c.author_name || c.author_email}</strong>
-                      <span style={{ fontSize: 10, color: T.textMuted }}>{relativeTime(c.created_at)} · {c.tab}</span>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 14 }}>
+                {resources.map(r => {
+                  const meta = LIBRARY_RESOURCE_META[r.resource_type] || LIBRARY_RESOURCE_META.misc
+                  return (
+                    <div key={r.id} style={{ background: T.surface, border: `1px solid ${T.border}`, borderLeft: `4px solid ${meta.color}`, borderRadius: 8, padding: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <span style={{ display: 'inline-block', alignSelf: 'flex-start', padding: '3px 10px', background: meta.color + '18', color: meta.color, fontSize: 10, fontWeight: 700, borderRadius: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{meta.label}</span>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: T.text, lineHeight: 1.3 }}>{r.title}</div>
+                      {r.notes && <div style={{ fontSize: 12, color: T.textSecondary, lineHeight: 1.5 }}>{r.notes}</div>}
+                      {r.storage_path && r.file_size != null && (
+                        <div style={{ fontSize: 10, color: T.textMuted }}>{Math.round(r.file_size / 1024)} KB · {r.mime_type || 'file'}</div>
+                      )}
                     </div>
-                    <div style={{ fontSize: 12, color: T.text, whiteSpace: 'pre-wrap', marginBottom: 6 }}>{c.body}</div>
-                    {replies.length > 0 && (
-                      <div style={{ marginTop: 6, paddingLeft: 10, borderLeft: `2px solid ${T.borderLight}` }}>
-                        {replies.map(r => (
-                          <div key={r.id} style={{ fontSize: 11, color: T.textSecondary, marginBottom: 4 }}>
-                            <strong>{r.author_name || 'You'}:</strong> {r.body}
+                  )
+                })}
+              </div>
+            )}
+          </Card>
+        )}
+
+        {/* ════════════ QUOTES TAB ════════════ */}
+        {tab === 'quotes' && (
+          <Card title="What the customer will see in the Proposal tab">
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, marginBottom: 14 }}>
+              <Stat label="Project Plan" value={`${stages.length} stages, ${milestones.length} milestones`} />
+              <Stat label="Library" value={`${resources.length} resources`} note="Manage in QuoteBuilder Resources tab" />
+              <Stat label="Proposal"
+                value={room.proposal_snapshotted_at ? `Last refreshed ${relativeTime(room.proposal_snapshotted_at)}` : 'No proposal shared yet'}
+                note={room.proposal_snapshot_quote_id ? (() => { const q = quotes.find(x => x.id === room.proposal_snapshot_quote_id); return q ? `${q.name} v${q.version}` : '' })() : ''}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <label style={{ fontSize: 11, color: T.textMuted, fontWeight: 600 }}>Quote:</label>
+              <select value={selectedQuoteId} onChange={e => setSelectedQuoteId(e.target.value)} style={{ ...inputStyle, fontSize: 12, padding: '6px 8px', maxWidth: 280, cursor: 'pointer' }}>
+                {quotes.length === 0 && <option value="">No quotes yet</option>}
+                {quotes.map(q => <option key={q.id} value={q.id}>{q.name} v{q.version}{q.is_primary ? ' · primary' : ''}</option>)}
+              </select>
+              <Button primary onClick={refreshProposalSnapshot} disabled={!selectedQuoteId || snapshotting} style={{ padding: '6px 14px', fontSize: 12 }}>
+                {snapshotting ? 'Snapshotting…' : 'Refresh proposal snapshot'}
+              </Button>
+              {selectedQuoteId && <Button onClick={() => nav(`/deal/${dealId}/quote/${selectedQuoteId}`)} style={{ padding: '6px 14px', fontSize: 12 }}>Open quote →</Button>}
+            </div>
+          </Card>
+        )}
+
+        {/* ════════════ MODELS TAB ════════════ */}
+        {tab === 'models' && (
+          <Card title="Models">
+            <div style={{ padding: 28, textAlign: 'center', color: T.textMuted, fontSize: 13 }}>
+              ROI, payment schedules, and TCO live inside QuoteBuilder under the <strong>Models</strong> tab. Engagement analytics for this room (read time per tab, scroll depth, hot pages) will land here in a future sprint.
+              {primaryQuoteId && (
+                <div style={{ marginTop: 14 }}>
+                  <Button primary onClick={() => nav(`/deal/${dealId}/quote/${primaryQuoteId}#models`)} style={{ padding: '6px 14px', fontSize: 12 }}>Open Models in QuoteBuilder →</Button>
+                </div>
+              )}
+            </div>
+          </Card>
+        )}
+
+        {/* ════════════ INBOX TAB ════════════ */}
+        {tab === 'inbox' && (
+          <>
+            <Card title="Inbox" action={inboxBadge > 0 ? <Badge color={T.error}>{inboxBadge} unread</Badge> : null}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}>
+                {/* Comments */}
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', marginBottom: 6 }}>Comments ({viewerComments.length})</div>
+                  {viewerComments.length === 0 ? (
+                    <div style={{ padding: 16, textAlign: 'center', color: T.textMuted, fontSize: 12 }}>No comments yet</div>
+                  ) : viewerComments.map(c => {
+                    const replies = aeReplies(c.id)
+                    const draft = reply[c.id] || ''
+                    return (
+                      <div key={c.id} style={{ marginBottom: 10, padding: 10, background: T.surfaceAlt, borderRadius: 6, borderLeft: `3px solid ${c.resolved ? T.success : T.primary}` }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                          <strong style={{ fontSize: 12 }}>{c.author_name || c.author_email}</strong>
+                          <span style={{ fontSize: 10, color: T.textMuted }}>{relativeTime(c.created_at)} · {c.tab}</span>
+                        </div>
+                        <div style={{ fontSize: 12, color: T.text, whiteSpace: 'pre-wrap', marginBottom: 6 }}>{c.body}</div>
+                        {replies.length > 0 && (
+                          <div style={{ marginTop: 6, paddingLeft: 10, borderLeft: `2px solid ${T.borderLight}` }}>
+                            {replies.map(r => (
+                              <div key={r.id} style={{ fontSize: 11, color: T.textSecondary, marginBottom: 4 }}>
+                                <strong>{r.author_name || 'You'}:</strong> {r.body}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                          <input value={draft} onChange={e => setReply(prev => ({ ...prev, [c.id]: e.target.value }))} placeholder="Reply…"
+                            onKeyDown={e => { if (e.key === 'Enter') aeReply(c, draft) }}
+                            style={{ ...inputStyle, fontSize: 11, padding: '4px 6px', flex: 1 }} />
+                          <Button onClick={() => aeReply(c, draft)} disabled={!draft.trim()} style={{ padding: '4px 10px', fontSize: 10 }}>Reply</Button>
+                          <Button onClick={() => markCommentResolved(c)} style={{ padding: '4px 10px', fontSize: 10 }}>{c.resolved ? 'Reopen' : 'Resolve'}</Button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+
+                {/* Change requests */}
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', marginBottom: 6 }}>Change requests · pending ({pendingRequests.length})</div>
+                  {pendingRequests.length === 0 ? (
+                    <div style={{ padding: 16, textAlign: 'center', color: T.textMuted, fontSize: 12 }}>No pending change requests</div>
+                  ) : pendingRequests.map(r => (
+                    <div key={r.id} style={{ marginBottom: 10, padding: 10, background: T.warningLight, borderRadius: 6, borderLeft: `3px solid ${T.warning}` }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                        <strong style={{ fontSize: 12 }}>{r.requester_name || r.requester_email}</strong>
+                        <span style={{ fontSize: 10, color: T.textMuted }}>{relativeTime(r.created_at)}</span>
+                      </div>
+                      <div style={{ fontSize: 12, color: T.text, marginBottom: 4 }}>{describeRequestedChange(r)}</div>
+                      {r.reason && <div style={{ fontSize: 11, color: T.textSecondary, marginBottom: 6, fontStyle: 'italic' }}>"{r.reason}"</div>}
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <Button primary onClick={() => acceptRequest(r)} disabled={busy} style={{ padding: '4px 10px', fontSize: 10 }}>Accept</Button>
+                        <Button onClick={() => rejectRequest(r)} disabled={busy} style={{ padding: '4px 10px', fontSize: 10 }}>Reject</Button>
+                      </div>
+                    </div>
+                  ))}
+
+                  {decidedRequests.length > 0 && (
+                    <details style={{ marginTop: 12 }}>
+                      <summary style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', cursor: 'pointer' }}>Decided ({decidedRequests.length})</summary>
+                      <div style={{ marginTop: 8 }}>
+                        {decidedRequests.slice(0, 20).map(r => (
+                          <div key={r.id} style={{ padding: 8, marginBottom: 6, background: T.surfaceAlt, borderRadius: 4, fontSize: 11 }}>
+                            <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 2 }}>
+                              <Badge color={r.status === 'accepted' ? T.success : T.error}>{r.status}</Badge>
+                              <span style={{ color: T.textMuted, fontSize: 10 }}>{relativeTime(r.decided_at || r.created_at)}</span>
+                            </div>
+                            <div style={{ color: T.textSecondary }}>{describeRequestedChange(r)}</div>
+                            {r.decision_notes && <div style={{ color: T.textMuted, fontStyle: 'italic', marginTop: 2 }}>{r.decision_notes}</div>}
                           </div>
                         ))}
                       </div>
-                    )}
-                    <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-                      <input value={draft} onChange={e => setReply(prev => ({ ...prev, [c.id]: e.target.value }))} placeholder="Reply…"
-                        onKeyDown={e => { if (e.key === 'Enter') aeReply(c, draft) }}
-                        style={{ ...inputStyle, fontSize: 11, padding: '4px 6px', flex: 1 }} />
-                      <Button onClick={() => aeReply(c, draft)} disabled={!draft.trim()} style={{ padding: '4px 10px', fontSize: 10 }}>Reply</Button>
-                      <Button onClick={() => markCommentResolved(c)} style={{ padding: '4px 10px', fontSize: 10 }}>{c.resolved ? 'Reopen' : 'Resolve'}</Button>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
+                    </details>
+                  )}
+                </div>
+              </div>
+            </Card>
 
-            {/* Change requests */}
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', marginBottom: 6 }}>Change requests · pending ({pendingRequests.length})</div>
-              {pendingRequests.length === 0 ? (
-                <div style={{ padding: 16, textAlign: 'center', color: T.textMuted, fontSize: 12 }}>No pending change requests</div>
-              ) : pendingRequests.map(r => (
-                <div key={r.id} style={{ marginBottom: 10, padding: 10, background: T.warningLight, borderRadius: 6, borderLeft: `3px solid ${T.warning}` }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                    <strong style={{ fontSize: 12 }}>{r.requester_name || r.requester_email}</strong>
-                    <span style={{ fontSize: 10, color: T.textMuted }}>{relativeTime(r.created_at)}</span>
+            <Card title="Viewers & Activity">
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', marginBottom: 6 }}>Invite viewer</div>
+                  <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+                    <input value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="email@company.com"
+                      style={{ ...inputStyle, fontSize: 12, padding: '6px 10px', flex: 1 }} />
+                    <input value={inviteName} onChange={e => setInviteName(e.target.value)} placeholder="Name"
+                      style={{ ...inputStyle, fontSize: 12, padding: '6px 10px', flex: 1 }} />
+                    <Button primary onClick={inviteViewer} disabled={!inviteEmail.trim() || busy} style={{ padding: '6px 12px', fontSize: 11 }}>+ Invite</Button>
                   </div>
-                  <div style={{ fontSize: 12, color: T.text, marginBottom: 4 }}>{describeRequestedChange(r)}</div>
-                  {r.reason && <div style={{ fontSize: 11, color: T.textSecondary, marginBottom: 6, fontStyle: 'italic' }}>"{r.reason}"</div>}
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <Button primary onClick={() => acceptRequest(r)} disabled={busy} style={{ padding: '4px 10px', fontSize: 10 }}>Accept</Button>
-                    <Button onClick={() => rejectRequest(r)} disabled={busy} style={{ padding: '4px 10px', fontSize: 10 }}>Reject</Button>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', marginBottom: 6 }}>Viewers ({viewers.length})</div>
+                  <div style={{ maxHeight: 220, overflowY: 'auto', border: `1px solid ${T.borderLight}`, borderRadius: 6 }}>
+                    <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr style={{ borderBottom: `1px solid ${T.border}`, background: T.surfaceAlt }}>
+                          <th style={{ ...thStyle, padding: '6px 8px' }}>Email</th>
+                          <th style={{ ...thStyle, padding: '6px 8px' }}>Name</th>
+                          <th style={{ ...thStyle, padding: '6px 8px', textAlign: 'right' }}>Views</th>
+                          <th style={{ ...thStyle, padding: '6px 8px' }}>Last seen</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {viewers.length === 0 ? (
+                          <tr><td colSpan={4} style={{ padding: 12, textAlign: 'center', color: T.textMuted, fontSize: 11 }}>No viewers yet</td></tr>
+                        ) : viewers.map(v => (
+                          <tr key={v.id} style={{ borderBottom: `1px solid ${T.borderLight}` }}>
+                            <td style={{ padding: '6px 8px', fontFamily: T.mono, fontSize: 11 }}>{v.email}</td>
+                            <td style={{ padding: '6px 8px' }}>{v.name || '—'}</td>
+                            <td style={{ padding: '6px 8px', textAlign: 'right', fontFeatureSettings: '"tnum"' }}>{v.view_count || 0}</td>
+                            <td style={{ padding: '6px 8px', fontSize: 11, color: T.textMuted }}>{v.last_viewed_at ? relativeTime(v.last_viewed_at) : '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
-              ))}
-
-              {decidedRequests.length > 0 && (
-                <details style={{ marginTop: 12 }}>
-                  <summary style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', cursor: 'pointer' }}>Decided ({decidedRequests.length})</summary>
-                  <div style={{ marginTop: 8 }}>
-                    {decidedRequests.slice(0, 20).map(r => (
-                      <div key={r.id} style={{ padding: 8, marginBottom: 6, background: T.surfaceAlt, borderRadius: 4, fontSize: 11 }}>
-                        <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 2 }}>
-                          <Badge color={r.status === 'accepted' ? T.success : T.error}>{r.status}</Badge>
-                          <span style={{ color: T.textMuted, fontSize: 10 }}>{relativeTime(r.decided_at || r.created_at)}</span>
-                        </div>
-                        <div style={{ color: T.textSecondary }}>{describeRequestedChange(r)}</div>
-                        {r.decision_notes && <div style={{ color: T.textMuted, fontStyle: 'italic', marginTop: 2 }}>{r.decision_notes}</div>}
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', marginBottom: 6 }}>Recent activity</div>
+                  <div style={{ maxHeight: 280, overflowY: 'auto', fontSize: 12 }}>
+                    {recentViews.length === 0 ? (
+                      <div style={{ padding: 12, textAlign: 'center', color: T.textMuted, fontSize: 11 }}>No activity yet</div>
+                    ) : recentViews.map(v => (
+                      <div key={v.id} style={{ padding: '6px 8px', borderBottom: `1px solid ${T.borderLight}`, display: 'flex', justifyContent: 'space-between' }}>
+                        <span><strong>{v.viewer_email}</strong>{v.tab ? ` opened ${v.tab}` : ' opened the room'}</span>
+                        <span style={{ color: T.textMuted, fontSize: 11 }}>{relativeTime(v.viewed_at)}</span>
                       </div>
                     ))}
                   </div>
-                </details>
-              )}
-            </div>
-          </div>
-        </Card>
+                </div>
+              </div>
+            </Card>
+          </>
+        )}
       </div>
     </div>
   )
+}
+
+// Resource type metadata mirroring what the customer sees in the public
+// viewer's Library tab. Kept local to avoid an import cycle with
+// DealRoomViewer; if the source-of-truth shape changes there, mirror here.
+const LIBRARY_RESOURCE_META = {
+  demo:       { label: 'Demo',       color: '#a855f7' },
+  link:       { label: 'Link',       color: T.primary },
+  powerpoint: { label: 'PowerPoint', color: '#dc6b2f' },
+  document:   { label: 'Document',   color: T.sageGreen },
+  misc:       { label: 'Other',      color: T.textMuted },
 }
 
 const thStyle = { textAlign: 'left', padding: '8px 10px', fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em' }
