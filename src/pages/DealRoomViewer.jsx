@@ -445,7 +445,12 @@ export function ProposalTabContent({ data, archived, onComment, themeColor }) {
   const annualDiscountAmount = annualListTotal - annualNetTotal
   const blendedDiscountPct = annualListTotal > 0 ? (annualDiscountAmount / annualListTotal) * 100 : 0
 
-  const implTotal = sageImpl.reduce((s, i) => s + num(i.extended || i.amount), 0)
+  // sage_implementation rows expose the dollar value via `total_amount` (the
+  // canonical column on quote_implementation_items). Older paths used
+  // `extended` or `amount`; honor both as fallbacks so legacy snapshots still
+  // render.
+  const implValue = (i) => num(i.total_amount != null ? i.total_amount : (i.extended != null ? i.extended : i.amount))
+  const implTotal = sageImpl.reduce((s, i) => s + implValue(i), 0)
 
   const monthlySubscription = annualNetTotal / 12
   const freeMonthsValue = freeMonths * monthlySubscription
@@ -504,9 +509,13 @@ export function ProposalTabContent({ data, archived, onComment, themeColor }) {
                         <div style={{ fontWeight: 700, fontSize: 13 }}>{p.name || p.sku || '—'}</div>
                         {isBundle && (
                           <div style={{ marginTop: 6, fontSize: 11.5, color: '#0f5132', lineHeight: 1.6 }}>
-                            {kids.map(c => (
-                              <div key={c.id}>- {c.name || c.sku}</div>
-                            ))}
+                            {kids.map(c => {
+                              const childQty = num(c.quantity)
+                              const showQty = childQty > 0 && childQty !== 1
+                              return (
+                                <div key={c.id}>- {c.name || c.sku}{showQty ? ` (${childQty})` : ''}</div>
+                              )
+                            })}
                           </div>
                         )}
                       </td>
@@ -558,11 +567,24 @@ export function ProposalTabContent({ data, archived, onComment, themeColor }) {
               </thead>
               <tbody>
                 {sageImpl.map((i, idx) => (
-                  <tr key={i.id || idx} style={{ borderBottom: `1px solid ${T.borderLight}` }}>
-                    <td style={{ padding: '10px 10px', color: T.text, fontWeight: 600 }}>{i.description || i.name || 'Implementation'}</td>
+                  <tr key={i.id || idx} style={{ borderBottom: `1px solid ${T.borderLight}`, verticalAlign: 'top' }}>
+                    <td style={{ padding: '12px 10px', color: T.text }}>
+                      <div style={{ fontWeight: 700, fontSize: 13 }}>{i.name || i.description || 'Implementation'}</div>
+                      {i.name && i.description && i.description !== i.name && (
+                        <div style={{ marginTop: 4, fontSize: 11, color: T.textSecondary, lineHeight: 1.45 }}>{i.description}</div>
+                      )}
+                      {i.notes && (
+                        <div style={{ marginTop: 4, fontSize: 11, color: T.textMuted, fontStyle: 'italic' }}>{i.notes}</div>
+                      )}
+                      {i.billing_type && (
+                        <div style={{ marginTop: 6, display: 'inline-block', padding: '2px 8px', background: T.surfaceAlt, color: T.textMuted, fontSize: 10, fontWeight: 700, borderRadius: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                          {String(i.billing_type).replace(/_/g, ' ')}
+                        </div>
+                      )}
+                    </td>
                     <td style={cellRight}>{num(i.quantity || 1).toLocaleString()}</td>
-                    <td style={{ ...cellRight, color: T.textSecondary }}>{i.unit_price != null ? money(i.unit_price) : '—'}</td>
-                    <td style={{ ...cellRight, background: '#eaf3e0', fontWeight: 700 }}>{money(i.extended || i.amount)}</td>
+                    <td style={{ ...cellRight, color: T.textSecondary }}>{i.unit_price != null ? money(i.unit_price) : (i.tm_weeks ? `${i.tm_weeks} wk` : '—')}</td>
+                    <td style={{ ...cellRight, background: '#eaf3e0', fontWeight: 700 }}>{money(implValue(i))}</td>
                   </tr>
                 ))}
               </tbody>
@@ -584,7 +606,7 @@ export function ProposalTabContent({ data, archived, onComment, themeColor }) {
         const impl = pb.implementation || []
         if (lines.length === 0 && impl.length === 0) return null
         const partnerSub = lines.reduce((s, l) => s + num(l.extended), 0)
-        const partnerImpl = impl.reduce((s, l) => s + num(l.extended || l.amount), 0)
+        const partnerImpl = impl.reduce((s, l) => s + implValue(l), 0)
         return (
           <div key={block.id || idx} style={{ marginTop: 28 }}>
             <ProposalSectionHeader>Partner: {block.partner_name || 'Partner'}</ProposalSectionHeader>
