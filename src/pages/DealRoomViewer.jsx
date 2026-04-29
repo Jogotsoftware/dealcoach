@@ -204,10 +204,9 @@ export default function DealRoomViewer() {
             <div style={{ fontSize: 22, fontWeight: 800, color: T.text }}>{deal?.company_name}</div>
             <div style={{ fontSize: 12, color: T.textSecondary, marginTop: 2 }}>Welcome, {viewer.name || viewer.email}</div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 12 }}>
-            <RepContactIcons rep={rep} />
+          <div style={{ textAlign: 'right' }}>
             {deal?.customer_logo_url && (
-              <img src={deal.customer_logo_url} alt={deal.company_name} style={{ maxWidth: 110, maxHeight: 46, objectFit: 'contain' }} />
+              <img src={deal.customer_logo_url} alt={deal.company_name} style={{ maxWidth: 140, maxHeight: 50, objectFit: 'contain', marginLeft: 'auto' }} />
             )}
           </div>
         </div>
@@ -221,7 +220,7 @@ export default function DealRoomViewer() {
 
       {/* Tab bar */}
       <div style={{ background: T.surface, borderBottom: `1px solid ${T.border}`, padding: '0 24px' }}>
-        <div style={{ display: 'flex', gap: 0, maxWidth: 1200, margin: '0 auto' }}>
+        <div style={{ display: 'flex', gap: 0, maxWidth: 1200, margin: '0 auto', alignItems: 'center' }}>
           {[
             { key: 'msp', label: 'Project Plan' },
             { key: 'library', label: 'Library' },
@@ -232,6 +231,8 @@ export default function DealRoomViewer() {
               {t.label}
             </button>
           ))}
+          <div style={{ flex: 1 }} />
+          <RepContactIcons rep={rep} />
         </div>
       </div>
 
