@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { theme as T, formatDate, formatDateLong, daysUntil } from '../lib/theme'
 import { Card, Badge, Button, EmptyState, Spinner, TabBar, inputStyle, labelStyle } from '../components/Shared'
+import MSPCalendar from '../components/MSPCalendar'
 
 const STATUS_COLORS = { pending: T.textMuted, in_progress: T.primary, completed: T.success, blocked: T.error, at_risk: T.warning }
 const STATUS_OPTIONS = [
@@ -37,9 +38,14 @@ export default function MSPPage() {
   const [loading, setLoading] = useState(true)
   const [deal, setDeal] = useState(null)
   const [steps, setSteps] = useState([])
+  const [milestones, setMilestones] = useState([])
   const [resources, setResources] = useState([])
   const [sharedLinks, setSharedLinks] = useState([])
   const [tab, setTab] = useState('timeline')
+  const [view, setView] = useState(() => {
+    try { return localStorage.getItem('msp.view') || 'timeline' } catch { return 'timeline' }
+  })
+  const [expandedStages, setExpandedStages] = useState(new Set())  // stage ids whose milestones are visible
 
   // Add step
   const [showAddStep, setShowAddStep] = useState(false)
@@ -66,14 +72,16 @@ export default function MSPPage() {
   async function loadData() {
     setLoading(true)
     try {
-      const [dealRes, stepsRes, resRes, linksRes] = await Promise.all([
+      const [dealRes, stepsRes, milestonesRes, resRes, linksRes] = await Promise.all([
         supabase.from('deals').select('id, company_name, website, stage, target_close_date').eq('id', dealId).single(),
         supabase.from('msp_stages').select('*').eq('deal_id', dealId).order('stage_order'),
+        supabase.from('msp_milestones').select('*').eq('deal_id', dealId).order('milestone_order'),
         supabase.from('msp_resources').select('*').eq('deal_id', dealId).order('created_at'),
         supabase.from('msp_shared_links').select('*').eq('deal_id', dealId).order('created_at', { ascending: false }),
       ])
       setDeal(dealRes.data)
       setSteps(stepsRes.data || [])
+      setMilestones(milestonesRes.data || [])
       setResources(resRes.data || [])
       setSharedLinks(linksRes.data || [])
 
@@ -91,6 +99,11 @@ export default function MSPPage() {
     }
   }
 
+  function setViewPersist(v) {
+    setView(v)
+    try { localStorage.setItem('msp.view', v) } catch { /* ignore */ }
+  }
+
   async function applyTemplate() {
     if (!selectedTemplate) return
     setApplyingTemplate(true)
@@ -102,11 +115,31 @@ export default function MSPPage() {
       for (const ts of tplSteps) {
         const dueDate = new Date(today)
         dueDate.setDate(dueDate.getDate() + (ts.due_date_offset || ts.default_duration_days || 0))
-        await supabase.from('msp_stages').insert({
+        // Insert stage and pull its id so we can seed template milestones beneath it
+        const { data: newStage } = await supabase.from('msp_stages').insert({
           deal_id: dealId, stage_name: ts.stage_name, stage_order: ts.stage_order,
           due_date: dueDate.toISOString().split('T')[0],
           notes: ts.notes || null, status: 'pending', is_completed: false,
-        })
+          color: ts.color || null,  // seed stage color from template
+        }).select('id').single()
+
+        // Seed template milestones for this stage if any exist (template milestones don't carry color)
+        if (newStage?.id) {
+          try {
+            const { data: tplMs } = await supabase.from('msp_template_milestones').select('*').eq('template_stage_id', ts.id).order('milestone_order')
+            if (tplMs?.length) {
+              for (const tm of tplMs) {
+                const mDue = new Date(today)
+                mDue.setDate(mDue.getDate() + (tm.default_days_offset || 0))
+                await supabase.from('msp_milestones').insert({
+                  deal_id: dealId, msp_stage_id: newStage.id,
+                  milestone_name: tm.milestone_name, milestone_order: tm.milestone_order,
+                  due_date: mDue.toISOString(), notes: tm.notes || null, status: 'pending',
+                })
+              }
+            }
+          } catch (e) { console.warn('milestone seed failed (non-fatal):', e) }
+        }
       }
       loadData()
     } catch (err) {
@@ -114,6 +147,44 @@ export default function MSPPage() {
     } finally {
       setApplyingTemplate(false)
     }
+  }
+
+  // ── Milestone CRUD ──
+  async function addMilestone(stageId, name = 'New Milestone') {
+    const stageMs = milestones.filter(m => m.msp_stage_id === stageId)
+    const order = stageMs.length > 0 ? Math.max(...stageMs.map(m => m.milestone_order)) + 1 : 1
+    try {
+      const { data } = await supabase.from('msp_milestones').insert({
+        deal_id: dealId, msp_stage_id: stageId,
+        milestone_name: name, milestone_order: order, status: 'pending',
+      }).select().single()
+      if (data) setMilestones(prev => [...prev, data])
+      // Auto-expand the stage so the new milestone is visible
+      setExpandedStages(prev => { const n = new Set(prev); n.add(stageId); return n })
+    } catch (e) { console.error('addMilestone failed:', e) }
+  }
+
+  async function updateMilestone(milestoneId, patch) {
+    try {
+      await supabase.from('msp_milestones').update(patch).eq('id', milestoneId)
+      setMilestones(prev => prev.map(m => m.id === milestoneId ? { ...m, ...patch } : m))
+    } catch (e) { console.error('updateMilestone failed:', e) }
+  }
+
+  async function deleteMilestone(milestoneId) {
+    if (!window.confirm('Delete this milestone?')) return
+    try {
+      await supabase.from('msp_milestones').delete().eq('id', milestoneId)
+      setMilestones(prev => prev.filter(m => m.id !== milestoneId))
+    } catch (e) { console.error('deleteMilestone failed:', e) }
+  }
+
+  function toggleStageExpanded(stageId) {
+    setExpandedStages(prev => {
+      const next = new Set(prev)
+      if (next.has(stageId)) next.delete(stageId); else next.add(stageId)
+      return next
+    })
   }
 
   async function addStep() {
@@ -283,6 +354,59 @@ export default function MSPPage() {
         {/* TIMELINE TAB */}
         {tab === 'timeline' && (
           <div>
+            {/* View toggle */}
+            {steps.length > 0 && (
+              <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+                {[
+                  { k: 'timeline', l: 'Timeline' },
+                  { k: 'calendar', l: 'Calendar' },
+                ].map(v => (
+                  <button key={v.k} onClick={() => setViewPersist(v.k)}
+                    style={{ padding: '5px 12px', fontSize: 11, fontWeight: 600, border: `1px solid ${view === v.k ? T.primary : T.border}`, borderRadius: 4, background: view === v.k ? T.primary : T.surface, color: view === v.k ? '#fff' : T.text, cursor: 'pointer', fontFamily: T.font }}>
+                    {v.l}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Calendar view */}
+            {view === 'calendar' && steps.length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                <MSPCalendar
+                  stages={steps}
+                  milestones={milestones}
+                  onSelectEvent={(evt) => {
+                    const r = evt.resource || {}
+                    if (r.kind === 'stage' && r.stage) {
+                      setEditingStep(r.stage.id); setEditingName(r.stage.stage_name)
+                      // Scroll the timeline view into focus when user toggles back
+                    } else if (r.kind === 'milestone' && r.milestone) {
+                      setExpandedStages(prev => { const n = new Set(prev); n.add(r.milestone.msp_stage_id); return n })
+                    }
+                    // Switch back to timeline so the user can edit
+                    setViewPersist('timeline')
+                  }}
+                  onMoveStage={async (stage, newStart, newEnd) => {
+                    const startStr = newStart.toISOString().split('T')[0]
+                    const endStr = newEnd.toISOString().split('T')[0]
+                    const patch = { start_date: startStr, end_date: endStr, due_date: endStr }
+                    await supabase.from('msp_stages').update(patch).eq('id', stage.id)
+                    setSteps(prev => prev.map(s => s.id === stage.id ? { ...s, ...patch } : s))
+                  }}
+                  onResizeStage={async (stage, newStart, newEnd) => {
+                    const startStr = newStart.toISOString().split('T')[0]
+                    const endStr = newEnd.toISOString().split('T')[0]
+                    const patch = { start_date: startStr, end_date: endStr, due_date: endStr }
+                    await supabase.from('msp_stages').update(patch).eq('id', stage.id)
+                    setSteps(prev => prev.map(s => s.id === stage.id ? { ...s, ...patch } : s))
+                  }}
+                />
+              </div>
+            )}
+
+            {/* Timeline list view (also rendered when there are no steps for the empty state) */}
+            {(view === 'timeline' || steps.length === 0) && (
+            <>
             {steps.length === 0 ? (
               <Card>
                 <div style={{ textAlign: 'center', padding: 32 }}>
@@ -439,6 +563,17 @@ export default function MSPPage() {
                                 placeholder="Add notes..." />
                             </div>
                           )}
+
+                          {/* Milestones */}
+                          <MilestonesSection
+                            stage={step}
+                            milestones={milestones.filter(m => m.msp_stage_id === step.id)}
+                            expanded={expandedStages.has(step.id)}
+                            onToggle={() => toggleStageExpanded(step.id)}
+                            onAdd={() => addMilestone(step.id)}
+                            onUpdate={updateMilestone}
+                            onDelete={deleteMilestone}
+                          />
                         </div>
                       </div>
 
@@ -478,6 +613,8 @@ export default function MSPPage() {
               )}
             </div>
             <style>{`@keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.6 } }`}</style>
+            </>
+            )}
           </div>
         )}
 
@@ -582,6 +719,67 @@ function StatusPicker({ step, onCycle, onSet }) {
             })}
           </div>
         </>
+      )}
+    </div>
+  )
+}
+
+// Milestones rendered under a stage card in the timeline. Collapsible.
+function MilestonesSection({ stage, milestones, expanded, onToggle, onAdd, onUpdate, onDelete }) {
+  const count = milestones.length
+  return (
+    <div style={{ marginTop: 10, paddingTop: 8, borderTop: `1px dashed ${T.borderLight}` }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <button onClick={onToggle}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, fontSize: 11, fontWeight: 600, padding: 0, fontFamily: T.font }}>
+          <span style={{ display: 'inline-block', width: 10, transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}>▸</span>
+          {' '}Milestones{count ? ` (${count})` : ''}
+        </button>
+        <div style={{ flex: 1 }} />
+        <button onClick={onAdd}
+          style={{ background: 'none', border: `1px dashed ${T.border}`, cursor: 'pointer', color: T.textMuted, fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 10, fontFamily: T.font }}>
+          + Add Milestone
+        </button>
+      </div>
+
+      {expanded && count > 0 && (
+        <div style={{ marginTop: 8, paddingLeft: 14 }}>
+          {milestones.map(m => {
+            const mColor = m.color || stage.color || T.primary
+            const mDays = m.due_date ? Math.ceil((new Date(m.due_date) - new Date()) / 86400000) : null
+            const mOverdue = m.status !== 'completed' && mDays != null && mDays < 0
+            return (
+              <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px', background: T.surfaceAlt, borderRadius: 4, borderLeft: `3px solid ${mColor}`, marginBottom: 4, flexWrap: 'wrap' }}>
+                <ColorSwatch color={mColor} onChange={(c) => onUpdate(m.id, { color: c })} />
+                <input
+                  defaultValue={m.milestone_name}
+                  onBlur={e => { if (e.target.value !== m.milestone_name) onUpdate(m.id, { milestone_name: e.target.value }) }}
+                  placeholder="Milestone name"
+                  style={{ ...inputStyle, padding: '3px 6px', fontSize: 11, flex: 1, minWidth: 140 }}
+                />
+                <select value={m.status} onChange={e => onUpdate(m.id, { status: e.target.value })}
+                  style={{ ...inputStyle, padding: '3px 6px', fontSize: 10, width: 'auto', cursor: 'pointer', color: STATUS_COLORS[m.status] || T.text, fontWeight: 600 }}>
+                  {STATUS_OPTIONS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+                </select>
+                <input type="date" value={m.due_date ? new Date(m.due_date).toISOString().split('T')[0] : ''}
+                  onChange={e => onUpdate(m.id, { due_date: e.target.value || null })}
+                  style={{ ...inputStyle, padding: '3px 6px', fontSize: 10, width: 'auto' }}
+                  title="Due date" />
+                <input type="text" defaultValue={m.date_label || ''}
+                  onBlur={e => { if ((e.target.value || '') !== (m.date_label || '')) onUpdate(m.id, { date_label: e.target.value || null }) }}
+                  placeholder="Date label"
+                  style={{ ...inputStyle, padding: '3px 6px', fontSize: 10, width: 100, fontStyle: m.date_label ? 'normal' : 'italic' }} />
+                {mDays != null && m.status !== 'completed' && !m.date_label && (
+                  <span style={{ fontSize: 10, fontWeight: 600, color: mOverdue ? T.error : mDays <= 7 ? T.warning : T.textMuted, fontFeatureSettings: '"tnum"' }}>
+                    {mOverdue ? `${Math.abs(mDays)}d late` : `${mDays}d`}
+                  </span>
+                )}
+                <button onClick={() => onDelete(m.id)} title="Delete milestone"
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, fontSize: 12, padding: 0, lineHeight: 1 }}>×</button>
+              </div>
+            )
+          })}
+        </div>
       )}
     </div>
   )

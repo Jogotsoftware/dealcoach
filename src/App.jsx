@@ -14,6 +14,9 @@ import MSPClientPortal from './pages/MSPClientPortal'
 import QuotesList from './pages/QuotesList'
 import QuoteBuilder from './pages/QuoteBuilder'
 import ProposalRenderer from './pages/ProposalRenderer'
+import DealRoomConfig from './pages/DealRoomConfig'
+import DealRoomViewer from './pages/DealRoomViewer'
+import NotificationsPage from './pages/Notifications'
 import CallDetail from './pages/CallDetail'
 import CoachAdmin from './pages/CoachAdmin'
 import Settings from './pages/Settings'
@@ -86,6 +89,7 @@ export default function App() {
             {/* Public routes */}
             <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
             <Route path="/msp/shared/:token" element={<MSPClientPortal />} />
+            <Route path="/room/:shareToken" element={<DealRoomViewer />} />
             <Route path="/invite/:token" element={<AcceptInvite />} />
 
             {/* Onboarding — authenticated but no org */}
@@ -102,6 +106,8 @@ export default function App() {
                 <Route path="/deal/:dealId/quotes" element={<ErrorBoundary label="quotes"><QuotesList /></ErrorBoundary>} />
                 <Route path="/deal/:dealId/quote/:quoteId" element={<ErrorBoundary label="quote builder"><QuoteBuilder /></ErrorBoundary>} />
                 <Route path="/deal/:dealId/quote/:quoteId/proposal" element={<ErrorBoundary label="proposal preview"><ProposalRenderer /></ErrorBoundary>} />
+                <Route path="/deal/:dealId/room" element={<ErrorBoundary label="deal room"><DealRoomConfig /></ErrorBoundary>} />
+                <Route path="/notifications" element={<ErrorBoundary label="notifications"><NotificationsPage /></ErrorBoundary>} />
                 <Route path="/coach" element={<ErrorBoundary label="coach admin"><CoachAdmin /></ErrorBoundary>} />
                 <Route path="/coach/builder" element={<ErrorBoundary label="coach builder"><CoachBuilder /></ErrorBoundary>} />
                 <Route path="/reports" element={<ErrorBoundary label="reports"><Reports /></ErrorBoundary>} />

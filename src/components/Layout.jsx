@@ -6,6 +6,7 @@ import { useOrg } from '../contexts/OrgContext'
 import { supabase } from '../lib/supabase'
 import { theme as T } from '../lib/theme'
 import GlobalChatbot from './GlobalChatbot'
+import NotificationBell from './NotificationBell'
 
 export default function Layout() {
   const { profile, signOut } = useAuth()
@@ -173,7 +174,11 @@ export default function Layout() {
       </aside>
 
       {/* Main content */}
-      <div style={{ flex: 1, minWidth: 0, overflow: 'auto', width: '100%' }}>
+      <div style={{ flex: 1, minWidth: 0, overflow: 'auto', width: '100%', position: 'relative' }}>
+        {/* Floating notification bell — top-right of main content */}
+        <div style={{ position: 'fixed', top: 14, right: 22, zIndex: 50 }}>
+          <NotificationBell />
+        </div>
         {isTrialing && org?.trial_ends_at && (
           <div style={{
             padding: '8px 24px', background: T.warningLight, borderBottom: `1px solid ${T.warning}25`,
