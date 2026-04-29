@@ -13,21 +13,41 @@ import { supabase } from '../lib/supabase'
 import { theme as T } from '../lib/theme'
 import { Button, EmptyState, inputStyle, labelStyle } from './Shared'
 
-const COLORS = {
+// Sentiment drives the node colour. Three values only — neutral / champion / adversary.
+const SENTIMENT_COLORS = {
+  neutral: '#94a3b8',
   champion: '#10b981',
   adversary: '#ef4444',
-  influencer: '#f59e0b',
-  unknown: '#94a3b8',
-  eb: '#5DADE2',
 }
+const SENTIMENT_LABEL = { neutral: 'Neutral', champion: 'Champion', adversary: 'Adversary' }
+const SENTIMENTS = ['neutral', 'champion', 'adversary']
 
-const ROLE_LABEL = { champion: 'Champion', adversary: 'Adversary', influencer: 'Influencer', unknown: 'Unknown' }
+// Role enum stored in contacts.role_in_deal. Free-text legacy values still load,
+// but the editor only writes these six.
+const ROLES = [
+  { key: 'signer',             label: 'Signer' },
+  { key: 'decision_maker',     label: 'Decision Maker' },
+  { key: 'influencer',         label: 'Influencer' },
+  { key: 'business_user',      label: 'Business User' },
+  { key: 'employee_user',      label: 'Employee User' },
+  { key: 'technical_resource', label: 'Technical Resource' },
+]
+const ROLE_LABEL = Object.fromEntries(ROLES.map(r => [r.key, r.label]))
 
+function sentimentOf(c) {
+  if (c?.sentiment && SENTIMENT_COLORS[c.sentiment]) return c.sentiment
+  if (c?.is_champion) return 'champion'
+  if (c?.is_adversary) return 'adversary'
+  return 'neutral'
+}
 function roleOf(c) {
-  if (c.is_champion) return 'champion'
-  if (c.is_adversary) return 'adversary'
-  if (c.influence_level === 'high') return 'influencer'
-  return 'unknown'
+  const r = c?.role_in_deal
+  if (r && ROLE_LABEL[r]) return r
+  // Legacy fallbacks based on flags so old data still shows a role badge
+  if (c?.is_signer) return 'signer'
+  if (c?.is_economic_buyer) return 'decision_maker'
+  if (c?.influence_level === 'high') return 'influencer'
+  return null
 }
 
 function scaleFor(level) {
@@ -102,8 +122,9 @@ function ResetIcon({ size = 16 }) {
 // === NODE ===
 function ContactNode({ data }) {
   const c = data.contact
+  const sentiment = sentimentOf(c)
   const role = roleOf(c)
-  const color = COLORS[role]
+  const color = SENTIMENT_COLORS[sentiment]
   const scale = scaleFor(c.influence_level)
   return (
     <div style={{ transform: `scale(${scale})`, transformOrigin: 'top left' }}>
@@ -112,49 +133,30 @@ function ContactNode({ data }) {
         position={Position.Top}
         style={{ background: T.primary, width: 14, height: 14, border: `2px solid ${T.surface}`, top: -7 }}
       />
-      <div style={{
-        width: 200,
-        background: T.surface,
-        border: `1px solid ${T.border}`,
-        borderLeft: `4px solid ${color}`,
-        borderRadius: 6,
-        padding: '8px 36px 10px 10px',
-        position: 'relative',
-        boxShadow: data.selected ? `0 0 0 2px ${T.primary}` : T.shadow,
-        fontFamily: T.font,
-      }}>
-        {c.is_economic_buyer && (
-          <div style={{ position: 'absolute', left: 0, right: 0, top: 0, height: 4, background: COLORS.eb, borderTopLeftRadius: 4, borderTopRightRadius: 4 }} />
-        )}
-        {c.is_economic_buyer && (
-          <span style={{ position: 'absolute', top: 8, right: 36, background: COLORS.eb, color: '#fff', fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3, lineHeight: 1.2 }}>EB</span>
-        )}
-        <button
-          type="button"
-          className="nodrag"
-          onClick={(e) => { e.stopPropagation(); data.onEdit(c.id) }}
-          title="Edit"
-          aria-label="Edit"
-          style={{
-            position: 'absolute', top: 6, right: 6,
-            width: 24, height: 24,
-            background: T.surface,
-            border: `1px solid ${T.border}`,
-            borderRadius: 5,
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            cursor: 'pointer',
-            color: T.textSecondary,
-            padding: 0,
-          }}
-        >
-          <PencilIcon size={12} />
-        </button>
-        <div style={{ marginTop: c.is_economic_buyer ? 4 : 0 }}>
+      {/* Click anywhere on the body to open the full detail panel */}
+      <div
+        onClick={(e) => { e.stopPropagation(); data.onEdit(c.id) }}
+        title="Click to view details"
+        style={{
+          width: 200,
+          background: T.surface,
+          border: `1px solid ${T.border}`,
+          borderLeft: `4px solid ${color}`,
+          borderRadius: 6,
+          padding: '8px 12px 10px 12px',
+          position: 'relative',
+          boxShadow: data.selected ? `0 0 0 2px ${T.primary}` : T.shadow,
+          fontFamily: T.font,
+          cursor: 'pointer',
+        }}>
+        <div>
           <div style={{ fontSize: 14, fontWeight: 700, color: T.text, lineHeight: 1.2 }}>{c.name}</div>
           {c.title && <div style={{ fontSize: 12, color: T.textSecondary, marginTop: 2, lineHeight: 1.2 }}>{c.title}</div>}
           <div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-            <span style={{ display: 'inline-block', background: color, color: '#fff', fontSize: 10, fontWeight: 700, borderRadius: 3, padding: '2px 6px' }}>{ROLE_LABEL[role]}</span>
-            {c.is_signer && <span style={{ display: 'inline-block', background: T.warning, color: '#fff', fontSize: 9, fontWeight: 700, borderRadius: 3, padding: '2px 5px' }}>Signer</span>}
+            <span style={{ display: 'inline-block', background: color, color: '#fff', fontSize: 10, fontWeight: 700, borderRadius: 3, padding: '2px 6px' }}>{SENTIMENT_LABEL[sentiment]}</span>
+            {role && (
+              <span style={{ display: 'inline-block', background: T.surfaceAlt, color: T.textSecondary, fontSize: 10, fontWeight: 700, borderRadius: 3, padding: '2px 6px', border: `1px solid ${T.borderLight}` }}>{ROLE_LABEL[role]}</span>
+            )}
           </div>
         </div>
       </div>
@@ -456,13 +458,14 @@ export default function ContactsOrgTree({ dealId, contacts, setContacts }) {
           </div>
           <div style={{ flex: 1, overflowY: 'auto' }}>
             {contacts.map(c => {
+              const sentiment = sentimentOf(c)
               const role = roleOf(c)
               const isSel = selectedId === c.id
               const onTree = c.org_position_x != null && c.org_position_y != null
               return (
                 <div
                   key={c.id}
-                  onClick={() => setSelectedId(c.id)}
+                  onClick={() => { setSelectedId(c.id); setEditId(c.id) }}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 10,
                     padding: '10px 14px',
@@ -476,18 +479,21 @@ export default function ContactsOrgTree({ dealId, contacts, setContacts }) {
                 >
                   <span style={{
                     width: 8, height: 8, borderRadius: '50%',
-                    background: COLORS[role], flexShrink: 0,
+                    background: SENTIMENT_COLORS[sentiment], flexShrink: 0,
                   }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <span style={{ fontSize: 13, fontWeight: 700, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.name}</span>
-                      {c.is_economic_buyer && <span style={{ fontSize: 9, fontWeight: 700, color: '#fff', background: COLORS.eb, padding: '1px 4px', borderRadius: 3 }}>EB</span>}
-                      {c.is_signer && <span style={{ fontSize: 9, fontWeight: 700, color: '#fff', background: T.warning, padding: '1px 4px', borderRadius: 3 }}>Signer</span>}
+                      {role && (
+                        <span style={{ fontSize: 9, fontWeight: 700, color: T.textSecondary, background: T.surfaceAlt, border: `1px solid ${T.borderLight}`, padding: '1px 5px', borderRadius: 3 }}>
+                          {ROLE_LABEL[role]}
+                        </span>
+                      )}
                     </div>
                     <div style={{ fontSize: 11, color: T.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {c.title || <span style={{ fontStyle: 'italic' }}>No title</span>}
                       {' · '}
-                      <span style={{ color: COLORS[role], fontWeight: 600 }}>{ROLE_LABEL[role]}</span>
+                      <span style={{ color: SENTIMENT_COLORS[sentiment], fontWeight: 600 }}>{SENTIMENT_LABEL[sentiment]}</span>
                     </div>
                   </div>
                   <IconBtn
@@ -708,13 +714,6 @@ function ContactEditModal({ contact, contacts, onClose, onChange, onDelete }) {
     if (v !== (contact[field] ?? null)) onChange({ [field]: v })
   }
 
-  const flagToggle = (key, label) => (
-    <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: T.textSecondary, cursor: 'pointer' }}>
-      <input type="checkbox" checked={!!draft[key]} onChange={e => commitNow({ [key]: e.target.checked })} />
-      {label}
-    </label>
-  )
-
   const textArea = (field, label, rows = 2) => (
     <div style={{ marginBottom: 8 }}>
       <label style={labelStyle}>{label}</label>
@@ -768,17 +767,58 @@ function ContactEditModal({ contact, contacts, onClose, onChange, onDelete }) {
           {textInput('linkedin', 'LinkedIn')}
         </div>
 
+        {/* Sentiment — drives the contact's colour in the org tree */}
         <div style={{ marginBottom: 12 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Role</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, padding: '10px 12px', background: T.surfaceAlt, borderRadius: 6, border: `1px solid ${T.borderLight}` }}>
-            {flagToggle('is_champion', 'Champion')}
-            {flagToggle('is_adversary', 'Adversary')}
-            {flagToggle('is_economic_buyer', 'Economic Buyer')}
-            {flagToggle('is_signer', 'Signer')}
+          <div style={{ fontSize: 10, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Sentiment</div>
+          <div style={{ display: 'flex', gap: 6, padding: 4, background: T.surfaceAlt, borderRadius: 6, border: `1px solid ${T.borderLight}` }}>
+            {SENTIMENTS.map(s => {
+              const active = sentimentOf(draft) === s
+              const color = SENTIMENT_COLORS[s]
+              return (
+                <button key={s} type="button"
+                  onClick={() => commitNow({
+                    sentiment: s,
+                    // Keep the legacy flags in sync so existing reports/queries stay correct.
+                    is_champion: s === 'champion',
+                    is_adversary: s === 'adversary',
+                  })}
+                  style={{
+                    flex: 1, padding: '7px 10px', borderRadius: 5,
+                    border: `1px solid ${active ? color : T.border}`,
+                    background: active ? color + '18' : T.surface,
+                    color: active ? color : T.textSecondary,
+                    cursor: 'pointer', fontFamily: T.font, fontWeight: 700, fontSize: 12,
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  }}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: color }} />
+                  {SENTIMENT_LABEL[s]}
+                </button>
+              )
+            })}
           </div>
         </div>
 
+        {/* Role + Influence */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
+          <div>
+            <label style={labelStyle}>Role</label>
+            <select
+              style={{ ...inputStyle, cursor: 'pointer' }}
+              value={ROLE_LABEL[draft.role_in_deal] ? draft.role_in_deal : ''}
+              onChange={e => {
+                const v = e.target.value || null
+                commitNow({
+                  role_in_deal: v,
+                  // Keep legacy flags aligned with the closest enum match.
+                  is_signer: v === 'signer',
+                  is_economic_buyer: v === 'decision_maker',
+                })
+              }}
+            >
+              <option value="">— pick role —</option>
+              {ROLES.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}
+            </select>
+          </div>
           <div>
             <label style={labelStyle}>Influence</label>
             <select
@@ -792,6 +832,15 @@ function ContactEditModal({ contact, contacts, onClose, onChange, onDelete }) {
               <option value="low">Low</option>
             </select>
           </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
+          <div>
+            <label style={labelStyle}>Department</label>
+            <input style={inputStyle} value={draft.department || ''}
+              onChange={e => setDraft(d => ({ ...d, department: e.target.value }))}
+              onBlur={() => commitOnBlur('department')} />
+          </div>
           <div>
             <label style={labelStyle}>Reports to</label>
             <ReportsToPicker
@@ -802,9 +851,16 @@ function ContactEditModal({ contact, contacts, onClose, onChange, onDelete }) {
           </div>
         </div>
 
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
+          {textInput('tenure', 'Tenure')}
+          {textInput('communication_style', 'Communication style')}
+        </div>
+
         {textArea('pain_points', 'Pain Points')}
         {textArea('decision_criteria', 'Decision Criteria')}
         {textArea('priorities', 'Priorities')}
+        {textArea('success_criteria', 'Success Criteria')}
+        {textArea('background', 'Background')}
         {textArea('personality_notes', 'Personality Notes')}
         {textArea('notes', 'Notes', 3)}
 
