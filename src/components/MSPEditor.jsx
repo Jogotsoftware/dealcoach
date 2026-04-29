@@ -69,6 +69,7 @@ export default function MSPEditor({ dealId, mode = 'standalone', readonlyAdapter
   const navigate = useNavigate()
   const { profile } = useAuth()
   const isStandalone = mode === 'standalone'
+  const isEmbedded = mode === 'embedded'
   const isReadonly = mode === 'readonly'
   const isWritable = !isReadonly  // standalone + embedded both write
 
@@ -120,27 +121,59 @@ export default function MSPEditor({ dealId, mode = 'standalone', readonlyAdapter
     setLoading(true)
     try {
       const dealCols = isStandalone
-        ? 'id, company_name, website, stage, target_close_date'
-        : 'id, company_name'
+        ? 'id, company_name, website, stage, target_close_date, msp_template_seeded_at'
+        : 'id, company_name, msp_template_seeded_at'
       const [dealRes, stepsRes, milestonesRes, resRes, linksRes] = await Promise.all([
         supabase.from('deals').select(dealCols).eq('id', dealId).single(),
         supabase.from('msp_stages').select('*').eq('deal_id', dealId).order('stage_order'),
         supabase.from('msp_milestones').select('*').eq('deal_id', dealId).order('milestone_order'),
         isStandalone ? supabase.from('msp_resources').select('*').eq('deal_id', dealId).order('created_at') : Promise.resolve({ data: [] }),
-        isStandalone ? supabase.from('msp_shared_links').select('*').eq('deal_id', dealId).order('created_at', { ascending: false }) : Promise.resolve({ data: [] }),
+        // Embedded mode also needs shared links so the AE can generate a live customer-facing URL
+        (isStandalone || isEmbedded) ? supabase.from('msp_shared_links').select('*').eq('deal_id', dealId).order('created_at', { ascending: false }) : Promise.resolve({ data: [] }),
       ])
       setDeal(dealRes.data)
       setSteps(stepsRes.data || [])
       setMilestones(milestonesRes.data || [])
       setResources(resRes.data || [])
-      setSharedLinks(linksRes.data || [])
 
-      if (isStandalone && !stepsRes.data?.length) {
+      // Auto-create a live share link if none active — embedded mode always
+      // surfaces "Open live link" so the AE never has to think about generating one.
+      let links = linksRes.data || []
+      const hasActive = links.some(l => l.is_active)
+      if (isEmbedded && isWritable && !hasActive) {
+        try {
+          const { data: { user } } = await supabase.auth.getUser()
+          if (user) {
+            const token = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+            const { data: created } = await supabase.from('msp_shared_links')
+              .insert({ deal_id: dealId, share_token: token, created_by: user.id })
+              .select().single()
+            if (created) links = [created, ...links]
+          }
+        } catch (e) { console.warn('auto-create share link failed:', e?.message) }
+      }
+      setSharedLinks(links)
+
+      // Templates are useful in BOTH standalone and embedded modes — embedded users
+      // (Deal Room config) need to be able to start from the default template too.
+      if (!isReadonly && !stepsRes.data?.length) {
         let tplQuery = supabase.from('msp_templates').select('*')
         if (profile?.active_coach_id) tplQuery = tplQuery.eq('coach_id', profile.active_coach_id)
         const { data: tpls } = await tplQuery.order('is_default', { ascending: false })
         setTemplates(tpls || [])
-        if (tpls?.length) setSelectedTemplate(tpls[0].id)
+        if (tpls?.length) {
+          setSelectedTemplate(tpls[0].id)
+          // Auto-apply the default template once per deal. The seeded flag lives
+          // on `deals.msp_template_seeded_at` so it is shared across users and
+          // machines — a teammate opening a brand-new room on another device
+          // won't double-seed. Manual deletion of all stages won't re-seed
+          // either, since the flag is set after the first successful apply.
+          const alreadySeeded = !!dealRes.data?.msp_template_seeded_at
+          if (!alreadySeeded && isWritable) {
+            await applyTemplateById(tpls[0].id)
+            await supabase.from('deals').update({ msp_template_seeded_at: new Date().toISOString() }).eq('id', dealId)
+          }
+        }
       }
     } catch (err) {
       console.error('Error loading MSP:', err)
@@ -155,11 +188,12 @@ export default function MSPEditor({ dealId, mode = 'standalone', readonlyAdapter
   }
 
   // ── Template apply (writable only) ──
-  async function applyTemplate() {
-    if (!selectedTemplate || !isWritable) return
+  async function applyTemplate() { return applyTemplateById(selectedTemplate) }
+  async function applyTemplateById(templateId) {
+    if (!templateId || !isWritable) return
     setApplyingTemplate(true)
     try {
-      const { data: tplSteps } = await supabase.from('msp_template_stages').select('*').eq('template_id', selectedTemplate).order('stage_order')
+      const { data: tplSteps } = await supabase.from('msp_template_stages').select('*').eq('template_id', templateId).order('stage_order')
       if (!tplSteps?.length) { setApplyingTemplate(false); return }
       const today = new Date()
       for (const ts of tplSteps) {
@@ -176,6 +210,9 @@ export default function MSPEditor({ dealId, mode = 'standalone', readonlyAdapter
           due_date: hasOffset ? dueDate.toISOString().split('T')[0] : null,
           notes: ts.notes || null, status: 'pending', is_completed: false,
           color: ts.color || null,
+          // Template's default team contacts auto-populate the stage's team chips.
+          // Stored as jsonb [{ id, name, title }] — same shape as live stages use.
+          assigned_team_contacts: Array.isArray(ts.default_team_contacts) ? ts.default_team_contacts : [],
         }).select('id').single()
         if (newStage?.id) {
           try {
@@ -438,6 +475,15 @@ export default function MSPEditor({ dealId, mode = 'standalone', readonlyAdapter
         {/* TIMELINE TAB (always rendered in embedded/readonly; gated in standalone) */}
         {(!isStandalone || tab === 'timeline') && (
           <div>
+            {/* Live link strip — embedded mode only. Lets the AE share a URL the customer can
+                follow along with in real time as edits land. Mirrors via Supabase realtime. */}
+            {isEmbedded && (
+              <LiveLinkBar
+                dealId={dealId}
+                links={sharedLinks}
+                onCreate={async () => { await createShareLink() }}
+              />
+            )}
             {/* View toggle */}
             {steps.length > 0 && (
               <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
@@ -509,8 +555,8 @@ export default function MSPEditor({ dealId, mode = 'standalone', readonlyAdapter
                   ) : (
                     <Card>
                       <div style={{ textAlign: 'center', padding: 32 }}>
-                        <div style={{ fontSize: 14, color: T.textMuted, marginBottom: 16 }}>No project plan steps yet. {isStandalone && templates.length > 0 ? 'Apply a template or add steps manually.' : 'Add steps manually.'}</div>
-                        {isStandalone && templates.length > 0 && (
+                        <div style={{ fontSize: 14, color: T.textMuted, marginBottom: 16 }}>No project plan steps yet. {templates.length > 0 ? 'Apply a template or add steps manually.' : 'Add steps manually.'}</div>
+                        {templates.length > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'center', gap: 8, alignItems: 'center', marginBottom: 12 }}>
                             {templates.length > 1 ? (
                               <select style={{ ...inputStyle, width: 'auto', padding: '8px 12px', cursor: 'pointer' }}
@@ -594,7 +640,11 @@ export default function MSPEditor({ dealId, mode = 'standalone', readonlyAdapter
                                     ) : (
                                       <div onClick={() => { setEditingStep(step.id); setEditingName(step.stage_name) }}
                                         style={{
-                                          fontSize: 13, fontWeight: 600, color: T.text, cursor: 'pointer',
+                                          fontSize: 13, fontWeight: 600,
+                                          // Stage color tints the title text so meeting types are
+                                          // visually distinct at a glance. Falls back to body text.
+                                          color: step.color || T.text,
+                                          cursor: 'pointer',
                                           textDecoration: step.is_completed ? 'line-through' : 'none',
                                           opacity: step.is_completed ? 0.6 : 1,
                                         }}>
@@ -650,7 +700,8 @@ export default function MSPEditor({ dealId, mode = 'standalone', readonlyAdapter
                                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
                                   <div style={{ flex: 1, minWidth: 220 }}>
                                     <div style={{
-                                      fontSize: 14, fontWeight: 700, color: T.text,
+                                      fontSize: 14, fontWeight: 700,
+                                      color: step.color || T.text,
                                       textDecoration: step.is_completed ? 'line-through' : 'none',
                                       opacity: step.is_completed ? 0.6 : 1,
                                     }}>{step.stage_name}</div>
@@ -700,20 +751,24 @@ export default function MSPEditor({ dealId, mode = 'standalone', readonlyAdapter
                                 </div>
                               )}
 
-                              {/* Milestones */}
-                              <MilestonesSection
-                                stage={step}
-                                milestones={milestones.filter(m => m.msp_stage_id === step.id)}
-                                expanded={expandedStages.has(step.id)}
-                                onToggle={() => toggleStageExpanded(step.id)}
-                                onAdd={() => addMilestone(step.id)}
-                                onUpdate={updateMilestone}
-                                onDelete={deleteMilestone}
-                                isReadonly={isReadonly}
-                                archived={archived}
-                                pendingByTarget={pendingByTarget}
-                                onRequestChange={requestChange}
-                              />
+                              {/* Milestones — hidden in embedded mode (Deal Room config)
+                                  per UX: AEs build the high-level project plan there, not
+                                  the granular milestones. Standalone editor still shows them. */}
+                              {!isEmbedded && (
+                                <MilestonesSection
+                                  stage={step}
+                                  milestones={milestones.filter(m => m.msp_stage_id === step.id)}
+                                  expanded={expandedStages.has(step.id)}
+                                  onToggle={() => toggleStageExpanded(step.id)}
+                                  onAdd={() => addMilestone(step.id)}
+                                  onUpdate={updateMilestone}
+                                  onDelete={deleteMilestone}
+                                  isReadonly={isReadonly}
+                                  archived={archived}
+                                  pendingByTarget={pendingByTarget}
+                                  onRequestChange={requestChange}
+                                />
+                              )}
 
                               {/* Per-stage comment composer (readonly + non-archived) */}
                               {isReadonly && !archived && (
@@ -817,7 +872,7 @@ export default function MSPEditor({ dealId, mode = 'standalone', readonlyAdapter
               <Card key={link.id}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
-                    <div style={{ fontSize: 13, fontFamily: T.mono, color: T.text, marginBottom: 4 }}>{window.location.origin}/msp/shared/{link.share_token}</div>
+                    <div style={{ fontSize: 13, fontFamily: T.mono, color: T.text, marginBottom: 4 }}>{window.location.origin}/projectplan/shared/{link.share_token}</div>
                     <div style={{ display: 'flex', gap: 8, fontSize: 11, color: T.textSecondary, alignItems: 'center' }}>
                       <span>Views: {link.access_count || 0}</span>
                       {link.expires_at && <span>Expires: {formatDateLong(link.expires_at)}</span>}
@@ -827,9 +882,9 @@ export default function MSPEditor({ dealId, mode = 'standalone', readonlyAdapter
                     </div>
                   </div>
                   <Button style={{ padding: '6px 14px', fontSize: 12 }}
-                    onClick={() => window.open(`${window.location.origin}/msp/shared/${link.share_token}`, '_blank')}>Open</Button>
+                    onClick={() => window.open(`${window.location.origin}/projectplan/shared/${link.share_token}`, '_blank')}>Open</Button>
                   <Button style={{ padding: '6px 14px', fontSize: 12 }}
-                    onClick={() => navigator.clipboard.writeText(`${window.location.origin}/msp/shared/${link.share_token}`)}>Copy Link</Button>
+                    onClick={() => navigator.clipboard.writeText(`${window.location.origin}/projectplan/shared/${link.share_token}`)}>Copy Link</Button>
                 </div>
               </Card>
             ))}
@@ -1019,9 +1074,11 @@ function ColorSwatch({ color, onChange }) {
 function ContactChips({ stepId, clients, team, dealId, userId, onChangeClients, onChangeTeam }) {
   const [pickerSide, setPickerSide] = useState(null)
   const [options, setOptions] = useState([])
+  const [showQuickAdd, setShowQuickAdd] = useState(false)
+  const [draft, setDraft] = useState({ name: '', title: '', email: '', phone: '' })
+  const [saving, setSaving] = useState(false)
 
-  async function openPicker(side) {
-    setPickerSide(side)
+  async function refreshOptions(side) {
     if (side === 'client') {
       const { data } = await supabase.from('contacts').select('id, name, title, role_in_deal').eq('deal_id', dealId).order('name')
       setOptions(data || [])
@@ -1029,6 +1086,13 @@ function ContactChips({ stepId, clients, team, dealId, userId, onChangeClients, 
       const { data } = await supabase.from('user_team_members').select('id, name, title, member_type').eq('user_id', userId).order('name')
       setOptions(data || [])
     }
+  }
+
+  async function openPicker(side) {
+    setPickerSide(side)
+    setShowQuickAdd(false)
+    setDraft({ name: '', title: '', email: '', phone: '' })
+    await refreshOptions(side)
   }
 
   function add(side, contact) {
@@ -1046,6 +1110,43 @@ function ContactChips({ stepId, clients, team, dealId, userId, onChangeClients, 
   function remove(side, id) {
     if (side === 'client') onChangeClients(clients.filter(c => c.id !== id))
     else onChangeTeam(team.filter(c => c.id !== id))
+  }
+
+  // Quick-add: name is the only required field (it's the chip label and a NOT NULL
+  // column in both tables). Title/email/phone all optional.
+  async function quickSave() {
+    if (!draft.name.trim() || saving) return
+    setSaving(true)
+    try {
+      let row = null
+      if (pickerSide === 'client') {
+        const { data } = await supabase.from('contacts').insert({
+          deal_id: dealId,
+          name: draft.name.trim(),
+          title: draft.title.trim() || null,
+          email: draft.email.trim() || null,
+          phone: draft.phone.trim() || null,
+        }).select('id, name, title').single()
+        row = data
+      } else {
+        const { data } = await supabase.from('user_team_members').insert({
+          user_id: userId,
+          name: draft.name.trim(),
+          title: draft.title.trim() || null,
+          email: draft.email.trim() || null,
+          phone: draft.phone.trim() || null,
+          member_type: 'team',
+        }).select('id, name, title').single()
+        row = data
+      }
+      if (row) {
+        await refreshOptions(pickerSide)
+        add(pickerSide, row)
+      }
+      setShowQuickAdd(false)
+      setDraft({ name: '', title: '', email: '', phone: '' })
+    } catch (e) { console.error('quickSave contact failed:', e?.message) }
+    finally { setSaving(false) }
   }
 
   const Chip = ({ c, side }) => (
@@ -1071,12 +1172,41 @@ function ContactChips({ stepId, clients, team, dealId, userId, onChangeClients, 
       {pickerSide && (
         <>
           <div onClick={() => setPickerSide(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.2)', zIndex: 600 }} />
-          <div style={{ position: 'fixed', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, boxShadow: '0 10px 40px rgba(0,0,0,0.2)', zIndex: 601, width: 360, maxHeight: 400, overflow: 'auto' }}>
-            <div style={{ padding: 10, borderBottom: `1px solid ${T.border}`, fontWeight: 700, fontSize: 13, color: T.text }}>
-              Add {pickerSide === 'client' ? 'client' : 'team'} contact
+          <div style={{ position: 'fixed', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, boxShadow: '0 10px 40px rgba(0,0,0,0.2)', zIndex: 601, width: 380, maxHeight: 480, overflow: 'auto' }}>
+            <div style={{ padding: 10, borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontWeight: 700, fontSize: 13, color: T.text }}>
+                Add {pickerSide === 'client' ? 'client' : 'team'} contact
+              </span>
+              <button onClick={() => setShowQuickAdd(s => !s)}
+                title="Quick-add a new contact"
+                style={{
+                  width: 24, height: 24, borderRadius: '50%', border: `1px solid ${showQuickAdd ? T.primary : T.border}`,
+                  background: showQuickAdd ? T.primary : T.surface, color: showQuickAdd ? '#fff' : T.primary,
+                  cursor: 'pointer', fontSize: 14, fontWeight: 700, fontFamily: T.font, lineHeight: 1, padding: 0,
+                }}>+</button>
             </div>
+            {showQuickAdd && (
+              <div style={{ padding: 12, background: T.surfaceAlt, borderBottom: `1px solid ${T.borderLight}`, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                <input autoFocus value={draft.name} onChange={e => setDraft(p => ({ ...p, name: e.target.value }))}
+                  placeholder="Name" style={{ ...inputStyle, padding: '5px 8px', fontSize: 12, gridColumn: '1 / -1' }} />
+                <input value={draft.title} onChange={e => setDraft(p => ({ ...p, title: e.target.value }))}
+                  placeholder="Role / title" style={{ ...inputStyle, padding: '5px 8px', fontSize: 12, gridColumn: '1 / -1' }} />
+                <input value={draft.email} onChange={e => setDraft(p => ({ ...p, email: e.target.value }))}
+                  placeholder="Email" type="email" style={{ ...inputStyle, padding: '5px 8px', fontSize: 12 }} />
+                <input value={draft.phone} onChange={e => setDraft(p => ({ ...p, phone: e.target.value }))}
+                  placeholder="Phone" style={{ ...inputStyle, padding: '5px 8px', fontSize: 12 }} />
+                <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end', gap: 6, marginTop: 4 }}>
+                  <button onClick={() => { setShowQuickAdd(false); setDraft({ name: '', title: '', email: '', phone: '' }) }}
+                    style={{ padding: '5px 10px', fontSize: 11, background: T.surface, color: T.textMuted, border: `1px solid ${T.border}`, borderRadius: 4, cursor: 'pointer', fontFamily: T.font }}>Cancel</button>
+                  <button onClick={quickSave} disabled={!draft.name.trim() || saving}
+                    style={{ padding: '5px 12px', fontSize: 11, fontWeight: 700, background: !draft.name.trim() || saving ? T.borderLight : T.primary, color: '#fff', border: 'none', borderRadius: 4, cursor: !draft.name.trim() || saving ? 'not-allowed' : 'pointer', fontFamily: T.font }}>
+                    {saving ? 'Saving…' : 'Save & add'}
+                  </button>
+                </div>
+              </div>
+            )}
             {options.length === 0 ? (
-              <div style={{ padding: 20, textAlign: 'center', color: T.textMuted, fontSize: 12 }}>No {pickerSide === 'client' ? 'deal contacts' : 'team members'} yet.</div>
+              <div style={{ padding: 20, textAlign: 'center', color: T.textMuted, fontSize: 12 }}>No {pickerSide === 'client' ? 'deal contacts' : 'team members'} yet. Use + to create one.</div>
             ) : options.map(o => (
               <button key={o.id} onClick={() => add(pickerSide, o)} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2, width: '100%', padding: '8px 12px', border: 'none', borderBottom: `1px solid ${T.borderLight}`, background: 'transparent', cursor: 'pointer', fontFamily: T.font, textAlign: 'left' }}
                 onMouseEnter={e => e.currentTarget.style.background = T.surfaceAlt}
@@ -1177,6 +1307,62 @@ function ReadonlyCommentComposer({ refKind, refId, count, placeholder, onSubmit 
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+// ─── Live link bar — embedded mode ───────────────────────────────────────────
+// Shows the active customer-facing share URL, or a "Generate live link" button
+// if none exists. The customer page (MSPClientPortal) subscribes to realtime
+// updates so edits made here mirror live without a page refresh.
+function LiveLinkBar({ links, onCreate }) {
+  const [copied, setCopied] = useState(false)
+  const active = (links || []).find(l => l.is_active) || null
+  const url = active ? `${window.location.origin}/projectplan/shared/${active.share_token}` : ''
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(url)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {}
+  }
+
+  // Fallback if for some reason auto-create didn't run (RLS denial, etc.)
+  if (!active) {
+    return (
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px',
+        marginBottom: 12, background: T.surfaceAlt, border: `1px dashed ${T.border}`,
+        borderRadius: 6, fontFamily: T.font,
+      }}>
+        <span style={{ flex: 1, fontSize: 11, color: T.textMuted }}>Live link not ready yet.</span>
+        <button onClick={onCreate}
+          style={{ padding: '5px 12px', fontSize: 11, fontWeight: 700, background: T.primary, color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontFamily: T.font }}>
+          Retry
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px',
+      marginBottom: 12, background: T.surfaceAlt, border: `1px solid ${T.border}`,
+      borderRadius: 6, fontFamily: T.font, flexWrap: 'wrap',
+    }}>
+      <span style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase' }}>Customer view</span>
+      <input readOnly value={url} onClick={e => e.target.select()}
+        style={{ flex: 1, minWidth: 200, fontFamily: T.mono, fontSize: 11, padding: '4px 8px', border: `1px solid ${T.border}`, borderRadius: 4, background: T.surface, color: T.text }} />
+      <button onClick={copy}
+        title="Copy link"
+        style={{ padding: '5px 10px', fontSize: 11, fontWeight: 600, background: T.surface, color: T.text, border: `1px solid ${T.border}`, borderRadius: 4, cursor: 'pointer', fontFamily: T.font }}>
+        {copied ? 'Copied ✓' : 'Copy'}
+      </button>
+      <button onClick={() => window.open(url, '_blank', 'noopener')}
+        style={{ padding: '5px 12px', fontSize: 11, fontWeight: 700, background: T.primary, color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontFamily: T.font }}>
+        Open live link ↗
+      </button>
     </div>
   )
 }
