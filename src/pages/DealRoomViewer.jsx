@@ -522,7 +522,7 @@ export function ProposalTabContent({ data, archived, onComment, themeColor }) {
                       <td style={cellRight}>{num(p.quantity).toLocaleString()}</td>
                       <td style={{ ...cellRight, color: T.textSecondary }}>{money(p.unit_price)}</td>
                       <td style={cellRight}>{money(lineList)}</td>
-                      <td style={{ ...cellRight, background: '#fdf2e9' }}>{num(p.discount_pct).toFixed(1)}%</td>
+                      <td style={{ ...cellRight, background: '#fdf2e9' }}>{num(p.discount_pct) > 0 ? `${Math.round(num(p.discount_pct) * 100)}%` : '—'}</td>
                       <td style={{ ...cellRight, background: '#eaf3e0', fontWeight: 700 }}>{money(p.extended)}</td>
                     </tr>
                   )
