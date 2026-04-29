@@ -504,91 +504,308 @@ function ProposalTabContent({ data, archived, onComment }) {
       </div>
     )
   }
-  const totals = snapshot.totals || {}
   const sageLines = snapshot.sage_lines || []
   const sageImpl = snapshot.sage_implementation || []
   const partnerBlocks = snapshot.partner_blocks || []
-  const fmt = (n) => '$' + Math.ceil(Number(n) || 0).toLocaleString('en-US')
+  const term = snapshot.term
+  const startDate = snapshot.contract_start_date
+  const freeMonths = Number(snapshot.free_months) || 0
+  const freeMonthsPlacement = snapshot.free_months_placement || 'back'
+  const signingBonusAmountRaw = Number(snapshot.signing_bonus_amount) || 0
+  const signingBonusMonths = Number(snapshot.signing_bonus_months) || 0
+
   const num = (n) => Number(n) || 0
+  const fmtUSD = (n) => Math.round(num(n)).toLocaleString('en-US')
+  const money = (n) => '$' + fmtUSD(n)
+  const moneyNeg = (n) => '-$' + fmtUSD(Math.abs(num(n)))
+
+  // Group: parents at top, children grouped underneath their parent
+  const parents = sageLines.filter(l => !l.parent_line_id)
+  const childrenOf = (parentId) => sageLines.filter(l => l.parent_line_id === parentId)
+
+  // Sage subscription totals (computed from line items so the math always ties out)
+  const annualListTotal = parents.reduce((s, l) => s + num(l.quantity) * num(l.unit_price), 0)
+  const annualNetTotal = parents.reduce((s, l) => s + num(l.extended), 0)
+  const annualDiscountAmount = annualListTotal - annualNetTotal
+  const blendedDiscountPct = annualListTotal > 0 ? (annualDiscountAmount / annualListTotal) * 100 : 0
+
+  const implTotal = sageImpl.reduce((s, i) => s + num(i.extended || i.amount), 0)
+
+  const monthlySubscription = annualNetTotal / 12
+  const freeMonthsValue = freeMonths * monthlySubscription
+  const signingBonusValue = signingBonusAmountRaw > 0 ? signingBonusAmountRaw : signingBonusMonths * monthlySubscription
+  const signMonth = startDate ? new Date(startDate + 'T00:00:00').toLocaleString('en-US', { month: 'long' }) : null
+
+  const year1Total = annualNetTotal + implTotal
+    - (freeMonthsPlacement === 'front' ? freeMonthsValue : 0)
+    - signingBonusValue
+
+  const COL_WIDTHS = { qty: 56, list: 92, totalList: 100, discount: 78, totalPrice: 110 }
+  const cellHead = { padding: '8px 10px', fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'right' }
+  const cellRight = { padding: '10px 10px', fontSize: 13, fontFeatureSettings: '"tnum"', textAlign: 'right', color: T.text }
 
   return (
-    <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: 32, maxWidth: 880, margin: '0 auto' }}>
-      <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: T.text }}>Proposal</h1>
-      <div style={{ fontSize: 11, color: T.textMuted, marginTop: 4 }}>
-        {snapshot.quote_name}{snapshot.quote_version ? ` v${snapshot.quote_version}` : ''}
-        {snapshot.snapshotted_at ? ` · Captured ${new Date(snapshot.snapshotted_at).toLocaleString()}` : ''}
+    <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: 28, maxWidth: 980, margin: '0 auto' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+        <div>
+          <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: T.text }}>Proposal</h1>
+          <div style={{ fontSize: 11, color: T.textMuted, marginTop: 4 }}>
+            {snapshot.quote_name}{snapshot.quote_version ? ` v${snapshot.quote_version}` : ''}
+            {snapshot.snapshotted_at ? ` · Captured ${new Date(snapshot.snapshotted_at).toLocaleDateString()}` : ''}
+          </div>
+        </div>
+        {startDate && (
+          <div style={{ fontSize: 11, color: T.textSecondary }}>
+            Contract start: <strong style={{ color: T.text }}>{new Date(startDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</strong>
+          </div>
+        )}
       </div>
 
-      <hr style={{ margin: '20px 0', border: 0, borderTop: `1px solid ${T.borderLight}` }} />
-
+      {/* Sage Annual Software Subscription */}
       {sageLines.length > 0 && (
-        <Section title="Sage Subscription">
-          <LineTable lines={sageLines} fmt={fmt} num={num} />
-          <Total label="Year-1 subtotal" value={fmt(totals.sage_subscription)} />
-        </Section>
+        <div style={{ marginTop: 22 }}>
+          <ProposalSectionHeader>Sage Annual Software Subscription</ProposalSectionHeader>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ borderBottom: `2px solid ${T.border}`, background: T.surfaceAlt }}>
+                  <th style={{ ...cellHead, textAlign: 'left' }}>Item</th>
+                  <th style={{ ...cellHead, width: COL_WIDTHS.qty }}>Qty</th>
+                  <th style={{ ...cellHead, width: COL_WIDTHS.list }}>List</th>
+                  <th style={{ ...cellHead, width: COL_WIDTHS.totalList }}>Total List</th>
+                  <th style={{ ...cellHead, width: COL_WIDTHS.discount, background: '#fde9d9' }}>Discount</th>
+                  <th style={{ ...cellHead, width: COL_WIDTHS.totalPrice, background: '#e2f0d9' }}>Total Price</th>
+                </tr>
+              </thead>
+              <tbody>
+                {parents.map(p => {
+                  const kids = childrenOf(p.id)
+                  const isBundle = !!p.is_bundle && kids.length > 0
+                  const lineList = num(p.quantity) * num(p.unit_price)
+                  return (
+                    <tr key={p.id} style={{ borderBottom: `1px solid ${T.borderLight}`, verticalAlign: 'top' }}>
+                      <td style={{ padding: '12px 10px', color: T.text }}>
+                        <div style={{ fontWeight: 700, fontSize: 13 }}>{p.name || p.sku || '—'}</div>
+                        {isBundle && (
+                          <div style={{ marginTop: 6, fontSize: 11.5, color: '#0f5132', lineHeight: 1.6 }}>
+                            {kids.map(c => (
+                              <div key={c.id}>- {c.name || c.sku}</div>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+                      <td style={cellRight}>{num(p.quantity).toLocaleString()}</td>
+                      <td style={{ ...cellRight, color: T.textSecondary }}>{money(p.unit_price)}</td>
+                      <td style={cellRight}>{money(lineList)}</td>
+                      <td style={{ ...cellRight, background: '#fdf2e9' }}>{num(p.discount_pct).toFixed(1)}%</td>
+                      <td style={{ ...cellRight, background: '#eaf3e0', fontWeight: 700 }}>{money(p.extended)}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colSpan={4} style={{ ...cellRight, fontWeight: 700 }}>Annual Subscription Total List Price</td>
+                  <td style={{ ...cellRight, fontWeight: 700 }} />
+                  <td style={{ ...cellRight, fontWeight: 800 }}>{money(annualListTotal)}</td>
+                </tr>
+                {annualDiscountAmount > 0 && (
+                  <tr>
+                    <td colSpan={4} style={{ ...cellRight, color: T.error, fontWeight: 700 }}>Discount Amount</td>
+                    <td style={{ ...cellRight, color: T.error, fontWeight: 700 }}>{blendedDiscountPct.toFixed(0)}%</td>
+                    <td style={{ ...cellRight, color: T.error, fontWeight: 800 }}>{money(annualDiscountAmount)}</td>
+                  </tr>
+                )}
+                <tr style={{ background: '#eaf3e0' }}>
+                  <td colSpan={5} style={{ ...cellRight, fontWeight: 800 }}>Net Annual Subscription Total</td>
+                  <td style={{ ...cellRight, fontWeight: 900 }}>{money(annualNetTotal)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
       )}
 
-      {sageImpl.length > 0 && (
-        <Section title="Sage Implementation">
-          <LineTable
-            lines={sageImpl.map(i => ({ name: i.description || i.name || 'Implementation', quantity: i.quantity || 1, unit_price: i.unit_price || i.amount, extended: i.extended || i.amount }))}
-            fmt={fmt} num={num}
-          />
-          <Total label="Implementation total" value={fmt(totals.sage_implementation)} />
-        </Section>
+      {/* One Time Implementation */}
+      {(sageImpl.length > 0 || implTotal > 0) && (
+        <div style={{ marginTop: 28 }}>
+          <ProposalSectionHeader>One Time Implementation</ProposalSectionHeader>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ borderBottom: `2px solid ${T.border}`, background: T.surfaceAlt }}>
+                  <th style={{ ...cellHead, textAlign: 'left' }}>Item</th>
+                  <th style={{ ...cellHead, width: COL_WIDTHS.qty }}>Qty</th>
+                  <th style={{ ...cellHead, width: COL_WIDTHS.list }}>Rate</th>
+                  <th style={{ ...cellHead, width: COL_WIDTHS.totalPrice, background: '#e2f0d9' }}>Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sageImpl.map((i, idx) => (
+                  <tr key={i.id || idx} style={{ borderBottom: `1px solid ${T.borderLight}` }}>
+                    <td style={{ padding: '10px 10px', color: T.text, fontWeight: 600 }}>{i.description || i.name || 'Implementation'}</td>
+                    <td style={cellRight}>{num(i.quantity || 1).toLocaleString()}</td>
+                    <td style={{ ...cellRight, color: T.textSecondary }}>{i.unit_price != null ? money(i.unit_price) : '—'}</td>
+                    <td style={{ ...cellRight, background: '#eaf3e0', fontWeight: 700 }}>{money(i.extended || i.amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr style={{ background: '#eaf3e0' }}>
+                  <td colSpan={3} style={{ ...cellRight, fontWeight: 800 }}>Implementation Total</td>
+                  <td style={{ ...cellRight, fontWeight: 900 }}>{money(implTotal)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
       )}
 
-      {(num(snapshot.free_months) > 0 || num(snapshot.signing_bonus_amount) > 0 || num(snapshot.signing_bonus_months) > 0) && (
-        <Section title="Promo & Incentives">
-          {num(snapshot.free_months) > 0 && (
-            <div style={{ fontSize: 13, color: T.text, padding: '4px 0' }}>
-              {snapshot.free_months} free month{num(snapshot.free_months) === 1 ? '' : 's'} ({snapshot.free_months_placement || 'back'})
-            </div>
-          )}
-          {num(snapshot.signing_bonus_amount) > 0 && (
-            <div style={{ fontSize: 13, color: T.text, padding: '4px 0' }}>Signing bonus: {fmt(snapshot.signing_bonus_amount)}</div>
-          )}
-          {num(snapshot.signing_bonus_months) > 0 && (
-            <div style={{ fontSize: 13, color: T.text, padding: '4px 0' }}>Signing bonus: {snapshot.signing_bonus_months} month{num(snapshot.signing_bonus_months) === 1 ? '' : 's'}</div>
-          )}
-        </Section>
-      )}
-
+      {/* Partners */}
       {partnerBlocks.map((pb, idx) => {
         const block = pb.block || {}
         const lines = pb.lines || []
         const impl = pb.implementation || []
-        const subTotal = lines.reduce((s, l) => s + num(l.extended), 0)
-        const implTotal = impl.reduce((s, l) => s + num(l.extended || l.amount), 0)
-        if (!subTotal && !implTotal && lines.length === 0 && impl.length === 0) return null
+        if (lines.length === 0 && impl.length === 0) return null
+        const partnerSub = lines.reduce((s, l) => s + num(l.extended), 0)
+        const partnerImpl = impl.reduce((s, l) => s + num(l.extended || l.amount), 0)
         return (
-          <Section key={block.id || idx} title={`Partner: ${block.partner_name || 'Partner'}`}>
+          <div key={block.id || idx} style={{ marginTop: 28 }}>
+            <ProposalSectionHeader>Partner: {block.partner_name || 'Partner'}</ProposalSectionHeader>
             {lines.length > 0 && (
-              <>
-                <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', marginTop: 4, marginBottom: 4 }}>Subscription</div>
-                <LineTable lines={lines.map(l => ({ name: l.name || l.description, quantity: l.quantity || 1, unit_price: l.unit_price, extended: l.extended }))} fmt={fmt} num={num} />
-              </>
+              <div style={{ overflowX: 'auto', marginBottom: 10 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ borderBottom: `2px solid ${T.border}`, background: T.surfaceAlt }}>
+                      <th style={{ ...cellHead, textAlign: 'left' }}>Subscription</th>
+                      <th style={{ ...cellHead, width: COL_WIDTHS.qty }}>Qty</th>
+                      <th style={{ ...cellHead, width: COL_WIDTHS.list }}>Unit</th>
+                      <th style={{ ...cellHead, width: COL_WIDTHS.totalPrice, background: '#e2f0d9' }}>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lines.map((l, i) => (
+                      <tr key={l.id || i} style={{ borderBottom: `1px solid ${T.borderLight}` }}>
+                        <td style={{ padding: '10px 10px', color: T.text, fontWeight: 600 }}>{l.name || l.description || '—'}</td>
+                        <td style={cellRight}>{num(l.quantity || 1).toLocaleString()}</td>
+                        <td style={{ ...cellRight, color: T.textSecondary }}>{l.unit_price != null ? money(l.unit_price) : '—'}</td>
+                        <td style={{ ...cellRight, background: '#eaf3e0', fontWeight: 700 }}>{money(l.extended)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr style={{ background: '#eaf3e0' }}>
+                      <td colSpan={3} style={{ ...cellRight, fontWeight: 800 }}>Partner Subscription Total</td>
+                      <td style={{ ...cellRight, fontWeight: 900 }}>{money(partnerSub)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
             )}
             {impl.length > 0 && (
-              <>
-                <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', marginTop: 10, marginBottom: 4 }}>Implementation</div>
-                <LineTable lines={impl.map(l => ({ name: l.description || l.name, quantity: l.quantity || 1, unit_price: l.unit_price || l.amount, extended: l.extended || l.amount }))} fmt={fmt} num={num} />
-              </>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ borderBottom: `2px solid ${T.border}`, background: T.surfaceAlt }}>
+                      <th style={{ ...cellHead, textAlign: 'left' }}>Implementation</th>
+                      <th style={{ ...cellHead, width: COL_WIDTHS.qty }}>Qty</th>
+                      <th style={{ ...cellHead, width: COL_WIDTHS.list }}>Rate</th>
+                      <th style={{ ...cellHead, width: COL_WIDTHS.totalPrice, background: '#e2f0d9' }}>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {impl.map((l, i) => (
+                      <tr key={l.id || i} style={{ borderBottom: `1px solid ${T.borderLight}` }}>
+                        <td style={{ padding: '10px 10px', color: T.text, fontWeight: 600 }}>{l.description || l.name || 'Implementation'}</td>
+                        <td style={cellRight}>{num(l.quantity || 1).toLocaleString()}</td>
+                        <td style={{ ...cellRight, color: T.textSecondary }}>{(l.unit_price || l.amount) != null ? money(l.unit_price || l.amount) : '—'}</td>
+                        <td style={{ ...cellRight, background: '#eaf3e0', fontWeight: 700 }}>{money(l.extended || l.amount)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr style={{ background: '#eaf3e0' }}>
+                      <td colSpan={3} style={{ ...cellRight, fontWeight: 800 }}>Partner Implementation Total</td>
+                      <td style={{ ...cellRight, fontWeight: 900 }}>{money(partnerImpl)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
             )}
-          </Section>
+          </div>
         )
       })}
 
-      {num(totals.partner_subscription) + num(totals.partner_implementation) > 0 && (
-        <Section title="Partner Totals">
-          {num(totals.partner_subscription) > 0 && <Total label="Partner subscription" value={fmt(totals.partner_subscription)} />}
-          {num(totals.partner_implementation) > 0 && <Total label="Partner implementation" value={fmt(totals.partner_implementation)} />}
-        </Section>
+      {/* Promo & Incentives */}
+      {(freeMonths > 0 || signingBonusValue > 0) && (
+        <div style={{ marginTop: 28 }}>
+          <ProposalSectionHeader>Promo & Incentives</ProposalSectionHeader>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <tbody>
+              {freeMonths > 0 && (
+                <tr style={{ background: '#fdf2e9', borderBottom: `1px solid ${T.borderLight}` }}>
+                  <td style={{ padding: '12px 14px', fontWeight: 700, color: T.text }}>
+                    {freeMonths} Free Month{freeMonths === 1 ? '' : 's'}
+                    <span style={{ marginLeft: 8, fontWeight: 500, color: T.textSecondary, fontSize: 12, textTransform: 'capitalize' }}>
+                      (applied to {freeMonthsPlacement} of term)
+                    </span>
+                  </td>
+                  <td style={{ padding: '12px 14px', textAlign: 'right', fontFeatureSettings: '"tnum"', fontWeight: 800, color: T.error, width: 160 }}>
+                    {moneyNeg(freeMonthsValue)}
+                  </td>
+                </tr>
+              )}
+              {signingBonusValue > 0 && (
+                <tr style={{ background: '#fdf2e9' }}>
+                  <td style={{ padding: '12px 14px', fontWeight: 700, color: T.text }}>
+                    {signMonth ? `${signMonth} ` : ''}Signing Bonus
+                  </td>
+                  <td style={{ padding: '12px 14px', textAlign: 'right', fontFeatureSettings: '"tnum"', fontWeight: 800, color: T.error, width: 160 }}>
+                    {moneyNeg(signingBonusValue)}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       )}
 
-      <div style={{ marginTop: 28, padding: '16px 20px', background: T.primaryLight, borderRadius: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ fontSize: 16, fontWeight: 800, color: T.text }}>Solution Total</span>
-        <span style={{ fontSize: 24, fontWeight: 900, color: T.primary }}>{fmt(totals.solution_total)}</span>
+      {/* Contract Terms */}
+      {term && (
+        <div style={{ marginTop: 28 }}>
+          <ProposalSectionHeader>Contract Terms</ProposalSectionHeader>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+            {term.name && (
+              <KvCard label="Term" value={term.name} />
+            )}
+            {term.term_years != null && (
+              <KvCard label="Length" value={`${term.term_years} year${num(term.term_years) === 1 ? '' : 's'}`} />
+            )}
+            {term.yoy_caps && (
+              <KvCard label="Year-over-Year Caps" value={Array.isArray(term.yoy_caps)
+                ? term.yoy_caps.map(c => typeof c === 'number' ? `${c}%` : String(c)).join(' / ')
+                : (typeof term.yoy_caps === 'object' ? JSON.stringify(term.yoy_caps) : String(term.yoy_caps))} />
+            )}
+            {snapshot.billing_cadence && (
+              <KvCard label="Billing Cadence" value={String(snapshot.billing_cadence).replace(/_/g, ' ')} />
+            )}
+          </div>
+          {term.description && (
+            <div style={{ marginTop: 12, padding: '12px 14px', background: T.surfaceAlt, borderRadius: 6, fontSize: 12, color: T.textSecondary, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+              {term.description}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Year 1 Total */}
+      <div style={{ marginTop: 28, padding: '18px 22px', background: '#fff3a3', border: '2px solid #d4b500', borderRadius: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span style={{ fontSize: 18, fontWeight: 800, color: T.text, letterSpacing: '0.02em' }}>Year 1 Total</span>
+        <span style={{ fontSize: 26, fontWeight: 900, color: T.text, fontFeatureSettings: '"tnum"' }}>{money(year1Total)}</span>
+      </div>
+
+      <div style={{ marginTop: 10, fontSize: 11, color: T.textMuted, textAlign: 'right' }}>
+        Need a printable PDF version? Ask your AE — they can generate a document-style proposal.
       </div>
 
       {!archived && (
@@ -598,48 +815,19 @@ function ProposalTabContent({ data, archived, onComment }) {
   )
 }
 
-function LineTable({ lines, fmt, num }) {
-  if (!lines || lines.length === 0) return null
+function ProposalSectionHeader({ children }) {
   return (
-    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 8 }}>
-      <thead>
-        <tr style={{ borderBottom: `1px solid ${T.borderLight}` }}>
-          <th style={{ textAlign: 'left', padding: '6px 4px', fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase' }}>Item</th>
-          <th style={{ textAlign: 'right', padding: '6px 4px', fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', width: 60 }}>Qty</th>
-          <th style={{ textAlign: 'right', padding: '6px 4px', fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', width: 100 }}>Unit</th>
-          <th style={{ textAlign: 'right', padding: '6px 4px', fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', width: 110 }}>Total</th>
-        </tr>
-      </thead>
-      <tbody>
-        {lines.map((l, i) => (
-          <tr key={l.id || i} style={{ borderBottom: `1px solid ${T.borderLight}` }}>
-            <td style={{ padding: '6px 4px', color: T.text, paddingLeft: l.is_bundle_child ? 18 : 4 }}>
-              {l.is_bundle_child ? '↳ ' : ''}{l.name || l.sku || '—'}
-            </td>
-            <td style={{ padding: '6px 4px', textAlign: 'right', fontFeatureSettings: '"tnum"' }}>{num(l.quantity).toLocaleString()}</td>
-            <td style={{ padding: '6px 4px', textAlign: 'right', fontFeatureSettings: '"tnum"', color: T.textSecondary }}>{l.unit_price != null ? fmt(l.unit_price) : '—'}</td>
-            <td style={{ padding: '6px 4px', textAlign: 'right', fontFeatureSettings: '"tnum"', fontWeight: 600 }}>{fmt(l.extended)}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  )
-}
-
-function Section({ title, children }) {
-  return (
-    <div style={{ marginBottom: 18 }}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: T.primary, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{title}</div>
+    <div style={{ fontSize: 14, fontWeight: 800, color: T.text, paddingBottom: 8, marginBottom: 8, borderBottom: `2px solid ${T.text}`, letterSpacing: '0.02em' }}>
       {children}
     </div>
   )
 }
 
-function Total({ label, value }) {
+function KvCard({ label, value }) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: 13 }}>
-      <span style={{ color: T.textSecondary }}>{label}</span>
-      <span style={{ fontWeight: 700, color: T.text, fontFeatureSettings: '"tnum"' }}>{value}</span>
+    <div style={{ padding: '10px 12px', background: T.surfaceAlt, borderRadius: 6, borderLeft: `3px solid ${T.primary}` }}>
+      <div style={{ fontSize: 9, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 3 }}>{label}</div>
+      <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{value}</div>
     </div>
   )
 }
