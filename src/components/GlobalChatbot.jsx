@@ -83,6 +83,12 @@ export default function GlobalChatbot() {
   const [dealPickerOpen, setDealPickerOpen] = useState(false)
   const [deals, setDeals] = useState([])
   const [dealSearch, setDealSearch] = useState('')
+  const [jumpOpen, setJumpOpen] = useState(false)
+  const [jumpQuery, setJumpQuery] = useState('')
+  const [jumpQuotes, setJumpQuotes] = useState([])
+  const [recentPages, setRecentPages] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('chatbot.recent_pages') || '[]') } catch { return [] }
+  })
   const [overrideDealId, setOverrideDealId] = useState(null)
   const [sessionId, setSessionId] = useState(null)
   const [sessions, setSessions] = useState([])
@@ -103,6 +109,27 @@ export default function GlobalChatbot() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, sending])
 
+  // Track recent visited routes in localStorage so the Jump panel can show them.
+  useEffect(() => {
+    const path = location.pathname
+    if (HIDDEN_ROUTES.includes(path)) return
+    if (HIDDEN_PREFIXES.some(p => path.startsWith(p))) return
+
+    const ctx = routeContext(path)
+    const pageLabel = (ctx.pageName || 'page').replace(/_/g, ' ')
+    let label = pageLabel
+    if (ctx.dealId) {
+      const d = deals.find(x => x.id === ctx.dealId)
+      label = d ? `${d.company_name} · ${pageLabel}` : `Deal · ${pageLabel}`
+    } else if (path === '/') label = 'Pipeline'
+
+    setRecentPages(prev => {
+      const next = [{ path, label, ts: Date.now() }, ...prev.filter(p => p.path !== path)].slice(0, 10)
+      try { localStorage.setItem('chatbot.recent_pages', JSON.stringify(next)) } catch { /* ignore quota errors */ }
+      return next
+    })
+  }, [location.pathname, deals])
+
   const path = location.pathname
   if (HIDDEN_ROUTES.includes(path) || HIDDEN_PREFIXES.some(p => path.startsWith(p))) return null
 
@@ -119,6 +146,28 @@ export default function GlobalChatbot() {
       .eq('rep_id', profile.id).not('stage', 'in', '(closed_won,closed_lost,disqualified)')
       .order('updated_at', { ascending: false }).limit(100)
     setDeals(data || [])
+  }
+
+  async function loadQuotesForJump() {
+    if (!profile?.id) return
+    const { data } = await supabase.from('quotes')
+      .select('id, name, deal_id, status, is_primary, deals(company_name)')
+      .order('updated_at', { ascending: false })
+      .limit(80)
+    setJumpQuotes(data || [])
+  }
+
+  async function openJump() {
+    setJumpOpen(true)
+    setJumpQuery('')
+    if (deals.length === 0) await loadDeals()
+    await loadQuotesForJump()
+  }
+
+  function navigateAndClose(path) {
+    setJumpOpen(false)
+    setOpen(false)
+    navigate(path)
   }
 
   async function openBot() {
@@ -328,6 +377,13 @@ export default function GlobalChatbot() {
           <div style={{ padding: '12px 14px', borderBottom: `1px solid ${T.border}`, background: T.surfaceAlt, display: 'flex', alignItems: 'center', gap: 8 }}>
             <div style={{ width: 8, height: 8, borderRadius: '50%', background: T.success }} />
             <div style={{ flex: 1, fontSize: 13, fontWeight: 700, color: T.text }}>Revenue Instruments</div>
+            <button onClick={openJump} title="Search opportunities, quotes, recent pages"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, padding: 2, display: 'inline-flex', alignItems: 'center' }}>
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="7" cy="7" r="4.5" />
+                <line x1="10.5" y1="10.5" x2="14" y2="14" />
+              </svg>
+            </button>
             <button onClick={() => setFeedbackModalOpen(true)} title="Send beta feedback"
               style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, fontSize: 14, padding: 2 }}>✎</button>
             <button onClick={() => { setSessionsOpen(s => !s); loadSessions() }} title="History"
@@ -366,6 +422,88 @@ export default function GlobalChatbot() {
             </div>
           )}
 
+          {/* Jump overlay — quick navigate to deals / quotes / recent pages */}
+          {jumpOpen && (() => {
+            const q = jumpQuery.trim().toLowerCase()
+            const matchedDeals = q
+              ? deals.filter(d => (d.company_name || '').toLowerCase().includes(q)).slice(0, 8)
+              : deals.slice(0, 6)
+            const matchedQuotes = q
+              ? jumpQuotes.filter(x => (x.name || '').toLowerCase().includes(q) || (x.deals?.company_name || '').toLowerCase().includes(q)).slice(0, 8)
+              : jumpQuotes.slice(0, 6)
+            const matchedRecent = q
+              ? recentPages.filter(p => p.label.toLowerCase().includes(q))
+              : recentPages.slice(0, 5)
+
+            return (
+              <div style={{ position: 'absolute', top: 72, left: 0, right: 0, bottom: 0, background: T.surface, zIndex: 20, display: 'flex', flexDirection: 'column' }}>
+                <div style={{ padding: 10, borderBottom: `1px solid ${T.border}`, display: 'flex', gap: 6 }}>
+                  <input value={jumpQuery} onChange={e => setJumpQuery(e.target.value)}
+                    placeholder="Jump to a deal, quote, or recent page…" autoFocus
+                    onKeyDown={e => {
+                      if (e.key === 'Escape') { setJumpOpen(false) }
+                      if (e.key === 'Enter') {
+                        const first = matchedRecent[0] || matchedDeals[0] || matchedQuotes[0]
+                        if (!first) return
+                        if (first.path) navigateAndClose(first.path)
+                        else if (first.deal_id) navigateAndClose(`/deal/${first.deal_id}/quote/${first.id}`)
+                        else if (first.id) navigateAndClose(`/deal/${first.id}`)
+                      }
+                    }}
+                    style={{ flex: 1, padding: '6px 10px', fontSize: 12, border: `1px solid ${T.border}`, borderRadius: 6, background: T.surface, color: T.text, fontFamily: T.font }} />
+                  <button onClick={() => setJumpOpen(false)}
+                    style={{ padding: '6px 10px', fontSize: 11, border: `1px solid ${T.border}`, borderRadius: 6, background: T.surfaceAlt, color: T.textMuted, cursor: 'pointer', fontFamily: T.font }}>Esc</button>
+                </div>
+                <div style={{ flex: 1, overflowY: 'auto' }}>
+                  {/* Recent */}
+                  {matchedRecent.length > 0 && (
+                    <>
+                      <div style={{ padding: '6px 12px', fontSize: 9, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', background: T.surfaceAlt, borderBottom: `1px solid ${T.borderLight}` }}>Recent</div>
+                      {matchedRecent.map(r => (
+                        <button key={r.path} onClick={() => navigateAndClose(r.path)}
+                          style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px', border: 'none', borderBottom: `1px solid ${T.borderLight}`, background: 'transparent', cursor: 'pointer', fontFamily: T.font }}>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.label}</div>
+                          <div style={{ fontSize: 10, color: T.textMuted, fontFamily: T.mono, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.path}</div>
+                        </button>
+                      ))}
+                    </>
+                  )}
+                  {/* Deals */}
+                  {matchedDeals.length > 0 && (
+                    <>
+                      <div style={{ padding: '6px 12px', fontSize: 9, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', background: T.surfaceAlt, borderBottom: `1px solid ${T.borderLight}` }}>Deals</div>
+                      {matchedDeals.map(d => (
+                        <button key={d.id} onClick={() => navigateAndClose(`/deal/${d.id}`)}
+                          style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px', border: 'none', borderBottom: `1px solid ${T.borderLight}`, background: 'transparent', cursor: 'pointer', fontFamily: T.font }}>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: T.text }}>{d.company_name}</div>
+                          <div style={{ fontSize: 10, color: T.textMuted }}>{d.stage}</div>
+                        </button>
+                      ))}
+                    </>
+                  )}
+                  {/* Quotes */}
+                  {matchedQuotes.length > 0 && (
+                    <>
+                      <div style={{ padding: '6px 12px', fontSize: 9, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', background: T.surfaceAlt, borderBottom: `1px solid ${T.borderLight}` }}>Quotes</div>
+                      {matchedQuotes.map(qt => (
+                        <button key={qt.id} onClick={() => navigateAndClose(`/deal/${qt.deal_id}/quote/${qt.id}`)}
+                          style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px', border: 'none', borderBottom: `1px solid ${T.borderLight}`, background: 'transparent', cursor: 'pointer', fontFamily: T.font }}>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: T.text }}>
+                            {qt.name}{qt.is_primary && <span style={{ color: T.primary, fontWeight: 700, fontSize: 10, marginLeft: 6 }}>PRIMARY</span>}
+                          </div>
+                          <div style={{ fontSize: 10, color: T.textMuted }}>{qt.deals?.company_name || ''} · {qt.status}</div>
+                        </button>
+                      ))}
+                    </>
+                  )}
+                  {q && matchedRecent.length === 0 && matchedDeals.length === 0 && matchedQuotes.length === 0 && (
+                    <div style={{ padding: 24, textAlign: 'center', color: T.textMuted, fontSize: 12 }}>Nothing matches "{jumpQuery}"</div>
+                  )}
+                </div>
+              </div>
+            )
+          })()}
+
           {/* Deal picker overlay */}
           {dealPickerOpen && (
             <div style={{ position: 'absolute', top: 72, left: 0, right: 0, bottom: 0, background: T.surface, zIndex: 10, display: 'flex', flexDirection: 'column' }}>
@@ -393,7 +531,7 @@ export default function GlobalChatbot() {
           )}
 
           {/* Chat body */}
-          {!dealPickerOpen && (
+          {!dealPickerOpen && !jumpOpen && (
             <>
               <div style={{ flex: 1, overflow: 'auto', padding: 14 }}>
                 {messages.length === 0 && !sending && (
