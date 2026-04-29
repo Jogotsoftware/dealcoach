@@ -23,7 +23,6 @@ import CoachAdmin from './pages/CoachAdmin'
 import Settings from './pages/Settings'
 import AdminConsole from './pages/AdminConsole'
 import AcceptInvite from './pages/AcceptInvite'
-import TeamManagement from './pages/settings/TeamManagement'
 import OrgSettings from './pages/settings/OrgSettings'
 import WidgetBuilder from './pages/WidgetBuilder'
 import Dashboards from './pages/Dashboards'
@@ -119,7 +118,8 @@ export default function App() {
                 <Route path="/deal/:id/retrospective" element={<ErrorBoundary label="retrospective"><DealRetrospective /></ErrorBoundary>} />
                 <Route path="/settings" element={<ErrorBoundary label="settings"><Settings /></ErrorBoundary>} />
                 <Route path="/admin" element={<ErrorBoundary label="admin console"><AdminConsole /></ErrorBoundary>} />
-                <Route path="/settings/team" element={<ErrorBoundary label="team"><TeamManagement /></ErrorBoundary>} />
+                {/* /settings/team merged into the "My Team" section on /settings — redirect old links. */}
+                <Route path="/settings/team" element={<Navigate to="/settings#my_team" replace />} />
 
                 {/* Admin-only settings */}
                 <Route element={<RequireAdmin />}>

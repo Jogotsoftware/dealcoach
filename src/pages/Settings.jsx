@@ -378,32 +378,6 @@ export default function Settings() {
 
       <div style={{ padding: '16px 24px' }}>
 
-        {/* My Coach — 3 sections */}
-        <SectionCard id="my_coach" title="My Coach">
-          <CoachSection title="Your Organization's Coach" coaches={orgCoach ? [orgCoach] : []} activeId={activeCoachId} onSelect={selectCoach} emptyText="No org coach yet — your admin can set one up in /coach" />
-          <CoachSection
-            title="Coaches You've Built"
-            coaches={builtCoaches}
-            activeId={activeCoachId}
-            onSelect={selectCoach}
-            emptyText="You haven't built any coaches yet — go to /coach/builder"
-            ownerActions
-            userId={profile?.id}
-            onDeleted={() => loadCoachSections()}
-          />
-          <CoachSection title="Shared Coaches" coaches={sharedCoaches} activeId={activeCoachId} onSelect={selectCoach} emptyText="No shared coaches. Paste a share token below to add one." />
-
-          <div style={{ marginTop: 14, padding: 12, background: T.surfaceAlt, borderRadius: 6, border: `1px solid ${T.borderLight}` }}>
-            <label style={labelStyle}>Add a coach via share token</label>
-            <div style={{ display: 'flex', gap: 6 }}>
-              <input style={inputStyle} value={tokenInput} onChange={e => setTokenInput(e.target.value)} placeholder="Paste token..." />
-              <Button primary onClick={redeemToken} disabled={!tokenInput.trim()}>Redeem</Button>
-            </div>
-            {tokenStatus?.success && <div style={{ color: T.success, fontSize: 12, marginTop: 6 }}>{tokenStatus.success}</div>}
-            {tokenStatus?.error && <div style={{ color: T.error, fontSize: 12, marginTop: 6 }}>{tokenStatus.error}</div>}
-          </div>
-        </SectionCard>
-
         {/* Profile */}
         <SectionCard id="profile" title="Profile" action={profileSaved ? <span style={{ fontSize: 12, color: T.success, fontWeight: 600 }}>Saved</span> : null}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
@@ -537,82 +511,29 @@ export default function Settings() {
           )}
         </SectionCard>
 
-        {/* Organization */}
-        {orgData && (
-          <SectionCard id="organization" title="Organization" action={
-            ['admin', 'system_admin'].includes(profile?.role) ? (
-              <Button style={{ padding: '4px 12px', fontSize: 11 }} onClick={() => setShowOrgInvite(!showOrgInvite)}>Invite User</Button>
-            ) : null
-          }>
-            <div style={{ display: 'flex', gap: 24, marginBottom: 16, flexWrap: 'wrap' }}>
+        {/* Preferences */}
+        <SectionCard id="preferences" title="Preferences" defaultOpen={false}>
+          {[
+            ['Email Notifications', 'Get notified about deal updates'],
+            ['Weekly Digest', 'Pipeline summary every Friday'],
+            ['Auto-extract Tasks', 'Create tasks from transcript processing'],
+          ].map(([label, desc]) => (
+            <div key={label} style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              padding: '12px 0', borderBottom: `1px solid ${T.borderLight}`,
+            }}>
               <div>
-                <div style={labelStyle}>Organization</div>
-                <div style={{ fontSize: 16, fontWeight: 700, color: T.text }}>{orgData.name}</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{label}</div>
+                <div style={{ fontSize: 12, color: T.textSecondary }}>{desc}</div>
               </div>
-              <div>
-                <div style={labelStyle}>Plan</div>
-                <div style={{ fontSize: 14, fontWeight: 600, color: T.primary }}>{orgPlan?.name || '--'}</div>
-              </div>
-              <div>
-                <div style={labelStyle}>Status</div>
-                <Badge color={orgData.status === 'active' ? '#28a745' : orgData.status === 'trial' ? '#f59e0b' : '#dc3545'}>{orgData.status}</Badge>
+              <div style={{ width: 40, height: 22, borderRadius: 11, background: T.success, cursor: 'pointer', position: 'relative' }}>
+                <div style={{ width: 18, height: 18, borderRadius: '50%', background: '#fff', position: 'absolute', right: 2, top: 2, boxShadow: T.shadow }} />
               </div>
             </div>
+          ))}
+        </SectionCard>
 
-            {orgCredits && (
-              <div style={{ display: 'flex', gap: 20, marginBottom: 16 }}>
-                <div style={{ textAlign: 'center', padding: 14, background: T.surfaceAlt, borderRadius: 6, flex: 1 }}>
-                  <div style={{ fontSize: 24, fontWeight: 800, color: T.primary }}>{orgCredits.balance?.toLocaleString()}</div>
-                  <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 600, textTransform: 'uppercase' }}>Credit Balance</div>
-                </div>
-                <div style={{ textAlign: 'center', padding: 14, background: T.surfaceAlt, borderRadius: 6, flex: 1 }}>
-                  <div style={{ fontSize: 24, fontWeight: 800, color: T.error }}>{orgCredits.total_used?.toLocaleString()}</div>
-                  <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 600, textTransform: 'uppercase' }}>Total Used</div>
-                </div>
-                <div style={{ textAlign: 'center', padding: 14, background: T.surfaceAlt, borderRadius: 6, flex: 1 }}>
-                  <div style={{ fontSize: 24, fontWeight: 800, color: T.success }}>{orgCredits.total_granted?.toLocaleString()}</div>
-                  <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 600, textTransform: 'uppercase' }}>Total Granted</div>
-                </div>
-              </div>
-            )}
-
-            {showOrgInvite && (
-              <div style={{ padding: 12, background: T.surfaceAlt, borderRadius: 6, marginBottom: 12, border: `1px solid ${T.borderLight}` }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
-                  <div><label style={labelStyle}>Email</label><input style={inputStyle} value={orgInvite.email} onChange={e => setOrgInvite({ ...orgInvite, email: e.target.value })} /></div>
-                  <div><label style={labelStyle}>Role</label><select style={{ ...inputStyle, cursor: 'pointer' }} value={orgInvite.role} onChange={e => setOrgInvite({ ...orgInvite, role: e.target.value })}>
-                    {['rep', 'manager', 'admin'].map(r => <option key={r} value={r}>{r}</option>)}
-                  </select></div>
-                </div>
-                <Button primary onClick={sendOrgInvite} disabled={!orgInvite.email}>Send Invite</Button>
-                <Button style={{ marginLeft: 8 }} onClick={() => setShowOrgInvite(false)}>Cancel</Button>
-              </div>
-            )}
-
-            <div style={{ fontSize: 12, fontWeight: 700, color: T.textSecondary, marginBottom: 8 }}>Team Members</div>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-              <thead>
-                <tr style={{ borderBottom: `1px solid ${T.border}` }}>
-                  {['Name', 'Email', 'Role', 'Active Coach'].map(h => (
-                    <th key={h} style={{ textAlign: 'left', padding: '6px 8px', fontSize: 10, fontWeight: 600, color: T.textMuted, textTransform: 'uppercase' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {orgTeam.map(m => (
-                  <tr key={m.id} style={{ borderBottom: `1px solid ${T.borderLight}` }}>
-                    <td style={{ padding: '8px', fontWeight: 600 }}>{m.full_name}</td>
-                    <td style={{ padding: '8px', color: T.textMuted }}>{m.email}</td>
-                    <td style={{ padding: '8px' }}><Badge color={m.role === 'admin' ? '#f59e0b' : T.primary}>{m.role || 'rep'}</Badge></td>
-                    <td style={{ padding: '8px', color: T.textMuted }}>{m.active_coach_id ? 'Yes' : '--'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </SectionCard>
-        )}
-
-        {/* Quota */}
+        {/* Quota — moved to after Preferences per layout request */}
         <SectionCard id="quota" title={`Quota -- FY${fp.fy} (Oct ${fp.fy - 1} - Sep ${fp.fy})`}>
           {/* CSV upload */}
           <div style={{ marginBottom: 16, padding: 12, background: T.surfaceAlt, borderRadius: 6, border: `1px solid ${T.borderLight}` }}>
@@ -738,28 +659,6 @@ export default function Settings() {
             <Button primary onClick={saveQuota} disabled={loading}>{loading ? 'Saving...' : 'Save Quota'}</Button>
             {saved && <span style={{ fontSize: 13, color: T.success, fontWeight: 600 }}>&#10003; Saved</span>}
           </div>
-        </SectionCard>
-
-        {/* Preferences */}
-        <SectionCard id="preferences" title="Preferences" defaultOpen={false}>
-          {[
-            ['Email Notifications', 'Get notified about deal updates'],
-            ['Weekly Digest', 'Pipeline summary every Friday'],
-            ['Auto-extract Tasks', 'Create tasks from transcript processing'],
-          ].map(([label, desc]) => (
-            <div key={label} style={{
-              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-              padding: '12px 0', borderBottom: `1px solid ${T.borderLight}`,
-            }}>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{label}</div>
-                <div style={{ fontSize: 12, color: T.textSecondary }}>{desc}</div>
-              </div>
-              <div style={{ width: 40, height: 22, borderRadius: 11, background: T.success, cursor: 'pointer', position: 'relative' }}>
-                <div style={{ width: 18, height: 18, borderRadius: '50%', background: '#fff', position: 'absolute', right: 2, top: 2, boxShadow: T.shadow }} />
-              </div>
-            </div>
-          ))}
         </SectionCard>
       </div>
     </div>
