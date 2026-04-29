@@ -562,79 +562,124 @@ export default function DealRoomConfig() {
           <>
             <Card title="Inbox" action={inboxBadge > 0 ? <Badge color={T.error}>{inboxBadge} unread</Badge> : null}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}>
-                {/* Comments */}
+                {/* Comments column */}
                 <div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', marginBottom: 6 }}>Comments ({viewerComments.length})</div>
-                  {viewerComments.length === 0 ? (
-                    <div style={{ padding: 16, textAlign: 'center', color: T.textMuted, fontSize: 12 }}>No comments yet</div>
-                  ) : viewerComments.map(c => {
-                    const replies = aeReplies(c.id)
-                    const draft = reply[c.id] || ''
-                    return (
-                      <div key={c.id} style={{ marginBottom: 10, padding: 10, background: T.surfaceAlt, borderRadius: 6, borderLeft: `3px solid ${c.resolved ? T.success : T.primary}` }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                          <strong style={{ fontSize: 12 }}>{c.author_name || c.author_email}</strong>
-                          <span style={{ fontSize: 10, color: T.textMuted }}>{relativeTime(c.created_at)} · {c.tab}</span>
-                        </div>
-                        <div style={{ fontSize: 12, color: T.text, whiteSpace: 'pre-wrap', marginBottom: 6 }}>{c.body}</div>
-                        {replies.length > 0 && (
-                          <div style={{ marginTop: 6, paddingLeft: 10, borderLeft: `2px solid ${T.borderLight}` }}>
-                            {replies.map(r => (
-                              <div key={r.id} style={{ fontSize: 11, color: T.textSecondary, marginBottom: 4 }}>
-                                <strong>{r.author_name || 'You'}:</strong> {r.body}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-                          <input value={draft} onChange={e => setReply(prev => ({ ...prev, [c.id]: e.target.value }))} placeholder="Reply…"
-                            onKeyDown={e => { if (e.key === 'Enter') aeReply(c, draft) }}
-                            style={{ ...inputStyle, fontSize: 11, padding: '4px 6px', flex: 1 }} />
-                          <Button onClick={() => aeReply(c, draft)} disabled={!draft.trim()} style={{ padding: '4px 10px', fontSize: 10 }}>Reply</Button>
-                          <Button onClick={() => markCommentResolved(c)} style={{ padding: '4px 10px', fontSize: 10 }}>{c.resolved ? 'Reopen' : 'Resolve'}</Button>
-                        </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase' }}>Comments</span>
+                    <FilterChips
+                      value={commentFilter}
+                      onChange={setCommentFilter}
+                      options={[
+                        { k: 'unresolved', l: `Unresolved (${unresolvedCommentCount})` },
+                        { k: 'resolved',   l: `Resolved (${viewerComments.length - unresolvedCommentCount})` },
+                        { k: 'all',        l: `All (${viewerComments.length})` },
+                      ]}
+                    />
+                  </div>
+                  {(() => {
+                    const filtered = viewerComments.filter(c => {
+                      if (commentFilter === 'unresolved') return !c.resolved
+                      if (commentFilter === 'resolved')   return !!c.resolved
+                      return true
+                    })
+                    if (filtered.length === 0) {
+                      return <div style={{ padding: 16, textAlign: 'center', color: T.textMuted, fontSize: 12 }}>
+                        {commentFilter === 'unresolved' ? 'No unresolved comments' : commentFilter === 'resolved' ? 'No resolved comments yet' : 'No comments yet'}
                       </div>
-                    )
-                  })}
+                    }
+                    // Group by tab in a fixed order, hide empty groups
+                    const groups = [
+                      { tab: 'msp',      label: 'Project Plan' },
+                      { tab: 'library',  label: 'Library' },
+                      { tab: 'proposal', label: 'Proposal' },
+                      { tab: 'general',  label: 'General' },
+                    ].map(g => ({ ...g, items: filtered.filter(c => (c.tab || 'general') === g.tab) }))
+                      .filter(g => g.items.length > 0)
+                    return groups.map(g => (
+                      <div key={g.tab} style={{ marginBottom: 14 }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6, paddingBottom: 4, borderBottom: `1px solid ${T.borderLight}` }}>
+                          {g.label} ({g.items.length})
+                        </div>
+                        {g.items.map(c => {
+                          const replies = aeReplies(c.id)
+                          const draft = reply[c.id] || ''
+                          return (
+                            <div key={c.id} style={{ marginBottom: 10, padding: 10, background: T.surfaceAlt, borderRadius: 6, borderLeft: `3px solid ${c.resolved ? T.success : T.primary}` }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                                <strong style={{ fontSize: 12 }}>{c.author_name || c.author_email}</strong>
+                                <span style={{ fontSize: 10, color: T.textMuted }}>{relativeTime(c.created_at)}</span>
+                              </div>
+                              <div style={{ fontSize: 12, color: T.text, whiteSpace: 'pre-wrap', marginBottom: 6 }}>{c.body}</div>
+                              {replies.length > 0 && (
+                                <div style={{ marginTop: 6, paddingLeft: 10, borderLeft: `2px solid ${T.borderLight}` }}>
+                                  {replies.map(r => (
+                                    <div key={r.id} style={{ fontSize: 11, color: T.textSecondary, marginBottom: 4 }}>
+                                      <strong>{r.author_name || 'You'}:</strong> {r.body}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                                <input value={draft} onChange={e => setReply(prev => ({ ...prev, [c.id]: e.target.value }))} placeholder="Reply…"
+                                  onKeyDown={e => { if (e.key === 'Enter') aeReply(c, draft) }}
+                                  style={{ ...inputStyle, fontSize: 11, padding: '4px 6px', flex: 1 }} />
+                                <Button onClick={() => aeReply(c, draft)} disabled={!draft.trim()} style={{ padding: '4px 10px', fontSize: 10 }}>Reply</Button>
+                                <Button onClick={() => markCommentResolved(c)} style={{ padding: '4px 10px', fontSize: 10 }}>{c.resolved ? 'Reopen' : 'Resolve'}</Button>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    ))
+                  })()}
                 </div>
 
-                {/* Change requests */}
+                {/* Change requests column */}
                 <div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', marginBottom: 6 }}>Change requests · pending ({pendingRequests.length})</div>
-                  {pendingRequests.length === 0 ? (
-                    <div style={{ padding: 16, textAlign: 'center', color: T.textMuted, fontSize: 12 }}>No pending change requests</div>
-                  ) : pendingRequests.map(r => (
-                    <div key={r.id} style={{ marginBottom: 10, padding: 10, background: T.warningLight, borderRadius: 6, borderLeft: `3px solid ${T.warning}` }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                        <strong style={{ fontSize: 12 }}>{r.requester_name || r.requester_email}</strong>
-                        <span style={{ fontSize: 10, color: T.textMuted }}>{relativeTime(r.created_at)}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase' }}>Change requests</span>
+                    <FilterChips
+                      value={requestFilter}
+                      onChange={setRequestFilter}
+                      options={[
+                        { k: 'pending',  l: `Pending (${pendingRequests.length})` },
+                        { k: 'accepted', l: `Accepted (${requests.filter(r => r.status === 'accepted').length})` },
+                        { k: 'rejected', l: `Rejected (${requests.filter(r => r.status === 'rejected').length})` },
+                        { k: 'all',      l: `All (${requests.length})` },
+                      ]}
+                    />
+                  </div>
+                  {(() => {
+                    const visible = requestFilter === 'all' ? requests : requests.filter(r => r.status === requestFilter)
+                    if (visible.length === 0) {
+                      return <div style={{ padding: 16, textAlign: 'center', color: T.textMuted, fontSize: 12 }}>
+                        {requestFilter === 'pending' ? 'No pending change requests' : `No ${requestFilter} change requests`}
                       </div>
-                      <div style={{ fontSize: 12, color: T.text, marginBottom: 4 }}>{describeRequestedChange(r)}</div>
-                      {r.reason && <div style={{ fontSize: 11, color: T.textSecondary, marginBottom: 6, fontStyle: 'italic' }}>"{r.reason}"</div>}
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <Button primary onClick={() => acceptRequest(r)} disabled={busy} style={{ padding: '4px 10px', fontSize: 10 }}>Accept</Button>
-                        <Button onClick={() => rejectRequest(r)} disabled={busy} style={{ padding: '4px 10px', fontSize: 10 }}>Reject</Button>
-                      </div>
-                    </div>
-                  ))}
-
-                  {decidedRequests.length > 0 && (
-                    <details style={{ marginTop: 12 }}>
-                      <summary style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', cursor: 'pointer' }}>Decided ({decidedRequests.length})</summary>
-                      <div style={{ marginTop: 8 }}>
-                        {decidedRequests.slice(0, 20).map(r => (
-                          <div key={r.id} style={{ padding: 8, marginBottom: 6, background: T.surfaceAlt, borderRadius: 4, fontSize: 11 }}>
-                            <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 2 }}>
-                              <Badge color={r.status === 'accepted' ? T.success : T.error}>{r.status}</Badge>
-                              <span style={{ color: T.textMuted, fontSize: 10 }}>{relativeTime(r.decided_at || r.created_at)}</span>
+                    }
+                    return visible.map(r => {
+                      const isPending = r.status === 'pending'
+                      return (
+                        <div key={r.id} style={{ marginBottom: 10, padding: 10, background: isPending ? T.warningLight : T.surfaceAlt, borderRadius: 6, borderLeft: `3px solid ${isPending ? T.warning : (r.status === 'accepted' ? T.success : T.error)}` }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                              <strong style={{ fontSize: 12 }}>{r.requester_name || r.requester_email}</strong>
+                              {!isPending && <Badge color={r.status === 'accepted' ? T.success : T.error}>{r.status}</Badge>}
                             </div>
-                            <div style={{ color: T.textSecondary }}>{describeRequestedChange(r)}</div>
-                            {r.decision_notes && <div style={{ color: T.textMuted, fontStyle: 'italic', marginTop: 2 }}>{r.decision_notes}</div>}
+                            <span style={{ fontSize: 10, color: T.textMuted }}>{relativeTime(r.decided_at || r.created_at)}</span>
                           </div>
-                        ))}
-                      </div>
-                    </details>
-                  )}
+                          <div style={{ fontSize: 12, color: T.text, marginBottom: 4 }}>{describeRequestedChange(r)}</div>
+                          {r.reason && <div style={{ fontSize: 11, color: T.textSecondary, marginBottom: 6, fontStyle: 'italic' }}>"{r.reason}"</div>}
+                          {r.decision_notes && !isPending && <div style={{ fontSize: 11, color: T.textMuted, fontStyle: 'italic', marginBottom: 6 }}>Decision note: {r.decision_notes}</div>}
+                          {isPending && (
+                            <div style={{ display: 'flex', gap: 6 }}>
+                              <Button primary onClick={() => acceptRequest(r)} disabled={busy} style={{ padding: '4px 10px', fontSize: 10 }}>Accept</Button>
+                              <Button onClick={() => rejectRequest(r)} disabled={busy} style={{ padding: '4px 10px', fontSize: 10 }}>Reject</Button>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })
+                  })()}
                 </div>
               </div>
             </Card>
@@ -694,6 +739,31 @@ export default function DealRoomConfig() {
           </>
         )}
       </div>
+    </div>
+  )
+}
+
+// Compact filter chip strip for the Inbox columns. Each option shows its
+// label and is highlighted when active.
+function FilterChips({ value, onChange, options }) {
+  return (
+    <div style={{ display: 'inline-flex', gap: 4, flexWrap: 'wrap' }}>
+      {options.map(o => {
+        const active = value === o.k
+        return (
+          <button key={o.k} onClick={() => onChange(o.k)}
+            style={{
+              padding: '3px 9px', fontSize: 10, fontWeight: 600, fontFamily: T.font,
+              border: `1px solid ${active ? T.primary : T.border}`,
+              borderRadius: 999,
+              background: active ? T.primaryLight : T.surface,
+              color: active ? T.primary : T.textMuted,
+              cursor: 'pointer',
+            }}>
+            {o.l}
+          </button>
+        )
+      })}
     </div>
   )
 }
