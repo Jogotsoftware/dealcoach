@@ -21,6 +21,7 @@ export default function CompanyLogo({
   customerLogoUrl,         // primary — uploaded by the AE
   companyName,
   size = 'md',
+  bare = false,            // when true, render the logo image with no border/background frame
   editable = false,
   dealId,
   currentStoragePath,      // existing deals.customer_logo_storage_path (for orphan cleanup on replace)
@@ -88,8 +89,10 @@ export default function CompanyLogo({
           alt={companyName}
           onError={() => setImgError(true)}
           style={{
-            width: px, height: px, borderRadius: 6, objectFit: 'contain',
-            border: '1px solid #e1e4e8', background: '#fff', display: 'block',
+            width: px, height: px, borderRadius: bare ? 0 : 6, objectFit: 'contain',
+            border: bare ? 'none' : '1px solid #e1e4e8',
+            background: bare ? 'transparent' : '#fff',
+            display: 'block',
           }}
         />
         {editable && hover && !busy && (

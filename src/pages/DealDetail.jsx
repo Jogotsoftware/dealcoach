@@ -27,6 +27,7 @@ async function trackSuggestion({ orgId, dealId, userId, targetType, targetId, ac
 }
 import DealChat from '../components/DealChat'
 import CompanyLogo from '../components/CompanyLogo'
+import DealRoomConfig from './DealRoomConfig'
 import LogoUploader from '../components/LogoUploader'
 import SlideGenerator from '../components/SlideGenerator'
 import WidgetRenderer from '../components/WidgetRenderer'
@@ -1773,10 +1774,7 @@ export default function DealDetail() {
           <NextStepsWidget deal={deal} setDeal={setDeal} compact />
         </div>
 
-        <TabBar tabs={tabs} active={tab} onChange={(k) => {
-          if (k === 'deal_room') { navigate(`/deal/${id}/room`); return }
-          setTab(k)
-        }} />
+        <TabBar tabs={tabs} active={tab} onChange={setTab} />
       </div>
 
       <div style={{ padding: '16px 24px', width: '100%' }}>
@@ -1823,6 +1821,13 @@ export default function DealDetail() {
               <TasksWidget tasks={tasks} setTasks={setTasks} dealId={id} userId={profile?.id} onAdd={() => setShowAddTask(true)} />
               <DealAgeWidget deal={deal} />
             </div>
+          </div>
+        )}
+
+        {/* ════════════════════ DEAL ROOM TAB (embedded) ════════════════════ */}
+        {tab === 'deal_room' && (
+          <div style={{ margin: '-16px -24px' /* let the embedded room span the full content area */ }}>
+            <DealRoomConfig embedded dealId={id} />
           </div>
         )}
 

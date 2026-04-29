@@ -32,8 +32,12 @@ function describeRequestedChange(req) {
   return `${tableLabel} · change ${field} from "${fmt(fromV)}" to "${fmt(toV)}"`
 }
 
-export default function DealRoomConfig() {
-  const { dealId } = useParams()
+export default function DealRoomConfig({ embedded = false, dealId: dealIdProp } = {}) {
+  // When embedded inside another page (e.g. DealDetail's "Deal Room" sub-tab),
+  // the parent passes dealId directly. The standalone route /deal/:dealId/room
+  // still works because useParams returns the URL param.
+  const params = useParams()
+  const dealId = dealIdProp || params.dealId
   const nav = useNavigate()
   const { profile } = useAuth()
   const { org } = useOrg() || {}
@@ -298,34 +302,47 @@ export default function DealRoomConfig() {
 
   return (
     <div>
-      {/* ════════════ Sticky header strip ════════════ */}
-      <div style={{ position: 'sticky', top: 0, zIndex: 20, background: T.surface, borderBottom: `1px solid ${T.border}` }}>
-        {/* Row 1: identity + preview */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 24px 8px' }}>
-          <button onClick={() => nav(`/deal/${dealId}`)}
-            title="Back to deal"
-            style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 22, color: T.textMuted, padding: '0 4px', lineHeight: 1, fontFamily: T.font }}>
-            ‹
-          </button>
-          <CompanyLogo
-            logoUrl={null}
-            customerLogoUrl={deal?.customer_logo_url}
-            companyName={deal?.company_name}
-            size="md"
-            bare
-            editable
-            dealId={deal?.id}
-            currentStoragePath={deal?.customer_logo_storage_path}
-            onUploaded={(url, path) => setDeal(prev => prev ? { ...prev, customer_logo_url: url, customer_logo_storage_path: path } : prev)}
-          />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <h2 style={{ fontSize: 18, fontWeight: 700, color: T.text, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              Deal Room — {deal?.company_name}
-            </h2>
+      {/* ════════════ Header strip — sticky when standalone, in-flow when embedded ════════════ */}
+      <div style={embedded
+        ? { background: T.surface, borderBottom: `1px solid ${T.border}` }
+        : { position: 'sticky', top: 0, zIndex: 20, background: T.surface, borderBottom: `1px solid ${T.border}` }}>
+        {/* Row 1: identity + preview — hidden in embedded mode (DealDetail provides this). */}
+        {!embedded && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 24px 8px' }}>
+            <button onClick={() => nav(`/deal/${dealId}`)}
+              title="Back to deal"
+              style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 22, color: T.textMuted, padding: '0 4px', lineHeight: 1, fontFamily: T.font }}>
+              ‹
+            </button>
+            <CompanyLogo
+              logoUrl={null}
+              customerLogoUrl={deal?.customer_logo_url}
+              companyName={deal?.company_name}
+              size="md"
+              bare
+              editable
+              dealId={deal?.id}
+              currentStoragePath={deal?.customer_logo_storage_path}
+              onUploaded={(url, path) => setDeal(prev => prev ? { ...prev, customer_logo_url: url, customer_logo_storage_path: path } : prev)}
+            />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <h2 style={{ fontSize: 18, fontWeight: 700, color: T.text, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                Deal Room — {deal?.company_name}
+              </h2>
+            </div>
+            {archived && <Badge color={T.warning}>Archived</Badge>}
+            <Button onClick={openCustomerPreview} style={{ padding: '8px 16px', fontSize: 12 }}>Preview customer view ↗</Button>
           </div>
-          {archived && <Badge color={T.warning}>Archived</Badge>}
-          <Button onClick={openCustomerPreview} style={{ padding: '8px 16px', fontSize: 12 }}>Preview customer view ↗</Button>
-        </div>
+        )}
+
+        {/* When embedded, show the Preview button as a small inline action above the share row */}
+        {embedded && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 24px 0', flexWrap: 'wrap' }}>
+            {archived && <Badge color={T.warning}>Archived</Badge>}
+            <div style={{ flex: 1 }} />
+            <Button onClick={openCustomerPreview} style={{ padding: '6px 14px', fontSize: 12 }}>Preview customer view ↗</Button>
+          </div>
+        )}
 
         {/* Row 2: share row */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 24px 10px', flexWrap: 'wrap' }}>
