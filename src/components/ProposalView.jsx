@@ -316,42 +316,62 @@ function InvestmentSummaryTab({ snapshot, columnVisibility, aePreview, onColumnV
         </div>
       )}
 
-      {/* 2. Subscription detail table */}
-      {parents.length > 0 && (
-        <SubscriptionDetailTable
-          parents={parents}
-          childrenOf={childrenOf}
-          annualListTotal={annualListTotal}
-          annualNetTotal={annualNetTotal}
-          annualDiscountAmount={annualDiscountAmount}
-          blendedDiscountPct={blendedDiscountPct}
-          cv={cv}
-        />
-      )}
-
-      {/* 3. One-time costs detail card */}
-      {sageImpl.length > 0 && (
-        <div style={{ marginTop: 22 }}>
-          <Eyebrow>One-time costs</Eyebrow>
-          <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: 'hidden' }}>
-            {sageImpl.map((i, idx) => {
-              const v = num(i.total_amount ?? i.extended ?? i.amount)
-              return (
-                <div key={i.id || idx} style={{ display: 'flex', alignItems: 'center', padding: '14px 18px', borderBottom: idx < sageImpl.length - 1 ? `1px solid ${T.borderLight}` : 'none' }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>{i.name || '—'}</div>
-                    {i.sow_document_id && (
-                      <button
-                        onClick={() => window.open(`/api/sow/${i.sow_document_id}`, '_blank', 'noopener')}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.greenDark, padding: 0, fontSize: 12, fontWeight: 600, marginTop: 4, fontFamily: T.font }}
-                      >View statement of work →</button>
-                    )}
+      {/* 2 + 3. Pricing detail — Recurring and One time read as two
+          sub-sections inside one unified bordered container. Signing bonus
+          lives inside One time as a deduction row alongside impl items. */}
+      {(parents.length > 0 || sageImpl.length > 0 || signingBonusValue > 0) && (
+        <div style={{ marginTop: 22, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, overflow: 'hidden' }}>
+          {parents.length > 0 && (
+            <div style={{ padding: '18px 18px 4px' }}>
+              <Eyebrow>Recurring</Eyebrow>
+              <SubscriptionDetailTable
+                parents={parents}
+                childrenOf={childrenOf}
+                annualListTotal={annualListTotal}
+                annualNetTotal={annualNetTotal}
+                annualDiscountAmount={annualDiscountAmount}
+                blendedDiscountPct={blendedDiscountPct}
+                cv={cv}
+              />
+            </div>
+          )}
+          {parents.length > 0 && (sageImpl.length > 0 || signingBonusValue > 0) && (
+            <div style={{ height: 1, background: T.border }} />
+          )}
+          {(sageImpl.length > 0 || signingBonusValue > 0) && (
+            <div style={{ padding: 18 }}>
+              <Eyebrow>One time</Eyebrow>
+              <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: 'hidden' }}>
+                {sageImpl.map((i, idx) => {
+                  const v = num(i.total_amount ?? i.extended ?? i.amount)
+                  const isLastImpl = idx === sageImpl.length - 1
+                  const showBorderUnder = !isLastImpl || signingBonusValue > 0
+                  return (
+                    <div key={i.id || idx} style={{ display: 'flex', alignItems: 'center', padding: '14px 18px', borderBottom: showBorderUnder ? `1px solid ${T.borderLight}` : 'none' }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>{i.name || '—'}</div>
+                        {i.sow_document_id && (
+                          <button
+                            onClick={() => window.open(`/api/sow/${i.sow_document_id}`, '_blank', 'noopener')}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.greenDark, padding: 0, fontSize: 12, fontWeight: 600, marginTop: 4, fontFamily: T.font }}
+                          >View statement of work →</button>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: T.text, fontFeatureSettings: '"tnum"' }}>{money(v)}</div>
+                    </div>
+                  )
+                })}
+                {signingBonusValue > 0 && (
+                  <div style={{ display: 'flex', alignItems: 'center', padding: '14px 18px' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: C.amberDark }}>Signing bonus</div>
+                    </div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: C.amberDark, fontFeatureSettings: '"tnum"' }}>{moneyNeg(signingBonusValue)}</div>
                   </div>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: T.text, fontFeatureSettings: '"tnum"' }}>{money(v)}</div>
-                </div>
-              )
-            })}
-          </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -488,7 +508,7 @@ function SubscriptionDetailTable({ parents, childrenOf, annualListTotal, annualN
   const labelSpan = lastVisibleIdx
 
   return (
-    <div style={{ marginTop: 22, overflowX: 'auto' }}>
+    <div style={{ overflowX: 'auto' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, tableLayout: 'fixed' }}>
         <colgroup>
           {COLS.map(c => <col key={c.key} style={c.width ? { width: c.width } : undefined} />)}
