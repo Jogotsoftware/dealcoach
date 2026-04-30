@@ -573,14 +573,17 @@ function SchedulesTab({ snapshot, accent }) {
 // ─── 2a. Payment schedule ────────────────────────────────────────────────────
 function PaymentScheduleSubTab({ snapshot }) {
   const rawRows = snapshot.payment_schedule || []
-  if (!rawRows.length) {
+  // Hidden rows (show_in_proposal === false) are filtered before sort. Older
+  // snapshots without the field default to visible.
+  const visibleRows = rawRows.filter(r => r.show_in_proposal !== false)
+  if (!visibleRows.length) {
     return <div style={{ padding: 24, textAlign: 'center', color: T.textMuted, fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8 }}>No invoices scheduled yet.</div>
   }
 
   // Sort chronologically by invoice_date so implementation T&M rows that
   // start before the Y1 subscription invoice appear at the top of the table.
   // Tie-break on sequence_number to keep ordering stable for same-day rows.
-  const rows = [...rawRows].sort((a, b) => {
+  const rows = [...visibleRows].sort((a, b) => {
     const da = a.invoice_date ? new Date(a.invoice_date + 'T00:00:00').getTime() : 0
     const db = b.invoice_date ? new Date(b.invoice_date + 'T00:00:00').getTime() : 0
     if (da !== db) return da - db
@@ -908,6 +911,13 @@ function PhaseGantt({ stages, accent, placeholder }) {
   )
 }
 
+// ─── Section visibility from snapshot.display_config.sections ───────────────
+function readSection(snapshot, key) {
+  const s = snapshot?.display_config?.sections || {}
+  const v = s[key]
+  return v === undefined || v === null ? true : !!v
+}
+
 // ═════════════════════════════════════════════════════════════════════════════
 // TAB 3 — TCO
 // ═════════════════════════════════════════════════════════════════════════════
@@ -989,7 +999,7 @@ function TcoTab({ snapshot }) {
             </tr>
 
             {/* Subscription discount (red) */}
-            {discountTotal > 0 && (
+            {discountTotal > 0 && readSection(snapshot, 'tco_subscription_discount') && (
               <tr style={{ borderBottom: `1px solid ${T.borderLight}` }}>
                 <td style={{ ...cellLabel, color: C.redDark }}>Subscription discount ({discountPctDisplay}%)</td>
                 {yearDisc.map((v, i) => <td key={i} style={cellNum({ color: C.redDark })}>{moneyNeg(v)}</td>)}
@@ -998,7 +1008,7 @@ function TcoTab({ snapshot }) {
             )}
 
             {/* Signing bonus (amber) — Y1 only */}
-            {signingBonusValue > 0 && (
+            {signingBonusValue > 0 && readSection(snapshot, 'tco_signing_bonus') && (
               <tr style={{ borderBottom: `1px solid ${T.borderLight}` }}>
                 <td style={{ ...cellLabel, color: C.amberDark }}>Signing bonus</td>
                 {yearNet.map((_, i) => (
@@ -1011,7 +1021,7 @@ function TcoTab({ snapshot }) {
             )}
 
             {/* Free months (amber) — only the total cell populated */}
-            {freeMonths > 0 && (
+            {freeMonths > 0 && readSection(snapshot, 'tco_free_months') && (
               <tr style={{ borderBottom: `1px solid ${T.borderLight}` }}>
                 <td style={{ ...cellLabel, color: C.amberDark }}>Free months (Y1 · {freeMonths} mo · extends term)</td>
                 {yearNet.map((_, i) => <td key={i} style={cellNum({ color: C.amberDark })}>—</td>)}
@@ -1039,11 +1049,13 @@ function TcoTab({ snapshot }) {
             </tr>
 
             {/* Implementation — Y1 only */}
-            <tr style={{ background: C.greenSoftBg }}>
-              <td style={{ ...cellLabel, color: C.greenDark, fontWeight: 600 }}>Implementation (one-time)</td>
-              {yearImpl.map((v, i) => <td key={i} style={cellNum({ color: C.greenDark, fontWeight: 600 })}>{i === 0 ? money(v) : '—'}</td>)}
-              <td style={cellNum({ color: C.greenDark, fontWeight: 700 })}>{money(implTotal)}</td>
-            </tr>
+            {readSection(snapshot, 'tco_implementation') && (
+              <tr style={{ background: C.greenSoftBg }}>
+                <td style={{ ...cellLabel, color: C.greenDark, fontWeight: 600 }}>Implementation (one-time)</td>
+                {yearImpl.map((v, i) => <td key={i} style={cellNum({ color: C.greenDark, fontWeight: 600 })}>{i === 0 ? money(v) : '—'}</td>)}
+                <td style={cellNum({ color: C.greenDark, fontWeight: 700 })}>{money(implTotal)}</td>
+              </tr>
+            )}
 
             {/* Annual cost — bottom-line totals row */}
             <tr style={{ background: C.greenBg, borderTop: `2px solid ${C.greenDark}` }}>
@@ -1059,18 +1071,31 @@ function TcoTab({ snapshot }) {
         </table>
       </div>
 
-      {/* 3 summary cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
-        <SummaryCard
-          bg={C.greenBg} border={C.greenDark} color={C.greenDark}
-          label={`${termYears} YR Total`} value={money(totalCost)} />
-        <SummaryCard
-          bg={C.redBg} border={C.redDark} color={C.redDark}
-          label="Total concessions" value={money(totalConcessions)} />
-        <SummaryCard
-          bg={C.blueBg} border={C.blueDark} color={C.blueDark}
-          label="YoY avg subscription" value={money(yoyAvgSub)} />
-      </div>
+      {/* 3 summary cards — each individually hideable from AE side. Grid
+          adapts (3 / 2 / 1 cols) so visible cards always span the row. If
+          all three are hidden, the section disappears. */}
+      {(() => {
+        const cards = [
+          readSection(snapshot, 'tco_card_total') && {
+            bg: C.greenBg, border: C.greenDark, color: C.greenDark,
+            label: `${termYears} YR Total`, value: money(totalCost),
+          },
+          readSection(snapshot, 'tco_card_concessions') && {
+            bg: C.redBg, border: C.redDark, color: C.redDark,
+            label: 'Total concessions', value: money(totalConcessions),
+          },
+          readSection(snapshot, 'tco_card_yoy_avg') && {
+            bg: C.blueBg, border: C.blueDark, color: C.blueDark,
+            label: 'YoY avg subscription', value: money(yoyAvgSub),
+          },
+        ].filter(Boolean)
+        if (!cards.length) return null
+        return (
+          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cards.length}, 1fr)`, gap: 10 }}>
+            {cards.map((c, i) => <SummaryCard key={i} {...c} />)}
+          </div>
+        )
+      })()}
     </div>
   )
 }

@@ -71,6 +71,56 @@ function drSetPatch(quote, path, value) {
   return { deal_room_display_config: cfg }
 }
 
+// Reusable AE-controls card. Lives on top of each Models sub-tab so the AE
+// can flip what the customer sees from the same surface they're editing.
+//   tabKey     — display_config.tabs[tabKey] (the whole-tab toggle)
+//   rows[]     — per-row section toggles → display_config.sections[key]
+//   cards[]    — per-card section toggles → display_config.sections[key]
+// All toggles persist via saveQuoteHeader → snapshot picks them up next push.
+function CustomerVisibilityCard({ title, quote, saveQuoteHeader, tabKey, rows = [], cards = [] }) {
+  const tabOn = drGet(quote, `tabs.${tabKey}`, true)
+  function toggleTab() { saveQuoteHeader(drSetPatch(quote, `tabs.${tabKey}`, !tabOn)) }
+  function toggleSection(key) { saveQuoteHeader(drSetPatch(quote, `sections.${key}`, !drGet(quote, `sections.${key}`, true))) }
+  const Pill = ({ on, label, onClick, danger }) => (
+    <button onClick={onClick}
+      style={{
+        padding: '4px 11px', borderRadius: 14, fontSize: 11, fontWeight: 600,
+        border: `1px solid ${on ? T.primary : T.border}`,
+        background: on ? T.primaryLight : T.surface,
+        color: on ? T.primary : (danger ? T.error : T.textMuted),
+        cursor: 'pointer', fontFamily: T.font,
+      }}>
+      {on ? '✓ ' : ''}{label}
+    </button>
+  )
+  return (
+    <div style={{
+      marginBottom: 14, padding: '10px 14px', background: T.surfaceAlt,
+      border: `1px dashed ${T.border}`, borderRadius: 8,
+      display: 'flex', flexDirection: 'column', gap: 8,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 10, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{title}</span>
+        <Pill on={tabOn} label={tabOn ? 'Tab visible to customer' : 'Tab hidden from customer'} onClick={toggleTab} danger={!tabOn} />
+      </div>
+      {tabOn && (rows.length > 0 || cards.length > 0) && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 10, color: T.textMuted, fontStyle: 'italic' }}>Rows:</span>
+          {rows.map(r => (
+            <Pill key={r.key} on={drGet(quote, `sections.${r.key}`, true)} label={r.label}
+              onClick={() => toggleSection(r.key)} />
+          ))}
+          {cards.length > 0 && <span style={{ fontSize: 10, color: T.textMuted, fontStyle: 'italic', marginLeft: 8 }}>Cards:</span>}
+          {cards.map(c => (
+            <Pill key={c.key} on={drGet(quote, `sections.${c.key}`, true)} label={c.label}
+              onClick={() => toggleSection(c.key)} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // Compact icon button for the QuoteBuilder header. `accent` = primary-tinted,
 // `danger` = red-on-hover. Same 30px square so the action row aligns.
 function QbIconButton({ title, onClick, disabled, children, accent, danger }) {
@@ -472,6 +522,7 @@ export default function QuoteBuilder({
             contractTerms={contractTerms}
             partnerBlocks={partnerBlocks}
             partnerLines={partnerLines}
+            saveQuoteHeader={saveQuoteHeader}
             onRegenerate={async () => { await regenSchedule(); await reload() }}
             onChanged={async () => { await reload() }}
           />
@@ -2433,7 +2484,7 @@ function Metric({ label, value, positive }) {
 // ══════════════════════════════════════════════════════════
 // MODELS TAB — wraps ROI, Payment Schedule, and TCO under a sub-tab bar
 // ══════════════════════════════════════════════════════════
-function ModelsTab({ quote, pains, schedule, contractTerms, partnerBlocks, partnerLines, onRegenerate, onChanged }) {
+function ModelsTab({ quote, pains, schedule, contractTerms, partnerBlocks, partnerLines, saveQuoteHeader, onRegenerate, onChanged }) {
   const [sub, setSub] = useState('roi')
   const subTabs = [
     { key: 'roi', label: 'ROI' },
@@ -2446,8 +2497,8 @@ function ModelsTab({ quote, pains, schedule, contractTerms, partnerBlocks, partn
         <TabBar tabs={subTabs} active={sub} onChange={setSub} />
       </div>
       {sub === 'roi' && <RoiTab quote={quote} pains={pains} />}
-      {sub === 'schedule' && <ScheduleTab quote={quote} schedule={schedule} onRegenerate={onRegenerate} onChanged={onChanged} />}
-      {sub === 'tco' && <TcoTab quote={quote} contractTerms={contractTerms} partnerBlocks={partnerBlocks} partnerLines={partnerLines} />}
+      {sub === 'schedule' && <ScheduleTab quote={quote} schedule={schedule} saveQuoteHeader={saveQuoteHeader} onRegenerate={onRegenerate} onChanged={onChanged} />}
+      {sub === 'tco' && <TcoTab quote={quote} contractTerms={contractTerms} partnerBlocks={partnerBlocks} partnerLines={partnerLines} saveQuoteHeader={saveQuoteHeader} />}
     </div>
   )
 }
@@ -2455,7 +2506,7 @@ function ModelsTab({ quote, pains, schedule, contractTerms, partnerBlocks, partn
 // ──────────────────────────────────────────────────────────
 // TCO TAB — multi-year cost breakdown (subscription + impl + adjustments)
 // ──────────────────────────────────────────────────────────
-function TcoTab({ quote, contractTerms, partnerBlocks, partnerLines }) {
+function TcoTab({ quote, contractTerms, partnerBlocks, partnerLines, saveQuoteHeader }) {
   const term = contractTerms.find(ct => ct.id === quote.contract_term_id)
   const sageYears = term?.term_years || 1
   const yoyCaps = Array.isArray(term?.yoy_caps) ? term.yoy_caps : [0]
@@ -2523,6 +2574,25 @@ function TcoTab({ quote, contractTerms, partnerBlocks, partnerLines }) {
 
   return (
     <div>
+      {saveQuoteHeader && (
+        <CustomerVisibilityCard
+          title="What the customer sees on this tab"
+          quote={quote}
+          saveQuoteHeader={saveQuoteHeader}
+          tabKey="tco"
+          rows={[
+            { key: 'tco_subscription_discount', label: 'Subscription discount row' },
+            { key: 'tco_signing_bonus',         label: 'Signing bonus row' },
+            { key: 'tco_free_months',           label: 'Free months row' },
+            { key: 'tco_implementation',        label: 'Implementation row' },
+          ]}
+          cards={[
+            { key: 'tco_card_total',       label: `${horizon} YR Total` },
+            { key: 'tco_card_concessions', label: 'Total concessions' },
+            { key: 'tco_card_yoy_avg',     label: 'YoY avg subscription' },
+          ]}
+        />
+      )}
       <Card title={`TCO — ${horizon}-year Total Cost of Ownership`}>
         <div style={{ fontSize: 11, color: T.textSecondary, marginBottom: 10 }}>
           Sage subscription escalates Y2+ per the contract template's YoY caps. Partners run flat for their term length. Implementation, signing bonus, and free months hit Year 1.
@@ -2577,7 +2647,7 @@ function TcoTab({ quote, contractTerms, partnerBlocks, partnerLines }) {
 // ──────────────────────────────────────────────────────────
 // SCHEDULE TAB — sorted by invoice_date, color-coded by payment_type
 // ──────────────────────────────────────────────────────────
-function ScheduleTab({ quote, schedule, onRegenerate, onChanged }) {
+function ScheduleTab({ quote, schedule, saveQuoteHeader, onRegenerate, onChanged }) {
   const [busy, setBusy] = useState(false)
 
   const sortedSchedule = useMemo(() => {
@@ -2623,6 +2693,14 @@ function ScheduleTab({ quote, schedule, onRegenerate, onChanged }) {
 
   return (
     <div>
+      {saveQuoteHeader && (
+        <CustomerVisibilityCard
+          title="What the customer sees on Schedules"
+          quote={quote}
+          saveQuoteHeader={saveQuoteHeader}
+          tabKey="schedules"
+        />
+      )}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
         <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: T.text }}>Payment Schedule</h3>
         <div style={{ display: 'flex', gap: 6 }}>
@@ -2653,7 +2731,9 @@ function ScheduleTab({ quote, schedule, onRegenerate, onChanged }) {
                 <th style={thStyle}>Implementor</th>
                 <th style={thStyle}>Type</th>
                 <th style={thStyle}>Description</th>
+                <th style={thStyle} title="AE-only notes for this row. Empty = no note shown to customer.">Notes</th>
                 <th style={{ ...thStyle, textAlign: 'right' }}>Amount</th>
+                <th style={{ ...thStyle, textAlign: 'center' }}>Show to customer</th>
                 <th style={{ ...thStyle, textAlign: 'center' }}>Locked</th>
                 <th style={thStyle}></th>
               </tr>
@@ -2685,9 +2765,24 @@ function ScheduleTab({ quote, schedule, onRegenerate, onChanged }) {
                         style={{ ...inputStyle, fontSize: 12, padding: '4px 6px' }} />
                     </td>
                     <td style={{ padding: '4px 6px' }}>
+                      <input
+                        defaultValue={r.notes || ''}
+                        placeholder="AE-only note"
+                        title="AE-only note for this row. Customer never sees this — only the description column. Use this for invoice context, follow-ups, etc."
+                        onBlur={e => { const v = e.target.value || null; if ((v ?? null) !== (r.notes ?? null)) updateRow(r.id, { notes: v, manually_edited: true }) }}
+                        style={{ ...inputStyle, fontSize: 12, padding: '4px 6px' }} />
+                    </td>
+                    <td style={{ padding: '4px 6px' }}>
                       <input type="number" min="0" step="0.01" defaultValue={r.amount}
                         onBlur={e => { const v = Number(e.target.value); if (v !== Number(r.amount)) updateRow(r.id, { amount: v, manually_edited: true }) }}
                         style={{ ...inputStyle, fontSize: 12, padding: '4px 6px', textAlign: 'right', fontFeatureSettings: '"tnum"' }} />
+                    </td>
+                    <td style={{ padding: '6px 10px', textAlign: 'center' }}>
+                      <input
+                        type="checkbox"
+                        defaultChecked={r.show_in_proposal !== false}
+                        onChange={e => updateRow(r.id, { show_in_proposal: e.target.checked })}
+                        title="Show this row to the customer on the Proposal Schedules tab" />
                     </td>
                     <td style={{ padding: '6px 10px', textAlign: 'center' }}>
                       <button onClick={() => toggleLock(r)} title={r.manually_edited ? 'Locked — survives regenerate' : 'Click to lock'} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'inline-flex', color: r.manually_edited ? T.warning : T.textMuted, padding: 2 }}>
