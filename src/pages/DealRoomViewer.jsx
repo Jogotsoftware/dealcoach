@@ -222,7 +222,7 @@ export default function DealRoomViewer() {
         @media (max-width: 640px) {
           .ri-room-header { padding: 10px 14px !important; }
           .ri-room-header-grid { grid-template-columns: auto 1fr auto !important; gap: 10px !important; }
-          .ri-room-header-grid img { max-height: 36px !important; max-width: 80px !important; }
+          .ri-room-header-grid img { max-height: 26px !important; max-width: 64px !important; }
           .ri-room-header-title { font-size: 15px !important; }
           .ri-room-header-welcome { font-size: 11px !important; }
           .ri-room-tabbar-wrap { padding: 0 8px !important; }
@@ -237,9 +237,9 @@ export default function DealRoomViewer() {
         <div className="ri-room-header-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 1fr', alignItems: 'center', gap: 18, maxWidth: 1200, margin: '0 auto' }}>
           <div>
             {org?.logo_url ? (
-              <img src={org.logo_url} alt={org.name} style={{ maxWidth: 140, maxHeight: 50, objectFit: 'contain' }} />
+              <img src={org.logo_url} alt={org.name} style={{ maxWidth: 96, maxHeight: 32, objectFit: 'contain' }} />
             ) : (
-              <div style={{ fontSize: 16, fontWeight: 800, color: themeColor }}>{org?.name || 'Revenue Instruments'}</div>
+              <div style={{ fontSize: 14, fontWeight: 800, color: themeColor }}>{org?.name || 'Revenue Instruments'}</div>
             )}
           </div>
           <div style={{ textAlign: 'center', minWidth: 0 }}>
@@ -248,7 +248,7 @@ export default function DealRoomViewer() {
           </div>
           <div style={{ textAlign: 'right' }}>
             {deal?.customer_logo_url && (
-              <img src={deal.customer_logo_url} alt={deal.company_name} style={{ maxWidth: 140, maxHeight: 50, objectFit: 'contain', marginLeft: 'auto' }} />
+              <img src={deal.customer_logo_url} alt={deal.company_name} style={{ maxWidth: 96, maxHeight: 32, objectFit: 'contain', marginLeft: 'auto' }} />
             )}
           </div>
         </div>

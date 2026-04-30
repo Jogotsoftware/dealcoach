@@ -190,7 +190,7 @@ export default function ProposalView({
           .ri-proposal-print-root { padding: 0 !important; }
           .ri-prop-header { flex-wrap: wrap !important; gap: 8px !important; padding-bottom: 8px !important; margin-bottom: 14px !important; }
           .ri-prop-header > div { width: auto !important; flex: 1 1 auto !important; }
-          .ri-prop-header img { max-height: 28px !important; max-width: 70px !important; }
+          .ri-prop-header img { max-height: 22px !important; max-width: 56px !important; }
           .ri-prop-header-title { font-size: 14px !important; }
           .ri-prop-header-eyebrow { font-size: 8px !important; }
           .ri-prop-header-meta { font-size: 9px !important; }
@@ -325,7 +325,7 @@ function PrintPageHeader({ snapshot, accent, sectionTitle, pageIndex, pageTotal 
       {/* Org logo (left) */}
       <div style={{ width: 120, display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
         {orgLogo
-          ? <img src={orgLogo} alt={orgName || ''} style={{ maxHeight: 36, maxWidth: 120, objectFit: 'contain' }} />
+          ? <img src={orgLogo} alt={orgName || ''} style={{ maxHeight: 28, maxWidth: 96, objectFit: 'contain' }} />
           : (orgName && <span style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{orgName}</span>)}
       </div>
 
@@ -346,7 +346,7 @@ function PrintPageHeader({ snapshot, accent, sectionTitle, pageIndex, pageTotal 
       {/* Customer logo (right) */}
       <div style={{ width: 120, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
         {customerLogo && (
-          <img src={customerLogo} alt={customerName || ''} style={{ maxHeight: 36, maxWidth: 120, objectFit: 'contain' }} />
+          <img src={customerLogo} alt={customerName || ''} style={{ maxHeight: 28, maxWidth: 96, objectFit: 'contain' }} />
         )}
       </div>
     </div>
