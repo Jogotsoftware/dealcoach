@@ -2681,11 +2681,11 @@ function NextStepsWidget({ deal, setDeal, profile, compact = false }) {
           </span>
         )}
       </div>
-      {deal.next_steps_color_reason && (
-        <div style={{ fontSize: 11, color: T.textSecondary, fontStyle: 'italic', marginTop: 4 }}>
-          {deal.next_steps_color_reason}
-        </div>
-      )}
+      {/* The color reason now lives inline inside next_steps itself
+          (saveColor rewrites it to "<date> - <Color> <reason>"), so we
+          intentionally don't render next_steps_color_reason a second
+          time here. The init-based timestamp chip above still surfaces
+          who/when via the title tooltip. */}
       <div onClick={() => setEditing(true)}
         style={{ fontFamily: T.font, fontSize: bodySize, lineHeight: 1.55, whiteSpace: 'pre-wrap', color: T.text, marginTop: 4, cursor: 'pointer' }}>
         {deal.next_steps}
