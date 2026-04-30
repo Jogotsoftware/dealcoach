@@ -15,7 +15,7 @@ import { useOrg } from '../contexts/OrgContext'
 import { theme as T } from '../lib/theme'
 import { Spinner } from '../components/Shared'
 import MSPEditor from '../components/MSPEditor'
-import { ProposalTabContent } from './DealRoomViewer'
+import ProposalView from '../components/ProposalView'
 
 const RESOURCE_TYPE_META = {
   demo:       { label: 'Demo',       color: '#a855f7', cta: 'Watch demo' },
@@ -216,14 +216,41 @@ export default function DealRoomPreview() {
 
         {tab === 'proposal' && (
           room.proposal_snapshot
-            ? <ProposalTabContent
+            ? <ProposalView
                 data={{ snapshot: room.proposal_snapshot, snapshotted_at: room.proposal_snapshotted_at }}
-                archived
-                onComment={async () => { alert('Preview mode — interactions are disabled.'); return false }}
                 themeColor={themeColor}
                 themeColorSecondary={room.theme_color_secondary}
                 themeColorTertiary={room.theme_color_tertiary}
                 columnVisibility={room.proposal_column_visibility}
+                aePreview
+                onColumnVisibilityChange={async (patch) => {
+                  // Persist column toggle; reload room so the preview reflects it.
+                  const next = { ...(room.proposal_column_visibility || { columns: {} }) }
+                  next.columns = { ...(next.columns || {}), ...patch }
+                  await supabase.from('deal_rooms').update({ proposal_column_visibility: next }).eq('id', room.id)
+                  setRoom(prev => ({ ...prev, proposal_column_visibility: next }))
+                }}
+                onTabVisibilityChange={async (patch) => {
+                  // Tab visibility lives on the snapshotted quote's display_config.
+                  // For preview we mutate the snapshot in-place and persist back to
+                  // quotes.deal_room_display_config.tabs.
+                  const snap = { ...(room.proposal_snapshot || {}) }
+                  const dc = { ...(snap.display_config || {}) }
+                  dc.tabs = { ...(dc.tabs || {}), ...patch }
+                  snap.display_config = dc
+                  // Save to the source quote so the next snapshot honors it too.
+                  if (room.proposal_snapshot_quote_id) {
+                    const { data: q } = await supabase.from('quotes')
+                      .select('deal_room_display_config').eq('id', room.proposal_snapshot_quote_id).single()
+                    const qdc = { ...(q?.deal_room_display_config || {}) }
+                    qdc.tabs = { ...(qdc.tabs || {}), ...patch }
+                    await supabase.from('quotes').update({ deal_room_display_config: qdc })
+                      .eq('id', room.proposal_snapshot_quote_id)
+                  }
+                  // Update the snapshot itself for immediate effect.
+                  await supabase.from('deal_rooms').update({ proposal_snapshot: snap }).eq('id', room.id)
+                  setRoom(prev => ({ ...prev, proposal_snapshot: snap }))
+                }}
               />
             : <div style={{ padding: 40, textAlign: 'center', color: T.textMuted, fontSize: 14, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8 }}>No proposal snapshot yet. Snapshot one from the Quotes tab to see the customer view here.</div>
         )}

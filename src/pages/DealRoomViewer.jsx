@@ -3,6 +3,7 @@ import { useParams, useLocation } from 'react-router-dom'
 import { theme as T, formatDate } from '../lib/theme'
 import { Spinner } from '../components/Shared'
 import MSPEditor from '../components/MSPEditor'
+import ProposalView from '../components/ProposalView'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -300,10 +301,8 @@ export default function DealRoomViewer() {
         )}
 
         {tab === 'proposal' && (
-          <ProposalTabContent
+          <ProposalView
             data={proposal}
-            archived={archived}
-            onComment={submitComment}
             themeColor={themeColor}
             themeColorSecondary={meta.theme_color_secondary}
             themeColorTertiary={meta.theme_color_tertiary}
