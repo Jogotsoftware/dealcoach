@@ -6,6 +6,7 @@ import { useOrg } from '../contexts/OrgContext'
 import { theme as T } from '../lib/theme'
 import { Card, Badge, Button, TabBar, Spinner, EmptyState, inputStyle, labelStyle } from '../components/Shared'
 import LogoUploader from '../components/LogoUploader'
+import VisibilityToggleIcon from '../components/VisibilityToggleIcon'
 
 // Round UP to whole dollar; backend keeps decimals.
 function dollars(n) {
@@ -116,10 +117,14 @@ function CustomerVisibilityCard({
       border: `1px dashed ${T.border}`, borderRadius: 8,
       display: 'flex', flexDirection: 'column', gap: 8,
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <span style={{ fontSize: 10, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{title}</span>
         {tabKey && (
-          <Pill on={tabOn} label={tabOn ? 'Tab visible to customer' : 'Tab hidden from customer'} onClick={toggleTab} danger={!tabOn} />
+          <VisibilityToggleIcon
+            visible={tabOn}
+            onChange={() => toggleTab()}
+            label="this tab from the customer"
+          />
         )}
       </div>
       {tabOn && hasAnyGroups && (
@@ -556,7 +561,6 @@ export default function QuoteBuilder({
             partnerBlocks={partnerBlocks}
             partnerLines={partnerLines}
             saveQuoteHeader={saveQuoteHeader}
-            onRegenerate={async () => { await regenSchedule(); await reload() }}
             onChanged={async () => { await reload() }}
           />
         )}
@@ -2571,7 +2575,7 @@ function Metric({ label, value, positive }) {
 // ══════════════════════════════════════════════════════════
 // MODELS TAB — wraps ROI, Payment Schedule, and TCO under a sub-tab bar
 // ══════════════════════════════════════════════════════════
-function ModelsTab({ quote, pains, schedule, contractTerms, partnerBlocks, partnerLines, saveQuoteHeader, onRegenerate, onChanged }) {
+function ModelsTab({ quote, pains, schedule, contractTerms, partnerBlocks, partnerLines, saveQuoteHeader, onChanged }) {
   const [sub, setSub] = useState('roi')
   const subTabs = [
     { key: 'roi', label: 'ROI' },
@@ -2584,7 +2588,7 @@ function ModelsTab({ quote, pains, schedule, contractTerms, partnerBlocks, partn
         <TabBar tabs={subTabs} active={sub} onChange={setSub} />
       </div>
       {sub === 'roi' && <RoiTab quote={quote} pains={pains} />}
-      {sub === 'schedule' && <ScheduleTab quote={quote} schedule={schedule} saveQuoteHeader={saveQuoteHeader} onRegenerate={onRegenerate} onChanged={onChanged} />}
+      {sub === 'schedule' && <ScheduleTab quote={quote} schedule={schedule} saveQuoteHeader={saveQuoteHeader} onChanged={onChanged} />}
       {sub === 'tco' && <TcoTab quote={quote} contractTerms={contractTerms} partnerBlocks={partnerBlocks} partnerLines={partnerLines} saveQuoteHeader={saveQuoteHeader} />}
     </div>
   )
@@ -2734,8 +2738,10 @@ function TcoTab({ quote, contractTerms, partnerBlocks, partnerLines, saveQuoteHe
 // ──────────────────────────────────────────────────────────
 // SCHEDULE TAB — sorted by invoice_date, color-coded by payment_type
 // ──────────────────────────────────────────────────────────
-function ScheduleTab({ quote, schedule, saveQuoteHeader, onRegenerate, onChanged }) {
-  const [busy, setBusy] = useState(false)
+function ScheduleTab({ quote, schedule, saveQuoteHeader, onChanged }) {
+  // Schedule auto-regenerates whenever subscriptions, impl items, or terms
+  // change (handled at the top-level QuoteBuilder via onImplChanged /
+  // onTermsChanged), so there's no manual Regenerate action here.
 
   const sortedSchedule = useMemo(() => {
     return [...schedule].sort((a, b) => {
@@ -2764,11 +2770,6 @@ function ScheduleTab({ quote, schedule, saveQuoteHeader, onRegenerate, onChanged
       await onChanged()
     } catch (e) { alert(e?.message) }
   }
-  async function regen() {
-    if (!confirm('Regenerate the schedule? Manually edited rows will be preserved.')) return
-    setBusy(true)
-    try { await onRegenerate() } finally { setBusy(false) }
-  }
 
   const total = schedule.reduce((s, r) => s + (Number(r.amount) || 0), 0)
   const sageTotal = schedule.filter(r => r.source === 'sage').reduce((s, r) => s + (Number(r.amount) || 0), 0)
@@ -2790,10 +2791,15 @@ function ScheduleTab({ quote, schedule, saveQuoteHeader, onRegenerate, onChanged
       )}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
         <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: T.text }}>Payment Schedule</h3>
-        <div style={{ display: 'flex', gap: 6 }}>
-          <Button onClick={regen} disabled={busy}>Regenerate</Button>
-          <Button primary onClick={addCustom}>+ Add Custom Row</Button>
-        </div>
+        <button
+          onClick={addCustom}
+          title="Add a custom payment-schedule row"
+          style={{
+            background: T.primary, color: '#fff', border: 'none', borderRadius: 6,
+            width: 28, height: 28, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'pointer', fontSize: 18, fontWeight: 600, lineHeight: 1, fontFamily: T.font,
+          }}
+        >+</button>
       </div>
 
       {/* Color legend */}
@@ -2807,7 +2813,7 @@ function ScheduleTab({ quote, schedule, saveQuoteHeader, onRegenerate, onChanged
       </div>
 
       {schedule.length === 0 ? (
-        <EmptyState title="No schedule rows yet" message="Add subscription lines, implementation items, or terms to generate the schedule, then click Regenerate." action={<Button primary onClick={regen}>Regenerate</Button>} />
+        <EmptyState title="No schedule rows yet" message="Add subscription lines, implementation items, or contract terms — the schedule generates automatically." />
       ) : (
         <Card>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
