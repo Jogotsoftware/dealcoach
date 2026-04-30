@@ -619,6 +619,38 @@ export default function DealRoomConfig({ embedded = false, dealId: dealIdProp } 
             )}
           </div>
 
+          {/* Sync proposal snapshot — refreshes what the customer sees on the
+              Proposal tab from the currently-selected quote. Disabled when no
+              quote is selected. Tooltip shows last-push timestamp. */}
+          <button onClick={refreshProposalSnapshot}
+            disabled={!selectedQuoteId || snapshotting}
+            title={
+              !selectedQuoteId
+                ? 'Pick a quote on the Quotes tab to push to the customer'
+                : snapshotting
+                  ? 'Pushing…'
+                  : `Sync to customer Proposal tab${room?.proposal_snapshotted_at ? ` (last pushed ${relativeTime(room.proposal_snapshotted_at)})` : ''}`
+            }
+            aria-label="Sync proposal to customer"
+            style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              width: 32, height: 32, padding: 0,
+              border: `1px solid ${T.border}`, borderRadius: 6,
+              background: T.surface,
+              color: !selectedQuoteId || snapshotting ? T.textMuted : T.text,
+              cursor: !selectedQuoteId || snapshotting ? 'default' : 'pointer',
+              opacity: !selectedQuoteId ? 0.5 : 1,
+              fontFamily: T.font,
+            }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+              style={snapshotting ? { animation: 'ri-spin 1s linear infinite' } : undefined}>
+              <polyline points="23 4 23 10 17 10" />
+              <polyline points="1 20 1 14 7 14" />
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+            </svg>
+          </button>
+          <style>{`@keyframes ri-spin { to { transform: rotate(360deg); } }`}</style>
+
           {/* Preview customer view — sleek icon button */}
           <button onClick={openCustomerPreview} title="Preview customer view"
             style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', border: `1px solid ${T.border}`, borderRadius: 6, background: T.surface, color: T.text, cursor: 'pointer', fontFamily: T.font, fontSize: 12, fontWeight: 600 }}>
@@ -731,13 +763,6 @@ export default function DealRoomConfig({ embedded = false, dealId: dealIdProp } 
                 onDuplicateQuote={duplicateQuote}
                 onDeleteQuote={deleteQuote}
                 headerBusy={busy}
-                headerShareMenuItems={[{
-                  label: snapshotting
-                    ? 'Pushing…'
-                    : `Push to customer Proposal tab${room.proposal_snapshotted_at ? ` (last pushed ${relativeTime(room.proposal_snapshotted_at)})` : ''}`,
-                  onClick: refreshProposalSnapshot,
-                  disabled: snapshotting,
-                }]}
                 headerVisibilityToggle={
                   <VisibilityToggleIcon
                     visible={room?.show_proposal_tab !== false}
