@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { supabase } from '../lib/supabase'
 import { theme as T, formatCurrency, formatDate } from '../lib/theme'
-import { Badge, ScoreBar } from './Shared'
+import { Badge, ScoreBar, inputStyle } from './Shared'
 import { executeWidgetQuery, aggregate, resolveField } from '../lib/widgetQuery'
 import { executeSavedReport, fetchSavedReport, groupAndAggregate, scalarAggregate } from '../lib/reportQuery'
 
@@ -77,7 +78,125 @@ function CellValue({ row, field, section, navigate }) {
   if (action?.type === 'copy') {
     return <span style={{ cursor: 'pointer', textDecoration: 'underline dashed', ...style }} onClick={() => { navigator.clipboard.writeText(String(val || '')) }}>{formatted}</span>
   }
+  if (action?.type === 'inline_edit') {
+    return <InlineEditCell row={row} field={field} section={section} val={val} formatted={formatted} style={style} />
+  }
   return <span style={style}>{formatted}</span>
+}
+
+// Resolve which (table, row id) the inline-edit should write to. The widget
+// query joins related tables via `<table>(*)`, so a joined record sits at
+// row[field.table] as an object (one-to-one) or array (one-to-many).
+//   field on base table        → write to baseTable WHERE id = row.id
+//   field on joined object     → write to field.table WHERE id = row[field.table].id
+//   field on joined array      → write to first element's id (mirrors how
+//                                resolveField reads the value back)
+// Returns { table, id, applyLocal(next) } or null if nothing addressable.
+function resolveEditTarget(row, field, baseTable) {
+  if (!field?.table || !field?.field) return null
+  if (field.table === baseTable || !(field.table in row)) {
+    if (!row?.id) return null
+    return {
+      table: baseTable || field.table,
+      id: row.id,
+      applyLocal: (next) => { row[field.field] = next },
+    }
+  }
+  const joined = row[field.table]
+  if (Array.isArray(joined)) {
+    const first = joined[0]
+    if (!first?.id) return null
+    return {
+      table: field.table,
+      id: first.id,
+      applyLocal: (next) => { first[field.field] = next },
+    }
+  }
+  if (joined && typeof joined === 'object') {
+    if (!joined.id) return null
+    return {
+      table: field.table,
+      id: joined.id,
+      applyLocal: (next) => { joined[field.field] = next },
+    }
+  }
+  return null
+}
+
+// Click a cell, edit in place, save on blur or Enter. Resolves the right
+// target table + id even when the column lives on a joined table.
+function InlineEditCell({ row, field, section, val, formatted, style }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(val == null ? '' : String(val))
+  const [saving, setSaving] = useState(false)
+  useEffect(() => { setDraft(val == null ? '' : String(val)) }, [val])
+
+  const baseTable = section?.data_source?.base_table
+
+  async function commit() {
+    if (saving) return
+    const cur = val == null ? '' : String(val)
+    if (draft === cur) { setEditing(false); return }
+    const target = resolveEditTarget(row, field, baseTable)
+    if (!target) {
+      alert('Cannot edit this cell — no addressable id for ' + (field?.table || 'this field') + '.')
+      setEditing(false)
+      return
+    }
+    setSaving(true)
+    try {
+      let next = draft
+      if (field.type === 'number' || field.type === 'currency' || field.type === 'percentage' || field.type === 'score') {
+        next = draft === '' ? null : Number(draft)
+        if (Number.isNaN(next)) { alert('Not a number.'); setSaving(false); return }
+      } else if (next === '') {
+        next = null
+      }
+      const { error } = await supabase.from(target.table).update({ [field.field]: next }).eq('id', target.id)
+      if (error) {
+        console.error('inline_edit update failed:', error)
+        alert('Save failed: ' + error.message)
+        setDraft(cur)
+        setSaving(false)
+        return
+      }
+      // Mirror the change into the in-memory row so the cell reflects the
+      // new value without forcing the widget to re-fetch.
+      target.applyLocal(next)
+    } catch (e) {
+      console.error('inline_edit threw:', e)
+      alert('Save failed: ' + (e?.message || 'unknown error'))
+      setDraft(cur)
+    }
+    setSaving(false)
+    setEditing(false)
+  }
+
+  if (!editing) {
+    return (
+      <span
+        onClick={() => setEditing(true)}
+        title="Click to edit"
+        style={{ cursor: 'pointer', borderBottom: `1px dashed ${T.border}`, padding: '0 2px', ...style }}
+      >
+        {formatted || <span style={{ color: T.textMuted, fontStyle: 'italic' }}>\u2014</span>}
+      </span>
+    )
+  }
+  return (
+    <input
+      autoFocus
+      value={draft}
+      type={field.type === 'date' ? 'date' : (field.type === 'number' || field.type === 'currency' || field.type === 'percentage' || field.type === 'score') ? 'number' : 'text'}
+      onChange={e => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={e => {
+        if (e.key === 'Enter') { e.preventDefault(); commit() }
+        if (e.key === 'Escape') { setDraft(val == null ? '' : String(val)); setEditing(false) }
+      }}
+      style={{ ...inputStyle, fontSize: 12, padding: '2px 6px', width: '100%', minWidth: 0 }}
+    />
+  )
 }
 
 // === SECTION RENDERERS ===

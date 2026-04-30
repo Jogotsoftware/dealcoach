@@ -194,7 +194,7 @@ export const TABLES = {
 export const FORMAT_TYPES = ['text', 'number', 'currency', 'percentage', 'date', 'badge', 'boolean', 'score']
 export const SECTION_TYPES = ['metric', 'table', 'card', 'grid', 'list']
 export const OPERATORS = ['equals', 'not_equals', 'less_than', 'greater_than', 'contains', 'is_empty', 'is_not_empty', 'is_unknown', 'in_list']
-export const CLICK_ACTIONS = ['none', 'navigate_deal', 'open_url', 'copy']
+export const CLICK_ACTIONS = ['none', 'navigate_deal', 'open_url', 'copy', 'inline_edit']
 export const AGGREGATES = ['none', 'count', 'sum', 'avg', 'min', 'max']
 
 // ─────────────────────────────────────────────────────────────────────────────
