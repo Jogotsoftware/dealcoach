@@ -122,40 +122,46 @@ export default function ProposalView({
 
   const accent = themeColor || T.primary
 
+  // Print mode: when user hits Download PDF, choose which tabs to include,
+  // then render those tabs sequentially (each with its own header band and a
+  // page break before) and trigger window.print(). Reset after the dialog closes.
+  const [printingTabs, setPrintingTabs] = useState(null) // null when not printing; array of tab keys when active
+  useEffect(() => {
+    if (!printingTabs) return
+    // Wait one paint so the print-only DOM is mounted before the dialog opens.
+    const t = setTimeout(() => { window.print() }, 50)
+    const onAfter = () => setPrintingTabs(null)
+    window.addEventListener('afterprint', onAfter)
+    return () => { clearTimeout(t); window.removeEventListener('afterprint', onAfter) }
+  }, [printingTabs])
+
   return (
     <div className="ri-proposal-print-root" style={{ maxWidth: 1100, margin: '0 auto' }}>
-      {/* Print styles: when the buyer (or AE) hits Download PDF, collapse the
-          entire page chrome so only the proposal renders. The browser's
-          print dialog has a "Save as PDF" destination on every modern OS. */}
+      {/* Print styles. Two modes:
+            (1) Standalone: only the proposal content prints, page chrome hidden.
+            (2) Print mode (printingTabs set): we render selected tabs back to
+                back, each in a .ri-print-page block that forces a page break
+                before. The page header (.ri-print-header) repeats at the top
+                of every section so every PDF page reads as a coherent doc. */}
       <style>{`
         @media print {
-          @page { margin: 0.5in; }
+          @page { margin: 0.5in; size: letter; }
           body * { visibility: hidden !important; }
           .ri-proposal-print-root, .ri-proposal-print-root * { visibility: visible !important; }
-          .ri-proposal-print-root { position: absolute !important; left: 0; top: 0; width: 100%; max-width: 100%; padding: 0; margin: 0; }
+          .ri-proposal-print-root { position: absolute !important; left: 0; top: 0; width: 100%; max-width: 100%; padding: 0; margin: 0; font-family: ${T.font}; }
           .ri-no-print { display: none !important; }
+          .ri-print-page { page-break-before: always; padding-top: 0; }
+          .ri-print-page:first-of-type { page-break-before: auto; }
+          .ri-print-page table, .ri-print-page tr { page-break-inside: avoid; }
           * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
         }
+        .ri-print-only { display: none; }
+        @media print { .ri-print-only { display: block; } }
       `}</style>
 
-      {/* Download PDF — always visible; print CSS hides this button itself */}
+      {/* Download PDF — opens a small popover to pick which tabs to include */}
       <div className="ri-no-print" style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
-        <button onClick={() => window.print()}
-          title="Download a PDF copy of this proposal"
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-            padding: '6px 12px', fontSize: 12, fontWeight: 600,
-            border: `1px solid ${accent}`, borderRadius: 6,
-            background: T.surface, color: accent,
-            cursor: 'pointer', fontFamily: T.font,
-          }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-            <polyline points="7 10 12 15 17 10" />
-            <line x1="12" y1="15" x2="12" y2="3" />
-          </svg>
-          Download PDF
-        </button>
+        <PdfDownloadButton accent={accent} visibleTabs={visibleTabs} onPrint={(tabKeys) => setPrintingTabs(tabKeys)} />
       </div>
 
       {/* AE-only visibility toggle row */}
@@ -189,12 +195,15 @@ export default function ProposalView({
         </div>
       )}
 
-      {/* Page header — stays at top regardless of tab */}
-      <ProposalHeader snapshot={snapshot} />
+      {/* Screen header — stays at top regardless of tab. Hidden during print
+          because each printed page renders its own PrintPageHeader. */}
+      <div className="ri-no-print">
+        <ProposalHeader snapshot={snapshot} />
+      </div>
 
-      {/* Tabs */}
+      {/* Screen tabs */}
       {visibleTabs.length > 1 && (
-        <div style={{ display: 'flex', borderBottom: `1px solid ${T.border}`, marginBottom: 18, gap: 0 }}>
+        <div className="ri-no-print" style={{ display: 'flex', borderBottom: `1px solid ${T.border}`, marginBottom: 18, gap: 0 }}>
           {visibleTabs.map(t => {
             const on = activeTab === t.key
             return (
@@ -213,9 +222,159 @@ export default function ProposalView({
         </div>
       )}
 
-      {activeTab === 'summary'   && <InvestmentSummaryTab snapshot={snapshot} columnVisibility={columnVisibility} aePreview={aePreview} onColumnVisibilityChange={onColumnVisibilityChange} accent={accent} />}
-      {activeTab === 'schedules' && <SchedulesTab snapshot={snapshot} accent={accent} />}
-      {activeTab === 'tco'       && <TcoTab snapshot={snapshot} />}
+      {/* Screen view — renders the active tab only */}
+      {!printingTabs && (
+        <div className="ri-no-print">
+          {activeTab === 'summary'   && <InvestmentSummaryTab snapshot={snapshot} columnVisibility={columnVisibility} aePreview={aePreview} onColumnVisibilityChange={onColumnVisibilityChange} accent={accent} />}
+          {activeTab === 'schedules' && <SchedulesTab snapshot={snapshot} accent={accent} />}
+          {activeTab === 'tco'       && <TcoTab snapshot={snapshot} />}
+        </div>
+      )}
+
+      {/* Print view — renders every selected tab in sequence with a page-break
+          before each, so the PDF reads as a multi-page document. Each section
+          gets its own header band (org logo · quote · customer logo). */}
+      {printingTabs && printingTabs.map((key, idx) => {
+        const label = (visibleTabs.find(t => t.key === key) || { label: key }).label
+        return (
+          <section key={key} className="ri-print-page" style={{ paddingBottom: 24 }}>
+            <PrintPageHeader snapshot={snapshot} accent={accent} sectionTitle={label} pageIndex={idx + 1} pageTotal={printingTabs.length} />
+            {key === 'summary'   && <InvestmentSummaryTab snapshot={snapshot} columnVisibility={columnVisibility} accent={accent} />}
+            {key === 'schedules' && <SchedulesTab snapshot={snapshot} accent={accent} printAll />}
+            {key === 'tco'       && <TcoTab snapshot={snapshot} />}
+          </section>
+        )
+      })}
+    </div>
+  )
+}
+
+// ─── Print page header — repeats at the top of every PDF section ─────────────
+// Org logo (left) · Proposal + quote name + date + section title (center) ·
+// Customer logo (right). Designed to fit cleanly inside a 0.5in @page margin.
+function PrintPageHeader({ snapshot, accent, sectionTitle, pageIndex, pageTotal }) {
+  const orgLogo = snapshot.org?.logo_url
+  const customerLogo = snapshot.deal?.customer_logo_url
+  const customerName = snapshot.deal?.company_name
+  const orgName = snapshot.org?.name
+  const dateStr = snapshot.snapshotted_at ? fmtDateLong(String(snapshot.snapshotted_at).split('T')[0]) : ''
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 16,
+      paddingBottom: 12, marginBottom: 18, borderBottom: `2px solid ${accent}`,
+    }}>
+      {/* Org logo (left) */}
+      <div style={{ width: 120, display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
+        {orgLogo
+          ? <img src={orgLogo} alt={orgName || ''} style={{ maxHeight: 36, maxWidth: 120, objectFit: 'contain' }} />
+          : (orgName && <span style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{orgName}</span>)}
+      </div>
+
+      {/* Center: title block */}
+      <div style={{ flex: 1, textAlign: 'center', minWidth: 0 }}>
+        <div style={{ fontSize: 9, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+          Proposal · {sectionTitle}
+        </div>
+        <div style={{ fontSize: 16, fontWeight: 700, color: T.text, marginTop: 2 }}>
+          {customerName || ''}
+        </div>
+        <div style={{ fontSize: 10, color: T.textMuted, marginTop: 2 }}>
+          {[snapshot.quote_name, dateStr].filter(Boolean).join(' · ')}
+          {pageTotal > 1 && <span style={{ marginLeft: 6 }}>· {pageIndex} of {pageTotal}</span>}
+        </div>
+      </div>
+
+      {/* Customer logo (right) */}
+      <div style={{ width: 120, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+        {customerLogo && (
+          <img src={customerLogo} alt={customerName || ''} style={{ maxHeight: 36, maxWidth: 120, objectFit: 'contain' }} />
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── PdfDownloadButton — popover with per-tab checkboxes ─────────────────────
+function PdfDownloadButton({ accent, visibleTabs, onPrint }) {
+  const [open, setOpen] = useState(false)
+  // Default all visible tabs selected.
+  const [selected, setSelected] = useState(() => {
+    const map = {}; for (const t of visibleTabs) map[t.key] = true; return map
+  })
+  // Re-sync when visibleTabs changes (AE flips a tab visibility off, etc.)
+  useEffect(() => {
+    setSelected(prev => {
+      const next = { ...prev }
+      for (const t of visibleTabs) if (next[t.key] === undefined) next[t.key] = true
+      // Drop keys for tabs that are no longer visible.
+      for (const k of Object.keys(next)) if (!visibleTabs.find(t => t.key === k)) delete next[k]
+      return next
+    })
+  }, [visibleTabs])
+
+  function toggle(key) { setSelected(s => ({ ...s, [key]: !s[key] })) }
+  function go() {
+    const tabs = visibleTabs.map(t => t.key).filter(k => selected[k])
+    if (!tabs.length) return
+    setOpen(false)
+    onPrint(tabs)
+  }
+  const selectedCount = Object.values(selected).filter(Boolean).length
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <button onClick={() => setOpen(o => !o)}
+        title="Download a PDF copy of this proposal"
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+          padding: '6px 12px', fontSize: 12, fontWeight: 600,
+          border: `1px solid ${accent}`, borderRadius: 6,
+          background: open ? accent + '14' : T.surface, color: accent,
+          cursor: 'pointer', fontFamily: T.font,
+        }}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+          <polyline points="7 10 12 15 17 10" />
+          <line x1="12" y1="15" x2="12" y2="3" />
+        </svg>
+        Download PDF
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      {open && (
+        <>
+          <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 999 }} />
+          <div style={{
+            position: 'absolute', right: 0, top: '100%', marginTop: 6, zIndex: 1000,
+            background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8,
+            boxShadow: '0 10px 30px rgba(0,0,0,0.15)', padding: 14, minWidth: 240, fontFamily: T.font,
+          }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+              Pages to include
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
+              {visibleTabs.map(t => (
+                <label key={t.key} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: T.text, cursor: 'pointer', userSelect: 'none' }}>
+                  <input type="checkbox" checked={!!selected[t.key]} onChange={() => toggle(t.key)} />
+                  {t.label}
+                </label>
+              ))}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 10, color: T.textMuted }}>{selectedCount} of {visibleTabs.length} selected</span>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button onClick={() => setOpen(false)}
+                  style={{ padding: '5px 10px', fontSize: 11, fontWeight: 600, background: T.surface, color: T.textMuted, border: `1px solid ${T.border}`, borderRadius: 4, cursor: 'pointer', fontFamily: T.font }}>
+                  Cancel
+                </button>
+                <button onClick={go} disabled={!selectedCount}
+                  style={{ padding: '5px 14px', fontSize: 11, fontWeight: 700, background: selectedCount ? accent : T.borderLight, color: '#fff', border: 'none', borderRadius: 4, cursor: selectedCount ? 'pointer' : 'not-allowed', fontFamily: T.font }}>
+                  Download PDF
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   )
 }
@@ -625,7 +784,7 @@ function SubscriptionDetailTable({ parents, childrenOf, annualListTotal, annualN
 // ═════════════════════════════════════════════════════════════════════════════
 // TAB 2 — Schedules
 // ═════════════════════════════════════════════════════════════════════════════
-function SchedulesTab({ snapshot, accent }) {
+function SchedulesTab({ snapshot, accent, printAll = false }) {
   // Implementation schedule sub-tab only renders when a SOW is on file —
   // until then the AE has nothing to populate it from. Snapshot's `has_sow`
   // flag is set by snapshot_proposal RPC at push time.
@@ -640,6 +799,26 @@ function SchedulesTab({ snapshot, accent }) {
   useEffect(() => {
     if (!SUBS.some(s => s.key === sub)) setSub(SUBS[0]?.key || 'payment')
   }, [hasSow])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Print mode: render every sub-section sequentially with its own header so
+  // the PDF reader sees the full Schedules content, not just the active sub.
+  if (printAll) {
+    return (
+      <div>
+        <div style={{ marginBottom: 18 }}>
+          <Eyebrow>Payment schedule</Eyebrow>
+          <PaymentScheduleSubTab snapshot={snapshot} />
+        </div>
+        {hasSow && (
+          <div>
+            <Eyebrow>Implementation schedule</Eyebrow>
+            <ImplementationScheduleSubTab snapshot={snapshot} accent={accent} />
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div>
       {SUBS.length > 1 && (
