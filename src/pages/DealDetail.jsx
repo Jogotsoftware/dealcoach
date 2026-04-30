@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { theme as T, formatCurrency, formatDate, formatDateLong, daysUntil, STAGES, FORECAST_CATEGORIES, CALL_TYPES, TASK_CATEGORIES } from '../lib/theme'
 import { Card, Badge, ForecastBadge, StageBadge, ScoreBar, Field, StatusDot, TabBar, Button, EmptyState, Spinner, Skeleton, inputStyle, labelStyle } from '../components/Shared'
 import PlusButton from '../components/PlusButton'
+import CopyButton from '../components/CopyButton'
 import TranscriptUpload from '../components/TranscriptUpload'
 import { callGenerateEmail, callResearchFunction, reprocessDeal } from '../lib/webhooks'
 import { track } from '../lib/analytics'
@@ -2686,9 +2687,18 @@ function NextStepsWidget({ deal, setDeal, profile, compact = false }) {
           intentionally don't render next_steps_color_reason a second
           time here. The init-based timestamp chip above still surfaces
           who/when via the title tooltip. */}
-      <div onClick={() => setEditing(true)}
-        style={{ fontFamily: T.font, fontSize: bodySize, lineHeight: 1.55, whiteSpace: 'pre-wrap', color: T.text, marginTop: 4, cursor: 'pointer' }}>
-        {deal.next_steps}
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 4 }}>
+        <div onClick={() => setEditing(true)}
+          style={{ flex: 1, fontFamily: T.font, fontSize: bodySize, lineHeight: 1.55, whiteSpace: 'pre-wrap', color: T.text, cursor: 'pointer' }}>
+          {changedByInitials && (
+            <span style={{ fontWeight: 700, color: T.text, marginRight: 6 }}>{changedByInitials}:</span>
+          )}
+          {deal.next_steps}
+        </div>
+        <CopyButton
+          text={changedByInitials ? `${changedByInitials}: ${deal.next_steps}` : deal.next_steps}
+          title="Copy next steps"
+        />
       </div>
       {!compact && (
         <div style={{ fontSize: 11, color: T.textMuted, marginTop: 6 }}>
@@ -2796,10 +2806,10 @@ function HomeDashboard({ dealId, deal, tasks, setTasks, userId, onAddTask, editM
   // excluded — they belong to the Home pipeline tab, not the deal home.
   const externalWidgets = [
     ...(registeredWidgets || [])
-      .filter(w => !BUILT_IN_IDS.has(w.id) && w.category === 'pipeline')
+      .filter(w => !BUILT_IN_IDS.has(w.id) && w.category === 'deal')
       .map(w => ({ id: w.id, title: w.title || w.name || w.id, w: 6, h: 4, minW: 3, minH: 2 })),
     ...(customWidgetDefs  || [])
-      .filter(w => w.widget_type === 'pipeline')
+      .filter(w => w.widget_type === 'deal')
       .map(w => ({ id: w.id, title: w.name || w.id, w: 6, h: 4, minW: 3, minH: 2 })),
   ]
   const widgetCatalog = [...HOME_WIDGET_REGISTRY, ...externalWidgets]
