@@ -562,6 +562,7 @@ export default function QuoteBuilder({
             partnerBlocks={partnerBlocks}
             partnerLines={partnerLines}
             saveQuoteHeader={saveQuoteHeader}
+            profileId={profile?.id}
             onChanged={async () => { await reload() }}
           />
         )}
@@ -667,15 +668,6 @@ function QuoteTab({ quote, deal, quoteId, lines, products, productMap, bundleChi
         onChanged={onSubChanged}
         refreshFavorites={refreshFavorites}
       />
-      <div style={{ marginTop: 24 }}>
-        <SowUploader
-          dealId={quote.deal_id}
-          quoteId={quote.id}
-          orgId={quote.org_id}
-          profileId={profileId}
-          onChange={onImplChanged}
-        />
-      </div>
       <div style={{ marginTop: 24 }}>
         <ImplementationSection
           quote={quote}
@@ -1405,14 +1397,13 @@ function ProductPicker({ products, favorites, onClose, onAddSelected, onAddFavor
 // ──────────────────────────────────────────────────────────
 // IMPLEMENTATION SECTION
 // ──────────────────────────────────────────────────────────
-// Single-deal SOW uploader. The customer-facing Implementation Schedule
-// sub-tab and the implementation rows in Payment Schedule are gated on a
-// SOW row existing for the deal — until one is uploaded, the rep sees
-// "No SOW uploaded yet" here and the customer sees no implementation
-// surface at all. Uploading goes to the existing `deal-documents` storage
-// bucket and inserts a row into `sow_documents`.
-function SowUploader({ dealId, quoteId, orgId, profileId, onChange }) {
-  const [sows, setSows] = useState([])
+// Compact one-row SOW strip — lives at the top of the Schedules tab. While
+// no SOW is on file the customer-facing Implementation Schedule sub-tab and
+// the implementation rows in Payment Schedule stay hidden; uploading a SOW
+// flips both on. Uploads go to the existing `deal-documents` bucket and
+// insert a row into `sow_documents`.
+function SowStrip({ dealId, quoteId, orgId, profileId, onChange }) {
+  const [current, setCurrent] = useState(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const fileRef = useRef(null)
@@ -1425,7 +1416,8 @@ function SowUploader({ dealId, quoteId, orgId, profileId, onChange }) {
         .select('id, filename, storage_path, file_size, status, created_at')
         .eq('deal_id', dealId)
         .order('created_at', { ascending: false })
-      if (!cancelled) { setSows(data || []); setLoading(false) }
+        .limit(1)
+      if (!cancelled) { setCurrent((data && data[0]) || null); setLoading(false) }
     })()
     return () => { cancelled = true }
   }, [dealId])
@@ -1446,7 +1438,7 @@ function SowUploader({ dealId, quoteId, orgId, profileId, onChange }) {
         uploaded_by: profileId || null,
       }).select().single()
       if (error) throw error
-      setSows(prev => [data, ...prev])
+      setCurrent(data)
       if (onChange) await onChange()
     } catch (e) {
       console.error('SOW upload failed:', e)
@@ -1455,31 +1447,37 @@ function SowUploader({ dealId, quoteId, orgId, profileId, onChange }) {
     setBusy(false)
   }
 
-  async function viewSow(s) {
+  async function viewSow() {
     try {
-      const { data, error } = await supabase.storage.from('deal-documents').createSignedUrl(s.storage_path, 60)
+      const { data, error } = await supabase.storage.from('deal-documents').createSignedUrl(current.storage_path, 60)
       if (error) throw error
       if (data?.signedUrl) window.open(data.signedUrl, '_blank', 'noopener')
     } catch (e) { alert('Could not open SOW: ' + (e?.message || 'unknown')) }
   }
 
-  async function removeSow(s) {
-    if (!confirm(`Remove ${s.filename}? The customer's implementation schedule will hide until you upload another SOW.`)) return
+  async function removeSow() {
+    if (!current) return
+    if (!confirm(`Remove ${current.filename}? The customer's implementation schedule will hide until you upload another SOW.`)) return
     setBusy(true)
     try {
-      try { await supabase.storage.from('deal-documents').remove([s.storage_path]) } catch (e) { console.warn('SOW storage cleanup failed:', e) }
-      const { error } = await supabase.from('sow_documents').delete().eq('id', s.id)
+      try { await supabase.storage.from('deal-documents').remove([current.storage_path]) } catch (e) { console.warn('SOW storage cleanup failed:', e) }
+      const { error } = await supabase.from('sow_documents').delete().eq('id', current.id)
       if (error) throw error
-      setSows(prev => prev.filter(x => x.id !== s.id))
+      setCurrent(null)
       if (onChange) await onChange()
     } catch (e) { console.error(e); alert('Remove failed: ' + (e?.message || 'unknown')) }
     setBusy(false)
   }
 
   if (loading) return null
-  const current = sows[0]
+  const sowColor = current ? T.success : T.textMuted
   return (
-    <Card title="Statement of Work">
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+      padding: '6px 12px', marginBottom: 14,
+      border: `1px solid ${T.borderLight}`, borderRadius: 6,
+      background: T.surfaceAlt, fontFamily: T.font,
+    }}>
       <input
         ref={fileRef}
         type="file"
@@ -1487,31 +1485,46 @@ function SowUploader({ dealId, quoteId, orgId, profileId, onChange }) {
         style={{ display: 'none' }}
         onChange={e => { const f = e.target.files?.[0]; if (f) upload(f); e.target.value = '' }}
       />
-      {current ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <div style={{ flex: 1, minWidth: 240, fontSize: 13, color: T.text }}>
+      <span style={{
+        fontSize: 9, fontWeight: 800, color: sowColor, textTransform: 'uppercase',
+        letterSpacing: '0.06em', padding: '2px 6px', border: `1px solid ${sowColor}40`, borderRadius: 3,
+      }}>SOW</span>
+      <span style={{ fontSize: 12, color: T.text, flex: 1, minWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {current ? (
+          <>
             <span style={{ fontWeight: 600 }}>{current.filename}</span>
-            <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 10 }}>
-              uploaded {new Date(current.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-              {current.file_size ? ` · ${Math.round(current.file_size / 1024)} KB` : ''}
+            <span style={{ color: T.textMuted, marginLeft: 8, fontSize: 11 }}>
+              · {new Date(current.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
             </span>
-          </div>
-          <Button onClick={() => viewSow(current)} style={{ padding: '4px 10px', fontSize: 11 }}>View</Button>
-          <Button onClick={() => fileRef.current?.click()} disabled={busy} style={{ padding: '4px 10px', fontSize: 11 }}>{busy ? 'Uploading…' : 'Replace'}</Button>
-          <Button danger onClick={() => removeSow(current)} disabled={busy} style={{ padding: '4px 10px', fontSize: 11 }}>Remove</Button>
-        </div>
-      ) : (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-          <div style={{ flex: 1, minWidth: 240, fontSize: 13, color: T.textMuted, fontStyle: 'italic' }}>
-            No SOW uploaded yet. The customer's implementation schedule and
-            implementation invoice rows stay hidden until one is on file.
-          </div>
-          <Button primary onClick={() => fileRef.current?.click()} disabled={busy} style={{ padding: '6px 14px', fontSize: 12 }}>
-            {busy ? 'Uploading…' : '+ Upload SOW'}
-          </Button>
-        </div>
+          </>
+        ) : (
+          <span style={{ color: T.textMuted, fontStyle: 'italic' }}>
+            No SOW uploaded — implementation schedule won't show in the deal room until one is on file.
+          </span>
+        )}
+      </span>
+      {current && (
+        <button onClick={viewSow}
+          style={{ background: 'none', border: 'none', padding: '2px 4px', cursor: 'pointer', color: T.primary, fontSize: 11, fontWeight: 600, fontFamily: T.font }}>
+          View
+        </button>
       )}
-    </Card>
+      <button
+        onClick={() => fileRef.current?.click()}
+        disabled={busy}
+        style={{ background: 'none', border: `1px solid ${current ? T.border : T.primary}`, borderRadius: 4, padding: '3px 10px',
+          cursor: busy ? 'wait' : 'pointer', color: current ? T.textSecondary : T.primary, fontSize: 11, fontWeight: 600, fontFamily: T.font }}>
+        {busy ? 'Uploading…' : current ? 'Replace' : 'Upload SOW'}
+      </button>
+      {current && (
+        <button onClick={removeSow} disabled={busy}
+          style={{ background: 'none', border: 'none', padding: '2px 4px', cursor: 'pointer', color: T.textMuted, fontSize: 11, fontFamily: T.font }}
+          onMouseEnter={e => e.currentTarget.style.color = T.error}
+          onMouseLeave={e => e.currentTarget.style.color = T.textMuted}>
+          Remove
+        </button>
+      )}
+    </div>
   )
 }
 
@@ -2663,7 +2676,7 @@ function Metric({ label, value, positive }) {
 // ══════════════════════════════════════════════════════════
 // MODELS TAB — wraps ROI, Payment Schedule, and TCO under a sub-tab bar
 // ══════════════════════════════════════════════════════════
-function ModelsTab({ quote, pains, schedule, contractTerms, partnerBlocks, partnerLines, saveQuoteHeader, onChanged }) {
+function ModelsTab({ quote, pains, schedule, contractTerms, partnerBlocks, partnerLines, saveQuoteHeader, onChanged, profileId }) {
   const [sub, setSub] = useState('roi')
   const subTabs = [
     { key: 'roi', label: 'ROI' },
@@ -2676,7 +2689,7 @@ function ModelsTab({ quote, pains, schedule, contractTerms, partnerBlocks, partn
         <TabBar tabs={subTabs} active={sub} onChange={setSub} />
       </div>
       {sub === 'roi' && <RoiTab quote={quote} pains={pains} />}
-      {sub === 'schedule' && <ScheduleTab quote={quote} schedule={schedule} saveQuoteHeader={saveQuoteHeader} onChanged={onChanged} />}
+      {sub === 'schedule' && <ScheduleTab quote={quote} schedule={schedule} saveQuoteHeader={saveQuoteHeader} onChanged={onChanged} profileId={profileId} />}
       {sub === 'tco' && <TcoTab quote={quote} contractTerms={contractTerms} partnerBlocks={partnerBlocks} partnerLines={partnerLines} saveQuoteHeader={saveQuoteHeader} />}
     </div>
   )
@@ -2826,7 +2839,7 @@ function TcoTab({ quote, contractTerms, partnerBlocks, partnerLines, saveQuoteHe
 // ──────────────────────────────────────────────────────────
 // SCHEDULE TAB — sorted by invoice_date, color-coded by payment_type
 // ──────────────────────────────────────────────────────────
-function ScheduleTab({ quote, schedule, saveQuoteHeader, onChanged }) {
+function ScheduleTab({ quote, schedule, saveQuoteHeader, onChanged, profileId }) {
   // Schedule auto-regenerates whenever subscriptions, impl items, or terms
   // change (handled at the top-level QuoteBuilder via onImplChanged /
   // onTermsChanged), so there's no manual Regenerate action here.
@@ -2877,6 +2890,13 @@ function ScheduleTab({ quote, schedule, saveQuoteHeader, onChanged }) {
           tabKey="schedules"
         />
       )}
+      <SowStrip
+        dealId={quote.deal_id}
+        quoteId={quote.id}
+        orgId={quote.org_id}
+        profileId={profileId}
+        onChange={onChanged}
+      />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
         <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: T.text }}>Payment Schedule</h3>
         <PlusButton onClick={addCustom} title="Add a custom payment-schedule row" />
