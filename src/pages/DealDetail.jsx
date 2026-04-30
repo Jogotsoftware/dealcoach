@@ -2554,15 +2554,34 @@ function NextStepsWidget({ deal, setDeal, profile, compact = false }) {
   }
 
   async function saveColor(color, reason) {
+    const trimmedReason = reason ? reason.trim() : ''
     const patch = {
       next_steps_color: color,
-      next_steps_color_reason: reason ? reason.trim() : null,
+      next_steps_color_reason: trimmedReason || null,
       next_steps_color_changed_at: new Date().toISOString(),
       next_steps_color_changed_by: profile?.id || null,
       // The trigger respects this flag — once set, the keyword auto-parser
       // stops touching color until next_steps_color_manual is flipped back.
       next_steps_color_manual: color != null,
     }
+
+    // When a color + reason are set, auto-rewrite next_steps to a formatted
+    // status line: "<short date> - <Color> <reason>". The previous text is
+    // archived to next_steps_history first so it remains retrievable but is
+    // no longer the displayed value.
+    if (color && trimmedReason) {
+      const prior = (deal.next_steps || '').trim()
+      if (prior) {
+        const { error: archiveErr } = await supabase
+          .from('next_steps_history')
+          .insert({ deal_id: deal.id, content: prior })
+        if (archiveErr) console.error('archive next_steps failed', archiveErr)
+      }
+      const dateLabel = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+      const colorLabel = color.charAt(0).toUpperCase() + color.slice(1)
+      patch.next_steps = `${dateLabel} - ${colorLabel} ${trimmedReason}`
+    }
+
     const { error } = await supabase.from('deals').update(patch).eq('id', deal.id)
     if (error) { console.error('save next_steps_color failed', error); alert('Save failed: ' + error.message); return }
     setDeal(prev => ({ ...prev, ...patch }))
