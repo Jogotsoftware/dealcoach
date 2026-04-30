@@ -1,4 +1,10 @@
-// dealroom-access v7
+// dealroom-access v8
+// v8 changes: AE preview support. When the viewer row has is_ae_preview=true,
+// validate-token + log-view skip view logging, viewer-counter increments, and
+// first-view notifications. The AE clicks "Preview customer view" → DealRoomPreview
+// finds/creates that synthetic viewer and redirects to /room/:shareToken?t=:magic
+// so the customer URL is the source of truth for what the AE sees.
+//
 // v7 changes: per-tab visibility — deal_rooms.show_msp_tab/show_library_tab/show_proposal_tab.
 // validate-token returns the filtered `tabs` array; get-*-tab requests for a hidden tab are rejected with 403.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
@@ -84,11 +90,15 @@ Deno.serve(async (req: Request) => {
       const { data: org } = deal ? await sb.from('organizations').select('name, logo_url').eq('id', deal.org_id).single() : { data: null }
       const { data: rep } = deal?.rep_id ? await sb.from('profiles').select('full_name, email, phone').eq('id', deal.rep_id).maybeSingle() : { data: null }
 
-      const wasFirstView = !viewer.last_viewed_at && (viewer.view_count || 0) === 0
-      try { await sb.from('deal_room_views').insert({ deal_room_id: viewer.deal_room_id, viewer_id: viewer.id, viewer_email: viewer.email, tab: null, user_agent: userAgent, ip_hash: ipHash }) } catch (e) { console.warn('v7: view log failed', e) }
-      try { await sb.from('deal_room_viewers').update({ last_viewed_at: new Date().toISOString(), view_count: (Number(viewer.view_count) || 0) + 1 }).eq('id', viewer.id) } catch (e) { console.warn('v7: viewer counter update failed', e) }
-      if (wasFirstView && deal?.rep_id) {
-        try { await sb.from('deal_room_notifications').insert({ deal_room_id: viewer.deal_room_id, ae_user_id: deal.rep_id, kind: 'first_view', payload: { viewer_email: viewer.email, viewer_name: viewer.name, deal_company: deal.company_name } }) } catch (e) { console.warn('v7: first_view notification failed', e) }
+      // AE-preview viewers don't generate analytics or notifications. The AE
+      // is using the customer URL just to see what the customer would see.
+      if (!viewer.is_ae_preview) {
+        const wasFirstView = !viewer.last_viewed_at && (viewer.view_count || 0) === 0
+        try { await sb.from('deal_room_views').insert({ deal_room_id: viewer.deal_room_id, viewer_id: viewer.id, viewer_email: viewer.email, tab: null, user_agent: userAgent, ip_hash: ipHash }) } catch (e) { console.warn('v8: view log failed', e) }
+        try { await sb.from('deal_room_viewers').update({ last_viewed_at: new Date().toISOString(), view_count: (Number(viewer.view_count) || 0) + 1 }).eq('id', viewer.id) } catch (e) { console.warn('v8: viewer counter update failed', e) }
+        if (wasFirstView && deal?.rep_id) {
+          try { await sb.from('deal_room_notifications').insert({ deal_room_id: viewer.deal_room_id, ae_user_id: deal.rep_id, kind: 'first_view', payload: { viewer_email: viewer.email, viewer_name: viewer.name, deal_company: deal.company_name } }) } catch (e) { console.warn('v8: first_view notification failed', e) }
+        }
       }
 
       return resp({
@@ -229,12 +239,15 @@ Deno.serve(async (req: Request) => {
 
     if (action === 'log-view') {
       const tab = String(body.tab || '')
-      try { await sb.from('deal_room_views').insert({ deal_room_id: viewer.deal_room_id, viewer_id: viewer.id, viewer_email: viewer.email, tab: tab || null, user_agent: userAgent, ip_hash: ipHash }) } catch (e) { console.warn('v7: log-view failed', e) }
-      try { await sb.from('deal_room_viewers').update({ last_viewed_at: new Date().toISOString() }).eq('id', viewer.id) } catch (e) { console.warn('v7: log-view counter failed', e) }
+      // AE-preview viewers don't show up in tab analytics either.
+      if (!viewer.is_ae_preview) {
+        try { await sb.from('deal_room_views').insert({ deal_room_id: viewer.deal_room_id, viewer_id: viewer.id, viewer_email: viewer.email, tab: tab || null, user_agent: userAgent, ip_hash: ipHash }) } catch (e) { console.warn('v8: log-view failed', e) }
+        try { await sb.from('deal_room_viewers').update({ last_viewed_at: new Date().toISOString() }).eq('id', viewer.id) } catch (e) { console.warn('v8: log-view counter failed', e) }
+      }
       return resp({ ok: true })
     }
 
-    return resp({ error: `v7: unknown action '${action}'` }, 400)
+    return resp({ error: `v8: unknown action '${action}'` }, 400)
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     console.error('v7 fatal:', msg)
