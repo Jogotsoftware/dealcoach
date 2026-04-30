@@ -145,14 +145,38 @@ export default function ProposalView({
                 of every section so every PDF page reads as a coherent doc. */}
       <style>{`
         @media print {
-          @page { margin: 0.5in; size: letter; }
+          @page { margin: 0.4in; size: letter; }
+          html, body { background: #fff !important; }
           body * { visibility: hidden !important; }
           .ri-proposal-print-root, .ri-proposal-print-root * { visibility: visible !important; }
-          .ri-proposal-print-root { position: absolute !important; left: 0; top: 0; width: 100%; max-width: 100%; padding: 0; margin: 0; font-family: ${T.font}; }
+          .ri-proposal-print-root { position: absolute !important; left: 0; top: 0; width: 100%; max-width: 100%; padding: 0; margin: 0; font-family: ${T.font}; background: #fff !important; }
           .ri-no-print { display: none !important; }
           .ri-print-page { page-break-before: always; padding-top: 0; }
           .ri-print-page:first-of-type { page-break-before: auto; }
-          .ri-print-page table, .ri-print-page tr { page-break-inside: avoid; }
+
+          /* Tables can break across pages so we don't strand a section header
+             above an empty page when the table is taller than what's left. */
+          .ri-print-page table { page-break-inside: auto; }
+          .ri-print-page tr    { page-break-inside: avoid; page-break-after: auto; }
+          /* But each card-level container tries to stay together in a sensible
+             chunk so an Eyebrow + first row aren't stranded on different pages. */
+          .ri-print-block      { page-break-inside: avoid; }
+
+          /* Tighter typography in print so product names don't have to wrap to
+             10+ lines. Overrides base font-size on every cell. */
+          .ri-proposal-print-root, .ri-proposal-print-root * { font-size: 10.5pt; line-height: 1.35; }
+          .ri-proposal-print-root h1 { font-size: 18pt; }
+          .ri-proposal-print-root h2 { font-size: 13pt; }
+          .ri-proposal-print-root td { padding: 5pt 7pt !important; font-size: 9.5pt !important; }
+          .ri-proposal-print-root th { padding: 5pt 7pt !important; font-size: 8pt !important; }
+          /* Eyebrow + small captions can stay tiny */
+          .ri-proposal-print-root .ri-eyebrow { font-size: 8pt !important; }
+
+          /* Force white backgrounds on surfaces — the customer view tints
+             cards with theme color halos that bleed gray in print preview
+             when "Background graphics" is unchecked. */
+          .ri-proposal-print-root .ri-print-card { background: #fff !important; }
+
           * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
         }
         .ri-print-only { display: none; }
