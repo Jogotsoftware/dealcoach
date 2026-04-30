@@ -123,10 +123,44 @@ export default function ProposalView({
   const accent = themeColor || T.primary
 
   return (
-    <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+    <div className="ri-proposal-print-root" style={{ maxWidth: 1100, margin: '0 auto' }}>
+      {/* Print styles: when the buyer (or AE) hits Download PDF, collapse the
+          entire page chrome so only the proposal renders. The browser's
+          print dialog has a "Save as PDF" destination on every modern OS. */}
+      <style>{`
+        @media print {
+          @page { margin: 0.5in; }
+          body * { visibility: hidden !important; }
+          .ri-proposal-print-root, .ri-proposal-print-root * { visibility: visible !important; }
+          .ri-proposal-print-root { position: absolute !important; left: 0; top: 0; width: 100%; max-width: 100%; padding: 0; margin: 0; }
+          .ri-no-print { display: none !important; }
+          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        }
+      `}</style>
+
+      {/* Download PDF — always visible; print CSS hides this button itself */}
+      <div className="ri-no-print" style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+        <button onClick={() => window.print()}
+          title="Download a PDF copy of this proposal"
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            padding: '6px 12px', fontSize: 12, fontWeight: 600,
+            border: `1px solid ${accent}`, borderRadius: 6,
+            background: T.surface, color: accent,
+            cursor: 'pointer', fontFamily: T.font,
+          }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
+          </svg>
+          Download PDF
+        </button>
+      </div>
+
       {/* AE-only visibility toggle row */}
       {aePreview && (
-        <div style={{
+        <div className="ri-no-print" style={{
           marginBottom: 12, padding: '8px 12px', background: T.surfaceAlt, border: `1px dashed ${T.border}`, borderRadius: 8,
           display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
         }}>
@@ -295,7 +329,7 @@ function InvestmentSummaryTab({ snapshot, columnVisibility, aePreview, onColumnV
 
       {/* AE-only: customer-visible column toggles */}
       {aePreview && onColumnVisibilityChange && (
-        <div style={{
+        <div className="ri-no-print" style={{
           marginTop: 8, marginBottom: 6, padding: '8px 12px', background: T.surfaceAlt, border: `1px dashed ${T.border}`, borderRadius: 8,
           display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap',
         }}>
