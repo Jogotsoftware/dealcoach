@@ -668,6 +668,15 @@ function QuoteTab({ quote, deal, quoteId, lines, products, productMap, bundleChi
         refreshFavorites={refreshFavorites}
       />
       <div style={{ marginTop: 24 }}>
+        <SowUploader
+          dealId={quote.deal_id}
+          quoteId={quote.id}
+          orgId={quote.org_id}
+          profileId={profileId}
+          onChange={onImplChanged}
+        />
+      </div>
+      <div style={{ marginTop: 24 }}>
         <ImplementationSection
           quote={quote}
           quoteId={quote.id}
@@ -1396,6 +1405,116 @@ function ProductPicker({ products, favorites, onClose, onAddSelected, onAddFavor
 // ──────────────────────────────────────────────────────────
 // IMPLEMENTATION SECTION
 // ──────────────────────────────────────────────────────────
+// Single-deal SOW uploader. The customer-facing Implementation Schedule
+// sub-tab and the implementation rows in Payment Schedule are gated on a
+// SOW row existing for the deal — until one is uploaded, the rep sees
+// "No SOW uploaded yet" here and the customer sees no implementation
+// surface at all. Uploading goes to the existing `deal-documents` storage
+// bucket and inserts a row into `sow_documents`.
+function SowUploader({ dealId, quoteId, orgId, profileId, onChange }) {
+  const [sows, setSows] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const fileRef = useRef(null)
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const { data } = await supabase
+        .from('sow_documents')
+        .select('id, filename, storage_path, file_size, status, created_at')
+        .eq('deal_id', dealId)
+        .order('created_at', { ascending: false })
+      if (!cancelled) { setSows(data || []); setLoading(false) }
+    })()
+    return () => { cancelled = true }
+  }, [dealId])
+
+  async function upload(file) {
+    if (!file || busy) return
+    setBusy(true)
+    try {
+      const path = `${dealId}/sow/${Date.now()}-${file.name.replace(/[^\w.-]+/g, '_')}`
+      const { error: upErr } = await supabase.storage.from('deal-documents')
+        .upload(path, file, { upsert: false, contentType: file.type })
+      if (upErr) throw upErr
+      const { data, error } = await supabase.from('sow_documents').insert({
+        org_id: orgId, deal_id: dealId, quote_id: quoteId || null,
+        filename: file.name, storage_path: path,
+        file_size: file.size, mime_type: file.type,
+        status: 'uploaded', version: 1,
+        uploaded_by: profileId || null,
+      }).select().single()
+      if (error) throw error
+      setSows(prev => [data, ...prev])
+      if (onChange) await onChange()
+    } catch (e) {
+      console.error('SOW upload failed:', e)
+      alert('Upload failed: ' + (e?.message || 'unknown error'))
+    }
+    setBusy(false)
+  }
+
+  async function viewSow(s) {
+    try {
+      const { data, error } = await supabase.storage.from('deal-documents').createSignedUrl(s.storage_path, 60)
+      if (error) throw error
+      if (data?.signedUrl) window.open(data.signedUrl, '_blank', 'noopener')
+    } catch (e) { alert('Could not open SOW: ' + (e?.message || 'unknown')) }
+  }
+
+  async function removeSow(s) {
+    if (!confirm(`Remove ${s.filename}? The customer's implementation schedule will hide until you upload another SOW.`)) return
+    setBusy(true)
+    try {
+      try { await supabase.storage.from('deal-documents').remove([s.storage_path]) } catch (e) { console.warn('SOW storage cleanup failed:', e) }
+      const { error } = await supabase.from('sow_documents').delete().eq('id', s.id)
+      if (error) throw error
+      setSows(prev => prev.filter(x => x.id !== s.id))
+      if (onChange) await onChange()
+    } catch (e) { console.error(e); alert('Remove failed: ' + (e?.message || 'unknown')) }
+    setBusy(false)
+  }
+
+  if (loading) return null
+  const current = sows[0]
+  return (
+    <Card title="Statement of Work">
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".pdf,.doc,.docx,.txt,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        style={{ display: 'none' }}
+        onChange={e => { const f = e.target.files?.[0]; if (f) upload(f); e.target.value = '' }}
+      />
+      {current ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 240, fontSize: 13, color: T.text }}>
+            <span style={{ fontWeight: 600 }}>{current.filename}</span>
+            <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 10 }}>
+              uploaded {new Date(current.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+              {current.file_size ? ` · ${Math.round(current.file_size / 1024)} KB` : ''}
+            </span>
+          </div>
+          <Button onClick={() => viewSow(current)} style={{ padding: '4px 10px', fontSize: 11 }}>View</Button>
+          <Button onClick={() => fileRef.current?.click()} disabled={busy} style={{ padding: '4px 10px', fontSize: 11 }}>{busy ? 'Uploading…' : 'Replace'}</Button>
+          <Button danger onClick={() => removeSow(current)} disabled={busy} style={{ padding: '4px 10px', fontSize: 11 }}>Remove</Button>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 240, fontSize: 13, color: T.textMuted, fontStyle: 'italic' }}>
+            No SOW uploaded yet. The customer's implementation schedule and
+            implementation invoice rows stay hidden until one is on file.
+          </div>
+          <Button primary onClick={() => fileRef.current?.click()} disabled={busy} style={{ padding: '6px 14px', fontSize: 12 }}>
+            {busy ? 'Uploading…' : '+ Upload SOW'}
+          </Button>
+        </div>
+      )}
+    </Card>
+  )
+}
+
 function ImplementationSection({ quote, quoteId, implItems, implementorDefault, source, saveQuoteHeader, onChanged, partnerNames = [] }) {
   const [editing, setEditing] = useState(null)
   const [busy, setBusy] = useState(false)

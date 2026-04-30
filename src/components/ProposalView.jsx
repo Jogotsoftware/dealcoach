@@ -626,32 +626,43 @@ function SubscriptionDetailTable({ parents, childrenOf, annualListTotal, annualN
 // TAB 2 — Schedules
 // ═════════════════════════════════════════════════════════════════════════════
 function SchedulesTab({ snapshot, accent }) {
-  const [sub, setSub] = useState('payment')
+  // Implementation schedule sub-tab only renders when a SOW is on file —
+  // until then the AE has nothing to populate it from. Snapshot's `has_sow`
+  // flag is set by snapshot_proposal RPC at push time.
+  const hasSow = !!snapshot?.has_sow
   const SUBS = [
     { key: 'payment', label: 'Payment schedule' },
-    { key: 'impl',    label: 'Implementation schedule' },
+    ...(hasSow ? [{ key: 'impl', label: 'Implementation schedule' }] : []),
   ]
+  const [sub, setSub] = useState('payment')
+  // Defensively snap back to a visible sub-tab if the SOW gets removed
+  // out from under us between renders.
+  useEffect(() => {
+    if (!SUBS.some(s => s.key === sub)) setSub(SUBS[0]?.key || 'payment')
+  }, [hasSow])  // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div>
-      <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
-        {SUBS.map(s => {
-          const on = sub === s.key
-          return (
-            <button key={s.key} onClick={() => setSub(s.key)}
-              style={{
-                padding: '6px 14px', borderRadius: 16, fontSize: 12, fontWeight: 600,
-                border: `1px solid ${on ? accent : T.border}`,
-                background: on ? accent : T.surface,
-                color: on ? '#fff' : T.textSecondary,
-                cursor: 'pointer', fontFamily: T.font,
-              }}>
-              {s.label}
-            </button>
-          )
-        })}
-      </div>
+      {SUBS.length > 1 && (
+        <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
+          {SUBS.map(s => {
+            const on = sub === s.key
+            return (
+              <button key={s.key} onClick={() => setSub(s.key)}
+                style={{
+                  padding: '6px 14px', borderRadius: 16, fontSize: 12, fontWeight: 600,
+                  border: `1px solid ${on ? accent : T.border}`,
+                  background: on ? accent : T.surface,
+                  color: on ? '#fff' : T.textSecondary,
+                  cursor: 'pointer', fontFamily: T.font,
+                }}>
+                {s.label}
+              </button>
+            )
+          })}
+        </div>
+      )}
       {sub === 'payment' && <PaymentScheduleSubTab snapshot={snapshot} />}
-      {sub === 'impl'    && <ImplementationScheduleSubTab snapshot={snapshot} accent={accent} />}
+      {sub === 'impl' && hasSow && <ImplementationScheduleSubTab snapshot={snapshot} accent={accent} />}
     </div>
   )
 }
@@ -822,20 +833,17 @@ function ImplementationScheduleSubTab({ snapshot, accent }) {
           })}
         </div>
       ) : (
+        // SOW is on file (parent gate ensures this) but parsing hasn't yet
+        // produced sow_phase_key-tagged MSP stages. Show a terse message —
+        // no placeholder cadence preview, no marketing copy.
         <div style={{
-          padding: '22px 24px', background: T.surface, border: `1px dashed ${T.border}`, borderRadius: 8, marginBottom: 18,
-          color: T.textSecondary, fontSize: 13, lineHeight: 1.55,
+          padding: '14px 16px', background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8,
+          color: T.textMuted, fontSize: 12, fontStyle: 'italic',
         }}>
-          <div style={{ fontWeight: 600, color: T.text, marginBottom: 4 }}>Implementation schedule populates from your Statement of Work.</div>
-          Once the SOW is uploaded and parsed, the per-phase schedule (kick-off
-          milestones, deliverables, dependencies) will appear here. The standard
-          cadence preview below is a placeholder.
+          Phase-level schedule will appear here once the SOW is parsed.
         </div>
       )}
-
-      {/* Phase Gantt — uses standard Sage cadence as a placeholder when no
-          SOW-driven phases exist yet. */}
-      <PhaseGantt stages={stages} accent={accent} placeholder={!hasSowSchedule} />
+      {hasSowSchedule && <PhaseGantt stages={stages} accent={accent} placeholder={false} />}
     </div>
   )
 }
