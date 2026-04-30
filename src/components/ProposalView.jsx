@@ -262,27 +262,36 @@ function InvestmentSummaryTab({ snapshot, columnVisibility, aePreview, onColumnV
 
   return (
     <div>
-      {/* 1. Contract Terms strip */}
-      <Eyebrow>Contract terms</Eyebrow>
-      <div style={{
-        display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16,
-        padding: '14px 18px', background: T.surfaceAlt,
-        border: `1px solid ${T.border}`, borderLeft: `4px solid ${accent}`,
-        borderRadius: 8, marginBottom: 22,
-      }}>
-        <Field label="Term length" value={`${termYears * 12} months`} />
-        <Field label="Subscription period" value={
-          startDate
-            ? `${fmtDateShort(startDate)} – ${subscriptionEnd ? subscriptionEnd.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}`
-            : '—'
-        } />
-        <Field label="Billing cadence" value={billingCadence === 'annual' ? 'Annual' : billingCadence === 'quarterly' ? 'Quarterly' : billingCadence} />
-        <Field label="Payment terms" value="Net 30" />
-        <Field label="YoY cap" value={yoyCapDisplay} />
-        {freeMonths > 0 && (
-          <Field label="Free months" value={`${freeMonths} (${freeMonthsPlacement === 'back' ? 'Back' : 'Front'})`} />
-        )}
-      </div>
+      {/* 1. Contract Terms strip — section + per-field toggleable */}
+      {readSection(snapshot, 'summary_contract_terms_strip') && (() => {
+        const fields = [
+          readSection(snapshot, 'terms_term_length') && { label: 'Term length', value: `${termYears * 12} months` },
+          readSection(snapshot, 'terms_subscription_period') && {
+            label: 'Subscription period',
+            value: startDate
+              ? `${fmtDateShort(startDate)} – ${subscriptionEnd ? subscriptionEnd.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}`
+              : '—',
+          },
+          readSection(snapshot, 'terms_billing_cadence') && { label: 'Billing cadence', value: billingCadence === 'annual' ? 'Annual' : billingCadence === 'quarterly' ? 'Quarterly' : billingCadence },
+          readSection(snapshot, 'terms_payment_terms') && { label: 'Payment terms', value: 'Net 30' },
+          readSection(snapshot, 'terms_yoy_cap') && { label: 'YoY cap', value: yoyCapDisplay },
+          (freeMonths > 0 && readSection(snapshot, 'terms_free_months')) && { label: 'Free months', value: `${freeMonths} (${freeMonthsPlacement === 'back' ? 'Back' : 'Front'})` },
+        ].filter(Boolean)
+        if (!fields.length) return null
+        return (
+          <>
+            <Eyebrow>Contract terms</Eyebrow>
+            <div style={{
+              display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16,
+              padding: '14px 18px', background: T.surfaceAlt,
+              border: `1px solid ${T.border}`, borderLeft: `4px solid ${accent}`,
+              borderRadius: 8, marginBottom: 22,
+            }}>
+              {fields.map((f, i) => <Field key={i} label={f.label} value={f.value} />)}
+            </div>
+          </>
+        )
+      })()}
 
       {/* AE-only: customer-visible column toggles */}
       {aePreview && onColumnVisibilityChange && (
@@ -320,9 +329,10 @@ function InvestmentSummaryTab({ snapshot, columnVisibility, aePreview, onColumnV
       {/* 2 + 3. Pricing detail — Recurring and One time read as two
           sub-sections inside one unified bordered container. Signing bonus
           lives inside One time as a deduction row alongside impl items. */}
-      {(parents.length > 0 || sageImpl.length > 0 || signingBonusValue > 0) && (
+      {((readSection(snapshot, 'summary_subscription_detail') && parents.length > 0)
+        || (readSection(snapshot, 'summary_onetime_costs_card') && (sageImpl.length > 0 || signingBonusValue > 0))) && (
         <div style={{ marginTop: 22, background: T.surface, border: `1px solid ${T.border}`, borderLeft: `4px solid ${accent}`, borderRadius: 10, overflow: 'hidden' }}>
-          {parents.length > 0 && (
+          {readSection(snapshot, 'summary_subscription_detail') && parents.length > 0 && (
             <div style={{ padding: '18px 18px 4px' }}>
               <Eyebrow>Recurring</Eyebrow>
               <SubscriptionDetailTable
@@ -336,10 +346,11 @@ function InvestmentSummaryTab({ snapshot, columnVisibility, aePreview, onColumnV
               />
             </div>
           )}
-          {parents.length > 0 && (sageImpl.length > 0 || signingBonusValue > 0) && (
+          {readSection(snapshot, 'summary_subscription_detail') && parents.length > 0
+            && readSection(snapshot, 'summary_onetime_costs_card') && (sageImpl.length > 0 || signingBonusValue > 0) && (
             <div style={{ height: 1, background: T.border }} />
           )}
-          {(sageImpl.length > 0 || signingBonusValue > 0) && (
+          {readSection(snapshot, 'summary_onetime_costs_card') && (sageImpl.length > 0 || signingBonusValue > 0) && (
             <div style={{ padding: 18 }}>
               <Eyebrow>One time</Eyebrow>
               <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: 'hidden' }}>
@@ -376,36 +387,52 @@ function InvestmentSummaryTab({ snapshot, columnVisibility, aePreview, onColumnV
         </div>
       )}
 
-      {/* 4. Bottom summary — two grouped blocks (Subscription, One-time)
-          inside a single card, ending in the green Year 1 Total row.
-          Each block reads as a parent line with its concession indented
-          underneath. The two blocks are separated by a thicker rule. */}
-      <div style={{
-        marginTop: 22, background: T.surfaceAlt,
-        border: `1px solid ${T.border}`, borderLeft: `4px solid ${accent}`,
-        borderRadius: 10, overflow: 'hidden',
-      }}>
-        {/* Block 1: Subscription */}
-        <SumRow label="Annual subscription" value={money(annualListTotal)} bold noBorder={annualDiscountAmount > 0} />
-        {annualDiscountAmount > 0 && (
-          <SumRow label="Subscription discount" value={moneyNeg(annualDiscountAmount)} valueColor={C.redDark} labelColor={C.redDark} indent noBorder />
-        )}
-        {/* Block separator */}
-        <div style={{ height: 1, background: T.border, margin: '0' }} />
-        {/* Block 2: One-time */}
-        <SumRow label="One-time costs" value={money(implTotal)} bold noBorder={signingBonusValue > 0} />
-        {signingBonusValue > 0 && (
-          <SumRow label="Signing bonus" value={moneyNeg(signingBonusValue)} valueColor={C.amberDark} labelColor={C.amberDark} indent noBorder />
-        )}
-        {/* Year 1 Total — terminal row */}
-        <div style={{
-          background: C.greenBg, borderTop: `2px solid ${C.greenDark}`,
-          padding: '18px 22px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16,
-        }}>
-          <div style={{ fontSize: 15, fontWeight: 600, color: C.greenDark, letterSpacing: '0.01em' }}>Year 1 Total</div>
-          <div style={{ fontSize: 30, fontWeight: 500, color: C.greenDark, fontFeatureSettings: '"tnum"' }}>{money(year1Total)}</div>
-        </div>
-      </div>
+      {/* 4. Bottom summary — toggleable as a section, with each row + the
+          Year 1 Total row independently hide-able from the AE side. */}
+      {(() => {
+        const showSummary = readSection(snapshot, 'summary_bottom_summary')
+        const showYear1 = readSection(snapshot, 'summary_year1_total')
+        const showAnnualSub  = showSummary && readSection(snapshot, 'summary_row_annual_subscription')
+        const showSubDiscount = showSummary && annualDiscountAmount > 0 && readSection(snapshot, 'summary_row_subscription_discount')
+        const showOneTime    = showSummary && readSection(snapshot, 'summary_row_onetime_costs')
+        const showSigningBonus = showSummary && signingBonusValue > 0 && readSection(snapshot, 'summary_row_signing_bonus')
+        if (!showAnnualSub && !showSubDiscount && !showOneTime && !showSigningBonus && !showYear1) return null
+        return (
+          <div style={{
+            marginTop: 22, background: T.surfaceAlt,
+            border: `1px solid ${T.border}`, borderLeft: `4px solid ${accent}`,
+            borderRadius: 10, overflow: 'hidden',
+          }}>
+            {/* Block 1: Subscription */}
+            {showAnnualSub && (
+              <SumRow label="Annual subscription" value={money(annualListTotal)} bold noBorder={showSubDiscount} />
+            )}
+            {showSubDiscount && (
+              <SumRow label="Subscription discount" value={moneyNeg(annualDiscountAmount)} valueColor={C.redDark} labelColor={C.redDark} indent noBorder />
+            )}
+            {(showAnnualSub || showSubDiscount) && (showOneTime || showSigningBonus) && (
+              <div style={{ height: 1, background: T.border, margin: '0' }} />
+            )}
+            {/* Block 2: One-time */}
+            {showOneTime && (
+              <SumRow label="One-time costs" value={money(implTotal)} bold noBorder={showSigningBonus} />
+            )}
+            {showSigningBonus && (
+              <SumRow label="Signing bonus" value={moneyNeg(signingBonusValue)} valueColor={C.amberDark} labelColor={C.amberDark} indent noBorder />
+            )}
+            {/* Year 1 Total — terminal row */}
+            {showYear1 && (
+              <div style={{
+                background: C.greenBg, borderTop: `2px solid ${C.greenDark}`,
+                padding: '18px 22px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16,
+              }}>
+                <div style={{ fontSize: 15, fontWeight: 600, color: C.greenDark, letterSpacing: '0.01em' }}>Year 1 Total</div>
+                <div style={{ fontSize: 30, fontWeight: 500, color: C.greenDark, fontFeatureSettings: '"tnum"' }}>{money(year1Total)}</div>
+              </div>
+            )}
+          </div>
+        )
+      })()}
     </div>
   )
 }

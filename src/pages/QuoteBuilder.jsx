@@ -71,16 +71,32 @@ function drSetPatch(quote, path, value) {
   return { deal_room_display_config: cfg }
 }
 
-// Reusable AE-controls card. Lives on top of each Models sub-tab so the AE
+// Reusable AE-controls card. Lives on top of each Quote sub-tab so the AE
 // can flip what the customer sees from the same surface they're editing.
-//   tabKey     — display_config.tabs[tabKey] (the whole-tab toggle)
-//   rows[]     — per-row section toggles → display_config.sections[key]
-//   cards[]    — per-card section toggles → display_config.sections[key]
-// All toggles persist via saveQuoteHeader → snapshot picks them up next push.
-function CustomerVisibilityCard({ title, quote, saveQuoteHeader, tabKey, rows = [], cards = [] }) {
-  const tabOn = drGet(quote, `tabs.${tabKey}`, true)
-  function toggleTab() { saveQuoteHeader(drSetPatch(quote, `tabs.${tabKey}`, !tabOn)) }
-  function toggleSection(key) { saveQuoteHeader(drSetPatch(quote, `sections.${key}`, !drGet(quote, `sections.${key}`, true))) }
+//   tabKey         — display_config.tabs[tabKey] (the whole-tab toggle); optional
+//   sectionGroups[]— [{ label, items: [{ key, label }] }] each item maps to
+//                    display_config.sections[key]; persists via saveQuoteHeader
+//   extraGroups[]  — same shape but a custom getter/setter (used for column
+//                    visibility on deal_rooms, which lives outside the quote)
+// Backwards-compat: rows + cards (legacy props) become two section groups.
+function CustomerVisibilityCard({
+  title, quote, saveQuoteHeader, tabKey,
+  rows = null, cards = null, sectionGroups = null, extraGroups = null,
+}) {
+  const groups = sectionGroups || (() => {
+    const g = []
+    if (rows && rows.length) g.push({ label: 'Rows', items: rows })
+    if (cards && cards.length) g.push({ label: 'Cards', items: cards })
+    return g
+  })()
+  const tabOn = tabKey ? drGet(quote, `tabs.${tabKey}`, true) : true
+  function toggleTab() {
+    if (!tabKey) return
+    saveQuoteHeader(drSetPatch(quote, `tabs.${tabKey}`, !tabOn))
+  }
+  function toggleSection(key) {
+    saveQuoteHeader(drSetPatch(quote, `sections.${key}`, !drGet(quote, `sections.${key}`, true)))
+  }
   const Pill = ({ on, label, onClick, danger }) => (
     <button onClick={onClick}
       style={{
@@ -93,6 +109,7 @@ function CustomerVisibilityCard({ title, quote, saveQuoteHeader, tabKey, rows = 
       {on ? '✓ ' : ''}{label}
     </button>
   )
+  const hasAnyGroups = (groups.length + (extraGroups?.length || 0)) > 0
   return (
     <div style={{
       marginBottom: 14, padding: '10px 14px', background: T.surfaceAlt,
@@ -101,19 +118,28 @@ function CustomerVisibilityCard({ title, quote, saveQuoteHeader, tabKey, rows = 
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <span style={{ fontSize: 10, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{title}</span>
-        <Pill on={tabOn} label={tabOn ? 'Tab visible to customer' : 'Tab hidden from customer'} onClick={toggleTab} danger={!tabOn} />
+        {tabKey && (
+          <Pill on={tabOn} label={tabOn ? 'Tab visible to customer' : 'Tab hidden from customer'} onClick={toggleTab} danger={!tabOn} />
+        )}
       </div>
-      {tabOn && (rows.length > 0 || cards.length > 0) && (
+      {tabOn && hasAnyGroups && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 10, color: T.textMuted, fontStyle: 'italic' }}>Rows:</span>
-          {rows.map(r => (
-            <Pill key={r.key} on={drGet(quote, `sections.${r.key}`, true)} label={r.label}
-              onClick={() => toggleSection(r.key)} />
+          {groups.map((g, gi) => (
+            <span key={`g-${gi}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              {g.label && <span style={{ fontSize: 10, color: T.textMuted, fontStyle: 'italic', marginLeft: gi > 0 ? 8 : 0 }}>{g.label}:</span>}
+              {g.items.map(item => (
+                <Pill key={item.key} on={drGet(quote, `sections.${item.key}`, true)} label={item.label}
+                  onClick={() => toggleSection(item.key)} />
+              ))}
+            </span>
           ))}
-          {cards.length > 0 && <span style={{ fontSize: 10, color: T.textMuted, fontStyle: 'italic', marginLeft: 8 }}>Cards:</span>}
-          {cards.map(c => (
-            <Pill key={c.key} on={drGet(quote, `sections.${c.key}`, true)} label={c.label}
-              onClick={() => toggleSection(c.key)} />
+          {(extraGroups || []).map((g, gi) => (
+            <span key={`e-${gi}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              {g.label && <span style={{ fontSize: 10, color: T.textMuted, fontStyle: 'italic', marginLeft: 8 }}>{g.label}:</span>}
+              {g.items.map(item => (
+                <Pill key={item.key} on={item.on} label={item.label} onClick={item.onToggle} />
+              ))}
+            </span>
           ))}
         </div>
       )}
@@ -223,6 +249,11 @@ export default function QuoteBuilder({
   // which inherits the quote chosen on the Quotes tab and shouldn't show its
   // own quote selector / save / status / contact controls.
   hideHeader = false,
+  // Column visibility for the customer-facing subscription table — lives on
+  // deal_rooms.proposal_column_visibility, NOT on the quote, so the parent
+  // owns get + set. Optional.
+  columnVisibility = null,
+  onColumnVisibilityChange = null,
 } = {}) {
   // Embedded mode lets DealDetail's "Quotes" sub-tab mount the full builder
   // inline. The standalone /deal/:dealId/quote/:quoteId route still works —
@@ -498,6 +529,8 @@ export default function QuoteBuilder({
             profileId={profile?.id}
             saveQuoteHeader={saveQuoteHeader}
             registerFlusher={registerFlusher}
+            columnVisibility={columnVisibility}
+            onColumnVisibilityChange={onColumnVisibilityChange}
             onSubChanged={async () => { await recomputeSub(); await reload() }}
             onImplChanged={async () => { await recomputeTotals(); await regenSchedule(); await reload() }}
             onTermsChanged={async () => { await recomputeTotals(); await regenSchedule(); await reload() }}
@@ -556,12 +589,66 @@ function ContactPicker({ contacts, currentId, onChange }) {
 // ══════════════════════════════════════════════════════════
 // QUOTE TAB — Subscription + Implementation + Terms + (collapsible) Partners
 // ══════════════════════════════════════════════════════════
-function QuoteTab({ quote, deal, quoteId, lines, products, productMap, bundleChildrenMap, favorites, sageImplItems, partnerImplItems, partnerBlocks, partnerLines, contractTerms, profileId, saveQuoteHeader, registerFlusher, onSubChanged, onImplChanged, onTermsChanged, onPartnerSubChanged, refreshFavorites }) {
+function QuoteTab({ quote, deal, quoteId, lines, products, productMap, bundleChildrenMap, favorites, sageImplItems, partnerImplItems, partnerBlocks, partnerLines, contractTerms, profileId, saveQuoteHeader, registerFlusher, columnVisibility, onColumnVisibilityChange, onSubChanged, onImplChanged, onTermsChanged, onPartnerSubChanged, refreshFavorites }) {
   const [partnersOpen, setPartnersOpen] = useState(false)
   const partnerCount = partnerBlocks.length + partnerImplItems.length
 
+  // Build the column-visibility extra group when the parent is wired up.
+  // Toggles persist to deal_rooms.proposal_column_visibility, not the quote.
+  const colExtra = (() => {
+    if (!onColumnVisibilityChange) return null
+    const cv = columnVisibility?.columns || columnVisibility || {}
+    const get = (k) => cv[k] !== false
+    const items = [
+      { key: 'list',       label: 'List' },
+      { key: 'qty',        label: 'Qty' },
+      { key: 'total_list', label: 'Total list' },
+      { key: 'disc_pct',   label: 'Disc %' },
+      { key: 'disc_amt',   label: 'Disc $' },
+      { key: 'net',        label: 'Net price' },
+    ].map(c => ({
+      key: c.key,
+      label: c.label,
+      on: get(c.key),
+      onToggle: () => onColumnVisibilityChange({ [c.key]: !get(c.key) }),
+    }))
+    return [{ label: 'Customer table columns', items }]
+  })()
+
   return (
     <div>
+      {saveQuoteHeader && (
+        <CustomerVisibilityCard
+          title="Investment Summary tab — what the customer sees"
+          quote={quote}
+          saveQuoteHeader={saveQuoteHeader}
+          tabKey="investment_summary"
+          sectionGroups={[
+            { label: 'Sections', items: [
+              { key: 'summary_contract_terms_strip', label: 'Contract terms strip' },
+              { key: 'summary_subscription_detail',  label: 'Subscription detail table' },
+              { key: 'summary_onetime_costs_card',   label: 'One-time costs card' },
+              { key: 'summary_bottom_summary',       label: 'Summary table' },
+              { key: 'summary_year1_total',          label: 'Year 1 Total' },
+            ]},
+            { label: 'Summary rows', items: [
+              { key: 'summary_row_annual_subscription',  label: 'Annual subscription' },
+              { key: 'summary_row_subscription_discount', label: 'Subscription discount' },
+              { key: 'summary_row_onetime_costs',         label: 'One-time costs' },
+              { key: 'summary_row_signing_bonus',         label: 'Signing bonus' },
+            ]},
+            { label: 'Contract terms fields', items: [
+              { key: 'terms_term_length',         label: 'Term length' },
+              { key: 'terms_subscription_period', label: 'Subscription period' },
+              { key: 'terms_billing_cadence',     label: 'Billing cadence' },
+              { key: 'terms_payment_terms',       label: 'Payment terms' },
+              { key: 'terms_yoy_cap',             label: 'YoY cap' },
+              { key: 'terms_free_months',         label: 'Free months' },
+            ]},
+          ]}
+          extraGroups={colExtra}
+        />
+      )}
       <SubscriptionSection
         quote={quote}
         lines={lines}

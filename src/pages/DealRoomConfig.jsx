@@ -740,6 +740,13 @@ export default function DealRoomConfig({ embedded = false, dealId: dealIdProp } 
                     label="the Proposal tab"
                   />
                 }
+                columnVisibility={room?.proposal_column_visibility}
+                onColumnVisibilityChange={async (patch) => {
+                  const next = { ...(room?.proposal_column_visibility || { columns: {} }) }
+                  next.columns = { ...(next.columns || {}), ...patch }
+                  await supabase.from('deal_rooms').update({ proposal_column_visibility: next }).eq('id', room.id)
+                  setRoom(prev => ({ ...prev, proposal_column_visibility: next }))
+                }}
               />
             </div>
           ) : (
