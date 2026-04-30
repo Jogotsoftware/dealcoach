@@ -874,6 +874,7 @@ function EventDetailModal({ payload, themeColor, archived, onClose, onRequestCha
 
   // Pull the same fields the change-request modal exposes — show whatever has
   // a value so the customer can see context before deciding to flag a change.
+  const teamContacts = Array.isArray(item.assigned_team_contacts) ? item.assigned_team_contacts.filter(Boolean) : []
   const rows = [
     { label: 'Status',     value: item.status, render: (v) => v ? <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 999, background: statusColor + '22', color: statusColor, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{String(v).replace(/_/g, ' ')}</span> : null },
     { label: 'Date label', value: item.date_label },
@@ -881,8 +882,23 @@ function EventDetailModal({ payload, themeColor, archived, onClose, onRequestCha
     { label: 'End date',   value: item.end_date,   render: (v) => v ? formatDate(v) : null },
     { label: 'Due date',   value: item.due_date,   render: (v) => v ? formatDate(v) : null },
     { label: 'Duration',   value: item.duration },
+    { label: 'Attendees',  value: teamContacts.length > 0 ? teamContacts : null, render: (list) => (
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        {list.map((c, i) => (
+          <span key={c.id || `${c.name}-${i}`} title={c.title || ''} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 999, background: T.surfaceAlt, border: `1px solid ${T.border}`, fontSize: 12 }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: accent }} />
+            <span style={{ fontWeight: 600, color: T.text }}>{c.name || c.email || 'Teammate'}</span>
+            {c.title && <span style={{ color: T.textMuted, fontSize: 11 }}>· {c.title}</span>}
+          </span>
+        ))}
+      </div>
+    ) },
     { label: 'Notes',      value: item.notes, render: (v) => v ? <div style={{ whiteSpace: 'pre-wrap', fontSize: 12, color: T.text, lineHeight: 1.5 }}>{v}</div> : null },
-  ].filter(r => r.value !== null && r.value !== undefined && String(r.value).trim() !== '')
+  ].filter(r => {
+    if (r.value === null || r.value === undefined) return false
+    if (Array.isArray(r.value)) return r.value.length > 0
+    return String(r.value).trim() !== ''
+  })
 
   return (
     <ModalShell title={`${isStage ? 'Stage' : 'Milestone'} · ${title}`} onClose={onClose}>
