@@ -7,6 +7,7 @@ import { theme as T } from '../lib/theme'
 import { Card, Badge, Button, TabBar, Spinner, EmptyState, inputStyle, labelStyle } from '../components/Shared'
 import LogoUploader from '../components/LogoUploader'
 import VisibilityToggleIcon from '../components/VisibilityToggleIcon'
+import PlusButton from '../components/PlusButton'
 
 // Round UP to whole dollar; backend keeps decimals.
 function dollars(n) {
@@ -949,7 +950,7 @@ function SubscriptionSection({ quote, lines, products, productMap, bundleChildre
         {favorites.length > 0 && (
           <Button onClick={() => setShowFavManager(true)} style={{ padding: '4px 10px', fontSize: 11 }}>Manage</Button>
         )}
-        <Button primary onClick={() => setPickerOpen(true)} style={{ padding: '5px 12px', fontSize: 11 }}>+ Add Product</Button>
+        <PlusButton onClick={() => setPickerOpen(true)} title="Add a product line" />
       </div>
 
       {/* Global discount */}
@@ -972,7 +973,7 @@ function SubscriptionSection({ quote, lines, products, productMap, bundleChildre
 
       {orderedLines.length === 0 ? (
         <div style={{ padding: '20px 12px', textAlign: 'center', color: T.textMuted, fontSize: 13 }}>
-          No subscription lines yet. Click <strong>+ Add Product</strong> above to start.
+          No subscription lines yet. Click the <strong>+</strong> button above to add a product.
         </div>
       ) : (
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
@@ -1077,7 +1078,7 @@ function ColTH({ label, colKey, visible, onToggle, align = 'left' }) {
     <th style={{ ...thStyle, textAlign: align, padding: '6px 10px' }}>
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, justifyContent: align === 'right' ? 'flex-end' : align === 'center' ? 'center' : 'flex-start', whiteSpace: 'nowrap' }}>
         {label}
-        <DealRoomToggle visible={visible} onToggle={onToggle} size={13} inline />
+        <VisibilityToggleIcon visible={visible} onChange={() => onToggle()} label={`the ${label} column from the customer`} size={13} inline />
       </span>
     </th>
   )
@@ -1452,8 +1453,8 @@ function ImplementationSection({ quote, quoteId, implItems, implementorDefault, 
   return (
     <Card title={title} action={
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <DealRoomToggle visible={sectionVisible} onToggle={toggleSection} />
-        <Button primary onClick={newItem} style={{ padding: '4px 10px', fontSize: 11 }}>+ Add Implementation</Button>
+        <VisibilityToggleIcon visible={sectionVisible} onChange={() => toggleSection()} label="the implementation section from the customer" />
+        <PlusButton onClick={newItem} title="Add an implementation item" />
       </div>
     }>
       {implItems.length === 0 ? (
@@ -1502,38 +1503,6 @@ function ImplementationSection({ quote, quoteId, implItems, implementorDefault, 
 // Eye-icon visibility toggle. Open eye = visible to customer, slashed eye =
 // hidden. Drop-in replacement for the previous "[ ] SHOW IN DEAL ROOM"
 // checkbox — same { visible, onToggle, label } API.
-function DealRoomToggle({ visible, onToggle, label = 'Show in deal room', size = 16, inline = false }) {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      title={visible ? `Visible in customer deal room — click to hide` : `Hidden from customer deal room — click to show`}
-      aria-label={label}
-      aria-pressed={visible}
-      style={{
-        background: 'transparent', border: 'none', padding: inline ? 0 : 4, marginLeft: inline ? 6 : 0,
-        cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-        color: visible ? T.primary : T.textMuted, borderRadius: 4, lineHeight: 0,
-        verticalAlign: inline ? 'middle' : 'baseline',
-      }}
-    >
-      {visible ? (
-        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-          <circle cx="12" cy="12" r="3"/>
-        </svg>
-      ) : (
-        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
-          <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
-          <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/>
-          <line x1="1" y1="1" x2="23" y2="23"/>
-        </svg>
-      )}
-    </button>
-  )
-}
-
 function ImplementationEditor({ item, source, partnerNames, onClose, onSave }) {
   const [draft, setDraft] = useState(item)
   function setF(k, v) { setDraft(prev => ({ ...prev, [k]: v })) }
@@ -1678,12 +1647,12 @@ function TermsSection({ quote, contractTerms, saveQuoteHeader, onChanged }) {
   const displayMonths = activeField === 'months' ? dbMonths : (activeField === 'amount' && sageMonthly > 0 ? dbAmount / sageMonthly : 0)
 
   return (
-    <Card title="Terms & Promo" action={<DealRoomToggle visible={sectionVisible} onToggle={() => save(drSetPatch(quote, 'sections.terms', !sectionVisible))} />}>
+    <Card title="Terms & Promo" action={<VisibilityToggleIcon visible={sectionVisible} onChange={() => save(drSetPatch(quote, 'sections.terms', !sectionVisible))} label="Terms & Promo from the customer" />}>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}>
         <div>
           <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', marginBottom: 8, display: 'inline-flex', alignItems: 'center' }}>
             Contract
-            <DealRoomToggle visible={contractVisible} onToggle={() => save(drSetPatch(quote, 'sections.contract', !contractVisible))} size={13} inline />
+            <VisibilityToggleIcon visible={contractVisible} onChange={() => save(drSetPatch(quote, 'sections.contract', !contractVisible))} label="Contract terms from the customer" size={13} inline />
           </div>
           <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
             {[1, 3, 5].map(yr => (
@@ -1709,7 +1678,7 @@ function TermsSection({ quote, contractTerms, saveQuoteHeader, onChanged }) {
             <>
               <label style={{ ...labelStyle, display: 'inline-flex', alignItems: 'center' }}>
                 Term template
-                <DealRoomToggle visible={termTemplateVisible} onToggle={() => save(drSetPatch(quote, 'sections.term_template', !termTemplateVisible))} size={13} inline />
+                <VisibilityToggleIcon visible={termTemplateVisible} onChange={() => save(drSetPatch(quote, 'sections.term_template', !termTemplateVisible))} label="the term template from the customer" size={13} inline />
               </label>
               <select
                 style={{ ...inputStyle, cursor: 'pointer', marginBottom: 10 }}
@@ -1751,11 +1720,11 @@ function TermsSection({ quote, contractTerms, saveQuoteHeader, onChanged }) {
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
             <span style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase' }}>Promo &amp; Incentives</span>
-            <DealRoomToggle visible={promoVisible} onToggle={() => save(drSetPatch(quote, 'sections.promo', !promoVisible))} />
+            <VisibilityToggleIcon visible={promoVisible} onChange={() => save(drSetPatch(quote, 'sections.promo', !promoVisible))} label="the promo section from the customer" />
           </div>
           <label style={{ ...labelStyle, display: 'inline-flex', alignItems: 'center' }}>
             Free months (0–12)
-            <DealRoomToggle visible={freeMonthsVisible} onToggle={() => save(drSetPatch(quote, 'sections.free_months', !freeMonthsVisible))} size={13} inline />
+            <VisibilityToggleIcon visible={freeMonthsVisible} onChange={() => save(drSetPatch(quote, 'sections.free_months', !freeMonthsVisible))} label="free months from the customer" size={13} inline />
           </label>
           <div style={{ display: 'flex', gap: 6, alignItems: 'stretch' }}>
             <input type="number" min="0" max="12" step="1" style={{ ...inputStyle, width: 80, flex: '0 0 80px' }} defaultValue={quote.free_months}
@@ -1779,7 +1748,7 @@ function TermsSection({ quote, contractTerms, saveQuoteHeader, onChanged }) {
           <div style={{ marginTop: 14, paddingTop: 10, borderTop: `1px solid ${T.borderLight}` }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6, display: 'inline-flex', alignItems: 'center' }}>
               Signing bonus
-              <DealRoomToggle visible={signingBonusVisible} onToggle={() => save(drSetPatch(quote, 'sections.signing_bonus', !signingBonusVisible))} size={13} inline />
+              <VisibilityToggleIcon visible={signingBonusVisible} onChange={() => save(drSetPatch(quote, 'sections.signing_bonus', !signingBonusVisible))} label="the signing bonus from the customer" size={13} inline />
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
               <div>
@@ -1860,8 +1829,8 @@ function PartnersTab({ quote, quoteId, partnerBlocks, partnerLines, implItems, s
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
         <h3 style={{ margin: 0, fontSize: 12, fontWeight: 800, color: '#1a1a2e', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Partner Subscriptions</h3>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <DealRoomToggle visible={sectionVisible} onToggle={() => saveQuoteHeader(drSetPatch(quote, 'sections.partners', !sectionVisible))} />
-          <Button primary onClick={addBlock}>+ Add Partner Block</Button>
+          <VisibilityToggleIcon visible={sectionVisible} onChange={() => saveQuoteHeader(drSetPatch(quote, 'sections.partners', !sectionVisible))} label="partners from the customer" />
+          <PlusButton onClick={addBlock} title="Add a partner block" />
         </div>
       </div>
 
@@ -1872,7 +1841,7 @@ function PartnersTab({ quote, quoteId, partnerBlocks, partnerLines, implItems, s
         return (
           <Card key={block.id} style={{ marginBottom: 12 }}>
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
-              <DealRoomToggle visible={blockVisible} onToggle={() => saveQuoteHeader(drSetPatch(quote, `partner_blocks.${block.id}`, !blockVisible))} label="Show this block in deal room" />
+              <VisibilityToggleIcon visible={blockVisible} onChange={() => saveQuoteHeader(drSetPatch(quote, `partner_blocks.${block.id}`, !blockVisible))} label="this partner block from the customer" />
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto', gap: 8, marginBottom: 10, alignItems: 'end' }}>
               <div>
@@ -2144,7 +2113,7 @@ export function ResourcesTab({ deal, onDealUpdated, headerExtra = null }) {
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           {headerExtra}
           <Button onClick={() => setShowLibrary(true)} style={{ padding: '4px 10px', fontSize: 11 }}>From library</Button>
-          <Button primary onClick={newResource} style={{ padding: '4px 10px', fontSize: 11 }}>+ Add Resource</Button>
+          <PlusButton onClick={newResource} title="Add a resource" />
         </div>
       }>
         <div style={{ fontSize: 11, color: T.textSecondary, marginBottom: 10 }}>
@@ -2791,15 +2760,7 @@ function ScheduleTab({ quote, schedule, saveQuoteHeader, onChanged }) {
       )}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
         <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: T.text }}>Payment Schedule</h3>
-        <button
-          onClick={addCustom}
-          title="Add a custom payment-schedule row"
-          style={{
-            background: T.primary, color: '#fff', border: 'none', borderRadius: 6,
-            width: 28, height: 28, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            cursor: 'pointer', fontSize: 18, fontWeight: 600, lineHeight: 1, fontFamily: T.font,
-          }}
-        >+</button>
+        <PlusButton onClick={addCustom} title="Add a custom payment-schedule row" />
       </div>
 
       {/* Color legend */}
@@ -2826,7 +2787,7 @@ function ScheduleTab({ quote, schedule, saveQuoteHeader, onChanged }) {
                 <th style={thStyle}>Description</th>
                 <th style={thStyle} title="AE-only notes for this row. Empty = no note shown to customer.">Notes</th>
                 <th style={{ ...thStyle, textAlign: 'right' }}>Amount</th>
-                <th style={{ ...thStyle, textAlign: 'center' }}>Show to customer</th>
+                <th style={{ ...thStyle, textAlign: 'center' }} title="Visibility on the customer Proposal Schedules tab">Visible</th>
                 <th style={{ ...thStyle, textAlign: 'center' }}>Locked</th>
                 <th style={thStyle}></th>
               </tr>
@@ -2871,11 +2832,11 @@ function ScheduleTab({ quote, schedule, saveQuoteHeader, onChanged }) {
                         style={{ ...inputStyle, fontSize: 12, padding: '4px 6px', textAlign: 'right', fontFeatureSettings: '"tnum"' }} />
                     </td>
                     <td style={{ padding: '6px 10px', textAlign: 'center' }}>
-                      <input
-                        type="checkbox"
-                        defaultChecked={r.show_in_proposal !== false}
-                        onChange={e => updateRow(r.id, { show_in_proposal: e.target.checked })}
-                        title="Show this row to the customer on the Proposal Schedules tab" />
+                      <VisibilityToggleIcon
+                        visible={r.show_in_proposal !== false}
+                        onChange={(v) => updateRow(r.id, { show_in_proposal: v })}
+                        label="this row from the customer"
+                      />
                     </td>
                     <td style={{ padding: '6px 10px', textAlign: 'center' }}>
                       <button onClick={() => toggleLock(r)} title={r.manually_edited ? 'Locked — survives regenerate' : 'Click to lock'} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'inline-flex', color: r.manually_edited ? T.warning : T.textMuted, padding: 2 }}>

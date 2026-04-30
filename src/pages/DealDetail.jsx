@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { theme as T, formatCurrency, formatDate, formatDateLong, daysUntil, STAGES, FORECAST_CATEGORIES, CALL_TYPES, TASK_CATEGORIES } from '../lib/theme'
 import { Card, Badge, ForecastBadge, StageBadge, ScoreBar, Field, StatusDot, TabBar, Button, EmptyState, Spinner, Skeleton, inputStyle, labelStyle } from '../components/Shared'
+import PlusButton from '../components/PlusButton'
 import TranscriptUpload from '../components/TranscriptUpload'
 import { callGenerateEmail, callResearchFunction, reprocessDeal } from '../lib/webhooks'
 import { track } from '../lib/analytics'
@@ -1207,7 +1208,7 @@ export default function DealDetail() {
   function RisksWidget() {
     return (
       <>
-        <div style={{ marginBottom: 8 }}><Button style={{ padding: '4px 10px', fontSize: 10 }} onClick={() => setShowAddRisk(true)}>+ Add Risk</Button></div>
+        <div style={{ marginBottom: 8 }}><PlusButton onClick={() => setShowAddRisk(true)} title="Add a risk" style={{ width: 24, height: 24, fontSize: 16 }} /></div>
         {showAddRisk && (
           <div style={{ padding: 10, background: T.surfaceAlt, borderRadius: 6, marginBottom: 8, border: `1px solid ${T.borderLight}` }}>
             <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
@@ -1241,7 +1242,7 @@ export default function DealDetail() {
   function PainPointsWidget() {
     return (
       <>
-        <div style={{ marginBottom: 8 }}><Button style={{ padding: '4px 10px', fontSize: 10 }} onClick={() => setShowAddPain(true)}>+ Add Pain Point</Button></div>
+        <div style={{ marginBottom: 8 }}><PlusButton onClick={() => setShowAddPain(true)} title="Add a pain point" style={{ width: 24, height: 24, fontSize: 16 }} /></div>
         {showAddPain && (
           <div style={{ padding: 10, background: T.surfaceAlt, borderRadius: 6, marginBottom: 8, border: `1px solid ${T.borderLight}` }}>
             <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
@@ -1328,7 +1329,7 @@ export default function DealDetail() {
   function EventsWidget() {
     return (
       <>
-        <div style={{ marginBottom: 8 }}><Button style={{ padding: '4px 10px', fontSize: 10 }} onClick={() => setShowAddEvent(true)}>+ Add Event</Button></div>
+        <div style={{ marginBottom: 8 }}><PlusButton onClick={() => setShowAddEvent(true)} title="Add a compelling event" style={{ width: 24, height: 24, fontSize: 16 }} /></div>
         {showAddEvent && (
           <div style={{ padding: 10, background: T.surfaceAlt, borderRadius: 6, marginBottom: 8, border: `1px solid ${T.borderLight}` }}>
             <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
@@ -1357,7 +1358,7 @@ export default function DealDetail() {
   function CatalystsWidget() {
     return (
       <>
-        <div style={{ marginBottom: 8 }}><Button style={{ padding: '4px 10px', fontSize: 10 }} onClick={() => setShowAddCatalyst(true)}>+ Add Catalyst</Button></div>
+        <div style={{ marginBottom: 8 }}><PlusButton onClick={() => setShowAddCatalyst(true)} title="Add a catalyst" style={{ width: 24, height: 24, fontSize: 16 }} /></div>
         {showAddCatalyst && (
           <div style={{ padding: 10, background: T.surfaceAlt, borderRadius: 6, marginBottom: 8, border: `1px solid ${T.borderLight}` }}>
             <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
@@ -2099,7 +2100,7 @@ export default function DealDetail() {
                   ))}
                 </div>
               </div>
-              <Button primary onClick={() => setShowAddTask(true)}>+ Add Task</Button>
+              <PlusButton onClick={() => setShowAddTask(true)} title="Add a task" />
             </div>
             {selectedTasks.size > 0 && (
               <div style={{ display: 'flex', gap: 8, marginBottom: 12, padding: '8px 12px', background: T.primaryLight, borderRadius: 6, border: `1px solid ${T.primaryBorder}`, alignItems: 'center' }}>

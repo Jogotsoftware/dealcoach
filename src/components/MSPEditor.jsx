@@ -5,6 +5,7 @@ import { useAuth } from '../hooks/useAuth'
 import { theme as T, formatDate, formatDateLong, daysUntil } from '../lib/theme'
 import { Card, Badge, Button, EmptyState, Spinner, TabBar, inputStyle, labelStyle } from './Shared'
 import MSPCalendar from './MSPCalendar'
+import PlusButton from './PlusButton'
 
 const STATUS_COLORS = { pending: T.textMuted, in_progress: T.primary, completed: T.success, blocked: T.error, at_risk: T.warning }
 const STATUS_OPTIONS = [
@@ -872,7 +873,7 @@ export default function MSPEditor({ dealId, mode = 'standalone', readonlyAdapter
                         <Button onClick={() => { setShowAddStep(false); setNewStepName('') }}>Cancel</Button>
                       </div>
                     ) : (
-                      <Button onClick={() => setShowAddStep(true)}>+ Add Step</Button>
+                      <PlusButton onClick={() => setShowAddStep(true)} title="Add a step" />
                     )}
                   </div>
                 )}
@@ -886,7 +887,7 @@ export default function MSPEditor({ dealId, mode = 'standalone', readonlyAdapter
         {isStandalone && tab === 'resources' && (
           <div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
-              <Button primary onClick={() => setShowAddResource(true)}>+ Add Resource</Button>
+              <PlusButton onClick={() => setShowAddResource(true)} title="Add a resource" />
             </div>
             {showAddResource && (
               <Card title="New Resource" style={{ marginBottom: 16 }}>
