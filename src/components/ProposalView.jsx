@@ -181,6 +181,41 @@ export default function ProposalView({
         }
         .ri-print-only { display: none; }
         @media print { .ri-print-only { display: block; } }
+
+        /* Mobile-first overrides for the customer Proposal view. The desktop
+           layout uses lots of inline padding + 3-col grids that crush down
+           on narrow phones; these rules pull everything back into a single
+           column and shrink type so it stays readable. */
+        @media (max-width: 640px) {
+          .ri-proposal-print-root { padding: 0 !important; }
+          .ri-prop-header { flex-wrap: wrap !important; gap: 8px !important; padding-bottom: 8px !important; margin-bottom: 14px !important; }
+          .ri-prop-header > div { width: auto !important; flex: 1 1 auto !important; }
+          .ri-prop-header img { max-height: 28px !important; max-width: 70px !important; }
+          .ri-prop-header-title { font-size: 14px !important; }
+          .ri-prop-header-eyebrow { font-size: 8px !important; }
+          .ri-prop-header-meta { font-size: 9px !important; }
+
+          .ri-prop-tabs { overflow-x: auto !important; flex-wrap: nowrap !important; -webkit-overflow-scrolling: touch; }
+          .ri-prop-tabs button { padding: 9px 12px !important; font-size: 12px !important; flex-shrink: 0 !important; white-space: nowrap !important; }
+
+          .ri-prop-contract-grid { grid-template-columns: repeat(2, 1fr) !important; gap: 10px !important; padding: 10px 12px !important; }
+          .ri-prop-contract-grid > div { font-size: 11px !important; }
+
+          /* Tables: keep them readable but allow horizontal scroll for the
+             column-heavy SubscriptionDetailTable so cells don't crush. */
+          .ri-prop-table-wrap { overflow-x: auto !important; -webkit-overflow-scrolling: touch; margin: 0 -4px; }
+          .ri-prop-table-wrap table { font-size: 12px !important; }
+          .ri-prop-table-wrap th, .ri-prop-table-wrap td { padding: 8px 8px !important; font-size: 12px !important; }
+
+          /* One-time + summary rows */
+          .ri-prop-onetime-row { padding: 10px 12px !important; font-size: 12px !important; }
+          .ri-prop-summary-row { padding: 8px 14px !important; font-size: 13px !important; }
+
+          /* Year 1 Total banner — shrink so it doesn't shout on a phone. */
+          .ri-prop-year1 { padding: 12px 14px !important; }
+          .ri-prop-year1-label { font-size: 14px !important; }
+          .ri-prop-year1-value { font-size: 18px !important; }
+        }
       `}</style>
 
       {/* Download PDF — opens a small popover to pick which tabs to include */}
@@ -227,7 +262,7 @@ export default function ProposalView({
 
       {/* Screen tabs */}
       {visibleTabs.length > 1 && (
-        <div className="ri-no-print" style={{ display: 'flex', borderBottom: `1px solid ${T.border}`, marginBottom: 18, gap: 0 }}>
+        <div className="ri-no-print ri-prop-tabs" style={{ display: 'flex', borderBottom: `1px solid ${T.border}`, marginBottom: 18, gap: 0 }}>
           {visibleTabs.map(t => {
             const on = activeTab === t.key
             return (
@@ -283,7 +318,7 @@ function PrintPageHeader({ snapshot, accent, sectionTitle, pageIndex, pageTotal 
   const orgName = snapshot.org?.name
   const dateStr = snapshot.snapshotted_at ? fmtDateLong(String(snapshot.snapshotted_at).split('T')[0]) : ''
   return (
-    <div style={{
+    <div className="ri-prop-header" style={{
       display: 'flex', alignItems: 'center', gap: 16,
       paddingBottom: 12, marginBottom: 18, borderBottom: `2px solid ${accent}`,
     }}>
@@ -296,13 +331,13 @@ function PrintPageHeader({ snapshot, accent, sectionTitle, pageIndex, pageTotal 
 
       {/* Center: title block */}
       <div style={{ flex: 1, textAlign: 'center', minWidth: 0 }}>
-        <div style={{ fontSize: 9, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+        <div className="ri-prop-header-eyebrow" style={{ fontSize: 9, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
           Proposal · {sectionTitle}
         </div>
-        <div style={{ fontSize: 16, fontWeight: 700, color: T.text, marginTop: 2 }}>
+        <div className="ri-prop-header-title" style={{ fontSize: 16, fontWeight: 700, color: T.text, marginTop: 2 }}>
           {customerName || ''}
         </div>
-        <div style={{ fontSize: 10, color: T.textMuted, marginTop: 2 }}>
+        <div className="ri-prop-header-meta" style={{ fontSize: 10, color: T.textMuted, marginTop: 2 }}>
           {[snapshot.quote_name, dateStr].filter(Boolean).join(' · ')}
           {pageTotal > 1 && <span style={{ marginLeft: 6 }}>· {pageIndex} of {pageTotal}</span>}
         </div>
@@ -498,7 +533,7 @@ function InvestmentSummaryTab({ snapshot, columnVisibility, aePreview, onColumnV
         return (
           <>
             <Eyebrow>Contract terms</Eyebrow>
-            <div style={{
+            <div className="ri-prop-contract-grid" style={{
               display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16,
               padding: '14px 18px', background: T.surfaceAlt,
               border: `1px solid ${T.border}`, borderLeft: `4px solid ${accent}`,
@@ -639,12 +674,12 @@ function InvestmentSummaryTab({ snapshot, columnVisibility, aePreview, onColumnV
             )}
             {/* Year 1 Total — terminal row */}
             {showYear1 && (
-              <div style={{
+              <div className="ri-prop-year1" style={{
                 background: C.greenBg, borderTop: `2px solid ${C.greenDark}`,
                 padding: '18px 22px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16,
               }}>
-                <div style={{ fontSize: 15, fontWeight: 600, color: C.greenDark, letterSpacing: '0.01em' }}>Year 1 Total</div>
-                <div style={{ fontSize: 30, fontWeight: 500, color: C.greenDark, fontFeatureSettings: '"tnum"' }}>{money(year1Total)}</div>
+                <div className="ri-prop-year1-label" style={{ fontSize: 15, fontWeight: 600, color: C.greenDark, letterSpacing: '0.01em' }}>Year 1 Total</div>
+                <div className="ri-prop-year1-value" style={{ fontSize: 30, fontWeight: 500, color: C.greenDark, fontFeatureSettings: '"tnum"' }}>{money(year1Total)}</div>
               </div>
             )}
           </div>
@@ -754,7 +789,7 @@ function SubscriptionDetailTable({ parents, childrenOf, annualListTotal, annualN
   const labelSpan = lastVisibleIdx
 
   return (
-    <div style={{ overflowX: 'auto' }}>
+    <div className="ri-prop-table-wrap" style={{ overflowX: 'auto' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, tableLayout: 'fixed' }}>
         <colgroup>
           {COLS.map(c => <col key={c.key} style={c.width ? { width: c.width } : undefined} />)}

@@ -214,10 +214,27 @@ export default function DealRoomViewer() {
     : (meta.ae_notes && meta.ae_notes.trim() ? meta.ae_notes : null)
 
   return (
-    <div style={{ background: T.bg, minHeight: '100vh', fontFamily: T.font, color: T.text }}>
+    <div className="ri-room" style={{ background: T.bg, minHeight: '100vh', fontFamily: T.font, color: T.text }}>
+      {/* Mobile-first overrides. Inline styles win specificity, so we lean on
+          !important inside class-scoped rules. Breakpoint at 640px catches
+          phones in portrait (narrow layouts on iPhone Pro / Android). */}
+      <style>{`
+        @media (max-width: 640px) {
+          .ri-room-header { padding: 10px 14px !important; }
+          .ri-room-header-grid { grid-template-columns: auto 1fr auto !important; gap: 10px !important; }
+          .ri-room-header-grid img { max-height: 36px !important; max-width: 80px !important; }
+          .ri-room-header-title { font-size: 15px !important; }
+          .ri-room-header-welcome { font-size: 11px !important; }
+          .ri-room-tabbar-wrap { padding: 0 8px !important; }
+          .ri-room-tabbar { overflow-x: auto !important; flex-wrap: nowrap !important; -webkit-overflow-scrolling: touch; }
+          .ri-room-tabbar button { padding: 12px 14px !important; font-size: 13px !important; flex-shrink: 0 !important; }
+          .ri-room-main { padding: 14px !important; }
+          .ri-room-archived-banner { padding: 8px 14px !important; font-size: 12px !important; }
+        }
+      `}</style>
       {/* Header */}
-      <header style={{ background: T.surface, borderBottom: `1px solid ${T.border}`, padding: '14px 24px', position: 'sticky', top: 0, zIndex: 10 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 1fr', alignItems: 'center', gap: 18, maxWidth: 1200, margin: '0 auto' }}>
+      <header className="ri-room-header" style={{ background: T.surface, borderBottom: `1px solid ${T.border}`, padding: '14px 24px', position: 'sticky', top: 0, zIndex: 10 }}>
+        <div className="ri-room-header-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 1fr', alignItems: 'center', gap: 18, maxWidth: 1200, margin: '0 auto' }}>
           <div>
             {org?.logo_url ? (
               <img src={org.logo_url} alt={org.name} style={{ maxWidth: 140, maxHeight: 50, objectFit: 'contain' }} />
@@ -225,9 +242,9 @@ export default function DealRoomViewer() {
               <div style={{ fontSize: 16, fontWeight: 800, color: themeColor }}>{org?.name || 'Revenue Instruments'}</div>
             )}
           </div>
-          <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: 22, fontWeight: 800, color: T.text }}>{deal?.company_name}</div>
-            <div style={{ fontSize: 12, color: T.textSecondary, marginTop: 2 }}>Welcome, {viewer.name || viewer.email || 'guest'}</div>
+          <div style={{ textAlign: 'center', minWidth: 0 }}>
+            <div className="ri-room-header-title" style={{ fontSize: 22, fontWeight: 800, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{deal?.company_name}</div>
+            <div className="ri-room-header-welcome" style={{ fontSize: 12, color: T.textSecondary, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Welcome, {viewer.name || viewer.email || 'guest'}</div>
           </div>
           <div style={{ textAlign: 'right' }}>
             {deal?.customer_logo_url && (
@@ -238,21 +255,21 @@ export default function DealRoomViewer() {
       </header>
 
       {archived && (
-        <div style={{ background: T.warningLight, color: T.warning, padding: '10px 24px', textAlign: 'center', fontSize: 13, fontWeight: 600, borderBottom: `1px solid ${T.warning}30` }}>
+        <div className="ri-room-archived-banner" style={{ background: T.warningLight, color: T.warning, padding: '10px 24px', textAlign: 'center', fontSize: 13, fontWeight: 600, borderBottom: `1px solid ${T.warning}30` }}>
           This room is archived. You can review the content below but can no longer add comments or requests.
         </div>
       )}
 
       {/* Tab bar — only tabs the AE has marked visible are rendered */}
-      <div style={{ background: T.surface, borderBottom: `1px solid ${T.border}`, padding: '0 24px' }}>
-        <div style={{ display: 'flex', gap: 0, maxWidth: 1200, margin: '0 auto', alignItems: 'center' }}>
+      <div className="ri-room-tabbar-wrap" style={{ background: T.surface, borderBottom: `1px solid ${T.border}`, padding: '0 24px' }}>
+        <div className="ri-room-tabbar" style={{ display: 'flex', gap: 0, maxWidth: 1200, margin: '0 auto', alignItems: 'center' }}>
           {[
             { key: 'msp', label: 'Project Plan' },
             { key: 'library', label: 'Library' },
             { key: 'proposal', label: 'Proposal' },
           ].filter(t => !Array.isArray(meta.tabs) || meta.tabs.includes(t.key)).map(t => (
             <button key={t.key} onClick={() => selectTab(t.key)}
-              style={{ padding: '14px 24px', border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: T.font, fontSize: 13, fontWeight: 600, color: tab === t.key ? themeColor : T.textMuted, borderBottom: tab === t.key ? `3px solid ${themeColor}` : '3px solid transparent', marginBottom: -1 }}>
+              style={{ padding: '14px 24px', border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: T.font, fontSize: 13, fontWeight: 600, color: tab === t.key ? themeColor : T.textMuted, borderBottom: tab === t.key ? `3px solid ${themeColor}` : '3px solid transparent', marginBottom: -1, whiteSpace: 'nowrap' }}>
               {t.label}
             </button>
           ))}
@@ -261,7 +278,7 @@ export default function DealRoomViewer() {
         </div>
       </div>
 
-      <main style={{ maxWidth: 1200, margin: '0 auto', padding: '24px' }}>
+      <main className="ri-room-main" style={{ maxWidth: 1200, margin: '0 auto', padding: '24px' }}>
         {activeNote && (
           <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderLeft: `4px solid ${themeColor}`, borderRadius: 8, padding: '14px 18px', marginBottom: 18 }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
