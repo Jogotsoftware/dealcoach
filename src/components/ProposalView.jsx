@@ -266,8 +266,9 @@ function InvestmentSummaryTab({ snapshot, columnVisibility, aePreview, onColumnV
       <Eyebrow>Contract terms</Eyebrow>
       <div style={{
         display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16,
-        padding: '14px 18px', background: T.surfaceAlt, border: `1px solid ${T.border}`, borderRadius: 8,
-        marginBottom: 22,
+        padding: '14px 18px', background: T.surfaceAlt,
+        border: `1px solid ${T.border}`, borderLeft: `4px solid ${accent}`,
+        borderRadius: 8, marginBottom: 22,
       }}>
         <Field label="Term length" value={`${termYears * 12} months`} />
         <Field label="Subscription period" value={
@@ -320,7 +321,7 @@ function InvestmentSummaryTab({ snapshot, columnVisibility, aePreview, onColumnV
           sub-sections inside one unified bordered container. Signing bonus
           lives inside One time as a deduction row alongside impl items. */}
       {(parents.length > 0 || sageImpl.length > 0 || signingBonusValue > 0) && (
-        <div style={{ marginTop: 22, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, overflow: 'hidden' }}>
+        <div style={{ marginTop: 22, background: T.surface, border: `1px solid ${T.border}`, borderLeft: `4px solid ${accent}`, borderRadius: 10, overflow: 'hidden' }}>
           {parents.length > 0 && (
             <div style={{ padding: '18px 18px 4px' }}>
               <Eyebrow>Recurring</Eyebrow>
@@ -380,7 +381,9 @@ function InvestmentSummaryTab({ snapshot, columnVisibility, aePreview, onColumnV
           Each block reads as a parent line with its concession indented
           underneath. The two blocks are separated by a thicker rule. */}
       <div style={{
-        marginTop: 22, background: T.surfaceAlt, border: `1px solid ${T.border}`, borderRadius: 10, overflow: 'hidden',
+        marginTop: 22, background: T.surfaceAlt,
+        border: `1px solid ${T.border}`, borderLeft: `4px solid ${accent}`,
+        borderRadius: 10, overflow: 'hidden',
       }}>
         {/* Block 1: Subscription */}
         <SumRow label="Annual subscription" value={money(annualListTotal)} bold noBorder={annualDiscountAmount > 0} />
@@ -433,11 +436,10 @@ function SumRow({ label, value, bold, labelColor, valueColor, indent, noBorder }
 }
 
 function SubscriptionDetailTable({ parents, childrenOf, annualListTotal, annualNetTotal, annualDiscountAmount, blendedDiscountPct, cv }) {
-  // Column visibility: when hidden, blank the cell content + header text but
-  // preserve column width. Header *colors* stay so the page composition reads
-  // the same regardless of which columns are on.
+  // Column visibility: when hidden, blank both the cell content AND the
+  // header text but preserve column width so the table doesn't reflow.
   const COLS = [
-    { key: 'solution',   label: 'Solution',  width: undefined, headColor: T.textMuted, align: 'left',  always: true },
+    { key: 'solution',   label: 'Sage Intacct Subscription',  width: undefined, headColor: T.textMuted, align: 'left',  always: true },
     { key: 'list',       label: 'List',      width: 90,  headColor: C.textTertiary, align: 'right', visible: cv.list },
     { key: 'qty',        label: 'Qty',       width: 56,  headColor: C.textTertiary, align: 'right', visible: cv.qty },
     { key: 'total_list', label: 'Total list', width: 100, headColor: C.textTertiary, align: 'right', visible: cv.total_list },
@@ -515,11 +517,14 @@ function SubscriptionDetailTable({ parents, childrenOf, annualListTotal, annualN
         </colgroup>
         <thead>
           <tr>
-            {COLS.map(c => (
-              <th key={c.key} style={{ ...cellHead(c.headColor), textAlign: c.align || 'right' }}>
-                {c.label}
-              </th>
-            ))}
+            {COLS.map(c => {
+              const visible = c.always || c.visible
+              return (
+                <th key={c.key} style={{ ...cellHead(c.headColor), textAlign: c.align || 'right' }}>
+                  {visible ? c.label : ' '}
+                </th>
+              )
+            })}
           </tr>
         </thead>
         <tbody>
