@@ -412,7 +412,7 @@ export default function ContactsOrgTree({ dealId, contacts, setContacts }) {
               <Background color="#e5e7eb" gap={16} />
               <Controls showInteractive={false} />
               <MiniMap
-                nodeColor={(n) => COLORS[roleOf(n.data.contact)]}
+                nodeColor={(n) => SENTIMENT_COLORS[sentimentOf(n.data.contact)] || SENTIMENT_COLORS.neutral}
                 pannable
                 zoomable
                 style={{ background: T.surface, border: `1px solid ${T.borderLight}` }}
