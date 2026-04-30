@@ -172,6 +172,33 @@ export default function ProposalView({
           /* Eyebrow + small captions can stay tiny */
           .ri-proposal-print-root .ri-eyebrow { font-size: 8pt !important; }
 
+          /* Subscription table: collapse the numeric columns so the Solution
+             column gets the room product names + bundle children need to
+             read on one line. Bundle child list also drops a step in size. */
+          .ri-proposal-print-root .ri-sub-table { font-size: 9pt !important; }
+          .ri-proposal-print-root .ri-sub-table th,
+          .ri-proposal-print-root .ri-sub-table td { padding: 4pt 5pt !important; font-size: 9pt !important; }
+          .ri-proposal-print-root .ri-sub-table td.ri-col-solution > div:first-child { font-size: 10pt !important; }
+          .ri-proposal-print-root .ri-sub-table td.ri-col-solution > div:nth-child(2) { font-size: 8.5pt !important; line-height: 1.3 !important; }
+          .ri-proposal-print-root .ri-sub-table col.ri-col-list,
+          .ri-proposal-print-root .ri-sub-table th.ri-col-list,
+          .ri-proposal-print-root .ri-sub-table td.ri-col-list       { width: 60px !important; min-width: 60px !important; max-width: 60px !important; }
+          .ri-proposal-print-root .ri-sub-table col.ri-col-qty,
+          .ri-proposal-print-root .ri-sub-table th.ri-col-qty,
+          .ri-proposal-print-root .ri-sub-table td.ri-col-qty        { width: 36px !important; min-width: 36px !important; max-width: 36px !important; }
+          .ri-proposal-print-root .ri-sub-table col.ri-col-total_list,
+          .ri-proposal-print-root .ri-sub-table th.ri-col-total_list,
+          .ri-proposal-print-root .ri-sub-table td.ri-col-total_list { width: 70px !important; min-width: 70px !important; max-width: 70px !important; }
+          .ri-proposal-print-root .ri-sub-table col.ri-col-disc_pct,
+          .ri-proposal-print-root .ri-sub-table th.ri-col-disc_pct,
+          .ri-proposal-print-root .ri-sub-table td.ri-col-disc_pct   { width: 50px !important; min-width: 50px !important; max-width: 50px !important; }
+          .ri-proposal-print-root .ri-sub-table col.ri-col-disc_amt,
+          .ri-proposal-print-root .ri-sub-table th.ri-col-disc_amt,
+          .ri-proposal-print-root .ri-sub-table td.ri-col-disc_amt   { width: 70px !important; min-width: 70px !important; max-width: 70px !important; }
+          .ri-proposal-print-root .ri-sub-table col.ri-col-net,
+          .ri-proposal-print-root .ri-sub-table th.ri-col-net,
+          .ri-proposal-print-root .ri-sub-table td.ri-col-net        { width: 80px !important; min-width: 80px !important; max-width: 80px !important; }
+
           /* Force white backgrounds on surfaces — the customer view tints
              cards with theme color halos that bleed gray in print preview
              when "Background graphics" is unchecked. */
@@ -741,7 +768,7 @@ function SubscriptionDetailTable({ parents, childrenOf, annualListTotal, annualN
       const kids = childrenOf(p.id)
       const isBundle = !!p.is_bundle && kids.length > 0
       return (
-        <td key={col.key} style={{ padding: '12px 12px', textAlign: 'left', verticalAlign: 'top' }}>
+        <td key={col.key} className="ri-col-solution" style={{ padding: '12px 12px', textAlign: 'left', verticalAlign: 'top' }}>
           <div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>{p.name || p.sku || '—'}</div>
           {isBundle && (
             <div style={{ marginTop: 6, fontSize: 11.5, color: T.textSecondary, lineHeight: 1.5 }}>
@@ -757,29 +784,30 @@ function SubscriptionDetailTable({ parents, childrenOf, annualListTotal, annualN
     }
     if (!visible) {
       // Per spec: blank data text but keep column width by rendering a non-breaking placeholder
-      return <td key={col.key} style={cellData(hiddenCellStyle)}>&nbsp;</td>
+      return <td key={col.key} className={`ri-col-${col.key}`} style={cellData(hiddenCellStyle)}>&nbsp;</td>
     }
     const lineList = num(p.quantity) * num(p.unit_price)
     const lineDisc = lineList - num(p.extended)
+    const cls = `ri-col-${col.key}`
     switch (col.key) {
       case 'list':
-        return <td key={col.key} style={cellData({ color: C.textTertiary })}>{money(p.unit_price)}</td>
+        return <td key={col.key} className={cls} style={cellData({ color: C.textTertiary })}>{money(p.unit_price)}</td>
       case 'qty':
-        return <td key={col.key} style={cellData()}>{num(p.quantity).toLocaleString()}</td>
+        return <td key={col.key} className={cls} style={cellData()}>{num(p.quantity).toLocaleString()}</td>
       case 'total_list':
-        return <td key={col.key} style={cellData({ color: C.textTertiary })}>{money(lineList)}</td>
+        return <td key={col.key} className={cls} style={cellData({ color: C.textTertiary })}>{money(lineList)}</td>
       case 'disc_pct':
-        return <td key={col.key} style={cellData({ color: lineDisc > 0 ? C.redDark : T.textMuted })}>
+        return <td key={col.key} className={cls} style={cellData({ color: lineDisc > 0 ? C.redDark : T.textMuted })}>
           {num(p.discount_pct) > 0 ? `${Math.round(num(p.discount_pct) * 100)}%` : '—'}
         </td>
       case 'disc_amt':
-        return <td key={col.key} style={cellData({ color: lineDisc > 0 ? C.redDark : T.textMuted, fontWeight: lineDisc > 0 ? 600 : 400 })}>
+        return <td key={col.key} className={cls} style={cellData({ color: lineDisc > 0 ? C.redDark : T.textMuted, fontWeight: lineDisc > 0 ? 600 : 400 })}>
           {lineDisc > 0 ? `−${money(lineDisc)}` : '—'}
         </td>
       case 'net':
-        return <td key={col.key} style={cellData({ background: C.greenSoftBg, color: C.greenDark, fontWeight: 500 })}>{money(p.extended)}</td>
+        return <td key={col.key} className={cls} style={cellData({ background: C.greenSoftBg, color: C.greenDark, fontWeight: 500 })}>{money(p.extended)}</td>
       default:
-        return <td key={col.key} style={cellData()}>—</td>
+        return <td key={col.key} className={cls} style={cellData()}>—</td>
     }
   }
 
@@ -790,16 +818,16 @@ function SubscriptionDetailTable({ parents, childrenOf, annualListTotal, annualN
 
   return (
     <div className="ri-prop-table-wrap" style={{ overflowX: 'auto' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, tableLayout: 'fixed' }}>
+      <table className="ri-sub-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, tableLayout: 'fixed' }}>
         <colgroup>
-          {COLS.map(c => <col key={c.key} style={c.width ? { width: c.width } : undefined} />)}
+          {COLS.map(c => <col key={c.key} className={`ri-col-${c.key}`} style={c.width ? { width: c.width } : undefined} />)}
         </colgroup>
         <thead>
           <tr>
             {COLS.map(c => {
               const visible = c.always || c.visible
               return (
-                <th key={c.key} style={{ ...cellHead(c.headColor), textAlign: c.align || 'right' }}>
+                <th key={c.key} className={`ri-col-${c.key}`} style={{ ...cellHead(c.headColor), textAlign: c.align || 'right' }}>
                   {visible ? c.label : ' '}
                 </th>
               )
