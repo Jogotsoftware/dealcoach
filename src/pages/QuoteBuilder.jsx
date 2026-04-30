@@ -71,8 +71,8 @@ function drSetPatch(quote, path, value) {
   return { deal_room_display_config: cfg }
 }
 
-// Compact icon button for the QuoteBuilder header. `accent` = primary-tinted (Save),
-// `danger` = red-on-hover (Delete). Same 28px square as the back button so the row aligns.
+// Compact icon button for the QuoteBuilder header. `accent` = primary-tinted,
+// `danger` = red-on-hover. Same 30px square so the action row aligns.
 function QbIconButton({ title, onClick, disabled, children, accent, danger }) {
   const baseColor = accent ? T.primary : danger ? T.error : T.textMuted
   return (
@@ -104,6 +104,46 @@ function QbIconButton({ title, onClick, disabled, children, accent, danger }) {
   )
 }
 
+// Icon button that opens a dropdown menu of actions. Click outside to close.
+// items shape: [{ label, onClick, disabled?, danger?, separator? }]
+function QbMenuButton({ title, items, children }) {
+  const [open, setOpen] = useState(false)
+  const visible = (items || []).filter(Boolean)
+  if (!visible.length) return null
+  return (
+    <div style={{ position: 'relative' }}>
+      <QbIconButton title={title} onClick={() => setOpen(o => !o)}>{children}</QbIconButton>
+      {open && (
+        <>
+          <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 999 }} />
+          <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, zIndex: 1000, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, boxShadow: '0 8px 24px rgba(0,0,0,0.15)', minWidth: 200, padding: 4 }}>
+            {visible.map((it, i) => it.separator ? (
+              <div key={`sep-${i}`} style={{ height: 1, background: T.borderLight, margin: '4px 0' }} />
+            ) : (
+              <button key={i}
+                onClick={() => { setOpen(false); it.onClick && it.onClick() }}
+                disabled={it.disabled}
+                style={{
+                  display: 'block', width: '100%', textAlign: 'left',
+                  padding: '7px 12px', fontSize: 12, fontFamily: T.font,
+                  border: 'none', background: 'transparent',
+                  color: it.danger ? T.error : T.text,
+                  cursor: it.disabled ? 'not-allowed' : 'pointer',
+                  opacity: it.disabled ? 0.5 : 1,
+                  borderRadius: 4,
+                }}
+                onMouseEnter={e => { if (!it.disabled) e.currentTarget.style.background = it.danger ? T.errorLight : T.surfaceAlt }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}>
+                {it.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 // ──────────────────────────────────────────────────────────
 // Top-level page
 // ──────────────────────────────────────────────────────────
@@ -123,9 +163,9 @@ export default function QuoteBuilder({
   onDuplicateQuote = null,
   onDeleteQuote = null,
   headerBusy = false,
-  // Slot for parent-supplied actions (e.g. "Push to customer Proposal tab" + last
-  // pushed timestamp). Rendered between the identity row and the Preview button.
-  headerExtraAction = null,
+  // Extra menu items injected into the Share dropdown (e.g. Push to customer
+  // Proposal tab from the Deal Room). Shape: [{ label, onClick, disabled?, danger? }]
+  headerShareMenuItems = null,
   // Optional eye-icon visibility toggle (e.g. for the customer Proposal tab).
   headerVisibilityToggle = null,
   // Hides the entire builder header (identity row + tabbar) so a parent surface
@@ -350,31 +390,27 @@ export default function QuoteBuilder({
 
           <div style={{ flex: 1 }} />
 
-          {/* Action icons */}
-          {onCreateQuote && (
-            <QbIconButton title="New quote" onClick={onCreateQuote} disabled={headerBusy}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            </QbIconButton>
-          )}
-          {onDuplicateQuote && (
-            <QbIconButton title="Save as new quote (duplicate)" onClick={() => onDuplicateQuote(quoteId)} disabled={headerBusy}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-            </QbIconButton>
-          )}
-          <QbIconButton title={savingFlash ? 'Saving…' : (savedAt ? `Saved ${savedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Save')}
-            onClick={handleSave} disabled={savingFlash} accent>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-          </QbIconButton>
-          <QbIconButton title="Preview proposal" onClick={() => nav(`/deal/${dealId}/quote/${quoteId}/proposal`)}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-          </QbIconButton>
-          {headerExtraAction}
+          {/* File menu — Save / Save As / New / Delete grouped on one icon */}
+          <QbMenuButton title="File" items={[
+            { label: savingFlash ? 'Saving…' : (savedAt ? `Save (last saved ${savedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})` : 'Save'),
+              onClick: handleSave, disabled: savingFlash },
+            onDuplicateQuote && { label: 'Save as new quote', onClick: () => onDuplicateQuote(quoteId), disabled: headerBusy },
+            onCreateQuote && { label: 'New blank quote', onClick: onCreateQuote, disabled: headerBusy },
+            onDeleteQuote && { separator: true },
+            onDeleteQuote && { label: 'Delete this quote', onClick: () => onDeleteQuote(quoteId), disabled: headerBusy, danger: true },
+          ]}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+          </QbMenuButton>
+
+          {/* Share menu — Preview / Push grouped on one share icon */}
+          <QbMenuButton title="Share" items={[
+            { label: 'Preview proposal', onClick: () => nav(`/deal/${dealId}/quote/${quoteId}/proposal`) },
+            ...(Array.isArray(headerShareMenuItems) ? headerShareMenuItems : []),
+          ]}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+          </QbMenuButton>
+
           {headerVisibilityToggle}
-          {onDeleteQuote && (
-            <QbIconButton title="Delete this quote" onClick={() => onDeleteQuote(quoteId)} disabled={headerBusy} danger>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-            </QbIconButton>
-          )}
         </div>
         {/* Inner sub-tab bar — hidden when embedded inside the Deal Room (parent
             already exposes Quote / Resources / Models / Project Plan as top-level tabs). */}
@@ -758,7 +794,7 @@ function SubscriptionSection({ quote, lines, products, productMap, bundleChildre
         <span style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Favorites</span>
         {favorites.length === 0 ? (
           <span style={{ fontSize: 12, color: T.textMuted, fontStyle: 'italic' }}>
-            Click the ☆ on any product in the picker to add it here for one-click adding.
+            Click the star on any product in the picker to add it here for one-click adding.
           </span>
         ) : (
           favorites.map(f => {

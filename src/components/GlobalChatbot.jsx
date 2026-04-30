@@ -542,7 +542,7 @@ export default function GlobalChatbot() {
               <div style={{ flex: 1, overflow: 'auto', padding: 14 }}>
                 {messages.length === 0 && !sending && (
                   <div style={{ padding: '16px 12px', color: T.textMuted, fontSize: 12, lineHeight: 1.6 }}>
-                    <div style={{ fontWeight: 700, color: T.text, fontSize: 13, marginBottom: 6 }}>Hi {profile?.full_name?.split(' ')[0] || 'there'} 👋</div>
+                    <div style={{ fontWeight: 700, color: T.text, fontSize: 13, marginBottom: 6 }}>Hi {profile?.full_name?.split(' ')[0] || 'there'},</div>
                     <div>Ask me anything — your deals, pipeline, methodology, or to build reports. I'll use whatever context is most relevant based on where you are.</div>
                     {routeHint && <div style={{ marginTop: 8, fontSize: 10, color: T.textMuted, fontStyle: 'italic' }}>Noticed you're {routeHint}.</div>}
                   </div>
@@ -560,10 +560,14 @@ export default function GlobalChatbot() {
                         return (
                           <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginTop: 6, fontSize: 10, color: T.textMuted }}>
                             <span style={{ flex: 1 }}>{relativeTime(m.created_at)}</span>
-                            <button onClick={() => !fb.submitted && submitThumbs(m, 'thumbs_up')}
-                              style={{ background: 'none', border: 'none', cursor: fb.submitted ? 'default' : 'pointer', fontSize: 11, padding: 0, opacity: fb.sentiment === 'thumbs_up' ? 1 : 0.5 }}>👍</button>
-                            <button onClick={() => !fb.submitted && setFeedbackState(s => ({ ...s, [m.id]: { ...s[m.id], showPicker: true, sentiment: 'thumbs_down' } }))}
-                              style={{ background: 'none', border: 'none', cursor: fb.submitted ? 'default' : 'pointer', fontSize: 11, padding: 0, opacity: fb.sentiment === 'thumbs_down' ? 1 : 0.5 }}>👎</button>
+                            <button title="Helpful" onClick={() => !fb.submitted && submitThumbs(m, 'thumbs_up')}
+                              style={{ background: 'none', border: 'none', cursor: fb.submitted ? 'default' : 'pointer', padding: 2, display: 'inline-flex', color: fb.sentiment === 'thumbs_up' ? T.success : T.textMuted, opacity: fb.sentiment === 'thumbs_up' ? 1 : 0.5 }}>
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>
+                            </button>
+                            <button title="Not helpful" onClick={() => !fb.submitted && setFeedbackState(s => ({ ...s, [m.id]: { ...s[m.id], showPicker: true, sentiment: 'thumbs_down' } }))}
+                              style={{ background: 'none', border: 'none', cursor: fb.submitted ? 'default' : 'pointer', padding: 2, display: 'inline-flex', color: fb.sentiment === 'thumbs_down' ? T.error : T.textMuted, opacity: fb.sentiment === 'thumbs_down' ? 1 : 0.5 }}>
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"/></svg>
+                            </button>
                           </div>
                         )
                       })()}
@@ -750,7 +754,7 @@ function ReportCard({ draft, preview, onOpenInBuilder }) {
   return (
     <div style={{ border: `1px solid ${T.primary}40`, borderRadius: 10, background: T.surface, overflow: 'hidden' }}>
       <div style={{ padding: '8px 12px', background: T.primaryLight, borderBottom: `1px solid ${T.primary}30`, display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ fontSize: 14 }}>📊</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.primary} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{draft.name || 'Report draft'}</div>
           <div style={{ fontSize: 9, color: T.textMuted, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>

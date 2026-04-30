@@ -726,25 +726,13 @@ export default function DealRoomConfig({ embedded = false, dealId: dealIdProp } 
                 onDuplicateQuote={duplicateQuote}
                 onDeleteQuote={deleteQuote}
                 headerBusy={busy}
-                headerExtraAction={
-                  <button
-                    onClick={refreshProposalSnapshot}
-                    disabled={snapshotting}
-                    title={snapshotting ? 'Pushing snapshot…' : `Push to customer Proposal tab${room.proposal_snapshotted_at ? ` · last pushed ${relativeTime(room.proposal_snapshotted_at)}` : ''}`}
-                    style={{
-                      width: 30, height: 30, padding: 0, borderRadius: 5,
-                      border: `1px solid ${T.border}`, background: T.surface,
-                      color: room.proposal_snapshotted_at ? T.success : T.textMuted,
-                      cursor: snapshotting ? 'wait' : 'pointer', opacity: snapshotting ? 0.6 : 1,
-                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontFamily: T.font,
-                    }}
-                    onMouseEnter={e => { if (!snapshotting) { e.currentTarget.style.background = T.surfaceAlt; e.currentTarget.style.color = T.primary } }}
-                    onMouseLeave={e => { e.currentTarget.style.background = T.surface; e.currentTarget.style.color = room.proposal_snapshotted_at ? T.success : T.textMuted }}>
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="M12 19V5"/><polyline points="5 12 12 5 19 12"/>
-                    </svg>
-                  </button>
-                }
+                headerShareMenuItems={[{
+                  label: snapshotting
+                    ? 'Pushing…'
+                    : `Push to customer Proposal tab${room.proposal_snapshotted_at ? ` (last pushed ${relativeTime(room.proposal_snapshotted_at)})` : ''}`,
+                  onClick: refreshProposalSnapshot,
+                  disabled: snapshotting,
+                }]}
                 headerVisibilityToggle={
                   <VisibilityToggleIcon
                     visible={room?.show_proposal_tab !== false}

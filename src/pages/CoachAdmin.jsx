@@ -1529,7 +1529,12 @@ function AssembledPromptPreview({ coach, editing, onEdit, onCancel, value, setVa
                   style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 8, padding: '8px 12px', background: s.locked ? T.surfaceAlt : (T.primaryLight || 'rgba(93,173,226,0.08)'), border: 'none', cursor: 'pointer', fontFamily: T.font, textAlign: 'left' }}>
                   <span style={{ fontSize: 10, color: accent, fontWeight: 800 }}>{isExpanded ? '▼' : '▶'}</span>
                   <span style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{s.name}</span>
-                  {s.locked && <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 3, background: T.border, color: T.textMuted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>🔒 Managed by Revenue Instruments</span>}
+                  {s.locked && (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 9, padding: '2px 6px', borderRadius: 3, background: T.border, color: T.textMuted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                      Managed by Revenue Instruments
+                    </span>
+                  )}
                   <span style={{ flex: 1 }} />
                   <span style={{ fontSize: 10, color: T.textMuted }}>{s.content.length} chars</span>
                 </button>

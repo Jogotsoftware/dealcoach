@@ -310,11 +310,15 @@ export default function DealChat({ dealId, userId, isOpen, onClose, onAction, or
                       <>
                         <span style={{ flex: 1 }} />
                         <button title="Helpful" onClick={() => submitThumbs(msg, 'thumbs_up')}
-                          style={{ background: 'none', border: 'none', cursor: fb.submitted ? 'default' : 'pointer', padding: 0, fontSize: 12, opacity: fb.sentiment === 'thumbs_up' ? 1 : 0.5, color: fb.sentiment === 'thumbs_up' ? T.success : T.textMuted }}
-                          disabled={fb.submitted}>👍</button>
+                          style={{ background: 'none', border: 'none', cursor: fb.submitted ? 'default' : 'pointer', padding: 2, display: 'inline-flex', opacity: fb.sentiment === 'thumbs_up' ? 1 : 0.5, color: fb.sentiment === 'thumbs_up' ? T.success : T.textMuted }}
+                          disabled={fb.submitted}>
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>
+                        </button>
                         <button title="Not helpful" onClick={() => { if (fb.submitted) return; setFeedbackState(s => ({ ...s, [msg.id]: { ...s[msg.id], showPicker: true, sentiment: 'thumbs_down' } })) }}
-                          style={{ background: 'none', border: 'none', cursor: fb.submitted ? 'default' : 'pointer', padding: 0, fontSize: 12, opacity: fb.sentiment === 'thumbs_down' ? 1 : 0.5, color: fb.sentiment === 'thumbs_down' ? T.error : T.textMuted }}
-                          disabled={fb.submitted}>👎</button>
+                          style={{ background: 'none', border: 'none', cursor: fb.submitted ? 'default' : 'pointer', padding: 2, display: 'inline-flex', opacity: fb.sentiment === 'thumbs_down' ? 1 : 0.5, color: fb.sentiment === 'thumbs_down' ? T.error : T.textMuted }}
+                          disabled={fb.submitted}>
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"/></svg>
+                        </button>
                       </>
                     )
                   })()}
