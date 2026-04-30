@@ -355,27 +355,33 @@ function InvestmentSummaryTab({ snapshot, columnVisibility, aePreview, onColumnV
         </div>
       )}
 
-      {/* 4. Bottom summary table */}
+      {/* 4. Bottom summary — two grouped blocks (Subscription, One-time)
+          inside a single card, ending in the green Year 1 Total row.
+          Each block reads as a parent line with its concession indented
+          underneath. The two blocks are separated by a thicker rule. */}
       <div style={{
-        marginTop: 22, background: T.surfaceAlt, border: `1px solid ${T.border}`, borderRadius: 8, padding: '6px 0', overflow: 'hidden',
+        marginTop: 22, background: T.surfaceAlt, border: `1px solid ${T.border}`, borderRadius: 10, overflow: 'hidden',
       }}>
-        <SumRow label="Annual subscription" value={money(annualListTotal)} bold />
+        {/* Block 1: Subscription */}
+        <SumRow label="Annual subscription" value={money(annualListTotal)} bold noBorder={annualDiscountAmount > 0} />
         {annualDiscountAmount > 0 && (
-          <SumRow label="Subscription discount" value={moneyNeg(annualDiscountAmount)} valueColor={C.redDark} labelColor={C.redDark} />
+          <SumRow label="Subscription discount" value={moneyNeg(annualDiscountAmount)} valueColor={C.redDark} labelColor={C.redDark} indent noBorder />
         )}
-        <SumRow label="One-time costs" value={money(implTotal)} bold />
+        {/* Block separator */}
+        <div style={{ height: 1, background: T.border, margin: '0' }} />
+        {/* Block 2: One-time */}
+        <SumRow label="One-time costs" value={money(implTotal)} bold noBorder={signingBonusValue > 0} />
         {signingBonusValue > 0 && (
-          <SumRow label="Signing bonus" value={moneyNeg(signingBonusValue)} valueColor={C.amberDark} labelColor={C.amberDark} />
+          <SumRow label="Signing bonus" value={moneyNeg(signingBonusValue)} valueColor={C.amberDark} labelColor={C.amberDark} indent noBorder />
         )}
-      </div>
-
-      {/* 5. Year 1 Total card */}
-      <div style={{
-        marginTop: 16, background: C.greenBg, border: `2px solid ${C.greenDark}`, borderRadius: 10,
-        padding: '18px 22px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16,
-      }}>
-        <div style={{ fontSize: 15, fontWeight: 600, color: C.greenDark, letterSpacing: '0.01em' }}>Year 1 Total</div>
-        <div style={{ fontSize: 30, fontWeight: 500, color: C.greenDark, fontFeatureSettings: '"tnum"' }}>{money(year1Total)}</div>
+        {/* Year 1 Total — terminal row */}
+        <div style={{
+          background: C.greenBg, borderTop: `2px solid ${C.greenDark}`,
+          padding: '18px 22px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16,
+        }}>
+          <div style={{ fontSize: 15, fontWeight: 600, color: C.greenDark, letterSpacing: '0.01em' }}>Year 1 Total</div>
+          <div style={{ fontSize: 30, fontWeight: 500, color: C.greenDark, fontFeatureSettings: '"tnum"' }}>{money(year1Total)}</div>
+        </div>
       </div>
     </div>
   )
@@ -393,11 +399,15 @@ function Field({ label, value }) {
     </div>
   )
 }
-function SumRow({ label, value, bold, labelColor, valueColor }) {
+function SumRow({ label, value, bold, labelColor, valueColor, indent, noBorder }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 18px', borderBottom: `1px solid ${T.borderLight}` }}>
-      <div style={{ fontSize: 13, fontWeight: bold ? 700 : 500, color: labelColor || T.text }}>{label}</div>
-      <div style={{ fontSize: 14, fontWeight: bold ? 700 : 500, color: valueColor || T.text, fontFeatureSettings: '"tnum"' }}>{value}</div>
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      padding: indent ? '6px 18px 10px 36px' : '10px 18px',
+      borderBottom: noBorder ? 'none' : `1px solid ${T.borderLight}`,
+    }}>
+      <div style={{ fontSize: indent ? 12 : 13, fontWeight: bold ? 700 : 500, color: labelColor || T.text }}>{label}</div>
+      <div style={{ fontSize: indent ? 13 : 14, fontWeight: bold ? 700 : 500, color: valueColor || T.text, fontFeatureSettings: '"tnum"' }}>{value}</div>
     </div>
   )
 }
@@ -562,10 +572,24 @@ function SchedulesTab({ snapshot, accent }) {
 
 // ─── 2a. Payment schedule ────────────────────────────────────────────────────
 function PaymentScheduleSubTab({ snapshot }) {
-  const rows = snapshot.payment_schedule || []
-  if (!rows.length) {
+  const rawRows = snapshot.payment_schedule || []
+  if (!rawRows.length) {
     return <div style={{ padding: 24, textAlign: 'center', color: T.textMuted, fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8 }}>No invoices scheduled yet.</div>
   }
+
+  // Sort chronologically by invoice_date so implementation T&M rows that
+  // start before the Y1 subscription invoice appear at the top of the table.
+  // Tie-break on sequence_number to keep ordering stable for same-day rows.
+  const rows = [...rawRows].sort((a, b) => {
+    const da = a.invoice_date ? new Date(a.invoice_date + 'T00:00:00').getTime() : 0
+    const db = b.invoice_date ? new Date(b.invoice_date + 'T00:00:00').getTime() : 0
+    if (da !== db) return da - db
+    return (a.sequence_number || 0) - (b.sequence_number || 0)
+  })
+
+  // T&M implementation invoices ride the project schedule, so the dates are
+  // an estimate, not a fixed invoice date. Surface that to the customer.
+  const isEstimated = (pt) => pt === 'implementation_arrears' || pt === 'implementation_milestone'
 
   // Color scheme by payment_type
   const styleFor = (pt) => {
@@ -593,7 +617,7 @@ function PaymentScheduleSubTab({ snapshot }) {
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
         <thead>
           <tr>
-            <th style={{ padding: '10px 14px', fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', textAlign: 'left', borderBottom: `1px solid ${T.border}`, width: 130 }}>Date</th>
+            <th style={{ padding: '10px 14px', fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', textAlign: 'left', borderBottom: `1px solid ${T.border}`, width: 160 }}>Date</th>
             <th style={{ padding: '10px 14px', fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', textAlign: 'left', borderBottom: `1px solid ${T.border}` }}>Description</th>
             <th style={{ padding: '10px 14px', fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', textAlign: 'right', borderBottom: `1px solid ${T.border}`, width: 140 }}>Amount</th>
           </tr>
@@ -602,10 +626,18 @@ function PaymentScheduleSubTab({ snapshot }) {
           {rows.map((r, i) => {
             const s = styleFor(r.payment_type)
             const isFree = r.payment_type === 'free_month'
+            const estimated = isEstimated(r.payment_type)
             return (
               <tr key={i} style={{ borderBottom: i < rows.length - 1 ? `1px solid ${T.borderLight}` : 'none', background: s.rowBg }}>
-                <td style={{ padding: '12px 14px', fontWeight: 600, color: T.text, position: 'relative', boxShadow: `inset 3px 0 0 0 ${s.accent}` }}>
-                  {fmtDateShort(r.invoice_date)}
+                <td style={{ padding: '12px 14px', color: T.text, boxShadow: `inset 3px 0 0 0 ${s.accent}` }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    <span style={{ fontWeight: 600 }}>{fmtDateShort(r.invoice_date)}</span>
+                    {estimated && (
+                      <span style={{ fontSize: 9, fontWeight: 700, color: C.greenDark, textTransform: 'uppercase', letterSpacing: '0.06em', opacity: 0.85 }}>
+                        Expected · estimated
+                      </span>
+                    )}
+                  </div>
                 </td>
                 <td style={{ padding: '12px 14px', color: T.text }}>{cleanDesc(r.description)}</td>
                 <td style={{ padding: '12px 14px', textAlign: 'right', fontFeatureSettings: '"tnum"', fontWeight: 700, color: s.amountColor }}>
@@ -620,7 +652,15 @@ function PaymentScheduleSubTab({ snapshot }) {
   )
 }
 
-// ─── 2b. Implementation schedule (live msp_stages + Phase Gantt) ─────────────
+// ─── 2b. Implementation schedule (driven by uploaded SOW, NOT the deal MSP) ──
+// The deal's MSP project plan covers pre-sale evaluation steps (Discovery,
+// Demo, Scoping, Kick-off, Go-Live, etc.). Those don't belong here. The
+// implementation schedule is the post-signature delivery plan and should
+// come from a parsed Statement of Work — represented in our schema by
+// msp_stages rows that carry a `sow_phase_key` (linked to the SOW doc).
+//
+// If no SOW phases exist yet, we show a clean empty state plus a preview
+// of the standard 4-phase Sage cadence so the page still has visual weight.
 function ImplementationScheduleSubTab({ snapshot, accent }) {
   const dealId = snapshot.deal?.id
   const [stages, setStages] = useState(null)
@@ -629,8 +669,12 @@ function ImplementationScheduleSubTab({ snapshot, accent }) {
     let cancelled = false
     if (!dealId) { setStages([]); return }
     ;(async () => {
+      // Only stages tied to a SOW phase are part of the implementation plan.
       const { data } = await supabase
-        .from('msp_stages').select('*').eq('deal_id', dealId).order('stage_order')
+        .from('msp_stages').select('*')
+        .eq('deal_id', dealId)
+        .not('sow_phase_key', 'is', null)
+        .order('stage_order')
       if (!cancelled) setStages(data || [])
     })()
     return () => { cancelled = true }
@@ -640,19 +684,9 @@ function ImplementationScheduleSubTab({ snapshot, accent }) {
   const liveWeeks = num(sageImpl?.duration_to_live_weeks) || null
   const sowDocId = sageImpl?.sow_document_id
 
-  // Estimate completion weeks from msp_stages end_date if available.
-  const completeWeeks = useMemo(() => {
-    if (!stages?.length) return null
-    const dates = stages.map(s => s.end_date || s.due_date).filter(Boolean).map(d => new Date(d + 'T00:00:00'))
-    const starts = stages.map(s => s.start_date).filter(Boolean).map(d => new Date(d + 'T00:00:00'))
-    if (!dates.length || !starts.length) return null
-    const earliest = new Date(Math.min(...starts.map(d => d.getTime())))
-    const latest = new Date(Math.max(...dates.map(d => d.getTime())))
-    const days = (latest - earliest) / 86400000
-    return Math.max(1, Math.round(days / 7))
-  }, [stages])
-
   if (stages == null) return <Spinner />
+
+  const hasSowSchedule = stages.length > 0
 
   return (
     <div>
@@ -664,7 +698,6 @@ function ImplementationScheduleSubTab({ snapshot, accent }) {
       }}>
         <div style={{ fontSize: 13, color: T.text }}>
           {liveWeeks ? <strong>{liveWeeks} weeks to Go-Live</strong> : <strong>Implementation timeline</strong>}
-          {completeWeeks ? <span style={{ color: T.textMuted }}> · {completeWeeks} weeks to project completion</span> : null}
         </div>
         <div style={{ fontSize: 11, color: T.textMuted, display: 'flex', alignItems: 'center', gap: 10 }}>
           {sageImpl?.implementor_name && <span>Source: {sageImpl.implementor_name} SOW</span>}
@@ -677,33 +710,43 @@ function ImplementationScheduleSubTab({ snapshot, accent }) {
         </div>
       </div>
 
-      {/* Phase rows */}
-      <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: 'hidden', marginBottom: 18 }}>
-        {stages.length === 0 ? (
-          <div style={{ padding: 24, textAlign: 'center', color: T.textMuted, fontSize: 13 }}>Implementation phases will appear here once your AE publishes the project plan.</div>
-        ) : stages.map((s, i) => {
-          const isMilestone = isMilestoneStage(s)
-          const when = s.date_label || (s.start_date && s.end_date
-            ? `${fmtDateShort(s.start_date)} – ${fmtDateShort(s.end_date)}`
-            : (s.due_date ? fmtDateShort(s.due_date) : ''))
-          return (
-            <div key={s.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 16, padding: '12px 16px', borderBottom: i < stages.length - 1 ? `1px solid ${T.borderLight}` : 'none' }}>
-              <div style={{ width: 130, flexShrink: 0, fontSize: 12, color: isMilestone ? C.greenDark : T.textSecondary, fontWeight: isMilestone ? 600 : 500 }}>
-                {when}
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: isMilestone ? 600 : 500, color: isMilestone ? C.greenDark : T.text }}>
-                  {s.stage_name}
+      {hasSowSchedule ? (
+        <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: 'hidden', marginBottom: 18 }}>
+          {stages.map((s, i) => {
+            const isMilestone = isMilestoneStage(s)
+            const when = s.date_label || (s.start_date && s.end_date
+              ? `${fmtDateShort(s.start_date)} – ${fmtDateShort(s.end_date)}`
+              : (s.due_date ? fmtDateShort(s.due_date) : ''))
+            return (
+              <div key={s.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 16, padding: '12px 16px', borderBottom: i < stages.length - 1 ? `1px solid ${T.borderLight}` : 'none' }}>
+                <div style={{ width: 130, flexShrink: 0, fontSize: 12, color: isMilestone ? C.greenDark : T.textSecondary, fontWeight: isMilestone ? 600 : 500 }}>
+                  {when}
                 </div>
-                {s.notes && <div style={{ fontSize: 11.5, color: T.textMuted, marginTop: 3, lineHeight: 1.5 }}>{s.notes}</div>}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: isMilestone ? 600 : 500, color: isMilestone ? C.greenDark : T.text }}>
+                    {s.stage_name}
+                  </div>
+                  {s.notes && <div style={{ fontSize: 11.5, color: T.textMuted, marginTop: 3, lineHeight: 1.5 }}>{s.notes}</div>}
+                </div>
               </div>
-            </div>
-          )
-        })}
-      </div>
+            )
+          })}
+        </div>
+      ) : (
+        <div style={{
+          padding: '22px 24px', background: T.surface, border: `1px dashed ${T.border}`, borderRadius: 8, marginBottom: 18,
+          color: T.textSecondary, fontSize: 13, lineHeight: 1.55,
+        }}>
+          <div style={{ fontWeight: 600, color: T.text, marginBottom: 4 }}>Implementation schedule populates from your Statement of Work.</div>
+          Once the SOW is uploaded and parsed, the per-phase schedule (kick-off
+          milestones, deliverables, dependencies) will appear here. The standard
+          cadence preview below is a placeholder.
+        </div>
+      )}
 
-      {/* Phase Gantt */}
-      {stages.length > 0 && <PhaseGantt stages={stages} accent={accent} />}
+      {/* Phase Gantt — uses standard Sage cadence as a placeholder when no
+          SOW-driven phases exist yet. */}
+      <PhaseGantt stages={stages} accent={accent} placeholder={!hasSowSchedule} />
     </div>
   )
 }
@@ -716,7 +759,7 @@ function isMilestoneStage(s) {
 }
 
 // ─── Phase Gantt SVG ─────────────────────────────────────────────────────────
-function PhaseGantt({ stages, accent }) {
+function PhaseGantt({ stages, accent, placeholder }) {
   // Group non-milestone stages into 4 phases of Sage's standard cadence.
   // Phase widths: Define 4w / Configure 12w / System Readiness 2w / Success Assurance 6w.
   const PHASES = [
@@ -728,34 +771,50 @@ function PhaseGantt({ stages, accent }) {
   const totalWeeks = PHASES.reduce((s, p) => s + p.weeks, 0)
   const goLiveWeek = PHASES.slice(0, 3).reduce((s, p) => s + p.weeks, 0)  // 4 + 12 + 2 = 18
 
-  // Layout
-  const W = 680, H = 240
-  const leftLane = 160
-  const rightPad = 18
-  const topBand = 22
-  const milestoneBand = 24
+  // Layout — wider canvas, tighter left lane so the chart eats more of the
+  // card width. Extra bottom band so the milestone labels can stack
+  // (name on one line, date on the next) without colliding with each other
+  // when Go-Live and Project Complete are close together.
+  const W = 1100, H = 280
+  const leftLane = 120
+  const rightPad = 24
+  const topBand = 24
+  const milestoneBand = 56
   const chartTop = topBand + 8
-  const chartBottom = H - milestoneBand - 6
+  const chartBottom = H - milestoneBand
   const chartHeight = chartBottom - chartTop
-  const barH = (chartHeight - 8 * (PHASES.length - 1)) / PHASES.length
+  const barH = (chartHeight - 10 * (PHASES.length - 1)) / PHASES.length
   const xPerWeek = (W - leftLane - rightPad) / totalWeeks
   const goLiveX = leftLane + goLiveWeek * xPerWeek
 
-  // Milestones: Kickoff (week 0), Go-Live (week 18), Project Complete (week totalWeeks)
-  // Use earliest stage start date as reference.
+  // Robust date parsing: msp_stages.start_date is timestamptz so the value
+  // arrives as a full ISO string ('2026-04-01T05:00:00+00:00'), not a bare
+  // 'YYYY-MM-DD'. Naively appending 'T00:00:00' produced an Invalid Date.
+  const parseDate = (v) => {
+    if (!v) return null
+    const s = String(v)
+    const d = new Date(s.includes('T') ? s : s + 'T00:00:00')
+    return Number.isNaN(d.getTime()) ? null : d
+  }
+
   const referenceStart = (() => {
-    const starts = stages.map(s => s.start_date).filter(Boolean).map(d => new Date(d + 'T00:00:00'))
-    if (!starts.length) return null
-    return new Date(Math.min(...starts.map(d => d.getTime())))
+    const starts = (stages || []).map(s => parseDate(s.start_date)).filter(Boolean)
+    if (starts.length) return new Date(Math.min(...starts.map(d => d.getTime())))
+    // Placeholder mode: anchor preview at today so the customer sees a
+    // representative timeline even before the SOW is parsed.
+    if (placeholder) {
+      const t = new Date(); t.setHours(0, 0, 0, 0)
+      return t
+    }
+    return null
   })()
-  const dateAtWeek = (w) => referenceStart ? addMonths(null, 0) /* stub */ && new Date(referenceStart.getTime() + w * 7 * 86400000) : null
   const fmtMs = (d) => d ? d.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }) : ''
+  const fmtMsShort = (d) => d ? d.toLocaleDateString('en-US', { day: 'numeric', month: 'short' }) : ''
 
   // Month axis labels
   const monthTicks = []
   if (referenceStart) {
-    const lastWeek = totalWeeks
-    const lastDate = new Date(referenceStart.getTime() + lastWeek * 7 * 86400000)
+    const lastDate = new Date(referenceStart.getTime() + totalWeeks * 7 * 86400000)
     let cur = new Date(referenceStart.getFullYear(), referenceStart.getMonth(), 1)
     while (cur <= lastDate) {
       const weeksFromStart = (cur.getTime() - referenceStart.getTime()) / (86400000 * 7)
@@ -777,13 +836,20 @@ function PhaseGantt({ stages, accent }) {
 
   return (
     <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: 16 }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
-        Implementation phases
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+          Implementation phases
+        </div>
+        {placeholder && (
+          <div style={{ fontSize: 10, fontWeight: 600, color: T.textMuted, fontStyle: 'italic' }}>
+            Standard cadence preview · actual dates from the SOW
+          </div>
+        )}
       </div>
-      <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: 'block' }}>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" preserveAspectRatio="xMidYMid meet" style={{ display: 'block' }}>
         {/* Month axis */}
         {monthTicks.map((m, i) => (
-          <text key={i} x={m.x} y={topBand - 8} textAnchor="middle" fontSize="9" fontWeight="600" fill={T.textMuted} fontFamily={T.font}>
+          <text key={i} x={m.x} y={topBand - 8} textAnchor="middle" fontSize="10" fontWeight="600" fill={T.textMuted} fontFamily={T.font}>
             {m.label}
           </text>
         ))}
@@ -792,7 +858,7 @@ function PhaseGantt({ stages, accent }) {
 
         {/* Phase rows */}
         {PHASES.map((p, idx) => {
-          const y = chartTop + idx * (barH + 8)
+          const y = chartTop + idx * (barH + 10)
           const x = leftLane + cumWeeks * xPerWeek
           const w = p.weeks * xPerWeek
           const startW = cumWeeks
@@ -800,13 +866,13 @@ function PhaseGantt({ stages, accent }) {
           cumWeeks += p.weeks
           return (
             <g key={p.name}>
-              <text x={leftLane - 12} y={y + barH / 2 + 4} textAnchor="end" fontSize="11" fontWeight="600" fill={T.text} fontFamily={T.font}>
+              <text x={leftLane - 12} y={y + barH / 2 + 2} textAnchor="end" fontSize="13" fontWeight="600" fill={T.text} fontFamily={T.font}>
                 {p.name}
               </text>
-              <text x={leftLane - 12} y={y + barH / 2 + 16} textAnchor="end" fontSize="9" fill={T.textMuted} fontFamily={T.font}>
+              <text x={leftLane - 12} y={y + barH / 2 + 18} textAnchor="end" fontSize="10" fill={T.textMuted} fontFamily={T.font}>
                 Wk {startW + 1}–{endW}
               </text>
-              <rect x={x} y={y} width={w} height={barH} rx="3" fill={p.color} />
+              <rect x={x} y={y} width={w} height={barH} rx="4" fill={p.color} />
             </g>
           )
         })}
@@ -814,20 +880,26 @@ function PhaseGantt({ stages, accent }) {
         {/* Vertical dashed Go-Live line */}
         <line x1={goLiveX} y1={topBand} x2={goLiveX} y2={chartBottom + 4} stroke={C.greenDark} strokeWidth="2" strokeDasharray="4,3" opacity="0.7" />
 
-        {/* Milestone markers along the bottom */}
+        {/* Milestone markers — diamond + name above the date, both anchored
+            at center. Stacking avoids the collision when Go-Live and Project
+            Complete sit close together. */}
         {[
-          { week: 0, label: 'Kickoff', date: kickoffDate, bold: false },
-          { week: goLiveWeek, label: 'Go-Live', date: goLiveDate, bold: true },
-          { week: totalWeeks, label: 'Project Complete', date: completeDate, bold: false },
+          { week: 0, label: 'Kickoff', date: kickoffDate, bold: false, anchor: 'start' },
+          { week: goLiveWeek, label: 'Go-Live', date: goLiveDate, bold: true, anchor: 'middle' },
+          { week: totalWeeks, label: 'Project Complete', date: completeDate, bold: false, anchor: 'end' },
         ].map((m, i) => {
           const x = leftLane + m.week * xPerWeek
           return (
             <g key={i}>
-              {/* Diamond */}
               <path d={`M ${x},${chartBottom + 6} L ${x + 5},${chartBottom + 11} L ${x},${chartBottom + 16} L ${x - 5},${chartBottom + 11} Z`} fill={C.greenDark} />
-              <text x={x} y={H - 4} textAnchor="middle" fontSize="11" fontWeight={m.bold ? 600 : 500} fill={C.greenDark} fontFamily={T.font}>
-                {m.label}{m.date ? ` · ${fmtMs(m.date)}` : ''}
+              <text x={x} y={chartBottom + 32} textAnchor={m.anchor} fontSize="12" fontWeight={m.bold ? 700 : 600} fill={C.greenDark} fontFamily={T.font}>
+                {m.label}
               </text>
+              {m.date && (
+                <text x={x} y={chartBottom + 46} textAnchor={m.anchor} fontSize="10" fill={T.textMuted} fontFamily={T.font}>
+                  {fmtMsShort(m.date)}
+                </text>
+              )}
             </g>
           )
         })}
@@ -947,30 +1019,41 @@ function TcoTab({ snapshot }) {
               </tr>
             )}
 
-            {/* Visual divider */}
-            <tr style={{ background: T.surfaceAlt }}>
-              <td colSpan={termYears + 2} style={{ height: 8, padding: 0 }}></td>
+            {/* Block separator — heavier rule signals "what was negotiated"
+                above ends here; the concrete cost block begins below. */}
+            <tr>
+              <td colSpan={termYears + 2} style={{ padding: 0, borderTop: `2px solid ${C.greenDark}`, height: 0 }}></td>
             </tr>
 
-            {/* Subscription · net (green soft bg) */}
-            <tr style={{ background: C.greenSoftBg, borderBottom: `1px solid ${T.borderLight}` }}>
+            {/* ── Concrete cost block ────────────────────────────────────
+                All three rows share the soft-green ground so they read as
+                one cohesive "this is what the customer actually pays" group.
+                Annual cost is the terminal row, deeper green, bigger value,
+                so the eye lands on the bottom-line number. */}
+
+            {/* Subscription · net */}
+            <tr style={{ background: C.greenSoftBg }}>
               <td style={{ ...cellLabel, color: C.greenDark, fontWeight: 600 }}>Subscription · net</td>
               {yearSubNet.map((v, i) => <td key={i} style={cellNum({ color: C.greenDark, fontWeight: 600 })}>{money(v)}</td>)}
               <td style={cellNum({ color: C.greenDark, fontWeight: 700 })}>{money(tot(yearSubNet))}</td>
             </tr>
 
             {/* Implementation — Y1 only */}
-            <tr style={{ borderBottom: `1px solid ${T.borderLight}` }}>
-              <td style={{ ...cellLabel, color: C.greenDark }}>Implementation (one-time)</td>
-              {yearImpl.map((v, i) => <td key={i} style={cellNum({ color: C.greenDark })}>{i === 0 ? money(v) : '—'}</td>)}
-              <td style={cellNum({ color: C.greenDark, fontWeight: 600 })}>{money(implTotal)}</td>
+            <tr style={{ background: C.greenSoftBg }}>
+              <td style={{ ...cellLabel, color: C.greenDark, fontWeight: 600 }}>Implementation (one-time)</td>
+              {yearImpl.map((v, i) => <td key={i} style={cellNum({ color: C.greenDark, fontWeight: 600 })}>{i === 0 ? money(v) : '—'}</td>)}
+              <td style={cellNum({ color: C.greenDark, fontWeight: 700 })}>{money(implTotal)}</td>
             </tr>
 
-            {/* Annual cost — green totals row */}
-            <tr style={{ background: C.greenBg }}>
-              <td style={{ ...cellLabel, color: C.greenDark, fontWeight: 700, fontSize: 14 }}>Annual cost</td>
-              {yearAnnualCost.map((v, i) => <td key={i} style={cellNum({ color: C.greenDark, fontWeight: 700, fontSize: 14 })}>{money(v)}</td>)}
-              <td style={cellNum({ color: C.greenDark, fontWeight: 800, fontSize: 14 })}>{money(totalCost)}</td>
+            {/* Annual cost — bottom-line totals row */}
+            <tr style={{ background: C.greenBg, borderTop: `2px solid ${C.greenDark}` }}>
+              <td style={{ ...cellLabel, color: C.greenDark, fontWeight: 800, fontSize: 14, padding: '14px 14px' }}>Annual cost</td>
+              {yearAnnualCost.map((v, i) => (
+                <td key={i} style={cellNum({ color: C.greenDark, fontWeight: 800, fontSize: 16, padding: '14px 12px' })}>
+                  {money(v)}
+                </td>
+              ))}
+              <td style={cellNum({ color: C.greenDark, fontWeight: 900, fontSize: 18, padding: '14px 12px' })}>{money(totalCost)}</td>
             </tr>
           </tbody>
         </table>
