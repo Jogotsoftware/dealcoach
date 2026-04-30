@@ -2566,17 +2566,11 @@ function NextStepsWidget({ deal, setDeal, profile, compact = false }) {
     }
 
     // When a color + reason are set, auto-rewrite next_steps to a formatted
-    // status line: "<short date> - <Color> <reason>". The previous text is
-    // archived to next_steps_history first so it remains retrievable but is
-    // no longer the displayed value.
+    // status line: "<short date> - <Color> <reason>". The prior value is
+    // archived to next_steps_history by the snapshot_next_steps trigger
+    // (which captures OLD.next_steps on update), so we don't archive here
+    // ourselves — that would double-write the same prior text.
     if (color && trimmedReason) {
-      const prior = (deal.next_steps || '').trim()
-      if (prior) {
-        const { error: archiveErr } = await supabase
-          .from('next_steps_history')
-          .insert({ deal_id: deal.id, content: prior })
-        if (archiveErr) console.error('archive next_steps failed', archiveErr)
-      }
       const dateLabel = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
       const colorLabel = color.charAt(0).toUpperCase() + color.slice(1)
       patch.next_steps = `${dateLabel} - ${colorLabel} ${trimmedReason}`
