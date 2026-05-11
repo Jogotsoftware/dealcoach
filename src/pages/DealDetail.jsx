@@ -456,7 +456,7 @@ export default function DealDetail() {
   const [showForecastPopover, setShowForecastPopover] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
   const [showAddTask, setShowAddTask] = useState(false)
-  const [selectedCallId, setSelectedCallId] = useState(null)
+  const [selectedCallId, setSelectedCallId] = useState('pre-qdc')
   const [retrospective, setRetrospective] = useState(null)
   const [loading, setLoading] = useState(true)
   const [deal, setDeal] = useState(null)
@@ -1873,6 +1873,7 @@ export default function DealDetail() {
             onSelectCall={setSelectedCallId}
             onUploadTranscript={() => setShowTranscriptUpload(true)}
             onCallUpdate={(callId, patch) => setConversations(prev => prev.map(c => c.id === callId ? { ...c, ...patch } : c))}
+            preQdcContent={<CompanyProfileWidget />}
           />
         )}
 
@@ -3167,35 +3168,28 @@ function TasksWidget({ tasks, setTasks, dealId, userId, onAdd }) {
   )
 }
 
-// Analysis tab — sub-tab strip per call + embedded CallAnalysisBody for the
-// selected call. Calls sort by date desc; auto-selects the most recent.
-function AnalysisTab({ conversations, dealId, selectedCallId, onSelectCall, onUploadTranscript, onCallUpdate }) {
+// Analysis tab — first sub-tab is "Pre-QDC" (initial research + analysis
+// created on deal creation), followed by one sub-tab per uploaded call.
+// `selectedCallId` is the sentinel string 'pre-qdc' or a conversation UUID.
+function AnalysisTab({ conversations, dealId, selectedCallId, onSelectCall, onUploadTranscript, onCallUpdate, preQdcContent }) {
   const sorted = [...conversations].sort((a, b) =>
     new Date(b.call_date || b.created_at || 0) - new Date(a.call_date || a.created_at || 0)
   )
 
-  // Auto-select most recent call when entering the tab or when calls change.
-  // Also re-select if the currently-selected call is no longer in the list.
+  // If the currently-selected call gets deleted, fall back to Pre-QDC.
+  // Pre-QDC stays selected by default — we don't yank the user to a new call
+  // when they upload one.
   useEffect(() => {
-    if (sorted.length === 0) return
+    if (selectedCallId === 'pre-qdc') return
     const stillExists = sorted.some(c => c.id === selectedCallId)
-    if (!selectedCallId || !stillExists) onSelectCall(sorted[0].id)
+    if (!stillExists) onSelectCall('pre-qdc')
   }, [sorted.map(c => c.id).join(',')])  // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (sorted.length === 0) {
-    return (
-      <EmptyState
-        icon="▶"
-        title="No calls yet"
-        message="Upload a call transcript (.txt / .vtt / .srt) or paste text. The AI analyses it and writes pain points, flags, contacts, tasks, and coaching scores into this deal."
-        action={<Button primary onClick={onUploadTranscript} style={{ padding: '6px 14px', fontSize: 12 }}>Upload transcript</Button>}
-      />
-    )
-  }
+  const preQdcActive = selectedCallId === 'pre-qdc'
 
   return (
     <div>
-      {/* Sub-tab strip — one tab per call, scrolls horizontally if it overflows */}
+      {/* Sub-tab strip — Pre-QDC + one tab per call, horizontal scroll on overflow */}
       <div style={{
         display: 'flex',
         gap: 0,
@@ -3203,6 +3197,24 @@ function AnalysisTab({ conversations, dealId, selectedCallId, onSelectCall, onUp
         marginBottom: 18,
         overflowX: 'auto',
       }}>
+        {/* Pre-QDC pinned first */}
+        <button
+          onClick={() => onSelectCall('pre-qdc')}
+          title="Pre-QDC analysis and research"
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 8,
+            padding: '10px 14px', fontSize: 12, fontWeight: 600, fontFamily: T.font,
+            border: 'none', cursor: 'pointer',
+            background: 'transparent',
+            color: preQdcActive ? T.primary : T.textMuted,
+            borderBottom: preQdcActive ? `2px solid ${T.primary}` : '2px solid transparent',
+            whiteSpace: 'nowrap',
+            transition: 'all 0.15s',
+          }}>
+          <Badge color={preQdcActive ? T.primary : T.textMuted}>Research</Badge>
+          <span>Pre-QDC</span>
+        </button>
+
         {sorted.map(call => {
           const active = call.id === selectedCallId
           const date = call.call_date || call.created_at
@@ -3234,8 +3246,18 @@ function AnalysisTab({ conversations, dealId, selectedCallId, onSelectCall, onUp
         })}
       </div>
 
-      {/* Body for the selected call */}
-      {selectedCallId && (
+      {/* Body */}
+      {preQdcActive ? (
+        <div>
+          {preQdcContent}
+          {sorted.length === 0 && (
+            <div style={{ marginTop: 18, padding: 14, background: T.surfaceAlt, border: `1px dashed ${T.border}`, borderRadius: 8, display: 'flex', alignItems: 'center', gap: 12 }}>
+              <span style={{ fontSize: 12, color: T.textMuted, flex: 1 }}>No call transcripts uploaded yet. Each upload adds a sub-tab here.</span>
+              <Button primary onClick={onUploadTranscript} style={{ padding: '5px 12px', fontSize: 11 }}>Upload transcript</Button>
+            </div>
+          )}
+        </div>
+      ) : (
         <CallAnalysisBody key={selectedCallId} dealId={dealId} conversationId={selectedCallId} onCallUpdate={onCallUpdate} />
       )}
     </div>
