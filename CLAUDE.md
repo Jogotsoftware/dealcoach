@@ -50,6 +50,7 @@ Revenue Instruments is a multi-product AI-powered revenue platform for enterpris
 | `/login` | `Login.jsx` |
 | `/invite/:token` | `AcceptInvite.jsx` |
 | `/msp/shared/:token` | `MSPClientPortal.jsx` |
+| `/room/:shareToken` | `DealRoomViewer.jsx` — public customer-facing DealRoom (anonymous) |
 | `/onboarding` | `Onboarding.jsx` (authenticated, no org required) |
 
 ### Protected (require org — inside Layout with sidebar)
@@ -62,7 +63,9 @@ Revenue Instruments is a multi-product AI-powered revenue platform for enterpris
 | `/deal/:dealId/msp` | `MSPPage.jsx` | Full MSP builder |
 | `/deal/:dealId/quote/new` | `QuoteEditor.jsx` | |
 | `/deal/:dealId/quote/:quoteId` | `QuoteEditor.jsx` | |
-| `/deal/:dealId/proposal` | `ProposalBuilder.jsx` | |
+| `/deal/:dealId/quote/:quoteId/proposal` | `ProposalRenderer.jsx` | AE-side proposal preview / PDF print |
+| `/deal/:dealId/room` | `DealRoomConfig.jsx` | AE-side DealRoom config — Share/Access, MSP, Library, Proposal (snapshot), Viewers, Inbox |
+| `/deal/:dealId/room/preview` | `DealRoomPreview.jsx` | Redirects to the customer-facing room URL |
 | `/deal/:id/retrospective` | `DealRetrospective.jsx` | AI retrospective on closed deals |
 | `/coach` | `CoachAdmin.jsx` | Prompts, docs, scoring configs, MSP templates, email templates |
 | `/coach/builder` | `CoachBuilder.jsx` | 8-step coach configuration wizard |

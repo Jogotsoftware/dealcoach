@@ -12,7 +12,6 @@
 > Sprint #3 live. Everything below is what's left after the 4/25 batch. Build verified after each chunk.
 
 ### High — still open
-- [ ] **Proposal Builder full rewrite** — integrated quote generator, AI-generate quantified pains + outcomes + "why we're here", real ROI/TCO calculators, full quoting engine. Multi-session lift. `[BF: 1e76c5e2]`
 - [ ] **Custom fields platform-wide** — create custom fields in coach admin that get extracted by AI and appear throughout platform. `custom_field_definitions` table already wired into `assemble_coach_prompt`; needs UI across CoachAdmin/DealDetail/ExtractionDefinitions. `[BF: 819d85f4]`
 - [ ] **Reports engine — real cross-reference + AND/OR groups** — Reports engine foundation shipped, but user reports `/reports` still routes to pipeline in some contexts. Verify routing + extend with Salesforce-style report-of-reports cross-ref. `[BF: de4123bb, 4662ea9c]`
 - [ ] **DealDetail + Settings + Admin density sweep** — density pass so far hits Shared.jsx, Pipeline header cards, and the grid breakpoints. DealDetail + Settings + Admin still need a pass. `[BF: 648514a1]`

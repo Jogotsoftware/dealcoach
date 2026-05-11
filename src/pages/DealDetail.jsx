@@ -34,6 +34,7 @@ import LogoUploader from '../components/LogoUploader'
 import SlideGenerator from '../components/SlideGenerator'
 import WidgetRenderer from '../components/WidgetRenderer'
 import ContactsOrgTree from '../components/ContactsOrgTree'
+import CallAnalysisBody from '../components/CallAnalysisBody'
 import { useAuth } from '../hooks/useAuth'
 import { useModules } from '../hooks/useModules'
 import { Responsive, WidthProvider } from 'react-grid-layout'
@@ -455,7 +456,7 @@ export default function DealDetail() {
   const [showForecastPopover, setShowForecastPopover] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
   const [showAddTask, setShowAddTask] = useState(false)
-  const [activityFilter, setActivityFilter] = useState('all')  // 'all' | 'calls' | 'emails'
+  const [selectedCallId, setSelectedCallId] = useState(null)
   const [retrospective, setRetrospective] = useState(null)
   const [loading, setLoading] = useState(true)
   const [deal, setDeal] = useState(null)
@@ -1631,11 +1632,11 @@ export default function DealDetail() {
 
   // Counts hide when zero per acceptance test step 6.
   const labelWithCount = (base, n) => n > 0 ? `${base} (${n})` : base
-  const activityCount = conversations.length + generatedEmails.length
   const tabs = [
     { key: 'home', label: 'Home' },
     (hasModule('msp') || hasModule('proposal')) && { key: 'deal_room', label: 'Deal Room' },
-    { key: 'activity', label: labelWithCount('Activity', activityCount) },
+    { key: 'analysis', label: labelWithCount('Analysis', conversations.length) },
+    generatedEmails.length > 0 && { key: 'emails', label: labelWithCount('Emails', generatedEmails.length) },
     hasModule('deal_management') && { key: 'contacts', label: labelWithCount('Contacts', contacts.length) },
   ].filter(Boolean)
 
@@ -1863,15 +1864,15 @@ export default function DealDetail() {
           </div>
         )}
 
-        {/* ════════════════════ ACTIVITY TAB ════════════════════ */}
-        {tab === 'activity' && (
-          <ActivityFeed
+        {/* ════════════════════ ANALYSIS TAB ════════════════════ */}
+        {tab === 'analysis' && (
+          <AnalysisTab
             conversations={conversations}
-            generatedEmails={generatedEmails}
             dealId={id}
-            navigate={navigate}
-            filter={activityFilter}
-            onFilter={setActivityFilter}
+            selectedCallId={selectedCallId}
+            onSelectCall={setSelectedCallId}
+            onUploadTranscript={() => setShowTranscriptUpload(true)}
+            onCallUpdate={(callId, patch) => setConversations(prev => prev.map(c => c.id === callId ? { ...c, ...patch } : c))}
           />
         )}
 
@@ -3166,83 +3167,77 @@ function TasksWidget({ tasks, setTasks, dealId, userId, onAdd }) {
   )
 }
 
-function ActivityFeed({ conversations, generatedEmails, dealId, navigate, filter, onFilter }) {
-  const items = []
-  for (const c of conversations) items.push({ kind: 'call',  id: `call-${c.id}`,  ts: c.call_date || c.created_at, data: c })
-  for (const e of generatedEmails) items.push({ kind: 'email', id: `email-${e.id}`, ts: e.created_at,                data: e })
-  items.sort((a, b) => new Date(b.ts || 0) - new Date(a.ts || 0))
+// Analysis tab — sub-tab strip per call + embedded CallAnalysisBody for the
+// selected call. Calls sort by date desc; auto-selects the most recent.
+function AnalysisTab({ conversations, dealId, selectedCallId, onSelectCall, onUploadTranscript, onCallUpdate }) {
+  const sorted = [...conversations].sort((a, b) =>
+    new Date(b.call_date || b.created_at || 0) - new Date(a.call_date || a.created_at || 0)
+  )
 
-  const counts = { all: items.length, calls: conversations.length, emails: generatedEmails.length }
-  const visible = filter === 'all' ? items : items.filter(it => (filter === 'calls' ? it.kind === 'call' : it.kind === 'email'))
+  // Auto-select most recent call when entering the tab or when calls change.
+  // Also re-select if the currently-selected call is no longer in the list.
+  useEffect(() => {
+    if (sorted.length === 0) return
+    const stillExists = sorted.some(c => c.id === selectedCallId)
+    if (!selectedCallId || !stillExists) onSelectCall(sorted[0].id)
+  }, [sorted.map(c => c.id).join(',')])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (sorted.length === 0) {
+    return (
+      <EmptyState
+        icon="▶"
+        title="No calls yet"
+        message="Upload a call transcript (.txt / .vtt / .srt) or paste text. The AI analyses it and writes pain points, flags, contacts, tasks, and coaching scores into this deal."
+        action={<Button primary onClick={onUploadTranscript} style={{ padding: '6px 14px', fontSize: 12 }}>Upload transcript</Button>}
+      />
+    )
+  }
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
-        {[
-          { k: 'all', l: counts.all > 0 ? `All (${counts.all})` : 'All' },
-          counts.calls  > 0 ? { k: 'calls',  l: `Calls (${counts.calls})` }   : null,
-          counts.emails > 0 ? { k: 'emails', l: `Emails (${counts.emails})` } : null,
-        ].filter(Boolean).map(o => {
-          const active = filter === o.k
+      {/* Sub-tab strip — one tab per call, scrolls horizontally if it overflows */}
+      <div style={{
+        display: 'flex',
+        gap: 0,
+        borderBottom: `1px solid ${T.border}`,
+        marginBottom: 18,
+        overflowX: 'auto',
+      }}>
+        {sorted.map(call => {
+          const active = call.id === selectedCallId
+          const date = call.call_date || call.created_at
+          const dateStr = date ? new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''
+          const title = call.title || call.call_type || 'Call'
           return (
-            <button key={o.k} onClick={() => onFilter(o.k)}
+            <button
+              key={call.id}
+              onClick={() => onSelectCall(call.id)}
+              title={title}
               style={{
-                padding: '5px 12px', fontSize: 11, fontWeight: 600, fontFamily: T.font,
-                border: `1px solid ${active ? T.primary : T.border}`,
-                borderRadius: 999,
-                background: active ? T.primaryLight : T.surface,
+                display: 'inline-flex', alignItems: 'center', gap: 8,
+                padding: '10px 14px', fontSize: 12, fontWeight: 600, fontFamily: T.font,
+                border: 'none', cursor: 'pointer',
+                background: 'transparent',
                 color: active ? T.primary : T.textMuted,
-                cursor: 'pointer',
+                borderBottom: active ? `2px solid ${T.primary}` : '2px solid transparent',
+                whiteSpace: 'nowrap',
+                transition: 'all 0.15s',
               }}>
-              {o.l}
+              {call.call_type && (
+                <Badge color={active ? T.primary : T.textMuted}>{String(call.call_type).replace(/_/g, ' ')}</Badge>
+              )}
+              <span style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</span>
+              {dateStr && <span style={{ fontSize: 11, color: T.textMuted, fontWeight: 500 }}>{dateStr}</span>}
+              {!call.processed && <span style={{ fontSize: 10, color: T.warning, fontWeight: 700 }}>•</span>}
             </button>
           )
         })}
       </div>
-      {visible.length === 0 ? (
-        <div style={{ padding: 32, textAlign: 'center', color: T.textMuted, fontSize: 13, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8 }}>
-          No activity yet. Use the <strong>+</strong> menu to upload a transcript or generate an email.
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {visible.map(it => it.kind === 'call' ? (
-            <ActivityCallRow key={it.id} call={it.data} dealId={dealId} navigate={navigate} />
-          ) : (
-            <ActivityEmailRow key={it.id} email={it.data} />
-          ))}
-        </div>
+
+      {/* Body for the selected call */}
+      {selectedCallId && (
+        <CallAnalysisBody key={selectedCallId} dealId={dealId} conversationId={selectedCallId} onCallUpdate={onCallUpdate} />
       )}
-    </div>
-  )
-}
-
-function ActivityCallRow({ call, dealId, navigate }) {
-  const date = call.call_date || call.created_at
-  return (
-    <div onClick={() => navigate(`/deal/${dealId}/call/${call.id}`)}
-      style={{ padding: 14, border: `1px solid ${T.border}`, borderLeft: `4px solid ${T.primary}`, borderRadius: 8, background: T.surface, cursor: 'pointer' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <Badge color={T.primary}>Call</Badge>
-        {call.call_type && <Badge color={T.textMuted}>{String(call.call_type).replace(/_/g, ' ')}</Badge>}
-        <span style={{ fontSize: 13, fontWeight: 700, color: T.text, flex: 1, minWidth: 0 }}>{call.title || call.call_type || 'Call'}</span>
-        <span style={{ fontSize: 11, color: T.textMuted }}>{date ? new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span>
-      </div>
-      {call.summary && <div style={{ fontSize: 12, color: T.textSecondary, marginTop: 6, lineHeight: 1.5 }}>{String(call.summary).slice(0, 280)}{String(call.summary).length > 280 ? '…' : ''}</div>}
-      {!call.processed && <div style={{ fontSize: 10, color: T.warning, marginTop: 6, fontWeight: 600 }}>Processing…</div>}
-    </div>
-  )
-}
-
-function ActivityEmailRow({ email }) {
-  return (
-    <div style={{ padding: 14, border: `1px solid ${T.border}`, borderLeft: `4px solid ${T.success}`, borderRadius: 8, background: T.surface }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <Badge color={T.success}>Email</Badge>
-        {email.email_type && <Badge color={T.textMuted}>{String(email.email_type).replace(/_/g, ' ')}</Badge>}
-        <span style={{ fontSize: 13, fontWeight: 700, color: T.text, flex: 1, minWidth: 0 }}>{email.subject || '(no subject)'}</span>
-        <span style={{ fontSize: 11, color: T.textMuted }}>{email.created_at ? new Date(email.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span>
-      </div>
-      {email.body && <div style={{ fontSize: 12, color: T.textSecondary, marginTop: 6, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{String(email.body).slice(0, 280)}{String(email.body).length > 280 ? '…' : ''}</div>}
     </div>
   )
 }
