@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { theme as T } from '../lib/theme'
 import { Spinner } from './Shared'
 import { supabase } from '../lib/supabase'
+import TcoModelsView from './TcoModelsView'
 
 // ─── Money + date helpers ────────────────────────────────────────────────────
 const num = (n) => Number(n) || 0
@@ -72,6 +73,9 @@ function readTabVis(displayConfig) {
     investment_summary: tabs.investment_summary !== false,
     schedules:          tabs.schedules          !== false,
     tco:                tabs.tco                !== false,
+    // TCO Comparison is opt-IN — hidden unless the AE explicitly turns it on,
+    // since most quotes won't have scenarios modeled yet.
+    tco_comparison:     tabs.tco_comparison     === true,
   }
 }
 
@@ -107,9 +111,10 @@ export default function ProposalView({
 
   const tabVis = readTabVis(snapshot.display_config)
   const visibleTabs = [
-    tabVis.investment_summary && { key: 'summary',   label: 'Investment Summary' },
-    tabVis.schedules          && { key: 'schedules', label: 'Schedules' },
-    tabVis.tco                && { key: 'tco',       label: 'TCO' },
+    tabVis.investment_summary && { key: 'summary',        label: 'Investment Summary' },
+    tabVis.schedules          && { key: 'schedules',      label: 'Schedules' },
+    tabVis.tco                && { key: 'tco',            label: 'TCO' },
+    tabVis.tco_comparison     && { key: 'tco_comparison', label: 'TCO Comparison' },
   ].filter(Boolean)
 
   // Fall back to first visible tab if the chosen one is hidden.
@@ -261,6 +266,7 @@ export default function ProposalView({
             { key: 'investment_summary', label: 'Investment Summary' },
             { key: 'schedules',          label: 'Schedules' },
             { key: 'tco',                label: 'TCO' },
+            { key: 'tco_comparison',     label: 'TCO Comparison' },
           ].map(t => {
             const on = tabVis[t.key]
             return (
@@ -311,9 +317,10 @@ export default function ProposalView({
       {/* Screen view — renders the active tab only */}
       {!printingTabs && (
         <div className="ri-no-print">
-          {activeTab === 'summary'   && <InvestmentSummaryTab snapshot={snapshot} columnVisibility={columnVisibility} aePreview={aePreview} onColumnVisibilityChange={onColumnVisibilityChange} accent={accent} />}
-          {activeTab === 'schedules' && <SchedulesTab snapshot={snapshot} accent={accent} />}
-          {activeTab === 'tco'       && <TcoTab snapshot={snapshot} />}
+          {activeTab === 'summary'        && <InvestmentSummaryTab snapshot={snapshot} columnVisibility={columnVisibility} aePreview={aePreview} onColumnVisibilityChange={onColumnVisibilityChange} accent={accent} />}
+          {activeTab === 'schedules'      && <SchedulesTab snapshot={snapshot} accent={accent} />}
+          {activeTab === 'tco'            && <TcoTab snapshot={snapshot} />}
+          {activeTab === 'tco_comparison' && <TcoComparisonTab snapshot={snapshot} />}
         </div>
       )}
 
@@ -325,9 +332,10 @@ export default function ProposalView({
         return (
           <section key={key} className="ri-print-page" style={{ paddingBottom: 24 }}>
             <PrintPageHeader snapshot={snapshot} accent={accent} sectionTitle={label} pageIndex={idx + 1} pageTotal={printingTabs.length} />
-            {key === 'summary'   && <InvestmentSummaryTab snapshot={snapshot} columnVisibility={columnVisibility} accent={accent} />}
-            {key === 'schedules' && <SchedulesTab snapshot={snapshot} accent={accent} printAll />}
-            {key === 'tco'       && <TcoTab snapshot={snapshot} />}
+            {key === 'summary'        && <InvestmentSummaryTab snapshot={snapshot} columnVisibility={columnVisibility} accent={accent} />}
+            {key === 'schedules'      && <SchedulesTab snapshot={snapshot} accent={accent} printAll />}
+            {key === 'tco'            && <TcoTab snapshot={snapshot} />}
+            {key === 'tco_comparison' && <TcoComparisonTab snapshot={snapshot} />}
           </section>
         )
       })}
@@ -1276,6 +1284,44 @@ function readSection(snapshot, key) {
   const s = snapshot?.display_config?.sections || {}
   const v = s[key]
   return v === undefined || v === null ? true : !!v
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// TAB 4 — TCO Comparison
+// Reuses the AE-side TcoModelsView in readOnly mode, fed by a synthetic
+// `parentQuote` and `contractTerms` array assembled from the snapshot.
+// ═════════════════════════════════════════════════════════════════════════════
+function TcoComparisonTab({ snapshot }) {
+  const totals = snapshot.totals || {}
+  const term = snapshot.term
+  // Synthetic quote shape — only the columns TcoModelsView reads. The
+  // snapshot is the source of truth here, not the live quotes row.
+  const parentQuote = {
+    id: snapshot.quote_id,
+    name: snapshot.quote_name,
+    scenario_label: snapshot.deal?.company_name || snapshot.quote_name,
+    sage_subscription_total: totals.sage_subscription,
+    sage_implementation_total: totals.sage_implementation,
+    signing_bonus_amount: snapshot.signing_bonus_amount,
+    signing_bonus_months: snapshot.signing_bonus_months,
+    free_months: snapshot.free_months,
+    contract_term_id: 'snapshot',  // synthetic id matched below
+    tco_scenarios: Array.isArray(snapshot.tco_scenarios) ? snapshot.tco_scenarios : [],
+  }
+  const contractTerms = term ? [{
+    id: 'snapshot',
+    term_years: term.term_years,
+    yoy_caps: term.yoy_caps,
+  }] : []
+  return (
+    <div className="ri-print-block">
+      <TcoModelsView
+        parentQuote={parentQuote}
+        contractTerms={contractTerms}
+        readOnly={true}
+      />
+    </div>
+  )
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
