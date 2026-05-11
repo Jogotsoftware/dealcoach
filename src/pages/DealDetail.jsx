@@ -3272,9 +3272,15 @@ function TasksWidget({ tasks, setTasks, dealId, userId, onAdd }) {
 // created on deal creation), followed by one sub-tab per uploaded call.
 // `selectedCallId` is the sentinel string 'pre-qdc' or a conversation UUID.
 function AnalysisTab({ conversations, dealId, selectedCallId, onSelectCall, onUploadTranscript, onCallUpdate, preQdcContent }) {
-  const sorted = [...conversations].sort((a, b) =>
-    new Date(b.call_date || b.created_at || 0) - new Date(a.call_date || a.created_at || 0)
-  )
+  // Ascending by call_date so the tabs read left-to-right as the deal's
+  // chronological progression. Pre-QDC research stays pinned leftmost as
+  // "before any call"; newest activity ends up on the right edge — the
+  // direction the user is already adding new transcripts.
+  const sorted = [...conversations].sort((a, b) => {
+    const at = new Date(a.call_date || a.created_at || 0).getTime()
+    const bt = new Date(b.call_date || b.created_at || 0).getTime()
+    return at - bt
+  })
 
   // If the currently-selected call gets deleted, fall back to Pre-QDC.
   // Pre-QDC stays selected by default — we don't yank the user to a new call
