@@ -457,6 +457,7 @@ export default function DealDetail() {
   const [showEditModal, setShowEditModal] = useState(false)
   const [showAddTask, setShowAddTask] = useState(false)
   const [selectedCallId, setSelectedCallId] = useState('pre-qdc')
+  const [intelSubTab, setIntelSubTab] = useState('contacts')
   const [retrospective, setRetrospective] = useState(null)
   const [loading, setLoading] = useState(true)
   const [deal, setDeal] = useState(null)
@@ -518,6 +519,12 @@ export default function DealDetail() {
   const [newTask, setNewTask] = useState({ title: '', priority: 'medium', due_date: '', notes: '' })
   const [taskCommitFilter, setTaskCommitFilter] = useState('all')
   const [selectedTasks, setSelectedTasks] = useState(new Set())
+  // Inline-outcome capture: while a task id is "pending complete", the
+  // checkbox shows as filled but the row hasn't been saved yet — the rep
+  // sees a textarea + Complete/Skip/Cancel buttons. The trigger
+  // tasks_write_outcome_to_memory fans completion_notes into ai_memory.
+  const [completingTaskId, setCompletingTaskId] = useState(null)
+  const [completionNote, setCompletionNote] = useState('')
 
   // Email generation
   const [showEmailGenerator, setShowEmailGenerator] = useState(false)
@@ -801,15 +808,48 @@ export default function DealDetail() {
     const { error } = await supabase.from('deal_competitors').update(editCompData).eq('id', compId)
     if (!error) { setCompetitors(prev => prev.map(c => c.id === compId ? { ...c, ...editCompData } : c)); setEditingCompetitor(null) }
   }
-  async function toggleTask(taskId) {
+  // Open task checkbox click — visual fills via completingTaskId but no
+  // save fires until Complete or Skip.
+  function startCompletingTask(taskId) {
+    setCompletingTaskId(taskId)
+    setCompletionNote('')
+  }
+  function cancelCompletingTask() {
+    setCompletingTaskId(null)
+    setCompletionNote('')
+  }
+  // withNote=true uses the current textarea value (or null if empty).
+  // withNote=false is the Skip path — completion_notes is set to null.
+  async function finishCompletingTask(withNote) {
+    const taskId = completingTaskId
+    if (!taskId) return
     const task = tasks.find(t => t.id === taskId)
-    if (!task) return
-    const { error } = await supabase.from('tasks').update({ completed: !task.completed, completed_at: !task.completed ? new Date().toISOString() : null }).eq('id', taskId)
-    if (!error) {
-      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, completed: !t.completed } : t))
+    if (!task) { cancelCompletingTask(); return }
+    const trimmed = withNote ? (completionNote.trim() || null) : null
+    try {
+      const { error } = await supabase.from('tasks')
+        .update({ completed: true, completion_notes: trimmed })
+        .eq('id', taskId)
+      if (error) { console.error('finishCompletingTask:', error.message); return }
+      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, completed: true, completion_notes: trimmed } : t))
       if (task.auto_generated && !task.completed) {
         trackSuggestion({ orgId: profile?.org_id, dealId: id, userId: profile?.id, targetType: 'task', targetId: taskId, action: 'accepted', createdAt: task.created_at })
       }
+    } catch (e) {
+      console.error('finishCompletingTask threw:', e.message)
+      return
+    }
+    cancelCompletingTask()
+  }
+  // Uncomplete preserves completion_notes — re-completing later writes a
+  // fresh ai_memory row, so outcomes are append-only signal.
+  async function uncompleteTask(taskId) {
+    try {
+      const { error } = await supabase.from('tasks').update({ completed: false }).eq('id', taskId)
+      if (error) { console.error('uncompleteTask:', error.message); return }
+      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, completed: false } : t))
+    } catch (e) {
+      console.error('uncompleteTask threw:', e.message)
     }
   }
   async function addRisk() {
@@ -1637,7 +1677,7 @@ export default function DealDetail() {
     (hasModule('msp') || hasModule('proposal')) && { key: 'deal_room', label: 'Deal Room' },
     { key: 'analysis', label: labelWithCount('Analysis', conversations.length) },
     generatedEmails.length > 0 && { key: 'emails', label: labelWithCount('Emails', generatedEmails.length) },
-    hasModule('deal_management') && { key: 'contacts', label: labelWithCount('Contacts', contacts.length) },
+    hasModule('deal_management') && { key: 'intel', label: 'Intel' },
   ].filter(Boolean)
 
   return (
@@ -1980,8 +2020,18 @@ export default function DealDetail() {
         )}
 
         {/* ===== CONTACTS TAB ===== */}
-        {tab === 'contacts' && (
-          <ContactsOrgTree dealId={id} contacts={contacts} setContacts={setContacts} />
+        {tab === 'intel' && (
+          <IntelTab
+            intelSubTab={intelSubTab}
+            onSubTabChange={setIntelSubTab}
+            dealId={id}
+            contacts={contacts}
+            setContacts={setContacts}
+            competitors={competitors}
+            setCompetitors={setCompetitors}
+            companyProfile={companyProfile}
+            setCompanyProfile={setCompanyProfile}
+          />
         )}
 
         {/* ===== TRANSCRIPTS TAB ===== */}
@@ -2153,23 +2203,64 @@ export default function DealDetail() {
                     <Card title="Open">
                       {filteredOpen.map(t => {
                         const overdue = t.due_date && daysUntil(t.due_date) < 0
+                        const isCompleting = completingTaskId === t.id
                         return (
-                          <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderBottom: `1px solid ${T.borderLight}` }}>
-                            <input type="checkbox" checked={selectedTasks.has(t.id)} onChange={() => setSelectedTasks(prev => { const n = new Set(prev); n.has(t.id) ? n.delete(t.id) : n.add(t.id); return n })} style={{ accentColor: T.primary, flexShrink: 0 }} />
-                            <button onClick={() => toggleTask(t.id)} style={{ width: 20, height: 20, borderRadius: 5, border: `1.5px solid ${T.border}`, background: 'transparent', cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }} />
-                            <span style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, background: t.priority === 'high' ? T.error : t.priority === 'medium' ? T.warning : T.textMuted }} />
-                            <div style={{ flex: 1 }}>
-                              <div style={{ fontSize: 13, color: T.text, display: 'flex', alignItems: 'center', gap: 6 }}>
-                                {t.title}
-                                {t.is_blocking && <Badge color={T.error}>Blocking</Badge>}
-                                {t.auto_generated && <Badge color={T.primary}>AI</Badge>}
-                                {t.committed_by && <Badge color={t.committed_by === 'prospect' ? T.warning : T.primary}>{t.committed_by === 'prospect' ? 'Prospect' : 'Rep'}</Badge>}
-                                {t.committed_by_name && <span style={{ fontSize: 10, color: T.textMuted }}>{t.committed_by_name}</span>}
+                          <div key={t.id} style={{ padding: '10px 0', borderBottom: `1px solid ${T.borderLight}` }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                              <input type="checkbox" checked={selectedTasks.has(t.id)} onChange={() => setSelectedTasks(prev => { const n = new Set(prev); n.has(t.id) ? n.delete(t.id) : n.add(t.id); return n })} style={{ accentColor: T.primary, flexShrink: 0 }} />
+                              <button
+                                onClick={() => isCompleting ? cancelCompletingTask() : startCompletingTask(t.id)}
+                                title={isCompleting ? 'Cancel' : 'Complete'}
+                                style={{
+                                  width: 20, height: 20, borderRadius: 5,
+                                  border: `1.5px solid ${isCompleting ? T.success : T.border}`,
+                                  background: isCompleting ? T.success : 'transparent',
+                                  cursor: 'pointer', flexShrink: 0,
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
+                                }}>
+                                {isCompleting && <span style={{ color: '#fff', fontSize: 12 }}>&#10003;</span>}
+                              </button>
+                              <span style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, background: t.priority === 'high' ? T.error : t.priority === 'medium' ? T.warning : T.textMuted }} />
+                              <div style={{ flex: 1 }}>
+                                <div style={{ fontSize: 13, color: T.text, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  {t.title}
+                                  {t.is_blocking && <Badge color={T.error}>Blocking</Badge>}
+                                  {t.auto_generated && <Badge color={T.primary}>AI</Badge>}
+                                  {t.committed_by && <Badge color={t.committed_by === 'prospect' ? T.warning : T.primary}>{t.committed_by === 'prospect' ? 'Prospect' : 'Rep'}</Badge>}
+                                  {t.committed_by_name && <span style={{ fontSize: 10, color: T.textMuted }}>{t.committed_by_name}</span>}
+                                </div>
+                                <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>{t.category || 'Uncategorized'}</div>
                               </div>
-                              <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>{t.category || 'Uncategorized'}</div>
+                              <span style={{ fontSize: 11, fontWeight: 500, color: overdue ? T.error : T.textMuted, fontFeatureSettings: '"tnum"' }}>{t.due_date ? formatDate(t.due_date) : ''}</span>
+                              <DeleteBtn onClick={() => deleteTask(t.id)} />
                             </div>
-                            <span style={{ fontSize: 11, fontWeight: 500, color: overdue ? T.error : T.textMuted, fontFeatureSettings: '"tnum"' }}>{t.due_date ? formatDate(t.due_date) : ''}</span>
-                            <DeleteBtn onClick={() => deleteTask(t.id)} />
+                            {isCompleting && (
+                              <div style={{ marginTop: 8, marginLeft: 36, padding: 10, background: T.surfaceAlt, borderRadius: 6, border: `1px solid ${T.borderLight}` }}>
+                                <textarea
+                                  autoFocus
+                                  value={completionNote}
+                                  onChange={e => setCompletionNote(e.target.value)}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); finishCompletingTask(true) }
+                                    else if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); finishCompletingTask(true) }
+                                    else if (e.key === 'Escape') { e.preventDefault(); cancelCompletingTask() }
+                                  }}
+                                  placeholder="Outcome (optional) — what happened? Any follow-up?"
+                                  rows={1}
+                                  style={{
+                                    ...inputStyle,
+                                    minHeight: 32, resize: 'vertical',
+                                    fontFamily: T.font, fontSize: 13,
+                                    width: '100%', boxSizing: 'border-box',
+                                  }}
+                                />
+                                <div style={{ display: 'flex', gap: 6, marginTop: 8, alignItems: 'center' }}>
+                                  <Button primary onClick={() => finishCompletingTask(true)} style={{ padding: '5px 14px', fontSize: 12 }}>Complete</Button>
+                                  <Button onClick={() => finishCompletingTask(false)} style={{ padding: '5px 14px', fontSize: 12 }}>Skip</Button>
+                                  <Button onClick={cancelCompletingTask} style={{ padding: '5px 14px', fontSize: 12, marginLeft: 'auto' }}>Cancel</Button>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         )
                       })}
@@ -2178,10 +2269,19 @@ export default function DealDetail() {
                   {filteredDone.length > 0 && (
                     <Card title="Completed">
                       {filteredDone.map(t => (
-                        <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderBottom: `1px solid ${T.borderLight}`, opacity: 0.5 }}>
-                          <button onClick={() => toggleTask(t.id)} style={{ width: 20, height: 20, borderRadius: 5, border: `1.5px solid ${T.success}`, background: T.success, cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}><span style={{ color: '#fff', fontSize: 12 }}>&#10003;</span></button>
-                          <span style={{ flex: 1, fontSize: 13, color: T.textMuted, textDecoration: 'line-through' }}>{t.title}</span>
-                          {t.committed_by && <Badge color={t.committed_by === 'prospect' ? T.warning : T.primary}>{t.committed_by === 'prospect' ? 'Prospect' : 'Rep'}</Badge>}
+                        <div key={t.id} style={{ padding: '10px 0', borderBottom: `1px solid ${T.borderLight}`, opacity: 0.5 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <button onClick={() => uncompleteTask(t.id)} style={{ width: 20, height: 20, borderRadius: 5, border: `1.5px solid ${T.success}`, background: T.success, cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}><span style={{ color: '#fff', fontSize: 12 }}>&#10003;</span></button>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 13, color: T.textMuted, textDecoration: 'line-through' }}>{t.title}</div>
+                              {t.completion_notes && (
+                                <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2, lineHeight: 1.4 }}>
+                                  <span style={{ fontWeight: 600 }}>Outcome:</span> {t.completion_notes}
+                                </div>
+                              )}
+                            </div>
+                            {t.committed_by && <Badge color={t.committed_by === 'prospect' ? T.warning : T.primary}>{t.committed_by === 'prospect' ? 'Prospect' : 'Rep'}</Badge>}
+                          </div>
                         </div>
                       ))}
                     </Card>
@@ -3260,6 +3360,461 @@ function AnalysisTab({ conversations, dealId, selectedCallId, onSelectCall, onUp
       ) : (
         <CallAnalysisBody key={selectedCallId} dealId={dealId} conversationId={selectedCallId} onCallUpdate={onCallUpdate} />
       )}
+    </div>
+  )
+}
+
+// Intel tab — Contacts (org tree), Competitors (vendors we're up against),
+// and Industry (the prospect's market peers + industry-level intel) as sub-tabs.
+function IntelTab({ intelSubTab, onSubTabChange, dealId, contacts, setContacts, competitors, setCompetitors, companyProfile, setCompanyProfile }) {
+  const dealCompetitors = competitors.filter(c => !c.competitor_type || c.competitor_type === 'deal')
+  const industryCompetitors = competitors.filter(c => c.competitor_type === 'industry')
+
+  const subTabBtn = (key, label, count) => {
+    const active = intelSubTab === key
+    return (
+      <button
+        key={key}
+        onClick={() => onSubTabChange(key)}
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+          padding: '10px 14px', fontSize: 12, fontWeight: 600, fontFamily: T.font,
+          border: 'none', cursor: 'pointer', background: 'transparent',
+          color: active ? T.primary : T.textMuted,
+          borderBottom: active ? `2px solid ${T.primary}` : '2px solid transparent',
+          whiteSpace: 'nowrap', transition: 'all 0.15s',
+        }}>
+        <span>{label}</span>
+        {count > 0 && <span style={{ fontSize: 11, color: T.textMuted, fontWeight: 500 }}>({count})</span>}
+      </button>
+    )
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 0, borderBottom: `1px solid ${T.border}`, marginBottom: 18 }}>
+        {subTabBtn('contacts', 'Contacts', contacts.length)}
+        {subTabBtn('competitors', 'Competitors', dealCompetitors.length)}
+        {subTabBtn('industry', 'Industry', industryCompetitors.length)}
+      </div>
+
+      {intelSubTab === 'contacts' && (
+        <ContactsOrgTree dealId={dealId} contacts={contacts} setContacts={setContacts} />
+      )}
+      {intelSubTab === 'competitors' && (
+        <CompetitorsView dealId={dealId} competitors={competitors} setCompetitors={setCompetitors} />
+      )}
+      {intelSubTab === 'industry' && (
+        <IndustryView
+          dealId={dealId}
+          competitors={competitors}
+          setCompetitors={setCompetitors}
+          companyProfile={companyProfile}
+          setCompanyProfile={setCompanyProfile}
+        />
+      )}
+    </div>
+  )
+}
+
+// Competitors sub-tab — manages deal_competitors rows (the vendors we're
+// competing with on this deal). Industry-level peers live in the Industry tab.
+function CompetitorsView({ dealId, competitors, setCompetitors }) {
+  const dealComps = competitors.filter(c => !c.competitor_type || c.competitor_type === 'deal')
+  const [showAdd, setShowAdd] = useState(false)
+  const [draftNew, setDraftNew] = useState({ competitor_name: '', website: '', strengths: '', weaknesses: '', where_in_process: '', received_pricing: false })
+  const [editingId, setEditingId] = useState(null)
+  const [draftEdit, setDraftEdit] = useState({})
+
+  function resetNew() {
+    setDraftNew({ competitor_name: '', website: '', strengths: '', weaknesses: '', where_in_process: '', received_pricing: false })
+    setShowAdd(false)
+  }
+
+  async function addCompetitor() {
+    const name = draftNew.competitor_name.trim()
+    if (!name) return
+    const payload = { deal_id: dealId, competitor_type: 'deal', source: 'manual', ...draftNew, competitor_name: name }
+    const { data, error } = await supabase.from('deal_competitors').insert(payload).select().single()
+    if (error) { alert('Failed to add competitor: ' + error.message); return }
+    setCompetitors(prev => [data, ...prev])
+    resetNew()
+  }
+
+  async function deleteCompetitor(compId) {
+    if (!window.confirm('Delete this competitor?')) return
+    const { error } = await supabase.from('deal_competitors').delete().eq('id', compId)
+    if (error) { alert('Delete failed: ' + error.message); return }
+    setCompetitors(prev => prev.filter(c => c.id !== compId))
+  }
+
+  async function saveEdit(compId) {
+    const { error } = await supabase.from('deal_competitors').update(draftEdit).eq('id', compId)
+    if (error) { alert('Save failed: ' + error.message); return }
+    setCompetitors(prev => prev.map(c => c.id === compId ? { ...c, ...draftEdit } : c))
+    setEditingId(null)
+    setDraftEdit({})
+  }
+
+  function startEdit(c) {
+    setEditingId(c.id)
+    setDraftEdit({
+      competitor_name: c.competitor_name || '',
+      website: c.website || '',
+      strengths: c.strengths || '',
+      weaknesses: c.weaknesses || '',
+      where_in_process: c.where_in_process || '',
+      received_pricing: !!c.received_pricing,
+    })
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+        <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: T.text }}>Competitors ({dealComps.length})</h3>
+        {!showAdd && <Button primary onClick={() => setShowAdd(true)} style={{ padding: '6px 12px', fontSize: 12 }}>+ Add Competitor</Button>}
+      </div>
+
+      {showAdd && (
+        <Card style={{ marginBottom: 12, borderLeft: `4px solid ${T.primary}` }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+            <div>
+              <label style={labelStyle}>Competitor Name *</label>
+              <input autoFocus style={inputStyle} value={draftNew.competitor_name} onChange={e => setDraftNew(p => ({ ...p, competitor_name: e.target.value }))} placeholder="e.g. NetSuite" />
+            </div>
+            <div>
+              <label style={labelStyle}>Website</label>
+              <input style={inputStyle} value={draftNew.website} onChange={e => setDraftNew(p => ({ ...p, website: e.target.value }))} placeholder="https://" />
+            </div>
+            <div>
+              <label style={labelStyle}>Strengths</label>
+              <textarea style={{ ...inputStyle, minHeight: 60, resize: 'vertical' }} value={draftNew.strengths} onChange={e => setDraftNew(p => ({ ...p, strengths: e.target.value }))} placeholder="What they do better than us" />
+            </div>
+            <div>
+              <label style={labelStyle}>Weaknesses</label>
+              <textarea style={{ ...inputStyle, minHeight: 60, resize: 'vertical' }} value={draftNew.weaknesses} onChange={e => setDraftNew(p => ({ ...p, weaknesses: e.target.value }))} placeholder="Where we win" />
+            </div>
+            <div>
+              <label style={labelStyle}>Where in process</label>
+              <input style={inputStyle} value={draftNew.where_in_process} onChange={e => setDraftNew(p => ({ ...p, where_in_process: e.target.value }))} placeholder="e.g. final two, ruled out, demoed last week" />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8 }}>
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: T.textSecondary, cursor: 'pointer' }}>
+                <input type="checkbox" checked={draftNew.received_pricing} onChange={e => setDraftNew(p => ({ ...p, received_pricing: e.target.checked }))} />
+                Customer has their pricing
+              </label>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <Button onClick={resetNew}>Cancel</Button>
+            <Button primary onClick={addCompetitor} disabled={!draftNew.competitor_name.trim()}>Add</Button>
+          </div>
+        </Card>
+      )}
+
+      {dealComps.length === 0 && !showAdd ? (
+        <EmptyState
+          icon="◆"
+          title="No competitors tracked yet"
+          message="Add the vendors you're up against on this deal. AI also extracts mentions from transcripts as you upload them."
+          action={<Button primary onClick={() => setShowAdd(true)} style={{ padding: '6px 14px', fontSize: 12 }}>Add competitor</Button>}
+        />
+      ) : (
+        dealComps.map(c => editingId === c.id ? (
+          <Card key={c.id} style={{ marginBottom: 10, borderLeft: `4px solid ${T.primary}` }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+              <div>
+                <label style={labelStyle}>Competitor Name</label>
+                <input style={inputStyle} value={draftEdit.competitor_name} onChange={e => setDraftEdit(p => ({ ...p, competitor_name: e.target.value }))} />
+              </div>
+              <div>
+                <label style={labelStyle}>Website</label>
+                <input style={inputStyle} value={draftEdit.website} onChange={e => setDraftEdit(p => ({ ...p, website: e.target.value }))} />
+              </div>
+              <div>
+                <label style={labelStyle}>Strengths</label>
+                <textarea style={{ ...inputStyle, minHeight: 60, resize: 'vertical' }} value={draftEdit.strengths} onChange={e => setDraftEdit(p => ({ ...p, strengths: e.target.value }))} />
+              </div>
+              <div>
+                <label style={labelStyle}>Weaknesses</label>
+                <textarea style={{ ...inputStyle, minHeight: 60, resize: 'vertical' }} value={draftEdit.weaknesses} onChange={e => setDraftEdit(p => ({ ...p, weaknesses: e.target.value }))} />
+              </div>
+              <div>
+                <label style={labelStyle}>Where in process</label>
+                <input style={inputStyle} value={draftEdit.where_in_process} onChange={e => setDraftEdit(p => ({ ...p, where_in_process: e.target.value }))} />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8 }}>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: T.textSecondary, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={draftEdit.received_pricing} onChange={e => setDraftEdit(p => ({ ...p, received_pricing: e.target.checked }))} />
+                  Customer has their pricing
+                </label>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <Button onClick={() => { setEditingId(null); setDraftEdit({}) }}>Cancel</Button>
+              <Button primary onClick={() => saveEdit(c.id)}>Save</Button>
+            </div>
+          </Card>
+        ) : (
+          <Card key={c.id} style={{ marginBottom: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  {c.website ? (
+                    <a href={c.website.startsWith('http') ? c.website : 'https://' + c.website} target="_blank" rel="noopener noreferrer"
+                      style={{ fontSize: 14, fontWeight: 700, color: T.primary, textDecoration: 'none' }}>
+                      {c.competitor_name} {'↗'}
+                    </a>
+                  ) : (
+                    <span style={{ fontSize: 14, fontWeight: 700, color: T.text }}>{c.competitor_name}</span>
+                  )}
+                  {c.received_pricing && <Badge color={T.warning}>Has our pricing</Badge>}
+                  {c.where_in_process && <Badge color={T.textMuted}>{c.where_in_process}</Badge>}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginTop: 10 }}>
+                  <div>
+                    <div style={ddLabelStyle}>Strengths</div>
+                    <div style={{ fontSize: 12, color: c.strengths ? T.text : T.textMuted, lineHeight: 1.5, fontStyle: c.strengths ? 'normal' : 'italic' }}>
+                      {c.strengths || 'None noted'}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={ddLabelStyle}>Weaknesses</div>
+                    <div style={{ fontSize: 12, color: c.weaknesses ? T.text : T.textMuted, lineHeight: 1.5, fontStyle: c.weaknesses ? 'normal' : 'italic' }}>
+                      {c.weaknesses || 'None noted'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                <button onClick={() => startEdit(c)} title="Edit"
+                  style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 600, color: T.textSecondary, cursor: 'pointer', fontFamily: T.font }}>
+                  Edit
+                </button>
+                <button onClick={() => deleteCompetitor(c.id)} title="Delete"
+                  style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 600, color: T.textMuted, cursor: 'pointer', fontFamily: T.font }}
+                  onMouseEnter={e => { e.currentTarget.style.color = T.error; e.currentTarget.style.borderColor = T.error }}
+                  onMouseLeave={e => { e.currentTarget.style.color = T.textMuted; e.currentTarget.style.borderColor = T.border }}>
+                  &times;
+                </button>
+              </div>
+            </div>
+          </Card>
+        ))
+      )}
+    </div>
+  )
+}
+
+// Industry sub-tab — the prospect's market peers (e.g. other cannabis
+// operators if the client is one) plus free-text industry-level intel
+// (trends, knowledge, research) stored on company_profile.
+function IndustryView({ dealId, competitors, setCompetitors, companyProfile, setCompanyProfile }) {
+  const industryComps = competitors.filter(c => c.competitor_type === 'industry')
+  const [showAdd, setShowAdd] = useState(false)
+  const [draftNew, setDraftNew] = useState({ competitor_name: '', website: '', notes: '' })
+  const [editingId, setEditingId] = useState(null)
+  const [draftEdit, setDraftEdit] = useState({})
+
+  function resetNew() {
+    setDraftNew({ competitor_name: '', website: '', notes: '' })
+    setShowAdd(false)
+  }
+
+  // deal_competitors has no dedicated `notes` column today, so the
+  // industry-tab notes field maps to `strengths` — that column is
+  // unused for industry-type rows. Simpler than adding a column.
+  async function addPeer() {
+    const name = draftNew.competitor_name.trim()
+    if (!name) return
+    const payload = {
+      deal_id: dealId,
+      competitor_type: 'industry',
+      source: 'manual',
+      competitor_name: name,
+      website: draftNew.website || null,
+      strengths: draftNew.notes || null,
+    }
+    const { data, error } = await supabase.from('deal_competitors').insert(payload).select().single()
+    if (error) { alert('Failed to add: ' + error.message); return }
+    setCompetitors(prev => [data, ...prev])
+    resetNew()
+  }
+
+  async function deletePeer(compId) {
+    if (!window.confirm('Remove this industry peer?')) return
+    const { error } = await supabase.from('deal_competitors').delete().eq('id', compId)
+    if (error) { alert('Delete failed: ' + error.message); return }
+    setCompetitors(prev => prev.filter(c => c.id !== compId))
+  }
+
+  async function saveEdit(compId) {
+    const patch = {
+      competitor_name: draftEdit.competitor_name,
+      website: draftEdit.website || null,
+      strengths: draftEdit.notes || null,
+    }
+    const { error } = await supabase.from('deal_competitors').update(patch).eq('id', compId)
+    if (error) { alert('Save failed: ' + error.message); return }
+    setCompetitors(prev => prev.map(c => c.id === compId ? { ...c, ...patch } : c))
+    setEditingId(null)
+    setDraftEdit({})
+  }
+
+  function startEdit(c) {
+    setEditingId(c.id)
+    setDraftEdit({
+      competitor_name: c.competitor_name || '',
+      website: c.website || '',
+      notes: c.strengths || '',
+    })
+  }
+
+  const cpSave = (f, v) => setCompanyProfile(p => p ? ({ ...p, [f]: v }) : p)
+
+  const sectionHeading = {
+    fontSize: 11, fontWeight: 700, color: T.textSecondary, textTransform: 'uppercase',
+    letterSpacing: '0.06em', marginBottom: 10, marginTop: 4,
+  }
+
+  return (
+    <div>
+      {/* ── INDUSTRY PEERS ── */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+        <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: T.text }}>Industry Peers ({industryComps.length})</h3>
+        {!showAdd && <Button primary onClick={() => setShowAdd(true)} style={{ padding: '6px 12px', fontSize: 12 }}>+ Add Peer</Button>}
+      </div>
+      <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 12 }}>
+        Similar companies to the client — same market, often the same region. Use this to ground value conversations in peer-relevant context.
+      </div>
+
+      {showAdd && (
+        <Card style={{ marginBottom: 12, borderLeft: `4px solid ${T.primary}` }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+            <div>
+              <label style={labelStyle}>Company Name *</label>
+              <input autoFocus style={inputStyle} value={draftNew.competitor_name} onChange={e => setDraftNew(p => ({ ...p, competitor_name: e.target.value }))} placeholder="e.g. Curaleaf" />
+            </div>
+            <div>
+              <label style={labelStyle}>Website</label>
+              <input style={inputStyle} value={draftNew.website} onChange={e => setDraftNew(p => ({ ...p, website: e.target.value }))} placeholder="https://" />
+            </div>
+            <div style={{ gridColumn: '1 / -1' }}>
+              <label style={labelStyle}>Notes (region, size, why relevant)</label>
+              <textarea style={{ ...inputStyle, minHeight: 60, resize: 'vertical' }} value={draftNew.notes} onChange={e => setDraftNew(p => ({ ...p, notes: e.target.value }))} placeholder="e.g. Same Colorado market, similar revenue band, recently acquired by..." />
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <Button onClick={resetNew}>Cancel</Button>
+            <Button primary onClick={addPeer} disabled={!draftNew.competitor_name.trim()}>Add</Button>
+          </div>
+        </Card>
+      )}
+
+      {industryComps.length === 0 && !showAdd ? (
+        <div style={{ padding: 18, background: T.surfaceAlt, border: `1px dashed ${T.border}`, borderRadius: 8, color: T.textMuted, fontSize: 13, textAlign: 'center', marginBottom: 24 }}>
+          No industry peers tracked yet. AI research also adds peers it finds during the initial research pass.
+        </div>
+      ) : (
+        <div style={{ marginBottom: 24 }}>
+          {industryComps.map(c => editingId === c.id ? (
+            <Card key={c.id} style={{ marginBottom: 10, borderLeft: `4px solid ${T.primary}` }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+                <div>
+                  <label style={labelStyle}>Company Name</label>
+                  <input style={inputStyle} value={draftEdit.competitor_name} onChange={e => setDraftEdit(p => ({ ...p, competitor_name: e.target.value }))} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Website</label>
+                  <input style={inputStyle} value={draftEdit.website} onChange={e => setDraftEdit(p => ({ ...p, website: e.target.value }))} />
+                </div>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label style={labelStyle}>Notes</label>
+                  <textarea style={{ ...inputStyle, minHeight: 60, resize: 'vertical' }} value={draftEdit.notes} onChange={e => setDraftEdit(p => ({ ...p, notes: e.target.value }))} />
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <Button onClick={() => { setEditingId(null); setDraftEdit({}) }}>Cancel</Button>
+                <Button primary onClick={() => saveEdit(c.id)}>Save</Button>
+              </div>
+            </Card>
+          ) : (
+            <Card key={c.id} style={{ marginBottom: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  {c.website ? (
+                    <a href={c.website.startsWith('http') ? c.website : 'https://' + c.website} target="_blank" rel="noopener noreferrer"
+                      style={{ fontSize: 14, fontWeight: 700, color: T.primary, textDecoration: 'none' }}>
+                      {c.competitor_name} {'↗'}
+                    </a>
+                  ) : (
+                    <span style={{ fontSize: 14, fontWeight: 700, color: T.text }}>{c.competitor_name}</span>
+                  )}
+                  {c.strengths && (
+                    <div style={{ fontSize: 12, color: T.textSecondary, marginTop: 6, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
+                      {c.strengths}
+                    </div>
+                  )}
+                </div>
+                <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                  <button onClick={() => startEdit(c)} title="Edit"
+                    style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 600, color: T.textSecondary, cursor: 'pointer', fontFamily: T.font }}>
+                    Edit
+                  </button>
+                  <button onClick={() => deletePeer(c.id)} title="Remove"
+                    style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 600, color: T.textMuted, cursor: 'pointer', fontFamily: T.font }}
+                    onMouseEnter={e => { e.currentTarget.style.color = T.error; e.currentTarget.style.borderColor = T.error }}
+                    onMouseLeave={e => { e.currentTarget.style.color = T.textMuted; e.currentTarget.style.borderColor = T.border }}>
+                    &times;
+                  </button>
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* ── INDUSTRY TRENDS / KNOWLEDGE / RESEARCH ──
+           Stored as free-text on company_profile; editable inline via the
+           same EditableField pattern used elsewhere on the page. */}
+      <div style={sectionHeading}>Industry Trends</div>
+      <Card style={{ marginBottom: 14 }}>
+        <EditableField
+          label=""
+          value={companyProfile?.industry_trends}
+          field="industry_trends"
+          table="company_profile"
+          recordId={companyProfile?.id}
+          type="textarea"
+          onSaved={cpSave}
+        />
+      </Card>
+
+      <div style={sectionHeading}>Industry Knowledge</div>
+      <Card style={{ marginBottom: 14 }}>
+        <EditableField
+          label=""
+          value={companyProfile?.industry_knowledge}
+          field="industry_knowledge"
+          table="company_profile"
+          recordId={companyProfile?.id}
+          type="textarea"
+          onSaved={cpSave}
+        />
+      </Card>
+
+      <div style={sectionHeading}>Industry Research</div>
+      <Card style={{ marginBottom: 14 }}>
+        <EditableField
+          label=""
+          value={companyProfile?.industry_research}
+          field="industry_research"
+          table="company_profile"
+          recordId={companyProfile?.id}
+          type="textarea"
+          onSaved={cpSave}
+        />
+      </Card>
     </div>
   )
 }
