@@ -73,9 +73,10 @@ function readTabVis(displayConfig) {
     investment_summary: tabs.investment_summary !== false,
     schedules:          tabs.schedules          !== false,
     tco:                tabs.tco                !== false,
-    // TCO Comparison is opt-IN — hidden unless the AE explicitly turns it on,
-    // since most quotes won't have scenarios modeled yet.
-    tco_comparison:     tabs.tco_comparison     === true,
+    // TCO Comparison is opt-OUT — visible by default; the visibleTabs
+    // assembly below also gates on the snapshot actually having scenarios
+    // so the tab doesn't show for quotes that haven't modeled any.
+    tco_comparison:     tabs.tco_comparison     !== false,
   }
 }
 
@@ -110,11 +111,12 @@ export default function ProposalView({
   }
 
   const tabVis = readTabVis(snapshot.display_config)
+  const hasTcoScenarios = Array.isArray(snapshot.tco_scenarios) && snapshot.tco_scenarios.length > 0
   const visibleTabs = [
     tabVis.investment_summary && { key: 'summary',        label: 'Investment Summary' },
     tabVis.schedules          && { key: 'schedules',      label: 'Schedules' },
     tabVis.tco                && { key: 'tco',            label: 'TCO' },
-    tabVis.tco_comparison     && { key: 'tco_comparison', label: 'TCO Comparison' },
+    tabVis.tco_comparison && hasTcoScenarios && { key: 'tco_comparison', label: 'TCO Comparison' },
   ].filter(Boolean)
 
   // Fall back to first visible tab if the chosen one is hidden.
