@@ -1,11 +1,16 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { theme as T, formatDateLong } from '../lib/theme'
+import { theme as T, formatDateLong, CALL_TYPES } from '../lib/theme'
 import { Card, Badge, ScoreBar, Button, Spinner, inputStyle, labelStyle } from './Shared'
 import { callGenerateEmail } from '../lib/webhooks'
 import { useAuth } from '../hooks/useAuth'
 import DealChat from './DealChat'
+
+function callTypeLabel(key) {
+  const t = CALL_TYPES.find(c => c.key === key)
+  return t ? t.label : (key || 'Unset')
+}
 
 // Renders one call's AI analysis (summary, coaching, scores, questions, transcript).
 // Used standalone by CallDetail and embedded in DealDetail's Analysis sub-tabs.
@@ -28,6 +33,8 @@ export default function CallAnalysisBody({ dealId, conversationId, onBack, onCal
   const [genResult, setGenResult] = useState(null)
   const [showChat, setShowChat] = useState(false)
   const [editingDate, setEditingDate] = useState(false)
+  const [editingCallType, setEditingCallType] = useState(false)
+  const [reprocessing, setReprocessing] = useState(false)
 
   async function saveCallDate(nextDate) {
     // Accepts YYYY-MM-DD; empty string clears. Optimistic local update + parent sync.
@@ -37,6 +44,34 @@ export default function CallAnalysisBody({ dealId, conversationId, onBack, onCal
     const { error } = await supabase.from('conversations').update({ call_date: value }).eq('id', conversationId)
     if (error) { alert('Failed to update date: ' + error.message); loadData(); return }
     onCallUpdate?.(conversationId, { call_date: value })
+  }
+
+  async function saveCallType(nextType) {
+    // Empty string clears. Optimistic local update + parent sync. Call type
+    // feeds the AI prompt assembly, so after saving offer to reprocess.
+    const value = nextType || null
+    const previous = conversation.call_type
+    setConversation(prev => prev ? { ...prev, call_type: value } : prev)
+    setEditingCallType(false)
+    const { error } = await supabase.from('conversations').update({ call_type: value }).eq('id', conversationId)
+    if (error) { alert('Failed to update call type: ' + error.message); loadData(); return }
+    onCallUpdate?.(conversationId, { call_type: value })
+    if (value && value !== previous && confirm('Re-run AI analysis with the new call type? This may take ~30s and uses credits.')) {
+      runReprocess()
+    }
+  }
+
+  async function runReprocess() {
+    if (reprocessing) return
+    setReprocessing(true)
+    try {
+      const { callProcessTranscript } = await import('../lib/webhooks')
+      const res = await callProcessTranscript(conversationId)
+      if (res.error) { alert('Processing failed: ' + res.error); return }
+      await loadData()
+    } finally {
+      setReprocessing(false)
+    }
   }
 
   useEffect(() => {
@@ -165,10 +200,38 @@ export default function CallAnalysisBody({ dealId, conversationId, onBack, onCal
                 {conversation.call_date ? formatDateLong(conversation.call_date) : 'No date'}
               </span>
             )}
-            {conversation.call_type && <Badge color={T.primary}>{conversation.call_type}</Badge>}
-            {conversation.processed ? <Badge color={T.success}>Processed</Badge> : (
-              <Button primary style={{ padding: '3px 10px', fontSize: 11 }} onClick={async () => { const { callProcessTranscript } = await import('../lib/webhooks'); const res = await callProcessTranscript(conversationId); if (res.error) alert('Processing failed: ' + res.error); else { alert('Processing complete!'); loadData() } }}>Reprocess</Button>
+            {editingCallType ? (
+              <select
+                autoFocus
+                defaultValue={conversation.call_type || ''}
+                onBlur={(e) => saveCallType(e.target.value)}
+                onChange={(e) => saveCallType(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Escape') setEditingCallType(false) }}
+                style={{ ...inputStyle, padding: '3px 8px', fontSize: 11, cursor: 'pointer', width: 'auto' }}
+              >
+                <option value="">— Set call type —</option>
+                {CALL_TYPES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+              </select>
+            ) : (
+              <span
+                onClick={() => setEditingCallType(true)}
+                title="Click to edit call type"
+                style={{ cursor: 'pointer' }}>
+                <Badge color={conversation.call_type ? T.primary : T.textMuted}>
+                  {callTypeLabel(conversation.call_type)}
+                </Badge>
+              </span>
             )}
+            {conversation.processed && <Badge color={T.success}>Processed</Badge>}
+            <Button
+              primary={!conversation.processed}
+              disabled={reprocessing}
+              onClick={runReprocess}
+              style={{ padding: '3px 10px', fontSize: 11 }}
+              title="Re-run AI analysis with the current call type + date"
+            >
+              {reprocessing ? 'Reprocessing…' : (conversation.processed ? 'Reprocess' : 'Process')}
+            </Button>
             <Button onClick={() => setShowChat(true)} style={{ padding: '4px 10px', fontSize: 11 }}>Ask Coach</Button>
             <Button onClick={() => setShowEmailGen(true)} style={{ padding: '4px 10px', fontSize: 11 }}>Generate Email</Button>
           </div>
