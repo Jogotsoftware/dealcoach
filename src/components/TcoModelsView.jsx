@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { theme as T } from '../lib/theme'
 import { Card, Badge, Button, EmptyState, inputStyle } from './Shared'
@@ -159,17 +159,57 @@ export default function TcoModelsView({ parentQuote, contractTerms, readOnly = f
     return deriveSageMatrix(parentQuote || {}, term)
   }, [parentQuote, contractTerms])
 
-  async function persist(next) {
-    setScenarios(next)
-    if (readOnly || !parentQuote?.id) return
+  // Debounced persist — every keystroke calls this, but only the latest
+  // snapshot is actually written 350ms after the user stops typing. Without
+  // the debounce, rapid keystrokes fire parallel HTTP PATCH requests that
+  // can land out of order and overwrite each other — the original bug where
+  // a typed label would silently revert to "".
+  const pendingRef = useRef(null)  // { next, timer }
+  const quoteIdRef = useRef(parentQuote?.id)
+  useEffect(() => { quoteIdRef.current = parentQuote?.id }, [parentQuote?.id])
+
+  async function writeNow(next) {
+    const id = quoteIdRef.current
+    if (!id) return
     try {
-      const { error } = await supabase.from('quotes').update({ tco_scenarios: next }).eq('id', parentQuote.id)
+      const { error } = await supabase.from('quotes').update({ tco_scenarios: next }).eq('id', id)
       if (error) console.error('[TcoModelsView] persist failed:', error.message)
       else onScenariosChange?.(next)
     } catch (e) {
       console.error('[TcoModelsView] persist threw:', e.message)
     }
   }
+
+  function persist(next) {
+    setScenarios(next)
+    if (readOnly || !parentQuote?.id) return
+    if (pendingRef.current) clearTimeout(pendingRef.current.timer)
+    pendingRef.current = {
+      next,
+      timer: setTimeout(() => {
+        const pending = pendingRef.current
+        pendingRef.current = null
+        if (pending) writeNow(pending.next)
+      }, 350),
+    }
+  }
+
+  // Flush any pending write on unmount + on pagehide so the user doesn't
+  // lose the last edit by navigating away or closing the tab mid-debounce.
+  useEffect(() => {
+    function flush() {
+      if (!pendingRef.current) return
+      clearTimeout(pendingRef.current.timer)
+      const next = pendingRef.current.next
+      pendingRef.current = null
+      writeNow(next)
+    }
+    window.addEventListener('pagehide', flush)
+    return () => {
+      window.removeEventListener('pagehide', flush)
+      flush()
+    }
+  }, [])
 
   function addScenario() {
     persist([...scenarios, defaultScenario(parentQuote)])
