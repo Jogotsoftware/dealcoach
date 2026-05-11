@@ -1321,17 +1321,19 @@ function TcoTab({ snapshot }) {
   const yearDisc = yearList.map(l => l * discountPct)
 
   // Final cost rows
-  // Subscription net for year 1 has signing bonus AND free months subtracted
-  // (matches payment_schedule). Free month is taken in Y1 per the line label.
-  const yearSubNet = yearNet.map((n, i) => i === 0 ? n - signingBonusValue - freeMonthsValue : n)
+  // Subscription net for year 1 has signing bonus subtracted (matches payment_schedule).
+  // Free months are NOT deducted from any individual year — they apply as a
+  // credit on the 3-year total only.
+  const yearSubNet = yearNet.map((n, i) => i === 0 ? n - signingBonusValue : n)
   const yearImpl = yearNet.map((_, i) => i === 0 ? implTotal : 0)
   const yearAnnualCost = yearSubNet.map((n, i) => n + yearImpl[i])
 
   const tot = (arr) => arr.reduce((s, n) => s + n, 0)
 
+  const subNetTotal = tot(yearSubNet) - freeMonthsValue
   const totalConcessions = tot(yearDisc) + freeMonthsValue + signingBonusValue
-  const totalCost = tot(yearAnnualCost)
-  const yoyAvgSub = tot(yearSubNet) / termYears
+  const totalCost = tot(yearAnnualCost) - freeMonthsValue
+  const yoyAvgSub = subNetTotal / termYears
 
   const cellHead = { padding: '10px 12px', fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right', whiteSpace: 'nowrap' }
   const cellLabel = { padding: '11px 14px', fontSize: 13, color: T.text, textAlign: 'left' }
@@ -1381,15 +1383,11 @@ function TcoTab({ snapshot }) {
               </tr>
             )}
 
-            {/* Free months (amber) — Y1 only, matches signing-bonus pattern */}
+            {/* Free months (amber) — credit on the 3-yr total only, not any single year */}
             {freeMonths > 0 && readSection(snapshot, 'tco_free_months') && (
               <tr style={{ borderBottom: `1px solid ${T.borderLight}` }}>
                 <td style={{ ...cellLabel, color: C.amberDark }}>Free months (Y1 · {freeMonths} mo · extends term)</td>
-                {yearNet.map((_, i) => (
-                  <td key={i} style={cellNum({ color: C.amberDark })}>
-                    {i === 0 ? moneyNeg(freeMonthsValue) : '—'}
-                  </td>
-                ))}
+                {yearNet.map((_, i) => <td key={i} style={cellNum({ color: C.amberDark })}>—</td>)}
                 <td style={cellNum({ color: C.amberDark, fontWeight: 600 })}>{moneyNeg(freeMonthsValue)}</td>
               </tr>
             )}
@@ -1410,7 +1408,7 @@ function TcoTab({ snapshot }) {
             <tr style={{ background: C.greenSoftBg }}>
               <td style={{ ...cellLabel, color: C.greenDark, fontWeight: 600 }}>Subscription · net</td>
               {yearSubNet.map((v, i) => <td key={i} style={cellNum({ color: C.greenDark, fontWeight: 600 })}>{money(v)}</td>)}
-              <td style={cellNum({ color: C.greenDark, fontWeight: 700 })}>{money(tot(yearSubNet))}</td>
+              <td style={cellNum({ color: C.greenDark, fontWeight: 700 })}>{money(subNetTotal)}</td>
             </tr>
 
             {/* Implementation — Y1 only */}
