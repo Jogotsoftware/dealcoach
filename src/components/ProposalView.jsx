@@ -1321,8 +1321,9 @@ function TcoTab({ snapshot }) {
   const yearDisc = yearList.map(l => l * discountPct)
 
   // Final cost rows
-  // Subscription net for year 1 has signing bonus subtracted (matches payment_schedule).
-  const yearSubNet = yearNet.map((n, i) => i === 0 ? n - signingBonusValue : n)
+  // Subscription net for year 1 has signing bonus AND free months subtracted
+  // (matches payment_schedule). Free month is taken in Y1 per the line label.
+  const yearSubNet = yearNet.map((n, i) => i === 0 ? n - signingBonusValue - freeMonthsValue : n)
   const yearImpl = yearNet.map((_, i) => i === 0 ? implTotal : 0)
   const yearAnnualCost = yearSubNet.map((n, i) => n + yearImpl[i])
 
@@ -1380,11 +1381,15 @@ function TcoTab({ snapshot }) {
               </tr>
             )}
 
-            {/* Free months (amber) — only the total cell populated */}
+            {/* Free months (amber) — Y1 only, matches signing-bonus pattern */}
             {freeMonths > 0 && readSection(snapshot, 'tco_free_months') && (
               <tr style={{ borderBottom: `1px solid ${T.borderLight}` }}>
                 <td style={{ ...cellLabel, color: C.amberDark }}>Free months (Y1 · {freeMonths} mo · extends term)</td>
-                {yearNet.map((_, i) => <td key={i} style={cellNum({ color: C.amberDark })}>—</td>)}
+                {yearNet.map((_, i) => (
+                  <td key={i} style={cellNum({ color: C.amberDark })}>
+                    {i === 0 ? moneyNeg(freeMonthsValue) : '—'}
+                  </td>
+                ))}
                 <td style={cellNum({ color: C.amberDark, fontWeight: 600 })}>{moneyNeg(freeMonthsValue)}</td>
               </tr>
             )}

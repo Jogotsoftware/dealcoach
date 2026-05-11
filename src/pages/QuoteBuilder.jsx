@@ -8,6 +8,7 @@ import { Card, Badge, Button, TabBar, Spinner, EmptyState, inputStyle, labelStyl
 import LogoUploader from '../components/LogoUploader'
 import VisibilityToggleIcon from '../components/VisibilityToggleIcon'
 import PlusButton from '../components/PlusButton'
+import TcoModelsView from '../components/TcoModelsView'
 
 // Round UP to whole dollar; backend keeps decimals.
 function dollars(n) {
@@ -556,6 +557,8 @@ export default function QuoteBuilder({
         {tab === 'models' && (
           <ModelsTab
             quote={quote}
+            deal={deal}
+            dealId={dealId}
             pains={pains}
             schedule={schedule}
             contractTerms={contractTerms}
@@ -2676,12 +2679,13 @@ function Metric({ label, value, positive }) {
 // ══════════════════════════════════════════════════════════
 // MODELS TAB — wraps ROI, Payment Schedule, and TCO under a sub-tab bar
 // ══════════════════════════════════════════════════════════
-function ModelsTab({ quote, pains, schedule, contractTerms, partnerBlocks, partnerLines, saveQuoteHeader, onChanged, profileId }) {
+function ModelsTab({ quote, deal, dealId, pains, schedule, contractTerms, partnerBlocks, partnerLines, saveQuoteHeader, onChanged, profileId }) {
   const [sub, setSub] = useState('roi')
   const subTabs = [
     { key: 'roi', label: 'ROI' },
     { key: 'schedule', label: `Payment Schedule${schedule.length ? ` (${schedule.length})` : ''}` },
-    { key: 'tco', label: 'TCO' },
+    { key: 'tco_models', label: 'TCO Models' },
+    { key: 'tco', label: 'TCO Detail' },
   ]
   return (
     <div>
@@ -2690,6 +2694,15 @@ function ModelsTab({ quote, pains, schedule, contractTerms, partnerBlocks, partn
       </div>
       {sub === 'roi' && <RoiTab quote={quote} pains={pains} />}
       {sub === 'schedule' && <ScheduleTab quote={quote} schedule={schedule} saveQuoteHeader={saveQuoteHeader} onChanged={onChanged} profileId={profileId} />}
+      {sub === 'tco_models' && (
+        <TcoModelsView
+          parentQuote={quote}
+          contractTerms={contractTerms}
+          dealId={dealId}
+          companyName={deal?.company_name}
+          profileId={profileId}
+        />
+      )}
       {sub === 'tco' && <TcoTab quote={quote} contractTerms={contractTerms} partnerBlocks={partnerBlocks} partnerLines={partnerLines} saveQuoteHeader={saveQuoteHeader} />}
     </div>
   )
