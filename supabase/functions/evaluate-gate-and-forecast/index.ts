@@ -20,7 +20,8 @@ const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-const VERSION = "evaluate-gate-and-forecast v1";
+const VERSION = "evaluate-gate-and-forecast v2";
+const FUNCTION_VERSION_INT = 2;
 
 // Fixed dimension weights for the 6-factor confidence breakdown (sum to 100)
 const DIMENSION_WEIGHTS: Record<string, number> = {
@@ -141,6 +142,45 @@ function stripJsonFences(s: string): string {
     .trim();
 }
 
+// Best-effort error log to ai_response_log. Never fails the caller.
+async function logError(
+  sb: ReturnType<typeof createClient>,
+  orgId: string | null,
+  dealId: string | null,
+  conversationId: string | null,
+  coachId: string | null,
+  message: string,
+): Promise<void> {
+  try {
+    await sb.from("ai_response_log").insert({
+      deal_id: dealId,
+      conversation_id: conversationId,
+      response_type: "evaluate-gate-and-forecast",
+      coach_id: coachId,
+      extraction_summary: { org_id: orgId },
+      status: "error",
+      error_message: `${VERSION}: ${message}`,
+      version: FUNCTION_VERSION_INT,
+    });
+  } catch (_e) {
+    // Telemetry-only; never throw from here.
+  }
+}
+
+// Helper: returns a 200-OK JSON with success=false. Use for expected failure
+// modes (missing coach, missing criteria) where the caller should see the
+// reason without an HTTP error. Logs to ai_response_log for ops triage.
+async function errorOut(
+  sb: ReturnType<typeof createClient>,
+  orgId: string | null,
+  dealId: string | null,
+  conversationId: string | null,
+  message: string,
+): Promise<Response> {
+  await logError(sb, orgId, dealId, conversationId, null, message);
+  return jr({ success: false, version: "v2", error: `${VERSION}: ${message}` });
+}
+
 interface Criterion {
   id: string;
   dimension: string;
@@ -158,6 +198,7 @@ interface CriterionEvaluation {
   evidence_quote: string | null;
   source_speaker: string | null;
   suggested_action: string | null;
+  errored?: boolean; // true if the Claude call or JSON parse failed and we degraded to 'open'
 }
 
 async function evaluateOneCriterion(
@@ -215,7 +256,7 @@ async function evaluateOneCriterion(
     if (!cr.ok) {
       const errText = await cr.text().catch(() => "");
       console.log(`${VERSION}: criterion ${criterion.criterion_key} Claude API ${cr.status}: ${errText.substring(0, 200)}`);
-      return { state: "open", evidence_quote: null, source_speaker: null, suggested_action: null };
+      return { state: "open", evidence_quote: null, source_speaker: null, suggested_action: null, errored: true };
     }
     const claudeData = await cr.json();
     const raw = ((claudeData.content ?? []) as Array<{ type: string; text?: string }>)
@@ -226,7 +267,7 @@ async function evaluateOneCriterion(
     const parsed = JSON.parse(cleaned) as Partial<CriterionEvaluation>;
     const state = parsed.state;
     if (state !== "met" && state !== "partial" && state !== "open" && state !== "not_applicable") {
-      return { state: "open", evidence_quote: null, source_speaker: null, suggested_action: null };
+      return { state: "open", evidence_quote: null, source_speaker: null, suggested_action: null, errored: true };
     }
     return {
       state,
@@ -332,19 +373,55 @@ Deno.serve(async (req: Request) => {
     const orgId = deal.org_id as string;
     if (!orgId) throw new Error(`${VERSION}: deal ${deal_id} has no org_id`);
 
-    // 2. Locate active coach for the org (first active coach for this org)
-    const { data: coach, error: cErr } = await sb
-      .from("coaches")
-      .select("id, name, model, temperature")
-      .eq("org_id", orgId)
-      .eq("active", true)
-      .order("updated_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (cErr) throw new Error(`${VERSION}: coach lookup error: ${cErr.message}`);
-    if (!coach) throw new Error(`${VERSION}: no active coach for org ${orgId}`);
+    // 2. Resolve coach via fallback chain:
+    //    a) The deal's rep's active_coach_id (profiles.active_coach_id) — the rep's chosen coach wins
+    //    b) (Org default coach — column does not exist in this schema; step skipped intentionally)
+    //    c) Most-recently-updated active coach for the deal's org (last resort)
+    let coach: { id: string; name: string; model: string | null; temperature: number | null } | null = null;
+    let coachSource: "rep_active" | "org_recent" | null = null;
 
-    // 3. Load gate criteria for this stage's outbound transition
+    if (deal.rep_id) {
+      const { data: rep, error: pErr } = await sb
+        .from("profiles")
+        .select("active_coach_id")
+        .eq("id", deal.rep_id)
+        .maybeSingle();
+      if (pErr) throw new Error(`${VERSION}: profiles select error: ${pErr.message}`);
+      if (rep?.active_coach_id) {
+        const { data: repCoach, error: rcErr } = await sb
+          .from("coaches")
+          .select("id, name, model, temperature, active, org_id")
+          .eq("id", rep.active_coach_id)
+          .maybeSingle();
+        if (rcErr) throw new Error(`${VERSION}: coach lookup (rep active) error: ${rcErr.message}`);
+        if (repCoach && repCoach.active && (repCoach.org_id === orgId || repCoach.org_id === null)) {
+          coach = { id: repCoach.id as string, name: repCoach.name as string, model: repCoach.model as string | null, temperature: repCoach.temperature as number | null };
+          coachSource = "rep_active";
+        }
+      }
+    }
+
+    if (!coach) {
+      const { data: orgCoach, error: ocErr } = await sb
+        .from("coaches")
+        .select("id, name, model, temperature")
+        .eq("org_id", orgId)
+        .eq("active", true)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (ocErr) throw new Error(`${VERSION}: coach lookup (org recent) error: ${ocErr.message}`);
+      if (orgCoach) {
+        coach = orgCoach as { id: string; name: string; model: string | null; temperature: number | null };
+        coachSource = "org_recent";
+      }
+    }
+
+    if (!coach) {
+      return errorOut(sb, orgId, deal_id, conversation_id, `no active coach found for deal ${deal_id} (rep ${deal.rep_id ?? "null"}, org ${orgId})`);
+    }
+
+    // 3. Load gate criteria for this stage's outbound transition on the resolved coach
     const { data: criteriaRaw, error: gErr } = await sb
       .from("coach_gate_criteria")
       .select("id, dimension, criterion_key, criterion_title, criterion_description, criterion_anti_patterns, weight, required_to_advance_from, required_to_advance_to, sort_order")
@@ -355,13 +432,7 @@ Deno.serve(async (req: Request) => {
     const criteria = (criteriaRaw ?? []) as Criterion[];
 
     if (criteria.length === 0) {
-      return jr({
-        success: true,
-        version: "v1",
-        deal_id,
-        stage,
-        message: "No gate criteria defined for this stage. No forecast computed.",
-      });
+      return errorOut(sb, orgId, deal_id, conversation_id, `no gate criteria for stage '${stage}' on coach ${coach.id} (${coach.name}). Source: ${coachSource}. Back-fill required.`);
     }
 
     // 4. Load deal context (compact summary)
@@ -429,7 +500,8 @@ Deno.serve(async (req: Request) => {
       .from("deal_gate_criteria_state")
       .upsert(upsertRows, { onConflict: "deal_id,criterion_id" });
     if (upErr) {
-      console.log(`${VERSION}: deal_gate_criteria_state upsert error`, upErr.message);
+      await logError(sb, orgId, deal_id, conversation_id, coach.id, `deal_gate_criteria_state upsert failed: ${upErr.message}`);
+      throw new Error(`${VERSION}: deal_gate_criteria_state upsert failed: ${upErr.message}`);
     }
 
     // 9. Compute confidence
@@ -472,7 +544,7 @@ Deno.serve(async (req: Request) => {
       predicted_at: new Date().toISOString(),
       prediction_horizon: stage,
       prediction_source: "ai_claude",
-      model_version: "evaluate-gate-and-forecast v1",
+      model_version: "evaluate-gate-and-forecast v2",
       predicted_close_date: deal.target_close_date,
       confidence_score: final_confidence,
       confidence_factors: { factors },
@@ -481,40 +553,49 @@ Deno.serve(async (req: Request) => {
       biggest_lever_dimension,
       biggest_lever_potential,
       feature_snapshot: featureSnapshot,
-      reasoning: `Computed by evaluate-gate-and-forecast v1 for stage=${stage}. Raw=${raw_score}, calibration=${calibration_adjustment}, final=${final_confidence}. Biggest lever: ${biggest_lever_dimension} (potential +${biggest_lever_potential}).`,
+      reasoning: `Computed by ${VERSION} for stage=${stage}. Raw=${raw_score}, calibration=${calibration_adjustment}, final=${final_confidence}. Biggest lever: ${biggest_lever_dimension} (potential +${biggest_lever_potential}). Coach source: ${coachSource}.`,
     });
     if (insErr) {
-      console.log(`${VERSION}: deal_forecast_predictions insert error`, insErr.message);
+      await logError(sb, orgId, deal_id, conversation_id, coach.id, `forecast insert failed: ${insErr.message}`);
+      throw new Error(`${VERSION}: forecast insert failed: ${insErr.message}`);
     }
 
-    // 11. Log
+    // 11. Telemetry — best-effort write to ai_response_log
     try {
       await sb.from("ai_response_log").insert({
-        org_id: orgId,
         deal_id,
-        function_name: "evaluate-gate-and-forecast",
-        function_version: "v1",
-        model,
-        latency_ms: claudeMs,
-        success: true,
-        metadata: {
+        conversation_id,
+        response_type: "evaluate-gate-and-forecast",
+        coach_id: coach.id,
+        ai_model_used: model,
+        temperature,
+        processing_time_ms: claudeMs,
+        confidence_score: final_confidence,
+        extraction_summary: {
           stage,
           criterion_count: criteria.length,
-          final_confidence,
           raw_score,
           calibration_adjustment,
           biggest_lever_dimension,
+          biggest_lever_potential,
+          coach_source: coachSource,
           triggered_by,
-          conversation_id,
         },
+        status: "success",
+        version: FUNCTION_VERSION_INT,
       });
     } catch (_e) {
-      // best-effort
+      // Telemetry-only; never fail the run on logging.
+    }
+
+    const errored_count = evalResults.filter((e) => e.errored).length;
+    if (errored_count > 0) {
+      await logError(sb, orgId, deal_id, conversation_id, coach.id, `${errored_count} of ${criteria.length} criterion evaluations errored and degraded to 'open'`);
     }
 
     return jr({
       success: true,
-      version: "v1",
+      version: "v2",
       deal_id,
       stage,
       final_confidence,
@@ -523,16 +604,20 @@ Deno.serve(async (req: Request) => {
       biggest_lever_dimension,
       biggest_lever_potential,
       criterion_count: criteria.length,
+      errored_count,
+      coach_id: coach.id,
+      coach_source: coachSource,
       evaluations: criteria.map((c, i) => ({
         criterion_key: c.criterion_key,
         dimension: c.dimension,
         state: evalResults[i].state,
+        errored: !!evalResults[i].errored,
       })),
       total_ms: Date.now() - t0,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.log(VERSION, msg);
-    return jr({ success: false, version: "v1", error: msg }, 500);
+    return jr({ success: false, version: "v2", error: msg }, 500);
   }
 });
