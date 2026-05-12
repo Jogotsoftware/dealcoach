@@ -32,6 +32,7 @@ import CoachingNudgeBanner from '../components/coaching/CoachingNudgeBanner'
 import EOMHeaderStrip from '../components/coaching/EOMHeaderStrip'
 import DualDateDisplay from '../components/coaching/DualDateDisplay'
 import NextStepsAISuggestion from '../components/coaching/NextStepsAISuggestion'
+import PathToCloseWidget from '../components/widgets/PathToCloseWidget'
 import CompanyLogo from '../components/CompanyLogo'
 import DealRoomConfig from './DealRoomConfig'
 import LogoUploader from '../components/LogoUploader'
@@ -1862,6 +1863,16 @@ export default function DealDetail() {
 
       {/* Sage canon: coaching nudge banner — active non-dismissed nudges for this deal */}
       <CoachingNudgeBanner dealId={deal.id} userId={profile?.id} />
+
+      {/* Sage canon: Path to Close v4 widget — single visible methodology surface */}
+      <div style={{ padding: '12px 24px 0 24px' }}>
+        <PathToCloseWidget
+          dealId={deal.id}
+          dealStage={deal.stage}
+          dealCloseDate={deal.target_close_date}
+          onAskLumen={(prompt) => console.log('Ask Lumen:', prompt)}
+        />
+      </div>
 
       <div style={{ padding: '16px 24px', width: '100%' }}>
 

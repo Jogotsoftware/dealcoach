@@ -36,6 +36,12 @@ import CoachBuilder from './pages/CoachBuilder'
 import Reports from './pages/Reports'
 import DealRetrospective from './pages/DealRetrospective'
 import PlatformAdminGuard from './components/guards/PlatformAdminGuard'
+import PathToClosePage from './pages/path/PathToClosePage'
+import ConfidencePage from './pages/path/ConfidencePage'
+import BarriersListPage from './pages/path/BarriersListPage'
+import BarrierDetailPage from './pages/path/BarrierDetailPage'
+import GateCriteriaPage from './pages/path/GateCriteriaPage'
+import GateDimensionPage from './pages/path/GateDimensionPage'
 import { theme as T } from './lib/theme'
 
 function AppLoadingSkeleton() {
@@ -116,6 +122,13 @@ export default function App() {
                 <Route path="/dashboards" element={<ErrorBoundary label="dashboards"><Dashboards /></ErrorBoundary>} />
                 <Route path="/dashboards/:dashboardId" element={<ErrorBoundary label="this dashboard"><Dashboards /></ErrorBoundary>} />
                 <Route path="/deal/:id/retrospective" element={<ErrorBoundary label="retrospective"><DealRetrospective /></ErrorBoundary>} />
+                {/* Path to Close v4 linked-out stub routes (Sage canon) */}
+                <Route path="/deal/:id/path" element={<ErrorBoundary label="path to close"><PathToClosePage /></ErrorBoundary>} />
+                <Route path="/deal/:id/confidence" element={<ErrorBoundary label="confidence"><ConfidencePage /></ErrorBoundary>} />
+                <Route path="/deal/:id/barriers" element={<ErrorBoundary label="barriers"><BarriersListPage /></ErrorBoundary>} />
+                <Route path="/deal/:id/barriers/:barrierId" element={<ErrorBoundary label="this barrier"><BarrierDetailPage /></ErrorBoundary>} />
+                <Route path="/deal/:id/gate" element={<ErrorBoundary label="gate criteria"><GateCriteriaPage /></ErrorBoundary>} />
+                <Route path="/deal/:id/gate/:dimension" element={<ErrorBoundary label="this gate dimension"><GateDimensionPage /></ErrorBoundary>} />
                 <Route path="/settings" element={<ErrorBoundary label="settings"><Settings /></ErrorBoundary>} />
                 <Route path="/admin" element={<ErrorBoundary label="admin console"><AdminConsole /></ErrorBoundary>} />
                 {/* /settings/team merged into the "My Team" section on /settings — redirect old links. */}
