@@ -1369,16 +1369,19 @@ function TcoTab({ snapshot }) {
   const yearDisc = yearList.map(l => l * discountPct)
 
   // Final cost rows
-  // Subscription net for year 1 has signing bonus subtracted (matches payment_schedule).
-  // Free months are NOT deducted from any individual year — they apply as a
-  // credit on the 3-year total only.
-  const yearSubNet = yearNet.map((n, i) => i === 0 ? n - signingBonusValue : n)
+  // Subscription net is gross net (post-discount) — signing bonus and free
+  // months are shown as their own concession rows, not folded in. Annual
+  // cost reflects the actual cash:
+  //   Y1   = subNet + impl − signingBonus
+  //   Y2+  = subNet
+  //   Total = sum of per-year annual cost − freeMonthsValue
+  const yearSubNet = yearNet
   const yearImpl = yearNet.map((_, i) => i === 0 ? implTotal : 0)
-  const yearAnnualCost = yearSubNet.map((n, i) => n + yearImpl[i])
+  const yearAnnualCost = yearSubNet.map((n, i) => n + yearImpl[i] - (i === 0 ? signingBonusValue : 0))
 
   const tot = (arr) => arr.reduce((s, n) => s + n, 0)
 
-  const subNetTotal = tot(yearSubNet) - freeMonthsValue
+  const subNetTotal = tot(yearSubNet)
   const totalConcessions = tot(yearDisc) + freeMonthsValue + signingBonusValue
   const totalCost = tot(yearAnnualCost) - freeMonthsValue
   const yoyAvgSub = subNetTotal / termYears
@@ -1446,6 +1449,29 @@ function TcoTab({ snapshot }) {
               </tr>
             )}
 
+            {/* Signing bonus (red) — Y1 only credit, sits between Implementation
+                and Annual cost so the column math reads cleanly. */}
+            {signingBonusValue > 0 && readSection(snapshot, 'tco_signing_bonus') && (
+              <tr style={{ background: C.greenSoftBg }}>
+                <td style={{ ...cellLabel, color: C.redDark, fontWeight: 600 }}>Signing Bonus</td>
+                {yearNet.map((_, i) => (
+                  <td key={i} style={cellNum({ color: C.redDark, fontWeight: 600 })}>
+                    {i === 0 ? moneyNeg(signingBonusValue) : '—'}
+                  </td>
+                ))}
+                <td style={cellNum({ color: C.redDark, fontWeight: 600 })}>{moneyNeg(signingBonusValue)}</td>
+              </tr>
+            )}
+
+            {/* Free months (red) — credit on the 3-yr total only, not any single year */}
+            {freeMonths > 0 && readSection(snapshot, 'tco_free_months') && (
+              <tr style={{ background: C.greenSoftBg }}>
+                <td style={{ ...cellLabel, color: C.redDark, fontWeight: 600 }}>Free Months ({freeMonths})</td>
+                {yearNet.map((_, i) => <td key={i} style={cellNum({ color: C.redDark, fontWeight: 600 })}>—</td>)}
+                <td style={cellNum({ color: C.redDark, fontWeight: 600 })}>{moneyNeg(freeMonthsValue)}</td>
+              </tr>
+            )}
+
             {/* Annual cost — bottom-line totals row */}
             <tr style={{ background: C.greenBg, borderTop: `2px solid ${C.greenDark}` }}>
               <td style={{ ...cellLabel, color: C.greenDark, fontWeight: 800, fontSize: 14, padding: '14px 14px' }}>Annual cost</td>
@@ -1456,30 +1482,6 @@ function TcoTab({ snapshot }) {
               ))}
               <td style={cellNum({ color: C.greenDark, fontWeight: 900, fontSize: 18, padding: '14px 12px' })}>{money(totalCost)}</td>
             </tr>
-
-            {/* Signing bonus (red) — Y1 only. Rendered below Annual cost so
-                concessions read as below-the-line credits, not list-price
-                adjustments. */}
-            {signingBonusValue > 0 && readSection(snapshot, 'tco_signing_bonus') && (
-              <tr style={{ borderTop: `1px solid ${T.borderLight}` }}>
-                <td style={{ ...cellLabel, color: C.redDark }}>Signing bonus</td>
-                {yearNet.map((_, i) => (
-                  <td key={i} style={cellNum({ color: C.redDark })}>
-                    {i === 0 ? moneyNeg(signingBonusValue) : '—'}
-                  </td>
-                ))}
-                <td style={cellNum({ color: C.redDark, fontWeight: 600 })}>{moneyNeg(signingBonusValue)}</td>
-              </tr>
-            )}
-
-            {/* Free months (red) — credit on the 3-yr total only, not any single year */}
-            {freeMonths > 0 && readSection(snapshot, 'tco_free_months') && (
-              <tr style={{ borderTop: `1px solid ${T.borderLight}` }}>
-                <td style={{ ...cellLabel, color: C.redDark }}>Free Months ({freeMonths})</td>
-                {yearNet.map((_, i) => <td key={i} style={cellNum({ color: C.redDark })}>—</td>)}
-                <td style={cellNum({ color: C.redDark, fontWeight: 600 })}>{moneyNeg(freeMonthsValue)}</td>
-              </tr>
-            )}
           </tbody>
         </table>
       </div>
