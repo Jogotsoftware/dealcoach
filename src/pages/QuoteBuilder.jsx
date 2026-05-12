@@ -1828,7 +1828,7 @@ function TermsSection({ quote, contractTerms, saveQuoteHeader, onChanged }) {
                   <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 10 }}>
                     {selectedTerm.yoy_caps.map((c, i) => (
                       <span key={i} style={{ display: 'inline-flex', alignItems: 'center', background: T.surfaceAlt, border: `1px solid ${T.border}`, borderRadius: 999, padding: '2px 8px', fontSize: 10, fontWeight: 600, color: T.text }}>
-                        Y{i + 1}: {Number(c) === 0 ? 'locked' : `${Number(c)}%`}
+                        Y{i + 1}: {Number(c) === 0 ? 'locked' : `${+(Number(c) * 100).toFixed(2)}%`}
                       </span>
                     ))}
                   </div>
@@ -2736,7 +2736,7 @@ function TcoTab({ quote, contractTerms, partnerBlocks, partnerLines, saveQuoteHe
       sageSubByYear.push(runningSage)
     } else if (y <= sageYears) {
       const cap = Number(yoyCaps[y - 1]) || 0
-      runningSage = runningSage * (1 + cap / 100)
+      runningSage = runningSage * (1 + cap)
       sageSubByYear.push(runningSage)
     } else {
       sageSubByYear.push(0)

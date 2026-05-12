@@ -48,7 +48,7 @@ function buildMatrix({ subscriptionY1, implementation, signingBonus, freeMonths,
     if (y === 1) subsByYear.push(running)
     else {
       const cap = Number(yoyPctList?.[y - 1]) || 0
-      running = running * (1 + cap / 100)
+      running = running * (1 + cap)
       subsByYear.push(running)
     }
   }
@@ -106,8 +106,10 @@ function deriveSageMatrix(parentQuote, contractTerm) {
 }
 
 // Builds a matrix for a user-defined scenario from its JSON fields.
+// scenario.yoy_pct is in percent-points (user enters "5" for 5%); buildMatrix
+// expects decimal form (0.05 = 5%), matching contract_terms.yoy_caps storage.
 function deriveScenarioMatrix(scenario) {
-  const yoyPct = Number(scenario.yoy_pct) || 0
+  const yoyPct = (Number(scenario.yoy_pct) || 0) / 100
   const termYears = Number(scenario.term_years) || 3
   // Same YoY applied each year past Y1.
   const yoyPctList = []

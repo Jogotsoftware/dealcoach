@@ -191,7 +191,7 @@ export default function ProposalRenderer() {
                 <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', marginBottom: 6 }}>YoY caps</div>
                 <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.7 }}>
                   {contractTerm.yoy_caps.map((c, i) => (
-                    <li key={i}>Year {i + 1}: {Number(c) === 0 ? 'locked' : `up to ${Number(c)}%`}</li>
+                    <li key={i}>Year {i + 1}: {Number(c) === 0 ? 'locked' : `up to ${+(Number(c) * 100).toFixed(2)}%`}</li>
                   ))}
                 </ul>
               </div>

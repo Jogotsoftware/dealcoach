@@ -239,7 +239,7 @@ export default function DealRoomViewer() {
             {org?.logo_url ? (
               <img src={org.logo_url} alt={org.name} style={{ maxWidth: 96, maxHeight: 32, objectFit: 'contain' }} />
             ) : (
-              <div style={{ fontSize: 14, fontWeight: 800, color: themeColor }}>{org?.name || 'Revenue Instruments'}</div>
+              <div style={{ fontSize: 14, fontWeight: 800, color: themeColor }}>{org?.name || 'Lumen'}</div>
             )}
           </div>
           <div style={{ textAlign: 'center', minWidth: 0 }}>
@@ -836,7 +836,7 @@ export function ProposalTabContent({ data, archived, onComment, themeColor, them
             )}
             {sectionVisible('term_template') && term.yoy_caps && (
               <KvCard label="Year-over-Year Caps" value={Array.isArray(term.yoy_caps)
-                ? term.yoy_caps.map(c => typeof c === 'number' ? `${c}%` : String(c)).join(' / ')
+                ? term.yoy_caps.map(c => typeof c === 'number' ? `${+(c * 100).toFixed(2)}%` : String(c)).join(' / ')
                 : (typeof term.yoy_caps === 'object' ? JSON.stringify(term.yoy_caps) : String(term.yoy_caps))} />
             )}
             {snapshot.billing_cadence && (
