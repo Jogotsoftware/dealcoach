@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1280, initial-scale=1">
+<title>Lumen — Path to Close v4 (linked-out)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --primary: #5DADE2;
+    --primary-dark: #3498db;
+    --primary-light: #EBF5FB;
+    --primary-border: #AED6F1;
+    --bg: #f5f5f5;
+    --surface: #ffffff;
+    --surface-alt: #fafbfc;
+    --surface-warm: #fff8eb;
+    --text: #2c3e50;
+    --text-secondary: #5d6d7e;
+    --text-muted: #95a5a6;
+    --text-faint: #c4ccd2;
+    --border: #e8ecef;
+    --border-strong: #d5dbe0;
+    --success: #1e8449;
+    --success-light: #e8f5ee;
+    --success-border: #b8e0c8;
+    --warning: #b9770e;
+    --warning-light: #fdf3e0;
+    --warning-border: #f5cba7;
+    --warning-hover: #fbeacc;
+    --danger: #a93226;
+    --danger-light: #fdedea;
+    --danger-border: #f5b7b1;
+    --neutral-light: #f0f3f5;
+    --radius-sm: 6px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --font: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--font); background: var(--bg); color: var(--text); -webkit-font-smoothing: antialiased; padding: 30px; }
+  .page { max-width: 920px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px; }
+  .intro { padding: 0 4px; }
+  .intro h1 { font-size: 16px; font-weight: 700; letter-spacing: -0.01em; margin-bottom: 4px; }
+  .intro p { font-size: 12px; color: var(--text-secondary); line-height: 1.55; }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+  .card-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+  .card-title-block { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+  .card-title { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
+  .card-subtitle { font-size: 12px; color: var(--text-muted); font-weight: 500; font-style: italic; }
+  .card-actions { display: flex; gap: 14px; align-items: center; }
+  .card-action { font-size: 11px; font-weight: 600; color: var(--primary-dark); cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
+  .card-action:hover { text-decoration: underline; }
+  .card-action svg { width: 9px; height: 9px; opacity: 0.7; }
+
+  .label { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
+
+  /* External link icon — reusable */
+  .ext { display: inline-flex; vertical-align: middle; margin-left: 4px; opacity: 0.55; }
+  .ext svg { width: 9px; height: 9px; }
+  a:hover .ext, .clickable:hover .ext { opacity: 1; }
+
+  /* PREDICTION STRIP */
+  .pred { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 0; }
+  .pred-cell { padding: 14px 18px; border-right: 1px solid var(--border); }
+  .pred-cell:last-child { border-right: none; }
+  .pred-cell .label { display: block; margin-bottom: 5px; }
+  .pred-value { font-size: 18px; font-weight: 700; letter-spacing: -0.01em; color: var(--text); line-height: 1.1; }
+  .pred-value .sub { font-size: 12px; font-weight: 500; color: var(--text-muted); margin-left: 6px; }
+  .pred-stage-trail { display: flex; align-items: baseline; gap: 6px; font-size: 13px; }
+  .pred-stage-trail .now { font-weight: 700; color: var(--text); }
+  .pred-stage-trail .arrow { color: var(--text-muted); font-size: 11px; }
+  .pred-stage-trail .next { color: var(--text-secondary); font-weight: 600; }
+  .pred-stage-meta { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+
+  /* CONFIDENCE — now a link, not an expander */
+  .conf-link { display: inline-flex; align-items: baseline; gap: 7px; padding: 2px 7px; margin: -2px -7px; border-radius: 5px; cursor: pointer; text-decoration: none; transition: background 0.12s; }
+  .conf-link:hover { background: var(--primary-light); }
+  .conf-val { font-size: 18px; font-weight: 700; color: var(--success); letter-spacing: -0.01em; line-height: 1.1; }
+  .conf-val.warn { color: var(--warning); }
+  .conf-why { font-size: 11px; color: var(--primary-dark); font-weight: 600; display: inline-flex; align-items: center; gap: 2px; }
+  .conf-why .ext { margin-left: 1px; }
+
+  /* STAGE STRIP */
+  .stage-strip { display: flex; align-items: center; gap: 6px; padding: 10px 18px; border-top: 1px solid var(--border); background: var(--surface-alt); flex-wrap: wrap; }
+  .stage-pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; color: var(--text-muted); }
+  .stage-pill.done { color: var(--text-secondary); }
+  .stage-pill.current { color: var(--primary-dark); font-weight: 700; padding: 2px 9px; background: var(--primary-light); border: 1px solid var(--primary-border); border-radius: 999px; }
+  .stage-pill .check { width: 11px; height: 11px; border-radius: 50%; background: var(--success); color: white; display: inline-flex; align-items: center; justify-content: center; }
+  .stage-pill .check svg { width: 6px; height: 6px; }
+  .stage-pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-faint); }
+  .stage-sep { color: var(--text-faint); font-size: 10px; }
+
+  /* BARRIER — now whole-card clickable with hover */
+  .barrier { display: block; padding: 16px 18px; background: linear-gradient(180deg, var(--surface-warm) 0%, var(--warning-light) 100%); border-top: 1px solid var(--warning-border); border-bottom: 1px solid var(--warning-border); cursor: pointer; text-decoration: none; color: inherit; transition: background 0.15s; position: relative; }
+  .barrier:hover { background: linear-gradient(180deg, var(--warning-hover) 0%, var(--warning-light) 100%); }
+  .barrier-go { position: absolute; top: 16px; right: 18px; width: 22px; height: 22px; border-radius: 5px; background: var(--surface); border: 1px solid var(--warning-border); display: flex; align-items: center; justify-content: center; transition: transform 0.15s, background 0.15s; }
+  .barrier:hover .barrier-go { background: var(--warning); border-color: var(--warning); transform: translateX(2px); }
+  .barrier:hover .barrier-go svg { color: white; }
+  .barrier-go svg { width: 10px; height: 10px; color: var(--warning); transition: color 0.15s; }
+  .barrier-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; padding-right: 36px; }
+  .barrier-icon { width: 18px; height: 18px; border-radius: 50%; background: var(--warning); color: white; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .barrier-icon svg { width: 10px; height: 10px; }
+  .barrier-label { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--warning); }
+  .barrier-more { margin-left: auto; font-size: 11px; color: var(--primary-dark); font-weight: 600; }
+  .barrier-title { font-size: 15px; font-weight: 700; color: var(--text); letter-spacing: -0.01em; margin-bottom: 6px; padding-right: 36px; }
+  .barrier-desc { font-size: 12px; color: var(--text); line-height: 1.55; margin-bottom: 10px; padding-right: 36px; }
+  .barrier-foot { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding-right: 36px; }
+  .barrier-action { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; background: var(--surface); border: 1px solid var(--warning-border); border-radius: var(--radius-sm); font-size: 12px; font-weight: 600; color: var(--text); cursor: pointer; text-decoration: none; }
+  .barrier-action:hover { background: var(--warning); color: white; border-color: var(--warning); }
+  .barrier-action svg { width: 10px; height: 10px; }
+  .barrier-source { font-size: 11px; color: var(--text-secondary); flex: 1; min-width: 200px; overflow-wrap: anywhere; }
+  .barrier-source .src { font-weight: 600; color: var(--text-secondary); }
+  .barrier-source .quote { font-style: italic; }
+
+  /* GATE STRIP */
+  .gate-strip { padding: 12px 18px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .gate-meta { font-size: 11px; color: var(--text-muted); font-weight: 600; }
+  .gate-meta .count { color: var(--text); font-weight: 700; font-variant-numeric: tabular-nums; }
+  .gate-dims { display: flex; gap: 4px; flex-wrap: wrap; flex: 1; }
+  .gate-dim { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; padding: 4px 8px; border-radius: 5px; transition: background 0.12s; text-decoration: none; color: inherit; }
+  .gate-dim:hover { background: var(--surface-alt); }
+  .gate-dim-name { font-size: 11px; font-weight: 600; color: var(--text-secondary); }
+  .gate-dim.strong .gate-dim-name { color: var(--text); }
+  .gate-dim.gap .gate-dim-name { color: var(--danger); }
+  .gate-dim.partial .gate-dim-name { color: var(--warning); }
+  .gate-dots { display: inline-flex; gap: 3px; }
+  .gd { width: 7px; height: 7px; border-radius: 50%; background: var(--neutral-light); border: 1px solid var(--border-strong); }
+  .gd.met { background: var(--success); border-color: var(--success); }
+  .gate-expand { font-size: 11px; color: var(--primary-dark); font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 3px; text-decoration: none; }
+  .gate-expand:hover { text-decoration: underline; }
+
+  /* SMALL annotation card */
+  .footnote { padding: 14px 18px; background: var(--surface); border: 1px dashed var(--border-strong); border-radius: 8px; font-size: 12px; color: var(--text-secondary); line-height: 1.6; }
+  .footnote strong { color: var(--text); }
+  .footnote code { font-family: SFMono-Regular, Menlo, monospace; font-size: 11px; background: var(--neutral-light); padding: 1px 5px; border-radius: 3px; }
+  .footnote ul { margin: 6px 0 0; padding-left: 18px; }
+  .footnote li { margin-bottom: 2px; }
+</style>
+</head>
+<body>
+  <div class="page">
+
+    <div class="intro">
+      <h1>Path to Close &middot; v4 (linked-out)</h1>
+      <p>Single-state widget. Every interactive element links out to its own page or pops in a new tab. No inline expansion &mdash; the deep view lives at a dedicated URL. The pattern is now consistent across the deal home: <strong>widgets are scan-mode, dedicated pages are work-mode.</strong></p>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title-block">
+          <span class="card-title">Path to Close</span>
+          <span class="card-subtitle">How do we close this?</span>
+        </div>
+        <div class="card-actions">
+          <a class="card-action" href="/deals/acme/path" target="_blank" rel="noopener">Full view<span class="ext"><svg viewBox="0 0 12 12" fill="currentColor"><path d="M3 3h4v4M7 3L3 7"/></svg></span></a>
+          <a class="card-action" href="/deals/acme/msp" target="_blank" rel="noopener">MSP<span class="ext"><svg viewBox="0 0 12 12" fill="currentColor"><path d="M3 3h4v4M7 3L3 7"/></svg></span></a>
+        </div>
+      </div>
+
+      <div class="pred">
+        <div class="pred-cell">
+          <span class="label">Predicted close</span>
+          <div class="pred-value">Oct 31<span class="sub">in 173 days</span></div>
+        </div>
+        <div class="pred-cell">
+          <span class="label">Confidence</span>
+          <a class="conf-link" href="/deals/acme/confidence" target="_blank" rel="noopener">
+            <span class="conf-val">68%</span>
+            <span class="conf-why">Why<span class="ext"><svg viewBox="0 0 12 12" fill="currentColor"><path d="M3 3h4v4M7 3L3 7"/></svg></span></span>
+          </a>
+        </div>
+        <div class="pred-cell">
+          <span class="label">Stage</span>
+          <div class="pred-stage-trail"><span class="now">Confirming Value</span><span class="arrow">&rarr;</span><span class="next">Selection</span></div>
+          <div class="pred-stage-meta">18 days in current stage</div>
+        </div>
+      </div>
+
+      <div class="stage-strip">
+        <span class="stage-pill done"><span class="check"><svg viewBox="0 0 8 8" fill="currentColor"><path d="M7 2L3 6 1 4"/></svg></span>Qualify</span>
+        <span class="stage-sep">&rsaquo;</span>
+        <span class="stage-pill done"><span class="check"><svg viewBox="0 0 8 8" fill="currentColor"><path d="M7 2L3 6 1 4"/></svg></span>Discovery</span>
+        <span class="stage-sep">&rsaquo;</span>
+        <span class="stage-pill done"><span class="check"><svg viewBox="0 0 8 8" fill="currentColor"><path d="M7 2L3 6 1 4"/></svg></span>Solution Validation</span>
+        <span class="stage-sep">&rsaquo;</span>
+        <span class="stage-pill current">Confirming Value</span>
+        <span class="stage-sep">&rsaquo;</span>
+        <span class="stage-pill"><span class="dot"></span>Selection</span>
+        <span class="stage-sep">&rsaquo;</span>
+        <span class="stage-pill"><span class="dot"></span>Closed Won</span>
+      </div>
+
+      <a class="barrier" href="/deals/acme/barriers/eb-not-engaged" target="_blank" rel="noopener">
+        <div class="barrier-go"><svg viewBox="0 0 12 12" fill="currentColor"><path d="M3 3h4v4M7 3L3 7"/></svg></div>
+        <div class="barrier-head">
+          <div class="barrier-icon"><svg viewBox="0 0 12 12" fill="currentColor"><path d="M6 1L11 11H1L6 1zm0 4v3M6 9v1" stroke="white" stroke-width="1" stroke-linecap="round" fill="none"/></svg></div>
+          <span class="barrier-label">Single biggest barrier</span>
+          <span class="barrier-more">+ 2 more open</span>
+        </div>
+        <div class="barrier-title">Economic buyer hasn't been engaged</div>
+        <div class="barrier-desc">Dana Rivera (CFO, EB) hasn't been on a single Lumen call. 21 days since any direct contact. Sage canon and Lumen's prediction model agree: without her in the room before Selection, this deal stalls or restarts when she finally engages.</div>
+        <div class="barrier-foot">
+          <span class="barrier-action" onclick="event.preventDefault(); event.stopPropagation();">Draft demo invite for Marcus to forward<svg viewBox="0 0 10 10" fill="currentColor"><path d="M3 1l4 4-4 4"/></svg></span>
+          <span class="barrier-source"><span class="src">FDC &middot; Apr 22 &middot; Marcus Reyes:</span> <span class="quote">"I'll get Dana on the next one, she's tied up with the close."</span></span>
+        </div>
+      </a>
+
+      <div class="gate-strip">
+        <span class="gate-meta">Gate to Selection &middot; <span class="count">7 of 14</span></span>
+        <div class="gate-dims">
+          <a class="gate-dim strong" href="/deals/acme/gate/need-fit" target="_blank" rel="noopener"><span class="gate-dim-name">Need</span><span class="gate-dots"><span class="gd met"></span><span class="gd met"></span><span class="gd met"></span></span></a>
+          <a class="gate-dim gap" href="/deals/acme/gate/power" target="_blank" rel="noopener"><span class="gate-dim-name">Power</span><span class="gate-dots"><span class="gd met"></span><span class="gd"></span><span class="gd"></span><span class="gd"></span></span></a>
+          <a class="gate-dim partial" href="/deals/acme/gate/timeline" target="_blank" rel="noopener"><span class="gate-dim-name">Timeline</span><span class="gate-dots"><span class="gd met"></span><span class="gd met"></span><span class="gd"></span></span></a>
+          <a class="gate-dim gap" href="/deals/acme/gate/budget" target="_blank" rel="noopener"><span class="gate-dim-name">Budget</span><span class="gate-dots"><span class="gd"></span><span class="gd"></span></span></a>
+          <a class="gate-dim partial" href="/deals/acme/gate/hygiene" target="_blank" rel="noopener"><span class="gate-dim-name">Hygiene</span><span class="gate-dots"><span class="gd met"></span><span class="gd"></span></span></a>
+        </div>
+        <a class="gate-expand" href="/deals/acme/gate" target="_blank" rel="noopener">All criteria<span class="ext"><svg viewBox="0 0 12 12" fill="currentColor"><path d="M3 3h4v4M7 3L3 7"/></svg></span></a>
+      </div>
+    </div>
+
+    <div class="footnote">
+      <strong>Linked-out routes from this widget.</strong> Every interactive element above is hooked to its own page (opens in new tab so the deal home stays anchored).
+      <ul>
+        <li><code>/deal/{id}/path</code> &mdash; full Path to Close page (the widget's "Full view" link)</li>
+        <li><code>/deal/{id}/confidence</code> &mdash; glass-box page: full factor breakdown, org calibration explanation, "what would move this most"</li>
+        <li><code>/deal/{id}/barriers/{barrier_id}</code> &mdash; barrier detail: full history of the risk, all transcript evidence, history of attempted moves, AI-suggested coaching</li>
+        <li><code>/deal/{id}/barriers</code> &mdash; full barrier list (when the AE clicks "+ 2 more open")</li>
+        <li><code>/deal/{id}/gate</code> &mdash; full Sage gate criteria</li>
+        <li><code>/deal/{id}/gate/{dimension}</code> &mdash; dimension drill-in (Power, Budget, etc.)</li>
+        <li><code>/deal/{id}/msp</code> &mdash; mutual success plan</li>
+      </ul>
+      <br>
+      <strong>One inline exception.</strong> The "Draft demo invite for Marcus to forward" button does <em>not</em> link out &mdash; it opens the Ask Lumen drawer with a templated prompt prefilled. The barrier-detail page is one tab over for context; the action is one click away inline. Most barriers will have an inline action like this; navigating to a page just to click another button defeats the point.
+      <br><br>
+      <strong>Why this pattern is right for Lumen.</strong> The deal home is a control panel. AEs glance at it 10x a day. Detail pages are where work happens &mdash; opening them in a new tab means the AE can keep their place on the deal home while they investigate, then close the tab and move on. It also makes every detail page link-shareable (paste into Slack, into 1:1 notes, into MSP comments), which becomes valuable for manager coaching workflows.
+    </div>
+
+  </div>
+</body>
+</html>
