@@ -6,6 +6,7 @@ import { Card, Badge, ScoreBar, Button, Spinner, inputStyle, labelStyle } from '
 import { callGenerateEmail } from '../lib/webhooks'
 import { useAuth } from '../hooks/useAuth'
 import DealChat from './DealChat'
+import AttendeesEditor from './coaching/AttendeesEditor'
 
 function callTypeLabel(key) {
   const t = CALL_TYPES.find(c => c.key === key)
@@ -254,6 +255,13 @@ export default function CallAnalysisBody({ dealId, conversationId, onBack, onCal
 
       {/* Content area */}
       <div style={{ padding: onBack ? '16px 24px' : 0 }}>
+
+        {/* Attendees editor (Sage canon) */}
+        {profile?.org_id && (
+          <div style={{ marginBottom: 16 }}>
+            <AttendeesEditor conversationId={conversationId} orgId={profile.org_id} />
+          </div>
+        )}
 
         {/* SECTION 1: AI Summary */}
         <div style={sectionStyle}>AI Summary</div>

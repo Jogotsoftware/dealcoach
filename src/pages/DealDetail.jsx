@@ -28,6 +28,10 @@ async function trackSuggestion({ orgId, dealId, userId, targetType, targetId, ac
   if (error) console.error('ai_suggestion_tracking insert failed:', error)
 }
 import DealChat from '../components/DealChat'
+import CoachingNudgeBanner from '../components/coaching/CoachingNudgeBanner'
+import EOMHeaderStrip from '../components/coaching/EOMHeaderStrip'
+import DualDateDisplay from '../components/coaching/DualDateDisplay'
+import NextStepsAISuggestion from '../components/coaching/NextStepsAISuggestion'
 import CompanyLogo from '../components/CompanyLogo'
 import DealRoomConfig from './DealRoomConfig'
 import LogoUploader from '../components/LogoUploader'
@@ -1682,6 +1686,9 @@ export default function DealDetail() {
 
   return (
     <div>
+      {/* Sage canon: month-end visual strip (renders only when in EOM window + deal closes this month) */}
+      <EOMHeaderStrip dealCloseDate={deal.target_close_date} />
+
       {/* CSS overrides for react-grid-layout */}
       <style>{`
         .react-grid-layout { position: relative !important; width: 100% !important; }
@@ -1728,6 +1735,8 @@ export default function DealDetail() {
                   {deal.website.replace(/^https?:\/\//, '').replace(/\/$/, '')} {'\u2197'}
                 </a>
               )}
+              {/* Sage canon: dual-date display (Close + MSP target side-by-side when they differ) */}
+              <DualDateDisplay dealId={deal.id} dealCloseDate={deal.target_close_date} />
               {showStagePopover && (
                 <BadgePopover onClose={() => setShowStagePopover(false)}
                   options={[
@@ -1838,10 +1847,21 @@ export default function DealDetail() {
             widget renders compact when populated and dashed when empty. */}
         <div style={{ marginBottom: 12 }}>
           <NextStepsWidget deal={deal} setDeal={setDeal} profile={profile} compact />
+          {/* Sage canon: Lumen's red/green suggestion shown below the AE's choice */}
+          <NextStepsAISuggestion
+            dealId={deal.id}
+            aiStatus={deal.next_steps_ai_status}
+            aiReasoning={deal.next_steps_ai_reasoning}
+            aiEvaluatedAt={deal.next_steps_ai_evaluated_at}
+            onRefreshed={(data) => setDeal(p => p ? { ...p, next_steps_ai_status: data.ai_status, next_steps_ai_reasoning: data.ai_reasoning, next_steps_ai_evaluated_at: new Date().toISOString() } : p)}
+          />
         </div>
 
         <TabBar tabs={tabs} active={tab} onChange={setTab} />
       </div>
+
+      {/* Sage canon: coaching nudge banner — active non-dismissed nudges for this deal */}
+      <CoachingNudgeBanner dealId={deal.id} userId={profile?.id} />
 
       <div style={{ padding: '16px 24px', width: '100%' }}>
 
