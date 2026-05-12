@@ -203,9 +203,11 @@ export default function PathToCloseWidget({ dealId, dealStage, dealCloseDate, on
   const gateDefined = criteriaTotal > 0
 
   if (loading) return <Skeleton />
-  if (!forecast && !topBarrier && criteriaTotal === 0) {
-    return <EmptyState message="Run a discovery call to evaluate the path to close." />
-  }
+  // The widget renders even with zero data. Each section degrades gracefully:
+  // - Prediction strip: shows '—' for missing values
+  // - Stage trail: always renders from STAGE_TRAIL
+  // - Barrier hero: hidden when no barriers exist
+  // - Gate strip: shows muted '—' chips + helper text when criteria not seeded for this stage
 
   function openInNewTab(path) {
     window.open(path, '_blank', 'noopener')
@@ -293,13 +295,17 @@ export default function PathToCloseWidget({ dealId, dealStage, dealCloseDate, on
         </div>
         <div style={predCell}>
           <span style={labelStyle}>Confidence</span>
-          <a onClick={(e) => { e.preventDefault(); openInNewTab(`/deal/${dealId}/confidence`) }} href={`/deal/${dealId}/confidence`} target="_blank" rel="noopener noreferrer"
-            style={{ display: 'inline-flex', alignItems: 'baseline', gap: 7, padding: '2px 7px', margin: '-2px -7px', borderRadius: 5, cursor: 'pointer', textDecoration: 'none' }}>
-            <span style={{ fontSize: 18, fontWeight: 700, color: confidence == null ? T.textMuted : (confWarn ? WARNING_DARK : SUCCESS_DARK), letterSpacing: '-0.01em', lineHeight: 1.1 }}>
-              {confidence != null ? `${confidence}%` : '—'}
-            </span>
-            <span style={{ fontSize: 11, color: T.primary, fontWeight: 600, display: 'inline-flex', alignItems: 'center' }}>Why<ExtIcon /></span>
-          </a>
+          {forecast ? (
+            <a onClick={(e) => { e.preventDefault(); openInNewTab(`/deal/${dealId}/confidence`) }} href={`/deal/${dealId}/confidence`} target="_blank" rel="noopener noreferrer"
+              style={{ display: 'inline-flex', alignItems: 'baseline', gap: 7, padding: '2px 7px', margin: '-2px -7px', borderRadius: 5, cursor: 'pointer', textDecoration: 'none' }}>
+              <span style={{ fontSize: 18, fontWeight: 700, color: confidence == null ? T.textMuted : (confWarn ? WARNING_DARK : SUCCESS_DARK), letterSpacing: '-0.01em', lineHeight: 1.1 }}>
+                {confidence != null ? `${confidence}%` : '—'}
+              </span>
+              <span style={{ fontSize: 11, color: T.primary, fontWeight: 600, display: 'inline-flex', alignItems: 'center' }}>Why<ExtIcon /></span>
+            </a>
+          ) : (
+            <span style={{ fontSize: 18, fontWeight: 700, color: T.textMuted, letterSpacing: '-0.01em', lineHeight: 1.1 }}>—</span>
+          )}
         </div>
         <div style={predCellLast}>
           <span style={labelStyle}>Stage</span>
@@ -413,7 +419,7 @@ export default function PathToCloseWidget({ dealId, dealStage, dealCloseDate, on
 
       {!gateDefined && (
         <div style={{ padding: '10px 18px', borderTop: `1px solid ${T.border}`, fontSize: 11, color: T.textMuted, background: T.surfaceAlt }}>
-          Gate criteria for {STAGE_TRAIL.find((s) => s.key === dealStage)?.label || dealStage} not yet defined. Path to Close becomes fully active in Confirming Value.
+          Gate criteria for {STAGE_TRAIL.find((s) => s.key === dealStage)?.label || dealStage} not yet defined. Path to Close becomes fully active when criteria are seeded for this stage.
         </div>
       )}
     </div>

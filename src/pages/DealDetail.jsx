@@ -1864,15 +1864,20 @@ export default function DealDetail() {
       {/* Sage canon: coaching nudge banner — active non-dismissed nudges for this deal */}
       <CoachingNudgeBanner dealId={deal.id} userId={profile?.id} />
 
-      {/* Sage canon: Path to Close v4 widget — single visible methodology surface */}
-      <div style={{ padding: '12px 24px 0 24px' }}>
-        <PathToCloseWidget
-          dealId={deal.id}
-          dealStage={deal.stage}
-          dealCloseDate={deal.target_close_date}
-          onAskLumen={(prompt) => console.log('Ask Lumen:', prompt)}
-        />
-      </div>
+      {/* Sage canon: Path to Close v4 widget — single visible methodology surface.
+          Visibility: render on discovery / solution_validation / confirming_value / selection.
+          Hidden on qualify (too early — deal lacks substance) and on closed_won / closed_lost / disqualified (done).
+          When criteria for the current stage aren't seeded, the widget gracefully renders with a muted gate strip. */}
+      {(deal.stage === 'discovery' || deal.stage === 'solution_validation' || deal.stage === 'confirming_value' || deal.stage === 'selection') && (
+        <div style={{ padding: '12px 24px 0 24px' }}>
+          <PathToCloseWidget
+            dealId={deal.id}
+            dealStage={deal.stage}
+            dealCloseDate={deal.target_close_date}
+            onAskLumen={(prompt) => console.log('Ask Lumen:', prompt)}
+          />
+        </div>
+      )}
 
       <div style={{ padding: '16px 24px', width: '100%' }}>
 
