@@ -33,6 +33,7 @@ import EOMHeaderStrip from '../components/coaching/EOMHeaderStrip'
 import DualDateDisplay from '../components/coaching/DualDateDisplay'
 import NextStepsAISuggestion from '../components/coaching/NextStepsAISuggestion'
 import PathToCloseWidget from '../components/widgets/PathToCloseWidget'
+import { checkIsPlatformAdmin } from '../lib/platformAdmin'
 import CompanyLogo from '../components/CompanyLogo'
 import DealRoomConfig from './DealRoomConfig'
 import LogoUploader from '../components/LogoUploader'
@@ -459,6 +460,10 @@ export default function DealDetail() {
   const [showEditMenu, setShowEditMenu] = useState(false)
   const [showStagePopover, setShowStagePopover] = useState(false)
   const [showForecastPopover, setShowForecastPopover] = useState(false)
+  // Sage canon: platform-admin-only Recalculate Path to Close debug action
+  const [isPlatformAdmin, setIsPlatformAdmin] = useState(false)
+  const [recalcLoading, setRecalcLoading] = useState(false)
+  const [ptcRefreshKey, setPtcRefreshKey] = useState(0)
   const [showEditModal, setShowEditModal] = useState(false)
   const [showAddTask, setShowAddTask] = useState(false)
   const [selectedCallId, setSelectedCallId] = useState('pre-qdc')
@@ -545,6 +550,37 @@ export default function DealDetail() {
   const [showMoreMenu, setShowMoreMenu] = useState(false)
 
   useEffect(() => { if (id && id !== 'new') loadDeal() }, [id])
+
+  // Platform admin check — gates the Recalculate Path to Close debug button
+  useEffect(() => {
+    let cancelled = false
+    if (!profile?.id) return
+    checkIsPlatformAdmin(profile.id).then((ok) => { if (!cancelled) setIsPlatformAdmin(ok) })
+    return () => { cancelled = true }
+  }, [profile?.id])
+
+  async function handleRecalcPathToClose() {
+    if (!deal?.id || recalcLoading) return
+    setRecalcLoading(true)
+    try {
+      const { data, error } = await supabase.functions.invoke('evaluate-gate-and-forecast', {
+        body: { deal_id: deal.id, triggered_by: 'manual' },
+      })
+      if (error) {
+        alert('Recalculate failed: ' + (error.message || JSON.stringify(error)))
+        return
+      }
+      if (data && data.success === false) {
+        alert('Recalculate failed: ' + (data.error || 'unknown'))
+        return
+      }
+      setPtcRefreshKey((k) => k + 1)
+    } catch (e) {
+      alert('Recalculate threw: ' + (e?.message || String(e)))
+    } finally {
+      setRecalcLoading(false)
+    }
+  }
 
   // Load widget layout (org default + optional user override)
   useEffect(() => {
@@ -1738,6 +1774,26 @@ export default function DealDetail() {
               )}
               {/* Sage canon: dual-date display (Close + MSP target side-by-side when they differ) */}
               <DualDateDisplay dealId={deal.id} dealCloseDate={deal.target_close_date} />
+              {/* Sage canon: platform-admin-only debug action — recalculates Path to Close evaluation */}
+              {isPlatformAdmin && (
+                <button
+                  onClick={handleRecalcPathToClose}
+                  disabled={recalcLoading}
+                  title="Recalculate Path to Close (platform admin)"
+                  style={{
+                    background: T.surface,
+                    border: `1px dashed ${T.border}`,
+                    borderRadius: 4,
+                    padding: '3px 8px',
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: recalcLoading ? T.textMuted : T.textSecondary,
+                    cursor: recalcLoading ? 'default' : 'pointer',
+                    fontFamily: T.font,
+                  }}>
+                  {recalcLoading ? 'Recalculating…' : '↻ Recalc Path to Close'}
+                </button>
+              )}
               {showStagePopover && (
                 <BadgePopover onClose={() => setShowStagePopover(false)}
                   options={[
@@ -1871,6 +1927,7 @@ export default function DealDetail() {
       {(deal.stage === 'discovery' || deal.stage === 'solution_validation' || deal.stage === 'confirming_value' || deal.stage === 'selection') && (
         <div style={{ padding: '12px 24px 0 24px' }}>
           <PathToCloseWidget
+            key={ptcRefreshKey}
             dealId={deal.id}
             dealStage={deal.stage}
             dealCloseDate={deal.target_close_date}
