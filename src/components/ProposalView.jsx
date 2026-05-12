@@ -1418,28 +1418,6 @@ function TcoTab({ snapshot }) {
               </tr>
             )}
 
-            {/* Signing bonus (amber) — Y1 only */}
-            {signingBonusValue > 0 && readSection(snapshot, 'tco_signing_bonus') && (
-              <tr style={{ borderBottom: `1px solid ${T.borderLight}` }}>
-                <td style={{ ...cellLabel, color: C.amberDark }}>Signing bonus</td>
-                {yearNet.map((_, i) => (
-                  <td key={i} style={cellNum({ color: C.amberDark })}>
-                    {i === 0 ? moneyNeg(signingBonusValue) : '—'}
-                  </td>
-                ))}
-                <td style={cellNum({ color: C.amberDark, fontWeight: 600 })}>{moneyNeg(signingBonusValue)}</td>
-              </tr>
-            )}
-
-            {/* Free months (amber) — credit on the 3-yr total only, not any single year */}
-            {freeMonths > 0 && readSection(snapshot, 'tco_free_months') && (
-              <tr style={{ borderBottom: `1px solid ${T.borderLight}` }}>
-                <td style={{ ...cellLabel, color: C.amberDark }}>Free months (Y1 · {freeMonths} mo · extends term)</td>
-                {yearNet.map((_, i) => <td key={i} style={cellNum({ color: C.amberDark })}>—</td>)}
-                <td style={cellNum({ color: C.amberDark, fontWeight: 600 })}>{moneyNeg(freeMonthsValue)}</td>
-              </tr>
-            )}
-
             {/* Block separator — heavier rule signals "what was negotiated"
                 above ends here; the concrete cost block begins below. */}
             <tr>
@@ -1478,6 +1456,30 @@ function TcoTab({ snapshot }) {
               ))}
               <td style={cellNum({ color: C.greenDark, fontWeight: 900, fontSize: 18, padding: '14px 12px' })}>{money(totalCost)}</td>
             </tr>
+
+            {/* Signing bonus (red) — Y1 only. Rendered below Annual cost so
+                concessions read as below-the-line credits, not list-price
+                adjustments. */}
+            {signingBonusValue > 0 && readSection(snapshot, 'tco_signing_bonus') && (
+              <tr style={{ borderTop: `1px solid ${T.borderLight}` }}>
+                <td style={{ ...cellLabel, color: C.redDark }}>Signing bonus</td>
+                {yearNet.map((_, i) => (
+                  <td key={i} style={cellNum({ color: C.redDark })}>
+                    {i === 0 ? moneyNeg(signingBonusValue) : '—'}
+                  </td>
+                ))}
+                <td style={cellNum({ color: C.redDark, fontWeight: 600 })}>{moneyNeg(signingBonusValue)}</td>
+              </tr>
+            )}
+
+            {/* Free months (red) — credit on the 3-yr total only, not any single year */}
+            {freeMonths > 0 && readSection(snapshot, 'tco_free_months') && (
+              <tr style={{ borderTop: `1px solid ${T.borderLight}` }}>
+                <td style={{ ...cellLabel, color: C.redDark }}>Free Months ({freeMonths})</td>
+                {yearNet.map((_, i) => <td key={i} style={cellNum({ color: C.redDark })}>—</td>)}
+                <td style={cellNum({ color: C.redDark, fontWeight: 600 })}>{moneyNeg(freeMonthsValue)}</td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>

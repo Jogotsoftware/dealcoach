@@ -40,7 +40,7 @@ function fmt(v) {
 
 // Build the matrix data for one scenario. Free-months value lives in the
 // Total column only — never in any Y1..Yn cell — per spec.
-function buildMatrix({ subscriptionY1, implementation, signingBonus, freeMonthsValue, termYears, yoyPctList, customLines }) {
+function buildMatrix({ subscriptionY1, implementation, signingBonus, freeMonths, freeMonthsValue, termYears, yoyPctList, customLines }) {
   const horizon = Math.max(1, Number(termYears) || 1)
   const subsByYear = []
   let running = Number(subscriptionY1) || 0
@@ -75,7 +75,7 @@ function buildMatrix({ subscriptionY1, implementation, signingBonus, freeMonthsV
 
   return {
     horizon, subsByYear, subsTotal,
-    impl, signingBonus: sb, freeMonthsValue: fmv,
+    impl, signingBonus: sb, freeMonths: Number(freeMonths) || 0, freeMonthsValue: fmv,
     customLines: customLines || [], customTotal,
     totalsByYear, grandTotal,
   }
@@ -97,6 +97,7 @@ function deriveSageMatrix(parentQuote, contractTerm) {
     subscriptionY1: sageY1,
     implementation: impl,
     signingBonus,
+    freeMonths,
     freeMonthsValue,
     termYears,
     yoyPctList: yoyCaps,
@@ -319,7 +320,7 @@ function buildSageRows(m) {
     rows.push({ key: 'sb', label: 'Signing Bonus', perYear: y => y === 1 ? -m.signingBonus : null, total: -m.signingBonus })
   }
   if (m.freeMonthsValue > 0) {
-    rows.push({ key: 'fm', label: 'Free Months', perYear: () => null, total: -m.freeMonthsValue })
+    rows.push({ key: 'fm', label: `Free Months (${m.freeMonths})`, perYear: () => null, total: -m.freeMonthsValue })
   }
   rows.push({ key: 'total', label: 'Total', perYear: y => m.totalsByYear[y - 1], total: m.grandTotal, strong: true, headline: true })
   return rows
