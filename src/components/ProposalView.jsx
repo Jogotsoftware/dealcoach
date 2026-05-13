@@ -72,6 +72,19 @@ function readColVis(columnVisibility) {
   }
 }
 
+// ─── Subscription summary-row visibility — sibling namespace to columns ──────
+// Customer-side reader for the 3 aggregate rows at the bottom of the
+// subscription detail table: list_subtotal, discount_amount, net_total.
+// All default visible; the AE toggles off via eye icons in QuoteBuilder.
+function readSummaryRowVis(columnVisibility) {
+  const inner = columnVisibility?.summary_rows || {}
+  return {
+    list_subtotal:   inner.list_subtotal   !== false,
+    discount_amount: inner.discount_amount !== false,
+    net_total:       inner.net_total       !== false,
+  }
+}
+
 // ─── Tab visibility — read from snapshot.display_config.tabs ─────────────────
 function readTabVis(displayConfig) {
   const tabs = displayConfig?.tabs || {}
@@ -647,6 +660,7 @@ function InvestmentSummaryTab({ snapshot, columnVisibility, aePreview, onColumnV
                 annualDiscountAmount={annualDiscountAmount}
                 blendedDiscountPct={blendedDiscountPct}
                 cv={cv}
+                summaryRows={readSummaryRowVis(columnVisibility)}
               />
             </div>
           )}
@@ -841,10 +855,11 @@ function SumRow({ label, value, bold, labelColor, valueColor, indent, noBorder }
   )
 }
 
-function SubscriptionDetailTable({ parents, childrenOf, annualListTotal, annualNetTotal, annualDiscountAmount, blendedDiscountPct, cv }) {
-  // Column visibility: when hidden, blank both the cell content AND the
-  // header text but preserve column width so the table doesn't reflow.
-  const COLS = [
+function SubscriptionDetailTable({ parents, childrenOf, annualListTotal, annualNetTotal, annualDiscountAmount, blendedDiscountPct, cv, summaryRows }) {
+  // Column visibility: hidden columns are FILTERED OUT entirely (not blanked)
+  // so the table actually collapses — what the AE toggles off, the customer
+  // truly doesn't see.
+  const ALL_COLS = [
     { key: 'solution',   label: 'Sage Intacct Subscription',  width: undefined, headColor: T.textMuted, align: 'left',  always: true },
     { key: 'list',       label: 'List',      width: 90,  headColor: C.textTertiary, align: 'right', visible: cv.list },
     { key: 'qty',        label: 'Qty',       width: 56,  headColor: C.textTertiary, align: 'right', visible: cv.qty },
@@ -853,17 +868,12 @@ function SubscriptionDetailTable({ parents, childrenOf, annualListTotal, annualN
     { key: 'disc_amt',   label: 'Disc $',    width: 90,  headColor: C.redDark,    align: 'right', visible: cv.disc_amt },
     { key: 'net',        label: 'Net price', width: 110, headColor: C.greenDark,  align: 'right', visible: cv.net, isNet: true },
   ]
+  const COLS = ALL_COLS.filter(c => c.always || c.visible)
 
   const cellHead = (color) => ({ padding: '10px 12px', fontSize: 10, fontWeight: 700, color, textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'right', whiteSpace: 'nowrap', background: '#fff', borderBottom: `1px solid ${T.border}` })
   const cellData = (extra = {}) => ({ padding: '12px 12px', fontSize: 13, fontFeatureSettings: '"tnum"', textAlign: 'right', color: T.text, ...extra })
 
-  // Hidden column: cells go transparent + white background (no tinted bg).
-  // Header text + color stay visible per spec, so the customer's table
-  // composition reads identical regardless of which columns are on.
-  const hiddenCellStyle = { background: '#fff', color: 'transparent' }
-
   function renderCell(p, col) {
-    const visible = col.always || col.visible
     if (col.key === 'solution') {
       const kids = childrenOf(p.id)
       const isBundle = !!p.is_bundle && kids.length > 0
@@ -881,10 +891,6 @@ function SubscriptionDetailTable({ parents, childrenOf, annualListTotal, annualN
           )}
         </td>
       )
-    }
-    if (!visible) {
-      // Per spec: blank data text but keep column width by rendering a non-breaking placeholder
-      return <td key={col.key} className={`ri-col-${col.key}`} style={cellData(hiddenCellStyle)}>&nbsp;</td>
     }
     const lineList = num(p.quantity) * num(p.unit_price)
     const lineDisc = lineList - num(p.extended)
@@ -924,14 +930,11 @@ function SubscriptionDetailTable({ parents, childrenOf, annualListTotal, annualN
         </colgroup>
         <thead>
           <tr>
-            {COLS.map(c => {
-              const visible = c.always || c.visible
-              return (
-                <th key={c.key} className={`ri-col-${c.key}`} style={{ ...cellHead(c.headColor), textAlign: c.align || 'right' }}>
-                  {visible ? c.label : ' '}
-                </th>
-              )
-            })}
+            {COLS.map(c => (
+              <th key={c.key} className={`ri-col-${c.key}`} style={{ ...cellHead(c.headColor), textAlign: c.align || 'right' }}>
+                {c.label}
+              </th>
+            ))}
           </tr>
         </thead>
         <tbody>
@@ -942,13 +945,15 @@ function SubscriptionDetailTable({ parents, childrenOf, annualListTotal, annualN
           ))}
         </tbody>
         <tfoot>
-          <tr>
-            <td colSpan={labelSpan} style={{ padding: '12px 12px', textAlign: 'right', fontSize: 13, color: C.textTertiary, fontWeight: 600 }}>
-              Annual subscription · total list price
-            </td>
-            <td style={{ padding: '12px 12px', textAlign: 'right', fontSize: 13, color: C.textTertiary, fontWeight: 700, fontFeatureSettings: '"tnum"' }}>{money(annualListTotal)}</td>
-          </tr>
-          {annualDiscountAmount > 0 && (
+          {summaryRows.list_subtotal && (
+            <tr>
+              <td colSpan={labelSpan} style={{ padding: '12px 12px', textAlign: 'right', fontSize: 13, color: C.textTertiary, fontWeight: 600 }}>
+                Annual subscription · total list price
+              </td>
+              <td style={{ padding: '12px 12px', textAlign: 'right', fontSize: 13, color: C.textTertiary, fontWeight: 700, fontFeatureSettings: '"tnum"' }}>{money(annualListTotal)}</td>
+            </tr>
+          )}
+          {summaryRows.discount_amount && annualDiscountAmount > 0 && (
             <tr>
               <td colSpan={labelSpan} style={{ padding: '12px 12px', textAlign: 'right', fontSize: 13, color: C.redDark, fontWeight: 600 }}>
                 Discount amount ({blendedDiscountPct}%)
@@ -956,12 +961,14 @@ function SubscriptionDetailTable({ parents, childrenOf, annualListTotal, annualN
               <td style={{ padding: '12px 12px', textAlign: 'right', fontSize: 13, color: C.redDark, fontWeight: 700, fontFeatureSettings: '"tnum"' }}>{moneyNeg(annualDiscountAmount)}</td>
             </tr>
           )}
-          <tr style={{ background: C.greenSoftBg }}>
-            <td colSpan={labelSpan} style={{ padding: '12px 12px', textAlign: 'right', fontSize: 13, color: C.greenDark, fontWeight: 700 }}>
-              Net annual subscription total
-            </td>
-            <td style={{ padding: '12px 12px', textAlign: 'right', fontSize: 14, color: C.greenDark, fontWeight: 700, fontFeatureSettings: '"tnum"' }}>{money(annualNetTotal)}</td>
-          </tr>
+          {summaryRows.net_total && (
+            <tr style={{ background: C.greenSoftBg }}>
+              <td colSpan={labelSpan} style={{ padding: '12px 12px', textAlign: 'right', fontSize: 13, color: C.greenDark, fontWeight: 700 }}>
+                Net annual subscription total
+              </td>
+              <td style={{ padding: '12px 12px', textAlign: 'right', fontSize: 14, color: C.greenDark, fontWeight: 700, fontFeatureSettings: '"tnum"' }}>{money(annualNetTotal)}</td>
+            </tr>
+          )}
         </tfoot>
       </table>
     </div>

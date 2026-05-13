@@ -687,6 +687,26 @@ function SubscriptionSection({ quote, lines, products, productMap, bundleChildre
     }
   }
 
+  // Aggregate-row visibility (the subscription footer strip). Customer-side
+  // ProposalView reads these from proposal_column_visibility.summary_rows.<key>.
+  // Keys: list_subtotal, discount_amount, net_total. Default visible.
+  const summaryRowsInner = (columnVisibility?.summary_rows || {})
+  const summaryRowVis = {
+    list_subtotal:    summaryRowsInner.list_subtotal    !== false,
+    discount_amount:  summaryRowsInner.discount_amount  !== false,
+    net_total:        summaryRowsInner.net_total        !== false,
+  }
+  async function toggleSummaryRow(key) {
+    const next = !summaryRowVis[key]
+    if (onColumnVisibilityChange) {
+      const nextSummary = { ...summaryRowsInner, [key]: next }
+      onColumnVisibilityChange({ summary_rows: nextSummary })
+    } else {
+      const patch = drSetPatch(quote, `summary_rows.${key}`, next)
+      await saveQuoteHeader(patch)
+    }
+  }
+
   async function addProductLines(productIds) {
     const maxOrder = lines.reduce((m, l) => Math.max(m, l.line_order || 0), -1)
     let nextOrder = maxOrder + 1
@@ -926,15 +946,21 @@ function SubscriptionSection({ quote, lines, products, productMap, bundleChildre
       )}
 
       <div style={{ marginTop: 14, padding: '12px 16px', background: T.surfaceAlt, border: `1px solid ${T.border}`, borderRadius: 6, display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
-        <FooterCell label="List subtotal" value={dollars(listSubtotal)} />
-        <FooterCell label="Discount" value={discountTotal > 0 ? `−${dollars(discountTotal)}` : '—'} color={discountTotal > 0 ? T.success : T.textMuted} />
+        <FooterCell label="List subtotal" value={dollars(listSubtotal)}
+          visible={summaryRowVis.list_subtotal}
+          onToggleVisible={() => toggleSummaryRow('list_subtotal')} />
+        <FooterCell label="Discount" value={discountTotal > 0 ? `−${dollars(discountTotal)}` : '—'} color={discountTotal > 0 ? T.success : T.textMuted}
+          visible={summaryRowVis.discount_amount}
+          onToggleVisible={() => toggleSummaryRow('discount_amount')} />
         <FooterCell
           label="Blended Discount"
           value={blendedDiscountPct == null ? '—' : `${blendedDiscountPct.toFixed(1)}%`}
           color={blendedDiscountPct == null ? T.textMuted : (blendedDiscountPct > 0 ? T.success : T.textMuted)}
-          title="Internal metric: weighted total discount across all lines except entity SKUs. Entities are excluded because they're often heavily discounted and skew the rate."
+          title="Internal metric: weighted total discount across all lines except entity SKUs. Entities are excluded because they're often heavily discounted and skew the rate. AE-only — never shown to customers."
         />
-        <FooterCell label="Sage Subscription" value={dollars(sageSubscriptionTotal)} bold color={T.primary} />
+        <FooterCell label="Sage Subscription" value={dollars(sageSubscriptionTotal)} bold color={T.primary}
+          visible={summaryRowVis.net_total}
+          onToggleVisible={() => toggleSummaryRow('net_total')} />
       </div>
 
       {pickerOpen && (
@@ -1102,11 +1128,16 @@ function ExcludeGlobalCheckbox({ line, product, onChange }) {
 
 const thStyle = { textAlign: 'left', padding: '8px 10px', fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em' }
 
-function FooterCell({ label, value, bold, color, title }) {
+function FooterCell({ label, value, bold, color, title, visible, onToggleVisible }) {
   return (
     <div title={title}>
-      <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', cursor: title ? 'help' : undefined }}>{label}</div>
-      <div style={{ fontSize: bold ? 18 : 14, fontWeight: bold ? 800 : 600, color: color || T.text, fontFeatureSettings: '"tnum"' }}>{value}</div>
+      <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', cursor: title ? 'help' : undefined, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+        {label}
+        {onToggleVisible && (
+          <VisibilityToggleIcon visible={visible !== false} onChange={() => onToggleVisible()} label={`the ${label} row from the customer`} size={13} inline />
+        )}
+      </div>
+      <div style={{ fontSize: bold ? 18 : 14, fontWeight: bold ? 800 : 600, color: color || T.text, fontFeatureSettings: '"tnum"', opacity: visible === false ? 0.45 : 1 }}>{value}</div>
     </div>
   )
 }
