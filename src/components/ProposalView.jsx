@@ -783,21 +783,27 @@ function InvestmentSummaryTab({ snapshot, columnVisibility, aePreview, onColumnV
             border: `1px solid ${T.border}`, borderLeft: `4px solid ${accent}`,
             borderRadius: 10, overflow: 'hidden',
           }}>
-            {/* Block 1: Subscription — single net row. The detailed list/discount
-                table lives in section 3 above; the bottom summary just shows the
-                customer the net annual cost. */}
+            {/* Block 1: Net annual subscription — tinted green so the customer's
+                eye lands on the "what you actually pay" recurring number. */}
             {showAnnualSub && (
-              <SumRow label="Net annual subscription" value={money(annualNetTotal)} bold />
+              <SumRow label="Net annual subscription" value={money(annualNetTotal)} bold labelColor={C.greenDark} valueColor={C.greenDark} />
             )}
             {showAnnualSub && (showOneTime || showSigningBonus) && (
               <div style={{ height: 1, background: T.border, margin: '0' }} />
             )}
-            {/* Block 2: One-time */}
+            {/* Block 2: Implementation (one-time costs) — tinted blue so it reads
+                as distinct from the recurring subscription block above. Signing
+                bonus is no longer indented under here; it moves into its own
+                "One time concessions" red row below when present. */}
             {showOneTime && (
-              <SumRow label="One-time costs" value={money(implTotal)} bold noBorder={showSigningBonus} />
+              <SumRow label="Implementation" value={money(implTotal)} bold labelColor={C.blueDark} valueColor={C.blueDark} />
             )}
+            {/* Block 2b: One time concessions — single red row that aggregates
+                the signing bonus credit. Only renders when there's a concession
+                to show. Free months extend the term (not cash), so they don't
+                appear here. */}
             {showSigningBonus && (
-              <SumRow label="Signing bonus" value={moneyNeg(signingBonusValue)} valueColor={C.amberDark} labelColor={C.amberDark} indent noBorder />
+              <SumRow label="One time concessions" value={moneyNeg(signingBonusValue)} bold labelColor={C.redDark} valueColor={C.redDark} />
             )}
             {/* Block 3: Partner — sub + impl roll into Year 1 Total. Tinted
                 with the partner palette so it visually splits from Sage rows. */}
