@@ -506,6 +506,7 @@ function InvestmentSummaryTab({ snapshot, columnVisibility, aePreview, onColumnV
 
   const sageLines = snapshot.sage_lines || []
   const sageImpl = snapshot.sage_implementation || []
+  const partnerBlocks = snapshot.partner_blocks || []
   const term = snapshot.term
   const startDate = snapshot.contract_start_date
   const freeMonths = num(snapshot.free_months)
@@ -527,9 +528,17 @@ function InvestmentSummaryTab({ snapshot, columnVisibility, aePreview, onColumnV
 
   const implTotal = sageImpl.reduce((s, i) => s + num(i.total_amount ?? i.extended ?? i.amount), 0)
 
-  // Year 1 cash = annual subscription (net) + impl − signing bonus.
+  // Partner totals — flow into Year 1 Total alongside Sage costs so the
+  // customer sees the all-in number, not just the Sage portion.
+  const partnerSubTotal = partnerBlocks.reduce((s, pb) =>
+    s + (pb.lines || []).reduce((ss, l) => ss + num(l.extended), 0), 0)
+  const partnerImplTotal = partnerBlocks.reduce((s, pb) =>
+    s + (pb.implementation || []).reduce((ss, i) => ss + num(i.total_amount ?? i.extended ?? i.amount), 0), 0)
+  const hasPartnerData = partnerBlocks.some(pb => (pb.lines || []).length > 0 || (pb.implementation || []).length > 0)
+
+  // Year 1 cash = annual subscription (net) + impl − signing bonus + partner (sub + impl).
   // Free months extend the term, not the cash, so they are NOT subtracted here.
-  const year1Total = annualNetTotal + implTotal - signingBonusValue
+  const year1Total = annualNetTotal + implTotal + partnerSubTotal + partnerImplTotal - signingBonusValue
 
   // Subscription end: start + (term_years × 12 months) + (free_months months)
   const termYears = term?.term_years || 1
@@ -676,6 +685,73 @@ function InvestmentSummaryTab({ snapshot, columnVisibility, aePreview, onColumnV
         </div>
       )}
 
+      {/* 3b. Partners — one card per partner block, with Recurring (subscription
+          lines) and One time (implementation items) sub-sections mirroring the
+          Sage layout above. */}
+      {hasPartnerData && partnerBlocks.map((pb, idx) => {
+        const block = pb.block || {}
+        const lines = pb.lines || []
+        const impl = pb.implementation || []
+        if (lines.length === 0 && impl.length === 0) return null
+        const pbSub = lines.reduce((s, l) => s + num(l.extended), 0)
+        const pbImpl = impl.reduce((s, i) => s + num(i.total_amount ?? i.extended ?? i.amount), 0)
+        return (
+          <div key={block.id || idx} style={{
+            marginTop: 22, background: T.surface, border: `1px solid ${T.border}`,
+            borderLeft: `4px solid ${accent}`, borderRadius: 10, overflow: 'hidden',
+          }}>
+            <div style={{ padding: '14px 18px 0' }}>
+              <Eyebrow>Partner: {block.partner_name || 'Partner'}</Eyebrow>
+            </div>
+            {lines.length > 0 && (
+              <div style={{ padding: '6px 18px 4px' }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Recurring</div>
+                <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: 'hidden' }}>
+                  {lines.map((l, i) => (
+                    <div key={l.id || i} style={{ display: 'flex', alignItems: 'center', padding: '12px 14px', borderBottom: i < lines.length - 1 ? `1px solid ${T.borderLight}` : 'none' }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>{l.name || l.description || '—'}</div>
+                        {l.description && l.name && (
+                          <div style={{ fontSize: 11.5, color: T.textSecondary, marginTop: 3, lineHeight: 1.5 }}>{l.description}</div>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: T.text, fontFeatureSettings: '"tnum"' }}>{money(l.extended)}</div>
+                    </div>
+                  ))}
+                  <div style={{ display: 'flex', alignItems: 'center', padding: '12px 14px', background: T.surfaceAlt, borderTop: `1px solid ${T.border}` }}>
+                    <div style={{ flex: 1, fontSize: 13, fontWeight: 800, color: T.text }}>Partner subscription total</div>
+                    <div style={{ fontSize: 15, fontWeight: 800, color: T.text, fontFeatureSettings: '"tnum"' }}>{money(pbSub)}</div>
+                  </div>
+                </div>
+              </div>
+            )}
+            {lines.length > 0 && impl.length > 0 && <div style={{ height: 1, background: T.border, margin: '12px 0 0' }} />}
+            {impl.length > 0 && (
+              <div style={{ padding: 18 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>One time</div>
+                <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, overflow: 'hidden' }}>
+                  {impl.map((i, idx2) => {
+                    const v = num(i.total_amount ?? i.extended ?? i.amount)
+                    return (
+                      <div key={i.id || idx2} style={{ display: 'flex', alignItems: 'center', padding: '14px 18px', borderBottom: idx2 < impl.length - 1 ? `1px solid ${T.borderLight}` : 'none' }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>{i.description || i.name || 'Implementation'}</div>
+                        </div>
+                        <div style={{ fontSize: 15, fontWeight: 700, color: T.text, fontFeatureSettings: '"tnum"' }}>{money(v)}</div>
+                      </div>
+                    )
+                  })}
+                  <div style={{ display: 'flex', alignItems: 'center', padding: '12px 14px', background: T.surfaceAlt, borderTop: `1px solid ${T.border}` }}>
+                    <div style={{ flex: 1, fontSize: 13, fontWeight: 800, color: T.text }}>Partner implementation total</div>
+                    <div style={{ fontSize: 15, fontWeight: 800, color: T.text, fontFeatureSettings: '"tnum"' }}>{money(pbImpl)}</div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )
+      })}
+
       {/* 4. Bottom summary — toggleable as a section, with each row + the
           Year 1 Total row independently hide-able from the AE side. */}
       {(() => {
@@ -685,7 +761,8 @@ function InvestmentSummaryTab({ snapshot, columnVisibility, aePreview, onColumnV
         const showSubDiscount = showSummary && annualDiscountAmount > 0 && readSection(snapshot, 'summary_row_subscription_discount')
         const showOneTime    = showSummary && readSection(snapshot, 'summary_row_onetime_costs')
         const showSigningBonus = showSummary && signingBonusValue > 0 && readSection(snapshot, 'summary_row_signing_bonus')
-        if (!showAnnualSub && !showSubDiscount && !showOneTime && !showSigningBonus && !showYear1) return null
+        const showPartnerInSummary = showSummary && (partnerSubTotal > 0 || partnerImplTotal > 0)
+        if (!showAnnualSub && !showSubDiscount && !showOneTime && !showSigningBonus && !showYear1 && !showPartnerInSummary) return null
         return (
           <div style={{
             marginTop: 22, background: T.surfaceAlt,
@@ -708,6 +785,19 @@ function InvestmentSummaryTab({ snapshot, columnVisibility, aePreview, onColumnV
             )}
             {showSigningBonus && (
               <SumRow label="Signing bonus" value={moneyNeg(signingBonusValue)} valueColor={C.amberDark} labelColor={C.amberDark} indent noBorder />
+            )}
+            {/* Block 3: Partner — sub + impl roll into Year 1 Total */}
+            {showSummary && partnerSubTotal > 0 && (
+              <>
+                {((showAnnualSub || showSubDiscount) || (showOneTime || showSigningBonus)) && <div style={{ height: 1, background: T.border }} />}
+                <SumRow label="Partner subscription" value={money(partnerSubTotal)} bold noBorder={partnerImplTotal > 0} />
+              </>
+            )}
+            {showSummary && partnerImplTotal > 0 && (
+              <>
+                {partnerSubTotal === 0 && ((showAnnualSub || showSubDiscount) || (showOneTime || showSigningBonus)) && <div style={{ height: 1, background: T.border }} />}
+                <SumRow label="Partner implementation" value={money(partnerImplTotal)} bold />
+              </>
             )}
             {/* Year 1 Total — terminal row */}
             {showYear1 && (
