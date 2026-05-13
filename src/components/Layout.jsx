@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { useModules } from '../hooks/useModules'
 import { useOrg } from '../contexts/OrgContext'
@@ -8,14 +8,33 @@ import { theme as T } from '../lib/theme'
 import GlobalChatbot from './GlobalChatbot'
 import NotificationBell from './NotificationBell'
 
+// Pilot AEs with profile.access_mode='dealroom_only' may only reach: their pipeline,
+// create-new-deal, and an individual deal (where DealDetail will further restrict tabs to
+// just Deal Room). NO Settings, Onboarding, Notifications, Coach, Reports, Admin —
+// pilot users get a single-purpose Deal Room surface. Pairs with the tab filter in
+// DealDetail.jsx.
+const DEALROOM_ONLY_ALLOWED_PATTERNS = [
+  /^\/$/,
+  /^\/deal\/new\/?$/,
+  /^\/deal\/[^/]+\/?$/,
+  /^\/deal\/[^/]+\/room(\/|$)/,
+]
+
 export default function Layout() {
   const { profile, signOut } = useAuth()
   const { hasModule } = useModules()
   const { org, credits, isTrialing } = useOrg()
   const navigate = useNavigate()
+  const location = useLocation()
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false)
   const [sidebarExpanded, setSidebarExpanded] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
+
+  // Pilot AE guard: profile.access_mode='dealroom_only' users may only reach pipeline,
+  // create-deal, and an individual deal. Pairs with the DealDetail tab filter.
+  if (profile?.access_mode === 'dealroom_only' && !DEALROOM_ONLY_ALLOWED_PATTERNS.some(p => p.test(location.pathname))) {
+    return <Navigate to="/" replace />
+  }
 
   useEffect(() => {
     if (profile?.id) {
@@ -32,8 +51,9 @@ export default function Layout() {
   const initials = profile?.initials || profile?.full_name?.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() || '?'
 
   const isAdmin = ['admin', 'system_admin'].includes(profile?.role)
+  const isDealRoomOnly = profile?.access_mode === 'dealroom_only'
 
-  const sections = [
+  const fullSections = [
     { label: 'Workspace', items: [
       { to: '/', icon: '\u25A6', label: 'Home', show: hasModule('pipeline') },
       { to: '/coach', icon: '\u25CE', label: 'Coach', show: hasModule('coach_customization') },
@@ -51,6 +71,17 @@ export default function Layout() {
       { to: '/admin/extraction-definitions', icon: '\u2261', label: 'AI Rules', show: true },
     ]},
   ]
+
+  // Pilot AE sidebar: just Deals. The Deal Room is reached by clicking into a deal \u2014
+  // DealDetail then hides every other tab. No Settings \u2014 pilot users get a
+  // single-purpose Deal Room surface.
+  const dealRoomOnlySections = [
+    { label: 'Workspace', items: [
+      { to: '/', icon: '\u25A6', label: 'Deals', show: true },
+    ]},
+  ]
+
+  const sections = isDealRoomOnly ? dealRoomOnlySections : fullSections
 
   return (
     <div style={{ display: 'flex', fontFamily: T.font, background: T.bg, minHeight: '100vh', color: T.text, fontSize: 14 }}>
@@ -133,11 +164,11 @@ export default function Layout() {
                 background: '#1a1f2e', border: '1px solid #2a3040', borderRadius: 8,
                 boxShadow: '0 -4px 16px rgba(0,0,0,0.4)', padding: 4,
               }}>
-                <button onClick={() => { navigate('/settings'); setShowUserMenu(false) }} style={{
+                {!isDealRoomOnly && <button onClick={() => { navigate('/settings'); setShowUserMenu(false) }} style={{
                   display: 'block', width: '100%', padding: '8px 12px', textAlign: 'left',
                   background: 'none', border: 'none', borderRadius: 4, cursor: 'pointer',
                   fontSize: 12, color: '#ccc', fontFamily: T.font,
-                }} onMouseEnter={e => e.currentTarget.style.background = '#252a3a'} onMouseLeave={e => e.currentTarget.style.background = 'none'}>Settings</button>
+                }} onMouseEnter={e => e.currentTarget.style.background = '#252a3a'} onMouseLeave={e => e.currentTarget.style.background = 'none'}>Settings</button>}
                 <button onClick={handleSignOut} style={{
                   display: 'block', width: '100%', padding: '8px 12px', textAlign: 'left',
                   background: 'none', border: 'none', borderRadius: 4, cursor: 'pointer',
@@ -179,10 +210,13 @@ export default function Layout() {
 
       {/* Main content */}
       <div style={{ flex: 1, minWidth: 0, overflow: 'auto', width: '100%', position: 'relative' }}>
-        {/* Floating notification bell — top-right of main content */}
-        <div style={{ position: 'fixed', top: 14, right: 22, zIndex: 50 }}>
-          <NotificationBell />
-        </div>
+        {/* Floating notification bell — top-right of main content. Hidden for
+            dealroom_only pilot AEs (no /notifications surface). */}
+        {!isDealRoomOnly && (
+          <div style={{ position: 'fixed', top: 14, right: 22, zIndex: 50 }}>
+            <NotificationBell />
+          </div>
+        )}
         {isTrialing && org?.trial_ends_at && (
           <div style={{
             padding: '8px 24px', background: T.warningLight, borderBottom: `1px solid ${T.warning}25`,
@@ -194,7 +228,8 @@ export default function Layout() {
         )}
         <Outlet />
       </div>
-      <GlobalChatbot />
+      {/* GlobalChatbot is hidden for dealroom_only pilot AEs — Deal Room only. */}
+      {!isDealRoomOnly && <GlobalChatbot />}
     </div>
   )
 }

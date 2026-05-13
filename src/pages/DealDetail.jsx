@@ -455,7 +455,10 @@ export default function DealDetail() {
     return () => timers.forEach(clearTimeout)
   }, [])
   const docsFileInputRef = useRef(null)
-  const [tab, setTab] = useState('home')
+  // Pilot AEs (profile.access_mode='dealroom_only') see only the Deal Room tab.
+  // Default them straight into it.
+  const isDealRoomOnly = profile?.access_mode === 'dealroom_only'
+  const [tab, setTab] = useState(isDealRoomOnly ? 'deal_room' : 'home')
   const [showAddMenu, setShowAddMenu] = useState(false)
   const [showEditMenu, setShowEditMenu] = useState(false)
   const [showStagePopover, setShowStagePopover] = useState(false)
@@ -1713,18 +1716,22 @@ export default function DealDetail() {
 
   // Counts hide when zero per acceptance test step 6.
   const labelWithCount = (base, n) => n > 0 ? `${base} (${n})` : base
-  const tabs = [
-    { key: 'home', label: 'Home' },
-    (hasModule('msp') || hasModule('proposal')) && { key: 'deal_room', label: 'Deal Room' },
-    { key: 'analysis', label: labelWithCount('Analysis', conversations.length) },
-    generatedEmails.length > 0 && { key: 'emails', label: labelWithCount('Emails', generatedEmails.length) },
-    hasModule('deal_management') && { key: 'intel', label: 'Intel' },
-  ].filter(Boolean)
+  // dealroom_only pilot AEs: Deal Room is their only surface, ignore module gating.
+  const tabs = isDealRoomOnly
+    ? [{ key: 'deal_room', label: 'Deal Room' }]
+    : [
+        { key: 'home', label: 'Home' },
+        (hasModule('msp') || hasModule('proposal')) && { key: 'deal_room', label: 'Deal Room' },
+        { key: 'analysis', label: labelWithCount('Analysis', conversations.length) },
+        generatedEmails.length > 0 && { key: 'emails', label: labelWithCount('Emails', generatedEmails.length) },
+        hasModule('deal_management') && { key: 'intel', label: 'Intel' },
+      ].filter(Boolean)
 
   return (
     <div>
-      {/* Sage canon: month-end visual strip (renders only when in EOM window + deal closes this month) */}
-      <EOMHeaderStrip dealCloseDate={deal.target_close_date} />
+      {/* Sage canon: month-end visual strip (renders only when in EOM window + deal closes this month).
+          Hidden for dealroom_only pilot AEs. */}
+      {!isDealRoomOnly && <EOMHeaderStrip dealCloseDate={deal.target_close_date} />}
 
       {/* CSS overrides for react-grid-layout */}
       <style>{`
@@ -1917,14 +1924,15 @@ export default function DealDetail() {
         <TabBar tabs={tabs} active={tab} onChange={setTab} />
       </div>
 
-      {/* Sage canon: coaching nudge banner — active non-dismissed nudges for this deal */}
-      <CoachingNudgeBanner dealId={deal.id} userId={profile?.id} />
+      {/* Sage canon: coaching nudge banner — active non-dismissed nudges for this deal.
+          Hidden for dealroom_only pilot AEs (they don't see methodology surfaces). */}
+      {!isDealRoomOnly && <CoachingNudgeBanner dealId={deal.id} userId={profile?.id} />}
 
       {/* Sage canon: Path to Close v4 widget — single visible methodology surface.
           Visibility: render on discovery / solution_validation / confirming_value / selection.
           Hidden on qualify (too early — deal lacks substance) and on closed_won / closed_lost / disqualified (done).
-          When criteria for the current stage aren't seeded, the widget gracefully renders with a muted gate strip. */}
-      {(deal.stage === 'discovery' || deal.stage === 'solution_validation' || deal.stage === 'confirming_value' || deal.stage === 'selection') && (
+          Also hidden for dealroom_only pilot AEs — Deal Room is their only surface. */}
+      {!isDealRoomOnly && (deal.stage === 'discovery' || deal.stage === 'solution_validation' || deal.stage === 'confirming_value' || deal.stage === 'selection') && (
         <div style={{ padding: '12px 24px 0 24px' }}>
           <PathToCloseWidget
             key={ptcRefreshKey}

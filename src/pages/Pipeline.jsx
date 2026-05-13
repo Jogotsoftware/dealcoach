@@ -112,6 +112,8 @@ export default function Pipeline() {
   const { profile } = useAuth()
   const { fyEndMonth } = useOrg()
   const navigate = useNavigate()
+  // Pilot AEs see only the Pipeline widget — no dashboard chrome, no other widgets.
+  const isDealRoomOnly = profile?.access_mode === 'dealroom_only'
 
   // Data
   const [deals, setDeals] = useState([])
@@ -916,16 +918,16 @@ export default function Pipeline() {
           <h1 style={{ fontSize: 18, fontWeight: 800, margin: 0, color: T.text }}>Home</h1>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             <AddMenuButton onNewDeal={() => navigate('/deal/new')} onTranscript={() => setShowTranscript(true)} />
-            <EditDashboardButton editMode={editMode} onToggle={() => {
+            {!isDealRoomOnly && <EditDashboardButton editMode={editMode} onToggle={() => {
               // Persist on lock — same path as the explicit Done button so users
               // don't have to remember which control commits the layout.
               if (editMode) savePipelineLayout()
               setEditMode(!editMode)
-            }} />
+            }} />}
           </div>
         </div>
-        {/* Home tabs — Pipeline and dashboards are all draggable + closable */}
-        <div style={{ display: 'flex', gap: 0, marginTop: 12, alignItems: 'flex-end', overflowX: 'auto', overflowY: 'hidden', position: 'relative' }}>
+        {/* Home tabs — hidden for pilot AEs (single pipeline-only view, no dashboards). */}
+        {!isDealRoomOnly && <div style={{ display: 'flex', gap: 0, marginTop: 12, alignItems: 'flex-end', overflowX: 'auto', overflowY: 'hidden', position: 'relative' }}>
           {visibleTabs.map(t => (
             <DashboardTab key={t.id}
               id={t.id}
@@ -957,7 +959,7 @@ export default function Pipeline() {
               <line x1="5" y1="12" x2="19" y2="12" />
             </svg>
           </button>
-        </div>
+        </div>}
       </div>
 
       {showTranscript && <TranscriptUpload deals={deals} onClose={() => setShowTranscript(false)} onUploaded={() => loadData()} />}
@@ -1004,9 +1006,17 @@ export default function Pipeline() {
           `}</style>
         )}
         <div style={{ width: '100%', minWidth: 0 }}>
+          {(() => {
+            // Pilot AEs: force layout to a single full-width pipeline widget at top.
+            const layoutFilter = (l) => (!isDealRoomOnly || l.i === 'pipeline_view') && pWidgets.find(w => w.id === l.i && w.visible)
+            const lgLayout = isDealRoomOnly ? [{ i: 'pipeline_view', x: 0, y: 0, w: 12, h: 10 }] : pLayout.filter(layoutFilter)
+            const mdLayout = isDealRoomOnly ? [{ i: 'pipeline_view', x: 0, y: 0, w: 10, h: 10 }] : pLayout.filter(layoutFilter)
+            const smLayout = isDealRoomOnly ? [{ i: 'pipeline_view', x: 0, y: 0, w: 6, h: 10 }] : pLayout.filter(layoutFilter).map(l => ({ ...l, w: Math.min(l.w, 6), x: 0 }))
+            const xsLayout = isDealRoomOnly ? [{ i: 'pipeline_view', x: 0, y: 0, w: 4, h: 10 }] : pLayout.filter(layoutFilter).map(l => ({ ...l, w: 4, x: 0 }))
+            return (
           <ResponsiveGridLayout
             className="layout"
-            layouts={{ lg: pLayout.filter(l => pWidgets.find(w => w.id === l.i && w.visible)), md: pLayout.filter(l => pWidgets.find(w => w.id === l.i && w.visible)), sm: pLayout.filter(l => pWidgets.find(w => w.id === l.i && w.visible)).map(l => ({ ...l, w: Math.min(l.w, 6), x: 0 })), xs: pLayout.filter(l => pWidgets.find(w => w.id === l.i && w.visible)).map(l => ({ ...l, w: 4, x: 0 })) }}
+            layouts={{ lg: lgLayout, md: mdLayout, sm: smLayout, xs: xsLayout }}
             breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480 }}
             cols={{ lg: 12, md: 10, sm: 6, xs: 4 }}
             rowHeight={60}
@@ -1038,7 +1048,8 @@ export default function Pipeline() {
           >
             {(() => {
               const wbc = { forecast_summary: '#3498db', pipeline_view: '#9b59b6', quota_tracker: '#f39c12', coaching_feedback: '#27ae60', scoreboard: '#f39c12', task_list: '#e74c3c', recent_activity: '#8899aa' }
-              return pWidgets.filter(w => w.visible).map(w => (
+              // Pilot AEs see only the pipeline widget — no other dashboard cards.
+              return pWidgets.filter(w => w.visible && (!isDealRoomOnly || w.id === 'pipeline_view')).map(w => (
                 <div key={w.id} style={{ background: T.surface, border: editMode ? '1px dashed rgba(93,173,226,0.3)' : '1px solid ' + T.border, borderLeft: '3px solid ' + (wbc[w.id] || '#8899aa'), borderRadius: 10, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                   <div style={{ padding: '6px 10px', borderBottom: '1px solid ' + T.border, display: 'flex', alignItems: 'center', gap: 8, background: T.surfaceAlt, flexShrink: 0 }}>
                     {editMode && <span className="widget-drag-handle" style={{ cursor: 'grab', color: T.textMuted, fontSize: 14, userSelect: 'none' }}>{'\u2807'}</span>}
@@ -1052,6 +1063,8 @@ export default function Pipeline() {
               ))
             })()}
           </ResponsiveGridLayout>
+            )
+          })()}
         </div>
       </div>
         </div>

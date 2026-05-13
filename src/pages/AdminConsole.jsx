@@ -432,13 +432,22 @@ function UsersTab() {
   }
 
   async function saveEdit() {
-    await supabase.from('profiles').update({ role: editData.role, org_id: editData.org_id || null }).eq('id', editingId)
+    await supabase.from('profiles').update({
+      role: editData.role,
+      org_id: editData.org_id || null,
+      access_mode: editData.access_mode || 'full',
+    }).eq('id', editingId)
     setEditingId(null)
     loadUsers()
   }
 
   async function updateRole(userId, role) {
     await supabase.from('profiles').update({ role }).eq('id', userId)
+    loadUsers()
+  }
+
+  async function updateAccessMode(userId, accessMode) {
+    await supabase.from('profiles').update({ access_mode: accessMode }).eq('id', userId)
     loadUsers()
   }
 
@@ -534,6 +543,7 @@ function UsersTab() {
               { key: 'email', label: 'Email' },
               { key: 'org', label: 'Company' },
               { key: 'role', label: 'Role' },
+              { key: 'access_mode', label: 'Access' },
               { key: 'modules', label: 'Modules' },
               { key: 'created_at', label: 'Created' },
               { key: null, label: '' },
@@ -565,6 +575,12 @@ function UsersTab() {
                     {['rep', 'manager', 'admin', 'system_admin'].map(r => <option key={r} value={r}>{r}</option>)}
                   </select>
                 </td>
+                <td style={cellStyle}>
+                  <select style={smallInput} value={editData.access_mode || 'full'} onChange={e => setEditData({ ...editData, access_mode: e.target.value })}>
+                    <option value="full">Full</option>
+                    <option value="dealroom_only">Deal Room only</option>
+                  </select>
+                </td>
                 <td style={cellStyle}>{modCount > 0 ? `${modCount} override${modCount === 1 ? '' : 's'}` : <span style={{ color: T.textMuted, fontSize: 11 }}>Plan default</span>}</td>
                 <td style={cellStyle}></td>
                 <td style={cellStyle}>
@@ -574,9 +590,9 @@ function UsersTab() {
               </tr>
             ) : (
               <tr key={u.id} style={{ cursor: 'pointer' }}>
-                <td style={cellStyle} onClick={() => { setEditingId(u.id); setEditData({ role: u.role || 'rep', org_id: u.org_id || '' }) }}><span style={{ fontWeight: 600 }}>{u.full_name}</span></td>
-                <td style={{ ...cellStyle, color: T.textMuted }} onClick={() => { setEditingId(u.id); setEditData({ role: u.role || 'rep', org_id: u.org_id || '' }) }}>{u.email}</td>
-                <td style={cellStyle} onClick={() => { setEditingId(u.id); setEditData({ role: u.role || 'rep', org_id: u.org_id || '' }) }}>{org?.name || <span style={{ color: T.textMuted }}>--</span>}</td>
+                <td style={cellStyle} onClick={() => { setEditingId(u.id); setEditData({ role: u.role || 'rep', org_id: u.org_id || '', access_mode: u.access_mode || 'full' }) }}><span style={{ fontWeight: 600 }}>{u.full_name}</span></td>
+                <td style={{ ...cellStyle, color: T.textMuted }} onClick={() => { setEditingId(u.id); setEditData({ role: u.role || 'rep', org_id: u.org_id || '', access_mode: u.access_mode || 'full' }) }}>{u.email}</td>
+                <td style={cellStyle} onClick={() => { setEditingId(u.id); setEditData({ role: u.role || 'rep', org_id: u.org_id || '', access_mode: u.access_mode || 'full' }) }}>{org?.name || <span style={{ color: T.textMuted }}>--</span>}</td>
                 <td style={cellStyle}>
                   <select
                     value={u.role || 'rep'}
@@ -587,10 +603,22 @@ function UsersTab() {
                     {['rep', 'manager', 'admin', 'system_admin'].map(r => <option key={r} value={r}>{r}</option>)}
                   </select>
                 </td>
-                <td style={cellStyle} onClick={() => { setEditingId(u.id); setEditData({ role: u.role || 'rep', org_id: u.org_id || '' }) }}>
+                <td style={cellStyle}>
+                  <select
+                    value={u.access_mode || 'full'}
+                    onClick={e => e.stopPropagation()}
+                    onChange={e => updateAccessMode(u.id, e.target.value)}
+                    style={{ ...smallInput, padding: '3px 6px', fontSize: 11, width: 'auto' }}
+                    title="Full = standard access. Deal Room only = pilot AE, sees only their deals + Deal Room tab."
+                  >
+                    <option value="full">Full</option>
+                    <option value="dealroom_only">Deal Room only</option>
+                  </select>
+                </td>
+                <td style={cellStyle} onClick={() => { setEditingId(u.id); setEditData({ role: u.role || 'rep', org_id: u.org_id || '', access_mode: u.access_mode || 'full' }) }}>
                   {modCount > 0 ? <Badge color={T.primary}>{modCount} override{modCount === 1 ? '' : 's'}</Badge> : <span style={{ color: T.textMuted, fontSize: 11 }}>Plan default</span>}
                 </td>
-                <td style={{ ...cellStyle, color: T.textMuted, fontSize: 11 }} onClick={() => { setEditingId(u.id); setEditData({ role: u.role || 'rep', org_id: u.org_id || '' }) }}>{formatDate(u.created_at?.split('T')[0])}</td>
+                <td style={{ ...cellStyle, color: T.textMuted, fontSize: 11 }} onClick={() => { setEditingId(u.id); setEditData({ role: u.role || 'rep', org_id: u.org_id || '', access_mode: u.access_mode || 'full' }) }}>{formatDate(u.created_at?.split('T')[0])}</td>
                 <td style={cellStyle}></td>
               </tr>
             )
