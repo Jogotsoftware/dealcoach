@@ -107,15 +107,18 @@ export default function DealRoomViewer() {
     }
   }, [meta])
 
+  // v10: when ?t= is absent we fall back to the anonymous "open share" path —
+  // validate-share + get-tab-anon. Read-only: comments, change requests, and
+  // email-AE require a magic-link viewer identity.
+  const isAnonymous = !magicToken
+
   async function validate() {
     setLoading(true)
     setError('')
     try {
-      if (!magicToken) {
-        setError('This room link requires a personal access token. Ask your AE to send a magic link.')
-        return
-      }
-      const res = await callDealRoom('validate-token', magicToken)
+      const res = isAnonymous
+        ? await callDealRoom('validate-share', '', { share_token: shareToken })
+        : await callDealRoom('validate-token', magicToken)
       if (!res.ok) {
         setError(res.error || 'This link is not active or has expired. Contact your AE.')
         return
@@ -134,15 +137,18 @@ export default function DealRoomViewer() {
   async function loadTab(t, m = meta) {
     if (!m) return
     try {
-      callDealRoom('log-view', magicToken, { tab: t }).catch(() => {})
+      if (!isAnonymous) callDealRoom('log-view', magicToken, { tab: t }).catch(() => {})
+      const fetchTab = (action) => isAnonymous
+        ? callDealRoom('get-tab-anon', '', { share_token: shareToken, tab: t })
+        : callDealRoom(action, magicToken)
       if (t === 'msp' && !msp) {
-        const r = await callDealRoom('get-msp-tab', magicToken)
+        const r = await fetchTab('get-msp-tab')
         if (r.ok) setMsp(r)
       } else if (t === 'library' && !library) {
-        const r = await callDealRoom('get-library-tab', magicToken)
+        const r = await fetchTab('get-library-tab')
         if (r.ok) setLibrary(r)
       } else if (t === 'proposal' && !proposal) {
-        const r = await callDealRoom('get-proposal-tab', magicToken)
+        const r = await fetchTab('get-proposal-tab')
         if (r.ok) setProposal(r)
       }
     } catch (e) { console.error('loadTab failed:', e) }
@@ -155,11 +161,19 @@ export default function DealRoomViewer() {
 
   async function refreshMsp() {
     setMsp(null)
-    const r = await callDealRoom('get-msp-tab', magicToken)
+    const r = isAnonymous
+      ? await callDealRoom('get-tab-anon', '', { share_token: shareToken, tab: 'msp' })
+      : await callDealRoom('get-msp-tab', magicToken)
     if (r.ok) setMsp(r)
   }
 
+  function anonymousWriteBlock(label) {
+    alert(`${label} requires a personal magic link. Ask your AE to send you one (or click "Email AE" to request it).`)
+    return false
+  }
+
   async function submitComment(tabKey, body, opts = {}) {
+    if (isAnonymous) return anonymousWriteBlock('Commenting')
     const res = await callDealRoom('add-comment', magicToken, { tab: tabKey, body, ...opts })
     if (!res.ok) { alert(res.error || 'Comment failed'); return false }
     if (tabKey === 'msp') await refreshMsp()
@@ -167,6 +181,7 @@ export default function DealRoomViewer() {
   }
 
   async function submitChangeRequest(target_table, target_id, field, current, proposed, reason) {
+    if (isAnonymous) return anonymousWriteBlock('Requesting changes')
     const res = await callDealRoom('request-change', magicToken, {
       target_table, target_id, requested_change: { field, current, proposed }, reason: reason || null,
     })
@@ -176,12 +191,14 @@ export default function DealRoomViewer() {
   }
 
   async function emailAe(subject, body) {
+    if (isAnonymous) return anonymousWriteBlock('Emailing the AE')
     const res = await callDealRoom('email-ae', magicToken, { subject, body })
     if (!res.ok) { alert(res.error || 'Send failed'); return false }
     return true
   }
 
   async function addTeammate(email, name) {
+    if (isAnonymous) { anonymousWriteBlock('Inviting teammates'); return null }
     const res = await callDealRoom('add-viewer', magicToken, { email, name: name || null })
     if (!res.ok) { alert(res.error || 'Invite failed'); return null }
     return res.magic_link

@@ -1,4 +1,13 @@
-// dealroom-access v8
+// dealroom-access v10
+// v10 changes: anonymous open share support. New action `validate-share` takes
+// only `share_token` (no magic_token) and loads the room for an anonymous viewer.
+// Anonymous viewers can read all visible tabs but cannot write (no comments, no
+// change requests, no email-AE). Anonymous loads count as views (ip_hash + UA)
+// but are NOT attributed to a viewer row and do NOT fire first_view notifications.
+// New action `get-tab-anon` lets anonymous viewers fetch msp/library/proposal tabs
+// using share_token (same payload as the magic-link variants, minus pending_requests).
+// Pairs with DealRoomViewer.jsx falling back to validate-share when ?t= is absent.
+//
 // v8 changes: AE preview support. When the viewer row has is_ae_preview=true,
 // validate-token + log-view skip view logging, viewer-counter increments, and
 // first-view notifications. The AE clicks "Preview customer view" → DealRoomPreview
@@ -45,6 +54,18 @@ async function loadViewer(sb: Sb, magic_token: string) {
   return { viewer, room, archived }
 }
 
+// v10: anonymous open share. Only share_token required — no viewer row, no email.
+async function loadRoomByShare(sb: Sb, share_token: string) {
+  if (!share_token) return { error: 'v10: share_token required' }
+  const { data: room, error } = await sb.from('deal_rooms').select('*').eq('share_token', share_token).maybeSingle()
+  if (error) return { error: `v10: room lookup failed: ${error.message}` }
+  if (!room) return { error: 'v10: invalid share link' }
+  if (!room.enabled) return { error: 'v10: this room is disabled' }
+  if (room.allow_open_access === false) return { error: 'v10: this room requires a personal magic link — ask your AE' }
+  const archived = !!room.expires_at && new Date(room.expires_at).getTime() <= Date.now()
+  return { room, archived }
+}
+
 function visibleTabs(room: Record<string, unknown>): string[] {
   const out: string[] = []
   if (room.show_msp_tab !== false) out.push('msp')
@@ -79,8 +100,77 @@ Deno.serve(async (req: Request) => {
 
   const action = String(body.action || '').trim()
   const magic_token = String(body.magic_token || '')
+  const share_token = String(body.share_token || '')
 
   try {
+    // v10: anonymous open share — same response shape as validate-token, minus
+    // viewer attribution. Read-only. Logs a view (no viewer_id, no email).
+    if (action === 'validate-share') {
+      const v = await loadRoomByShare(sb, share_token)
+      if ((v as Record<string, unknown>).error) return resp({ error: (v as Record<string, unknown>).error }, 401)
+      const { room, archived } = v as { room: Record<string, unknown>, archived: boolean }
+
+      const { data: deal } = await sb.from('deals').select('id, company_name, customer_logo_url, org_id, rep_id').eq('id', room.deal_id).single()
+      const { data: org } = deal ? await sb.from('organizations').select('name, logo_url').eq('id', deal.org_id).single() : { data: null }
+      const { data: rep } = deal?.rep_id ? await sb.from('profiles').select('full_name, email, phone').eq('id', deal.rep_id).maybeSingle() : { data: null }
+
+      try { await sb.from('deal_room_views').insert({ deal_room_id: room.id, viewer_id: null, viewer_email: null, tab: null, user_agent: userAgent, ip_hash: ipHash }) } catch (e) { console.warn('v10: anon view log failed', e) }
+
+      return resp({
+        ok: true,
+        anonymous: true,
+        viewer: null,
+        deal_room_id: room.id,
+        share_token: room.share_token,
+        deal: deal ? { company_name: deal.company_name, customer_logo_url: deal.customer_logo_url } : null,
+        org: org ? { name: org.name, logo_url: org.logo_url } : null,
+        rep: rep ? { full_name: rep.full_name, email: rep.email, phone: rep.phone } : null,
+        ae_notes: room.ae_notes || null,
+        ae_notes_msp: room.ae_notes_msp || null,
+        ae_notes_library: room.ae_notes_library || null,
+        ae_notes_proposal: room.ae_notes_proposal || null,
+        theme_color: room.theme_color || null,
+        theme_color_secondary: room.theme_color_secondary || null,
+        theme_color_tertiary: room.theme_color_tertiary || null,
+        hide_line_pricing: !!room.hide_line_pricing,
+        hide_discounts: !!room.hide_discounts,
+        proposal_column_visibility: room.proposal_column_visibility || null,
+        tabs: visibleTabs(room),
+        expires_at: room.expires_at,
+        archived,
+        has_proposal_snapshot: !!room.proposal_snapshot,
+      })
+    }
+
+    // v10: anonymous tab fetch. Read-only — no comments, no pending requests.
+    if (action === 'get-tab-anon') {
+      const v = await loadRoomByShare(sb, share_token)
+      if ((v as Record<string, unknown>).error) return resp({ error: (v as Record<string, unknown>).error }, 401)
+      const { room } = v as { room: Record<string, unknown> }
+      const tab = String(body.tab || '')
+      if (!['msp', 'library', 'proposal'].includes(tab)) return resp({ error: 'v10: invalid tab' }, 400)
+      if (!tabAllowed(room, tab)) return resp({ error: 'v10: this tab is not visible in this room' }, 403)
+      const dealId = room.deal_id
+
+      if (tab === 'msp') {
+        const [stagesRes, milestonesRes] = await Promise.all([
+          sb.from('msp_stages').select('*').eq('deal_id', dealId).order('stage_order'),
+          sb.from('msp_milestones').select('*').eq('deal_id', dealId).order('milestone_order'),
+        ])
+        return resp({ ok: true, stages: stagesRes.data || [], milestones: milestonesRes.data || [], pending_requests: [], comment_counts: {} })
+      }
+      if (tab === 'library') {
+        const { data, error } = await sb.from('deal_resources').select('id, resource_type, title, notes, url, storage_path, mime_type, file_size').eq('deal_id', dealId).order('sort_order').order('created_at')
+        if (error) return resp({ error: `v10: library load failed: ${error.message}` }, 500)
+        return resp({ ok: true, resources: data || [] })
+      }
+      if (tab === 'proposal') {
+        if (!room.proposal_snapshot) return resp({ ok: true, snapshot: null, message: 'Proposal not yet shared' })
+        return resp({ ok: true, snapshot: room.proposal_snapshot, snapshotted_at: room.proposal_snapshotted_at })
+      }
+      return resp({ error: 'v10: unreachable' }, 500)
+    }
+
     if (action === 'validate-token') {
       const v = await loadViewer(sb, magic_token)
       if ((v as Record<string, unknown>).error) return resp({ error: (v as Record<string, unknown>).error }, 401)
