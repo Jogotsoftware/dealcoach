@@ -718,10 +718,6 @@ function InvestmentSummaryTab({ snapshot, columnVisibility, aePreview, onColumnV
                       <div style={{ fontSize: 15, fontWeight: 700, color: T.text, fontFeatureSettings: '"tnum"' }}>{money(l.extended)}</div>
                     </div>
                   ))}
-                  <div style={{ display: 'flex', alignItems: 'center', padding: '12px 14px', background: T.surfaceAlt, borderTop: `1px solid ${T.border}` }}>
-                    <div style={{ flex: 1, fontSize: 13, fontWeight: 800, color: T.text }}>Partner subscription total</div>
-                    <div style={{ fontSize: 15, fontWeight: 800, color: T.text, fontFeatureSettings: '"tnum"' }}>{money(pbSub)}</div>
-                  </div>
                 </div>
               </div>
             )}
@@ -741,10 +737,6 @@ function InvestmentSummaryTab({ snapshot, columnVisibility, aePreview, onColumnV
                       </div>
                     )
                   })}
-                  <div style={{ display: 'flex', alignItems: 'center', padding: '12px 14px', background: T.surfaceAlt, borderTop: `1px solid ${T.border}` }}>
-                    <div style={{ flex: 1, fontSize: 13, fontWeight: 800, color: T.text }}>Partner implementation total</div>
-                    <div style={{ fontSize: 15, fontWeight: 800, color: T.text, fontFeatureSettings: '"tnum"' }}>{money(pbImpl)}</div>
-                  </div>
                 </div>
               </div>
             )}
