@@ -484,10 +484,13 @@ export default function DealRoomConfig({ embedded = false, dealId: dealIdProp } 
   const inboxBadge = unresolvedCommentCount + pendingRequests.length
   const primaryQuoteId = (quotes.find(q => q.is_primary) || quotes[0])?.id || null
 
+  // Tabs that map to a customer-visible surface get a `vizCol` — the
+  // deal_rooms.show_*_tab column the eye-toggle writes to. Models + Inbox
+  // are AE-only so they don't get a toggle.
   const TABS = [
-    { key: 'msp',     label: 'Project Plan' },
-    { key: 'library', label: 'Library' },
-    { key: 'quotes',  label: 'Quotes' },
+    { key: 'msp',     label: 'Project Plan', vizCol: 'show_msp_tab' },
+    { key: 'library', label: 'Library',      vizCol: 'show_library_tab' },
+    { key: 'quotes',  label: 'Quotes',       vizCol: 'show_proposal_tab' },
     { key: 'models',  label: 'Models' },
     { key: 'inbox',   label: 'Inbox' },
   ]
@@ -666,16 +669,29 @@ export default function DealRoomConfig({ embedded = false, dealId: dealIdProp } 
           {TABS.map(t => {
             const active = tab === t.key
             const showBadge = t.key === 'inbox' && inboxBadge > 0
+            // Show eye toggle for customer-visible tabs only (msp/library/quotes).
+            const tabVisible = t.vizCol ? room?.[t.vizCol] !== false : true
             return (
-              <button key={t.key} onClick={() => selectTab(t.key)}
-                style={{ padding: '11px 18px', border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: T.font, fontSize: 13, fontWeight: 600, color: active ? T.primary : T.textMuted, borderBottom: active ? `3px solid ${T.primary}` : '3px solid transparent', marginBottom: -1, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                {t.label}
-                {showBadge && (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 18, height: 18, padding: '0 6px', borderRadius: 9, background: T.error, color: '#fff', fontSize: 10, fontWeight: 800, fontFeatureSettings: '"tnum"' }}>
-                    {inboxBadge}
+              <div key={t.key} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                <button onClick={() => selectTab(t.key)}
+                  style={{ padding: '11px 6px 11px 18px', border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: T.font, fontSize: 13, fontWeight: 600, color: active ? T.primary : (tabVisible ? T.textMuted : T.textMuted + '90'), borderBottom: active ? `3px solid ${T.primary}` : '3px solid transparent', marginBottom: -1, display: 'inline-flex', alignItems: 'center', gap: 6, opacity: tabVisible ? 1 : 0.6 }}>
+                  {t.label}
+                  {showBadge && (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 18, height: 18, padding: '0 6px', borderRadius: 9, background: T.error, color: '#fff', fontSize: 10, fontWeight: 800, fontFeatureSettings: '"tnum"' }}>
+                      {inboxBadge}
+                    </span>
+                  )}
+                </button>
+                {t.vizCol && (
+                  <span style={{ paddingRight: 12, paddingBottom: 1, display: 'inline-flex', alignItems: 'center' }}>
+                    <VisibilityToggleIcon
+                      visible={tabVisible}
+                      onChange={(v) => saveRoom({ [t.vizCol]: v })}
+                      label={`the ${t.label} tab from the customer`}
+                    />
                   </span>
                 )}
-              </button>
+              </div>
             )
           })}
         </div>

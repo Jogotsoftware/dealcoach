@@ -168,6 +168,8 @@ function OrganizationsTab() {
       max_users: org.max_users || '', max_deals: org.max_deals || '',
       trial_ends_at: org.trial_ends_at || '', primary_color: org.primary_color || '#5DADE2',
       fiscal_year_end_month: org.fiscal_year_end_month || 12, fiscal_year_end_day: org.fiscal_year_end_day || 31,
+      allow_chat_web_search: org.allow_chat_web_search !== false,
+      enable_chat_reports: org.enable_chat_reports === true,
     })
     // Init module toggles from modules_override or plan.modules
     const effectiveModules = org.modules_override || org.plans?.modules || []
@@ -339,6 +341,28 @@ function OrganizationsTab() {
                           <div><label style={labelStyle}>FY End Month</label><select style={{ ...smallInput, cursor: 'pointer' }} value={editData.fiscal_year_end_month} onChange={e => setEditData({ ...editData, fiscal_year_end_month: Number(e.target.value) })}>{['January','February','March','April','May','June','July','August','September','October','November','December'].map((n,i) => <option key={i} value={i+1}>{n}</option>)}</select></div>
                           <div><label style={labelStyle}>FY End Day</label><select style={{ ...smallInput, cursor: 'pointer' }} value={editData.fiscal_year_end_day} onChange={e => setEditData({ ...editData, fiscal_year_end_day: Number(e.target.value) })}>{Array.from({length:31},(_,i)=><option key={i+1} value={i+1}>{i+1}</option>)}</select></div>
                           <div><label style={labelStyle}>Primary Color</label><div style={{ display: 'flex', gap: 4, alignItems: 'center' }}><input type="color" value={editData.primary_color || '#5DADE2'} onChange={e => setEditData({ ...editData, primary_color: e.target.value })} style={{ width: 32, height: 24, border: 'none', cursor: 'pointer' }} /><span style={{ fontSize: 10, color: T.textMuted, fontFamily: T.mono }}>{editData.primary_color}</span></div></div>
+                          {/* v21 Lux web search kill switch — org-level */}
+                          <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', background: T.surfaceAlt, borderRadius: 6, border: `1px solid ${T.borderLight}` }}>
+                            <div onClick={() => setEditData({ ...editData, allow_chat_web_search: !editData.allow_chat_web_search })}
+                              style={{ width: 36, height: 20, borderRadius: 10, cursor: 'pointer', background: editData.allow_chat_web_search ? T.success : T.borderLight, position: 'relative', transition: 'background 0.2s', flexShrink: 0 }}>
+                              <div style={{ width: 16, height: 16, borderRadius: '50%', background: '#fff', position: 'absolute', top: 2, left: editData.allow_chat_web_search ? 18 : 2, boxShadow: T.shadow, transition: 'left 0.2s' }} />
+                            </div>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontSize: 12, fontWeight: 600, color: T.text }}>Allow web search in chat</div>
+                              <div style={{ fontSize: 10, color: T.textMuted }}>Org kill switch. When off, no user in this org can use chat web search.</div>
+                            </div>
+                          </div>
+                          {/* v22 Lux reports kill switch — org-level. Default off while quality issues unresolved. */}
+                          <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', background: T.surfaceAlt, borderRadius: 6, border: `1px solid ${T.borderLight}` }}>
+                            <div onClick={() => setEditData({ ...editData, enable_chat_reports: !editData.enable_chat_reports })}
+                              style={{ width: 36, height: 20, borderRadius: 10, cursor: 'pointer', background: editData.enable_chat_reports ? T.success : T.borderLight, position: 'relative', transition: 'background 0.2s', flexShrink: 0 }}>
+                              <div style={{ width: 16, height: 16, borderRadius: '50%', background: '#fff', position: 'absolute', top: 2, left: editData.enable_chat_reports ? 18 : 2, boxShadow: T.shadow, transition: 'left 0.2s' }} />
+                            </div>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontSize: 12, fontWeight: 600, color: T.text }}>Enable chat reports</div>
+                              <div style={{ fontSize: 10, color: T.textMuted }}>When enabled, Lux can generate report cards in chat. Currently paused while report quality issues are resolved. Leave off unless actively testing.</div>
+                            </div>
+                          </div>
                         </div>
                         <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
                           <Button primary onClick={saveEdit} style={{ padding: '5px 14px', fontSize: 11 }}>Save</Button>
@@ -395,6 +419,7 @@ function UsersTab() {
   const [users, setUsers] = useState([])
   const [orgs, setOrgs] = useState([])
   const [moduleOverrides, setModuleOverrides] = useState({})
+  const [platformAdminIds, setPlatformAdminIds] = useState(new Set())
   const [loading, setLoading] = useState(true)
   const [editingId, setEditingId] = useState(null)
   const [editData, setEditData] = useState({})
@@ -414,11 +439,12 @@ function UsersTab() {
       usersQ = usersQ.eq('org_id', scopedOrgId)
       invQ = invQ.eq('org_id', scopedOrgId)
     }
-    const [usersRes, orgsRes, invRes, modRes] = await Promise.all([
+    const [usersRes, orgsRes, invRes, modRes, paRes] = await Promise.all([
       usersQ,
       supabase.from('organizations').select('id, name'),
       invQ,
       supabase.from('user_module_access').select('user_id'),
+      supabase.from('platform_admins').select('user_id'),
     ])
     setUsers(usersRes.data || [])
     setOrgs(orgsRes.data || [])
@@ -428,14 +454,17 @@ function UsersTab() {
       overrides[m.user_id] = (overrides[m.user_id] || 0) + 1
     }
     setModuleOverrides(overrides)
+    setPlatformAdminIds(new Set((paRes.data || []).map(r => r.user_id)))
     setLoading(false)
   }
 
   async function saveEdit() {
+    // Guard: platform admins always keep access_mode='full'.
+    const nextAccess = platformAdminIds.has(editingId) ? 'full' : (editData.access_mode || 'full')
     await supabase.from('profiles').update({
       role: editData.role,
       org_id: editData.org_id || null,
-      access_mode: editData.access_mode || 'full',
+      access_mode: nextAccess,
     }).eq('id', editingId)
     setEditingId(null)
     loadUsers()
@@ -447,6 +476,11 @@ function UsersTab() {
   }
 
   async function updateAccessMode(userId, accessMode) {
+    // Guard: refuse to flip platform admins — they need full access for support.
+    if (platformAdminIds.has(userId)) {
+      alert('Platform admins always have full access. Remove their platform_admins row first if you want to restrict them.')
+      return
+    }
     await supabase.from('profiles').update({ access_mode: accessMode }).eq('id', userId)
     loadUsers()
   }

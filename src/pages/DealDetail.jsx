@@ -41,6 +41,7 @@ import SlideGenerator from '../components/SlideGenerator'
 import WidgetRenderer from '../components/WidgetRenderer'
 import ContactsOrgTree from '../components/ContactsOrgTree'
 import CallAnalysisBody from '../components/CallAnalysisBody'
+import DisqualifyDealModal from '../components/DisqualifyDealModal'
 import { useAuth } from '../hooks/useAuth'
 import { useModules } from '../hooks/useModules'
 import { Responsive, WidthProvider } from 'react-grid-layout'
@@ -463,6 +464,7 @@ export default function DealDetail() {
   const [showEditMenu, setShowEditMenu] = useState(false)
   const [showStagePopover, setShowStagePopover] = useState(false)
   const [showForecastPopover, setShowForecastPopover] = useState(false)
+  const [showDisqualifyModal, setShowDisqualifyModal] = useState(false)
   // Sage canon: platform-admin-only Recalculate Path to Close debug action
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false)
   const [recalcLoading, setRecalcLoading] = useState(false)
@@ -1815,10 +1817,23 @@ export default function DealDetail() {
                   ]}
                   selected={deal.stage}
                   onPick={async (k) => {
+                    // Intercept disqualification — open modal for reason + BDR feedback (M7).
+                    if (k === 'disqualified') {
+                      setShowDisqualifyModal(true)
+                      setShowStagePopover(false)
+                      return
+                    }
                     const { error: e } = await supabase.from('deals').update({ stage: k }).eq('id', deal.id)
                     if (!e) setDeal(p => ({ ...p, stage: k, stage_changed_at: new Date().toISOString(), closed_at: ['closed_won','closed_lost','disqualified'].includes(k) ? new Date().toISOString() : null }))
                     setShowStagePopover(false)
                   }}
+                />
+              )}
+              {showDisqualifyModal && (
+                <DisqualifyDealModal
+                  deal={deal}
+                  onClose={() => setShowDisqualifyModal(false)}
+                  onDone={() => setDeal(p => ({ ...p, stage: 'disqualified', stage_changed_at: new Date().toISOString(), closed_at: new Date().toISOString() }))}
                 />
               )}
               {showForecastPopover && (
@@ -1908,18 +1923,21 @@ export default function DealDetail() {
           </div>
         </div>
         {/* Next Steps lives in the header so it's always glanceable. The
-            widget renders compact when populated and dashed when empty. */}
-        <div style={{ marginBottom: 12 }}>
-          <NextStepsWidget deal={deal} setDeal={setDeal} profile={profile} compact />
-          {/* Sage canon: Lumen's red/green suggestion shown below the AE's choice */}
-          <NextStepsAISuggestion
-            dealId={deal.id}
-            aiStatus={deal.next_steps_ai_status}
-            aiReasoning={deal.next_steps_ai_reasoning}
-            aiEvaluatedAt={deal.next_steps_ai_evaluated_at}
-            onRefreshed={(data) => setDeal(p => p ? { ...p, next_steps_ai_status: data.ai_status, next_steps_ai_reasoning: data.ai_reasoning, next_steps_ai_evaluated_at: new Date().toISOString() } : p)}
-          />
-        </div>
+            widget renders compact when populated and dashed when empty.
+            Hidden for dealroom_only pilot AEs — they don't see methodology surfaces. */}
+        {!isDealRoomOnly && (
+          <div style={{ marginBottom: 12 }}>
+            <NextStepsWidget deal={deal} setDeal={setDeal} profile={profile} compact />
+            {/* Sage canon: Lumen's red/green suggestion shown below the AE's choice */}
+            <NextStepsAISuggestion
+              dealId={deal.id}
+              aiStatus={deal.next_steps_ai_status}
+              aiReasoning={deal.next_steps_ai_reasoning}
+              aiEvaluatedAt={deal.next_steps_ai_evaluated_at}
+              onRefreshed={(data) => setDeal(p => p ? { ...p, next_steps_ai_status: data.ai_status, next_steps_ai_reasoning: data.ai_reasoning, next_steps_ai_evaluated_at: new Date().toISOString() } : p)}
+            />
+          </div>
+        )}
 
         <TabBar tabs={tabs} active={tab} onChange={setTab} />
       </div>
