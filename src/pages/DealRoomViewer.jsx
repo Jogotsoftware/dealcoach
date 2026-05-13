@@ -261,7 +261,7 @@ export default function DealRoomViewer() {
           </div>
           <div style={{ textAlign: 'center', minWidth: 0 }}>
             <div className="ri-room-header-title" style={{ fontSize: 22, fontWeight: 800, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{deal?.company_name}</div>
-            <div className="ri-room-header-welcome" style={{ fontSize: 12, color: T.textSecondary, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Welcome, {viewer.name || viewer.email || 'guest'}</div>
+            <div className="ri-room-header-welcome" style={{ fontSize: 12, color: T.textSecondary, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Welcome, {viewer?.name || viewer?.email || 'guest'}</div>
           </div>
           <div style={{ textAlign: 'right' }}>
             {deal?.customer_logo_url && (
