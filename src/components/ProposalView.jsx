@@ -48,6 +48,12 @@ const C = {
   amberBg: '#FAEEDA',
   blueDark: '#185FA5',
   blueBg: '#E6F1FB',
+  // Partner palette — distinct from Sage blue so the customer can scan partner
+  // vs Sage costs at a glance in both the Schedules tab and the Investment
+  // Summary partner cards.
+  partnerDark: '#5A3FBC',
+  partnerBg: '#EEEAFB',
+  partnerSoftBg: '#F7F5FD',
   textTertiary: '#94a3b8',
 }
 
@@ -698,10 +704,10 @@ function InvestmentSummaryTab({ snapshot, columnVisibility, aePreview, onColumnV
         return (
           <div key={block.id || idx} style={{
             marginTop: 22, background: T.surface, border: `1px solid ${T.border}`,
-            borderLeft: `4px solid ${accent}`, borderRadius: 10, overflow: 'hidden',
+            borderLeft: `4px solid ${C.partnerDark}`, borderRadius: 10, overflow: 'hidden',
           }}>
             <div style={{ padding: '14px 18px 0' }}>
-              <Eyebrow>Partner: {block.partner_name || 'Partner'}</Eyebrow>
+              <Eyebrow><span style={{ color: C.partnerDark }}>Partner: {block.partner_name || 'Partner'}</span></Eyebrow>
             </div>
             {lines.length > 0 && (
               <div style={{ padding: '6px 18px 4px' }}>
@@ -779,17 +785,18 @@ function InvestmentSummaryTab({ snapshot, columnVisibility, aePreview, onColumnV
             {showSigningBonus && (
               <SumRow label="Signing bonus" value={moneyNeg(signingBonusValue)} valueColor={C.amberDark} labelColor={C.amberDark} indent noBorder />
             )}
-            {/* Block 3: Partner — sub + impl roll into Year 1 Total */}
+            {/* Block 3: Partner — sub + impl roll into Year 1 Total. Tinted
+                with the partner palette so it visually splits from Sage rows. */}
             {showSummary && partnerSubTotal > 0 && (
               <>
                 {(showAnnualSub || showOneTime || showSigningBonus) && <div style={{ height: 1, background: T.border }} />}
-                <SumRow label="Partner subscription" value={money(partnerSubTotal)} bold noBorder={partnerImplTotal > 0} />
+                <SumRow label="Partner subscription" value={money(partnerSubTotal)} bold labelColor={C.partnerDark} valueColor={C.partnerDark} noBorder={partnerImplTotal > 0} />
               </>
             )}
             {showSummary && partnerImplTotal > 0 && (
               <>
                 {partnerSubTotal === 0 && (showAnnualSub || showOneTime || showSigningBonus) && <div style={{ height: 1, background: T.border }} />}
-                <SumRow label="Partner implementation" value={money(partnerImplTotal)} bold />
+                <SumRow label="Partner implementation" value={money(partnerImplTotal)} bold labelColor={C.partnerDark} valueColor={C.partnerDark} />
               </>
             )}
             {/* Year 1 Total — terminal row */}
@@ -1055,8 +1062,8 @@ function PaymentScheduleSubTab({ snapshot }) {
     if (pt === 'subscription_year' || pt === 'subscription_quarter') {
       return { rowBg: C.blueBg, accent: C.blueDark, amountColor: C.greenDark }
     }
-    if (pt === 'partner_subscription_year') {
-      return { rowBg: C.blueBg, accent: C.blueDark, amountColor: C.greenDark }
+    if (pt === 'partner_subscription_year' || pt === 'partner_implementation' || pt === 'partner_one_time') {
+      return { rowBg: C.partnerBg, accent: C.partnerDark, amountColor: C.partnerDark }
     }
     if (pt === 'implementation_arrears' || pt === 'implementation_milestone' || pt === 'one_time_service') {
       return { rowBg: C.greenBg, accent: C.greenDark, amountColor: C.greenDark }
@@ -1530,12 +1537,14 @@ function TcoTab({ snapshot }) {
               <td style={cellNum({ color: C.greenDark, fontWeight: 700 })}>{money(subNetTotal)}</td>
             </tr>
 
-            {/* Partner subscription — flat across the term, no annual uplift */}
+            {/* Partner subscription — flat across the term, no annual uplift.
+                Tinted with the partner palette so partner spend reads as a
+                distinct line from Sage subscription. */}
             {partnerSubAnnual > 0 && (
-              <tr style={{ background: C.greenSoftBg }}>
-                <td style={{ ...cellLabel, color: C.greenDark, fontWeight: 600 }}>Partner subscription</td>
-                {yearPartnerSub.map((v, i) => <td key={i} style={cellNum({ color: C.greenDark, fontWeight: 600 })}>{money(v)}</td>)}
-                <td style={cellNum({ color: C.greenDark, fontWeight: 700 })}>{money(partnerSubAnnual * termYears)}</td>
+              <tr style={{ background: C.partnerSoftBg }}>
+                <td style={{ ...cellLabel, color: C.partnerDark, fontWeight: 600 }}>Partner subscription</td>
+                {yearPartnerSub.map((v, i) => <td key={i} style={cellNum({ color: C.partnerDark, fontWeight: 600 })}>{money(v)}</td>)}
+                <td style={cellNum({ color: C.partnerDark, fontWeight: 700 })}>{money(partnerSubAnnual * termYears)}</td>
               </tr>
             )}
 
