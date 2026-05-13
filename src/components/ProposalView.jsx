@@ -758,25 +758,26 @@ function InvestmentSummaryTab({ snapshot, columnVisibility, aePreview, onColumnV
         const showSummary = readSection(snapshot, 'summary_bottom_summary')
         const showYear1 = readSection(snapshot, 'summary_year1_total')
         const showAnnualSub  = showSummary && readSection(snapshot, 'summary_row_annual_subscription')
-        const showSubDiscount = showSummary && annualDiscountAmount > 0 && readSection(snapshot, 'summary_row_subscription_discount')
+        // Discount is no longer surfaced in the bottom summary — net annual
+        // subscription absorbs it. The detail table above still shows list +
+        // discount per line so customers can see the math.
         const showOneTime    = showSummary && readSection(snapshot, 'summary_row_onetime_costs')
         const showSigningBonus = showSummary && signingBonusValue > 0 && readSection(snapshot, 'summary_row_signing_bonus')
         const showPartnerInSummary = showSummary && (partnerSubTotal > 0 || partnerImplTotal > 0)
-        if (!showAnnualSub && !showSubDiscount && !showOneTime && !showSigningBonus && !showYear1 && !showPartnerInSummary) return null
+        if (!showAnnualSub && !showOneTime && !showSigningBonus && !showYear1 && !showPartnerInSummary) return null
         return (
           <div style={{
             marginTop: 22, background: T.surfaceAlt,
             border: `1px solid ${T.border}`, borderLeft: `4px solid ${accent}`,
             borderRadius: 10, overflow: 'hidden',
           }}>
-            {/* Block 1: Subscription */}
+            {/* Block 1: Subscription — single net row. The detailed list/discount
+                table lives in section 3 above; the bottom summary just shows the
+                customer the net annual cost. */}
             {showAnnualSub && (
-              <SumRow label="Annual subscription" value={money(annualListTotal)} bold noBorder={showSubDiscount} />
+              <SumRow label="Net annual subscription" value={money(annualNetTotal)} bold />
             )}
-            {showSubDiscount && (
-              <SumRow label="Subscription discount" value={moneyNeg(annualDiscountAmount)} valueColor={C.redDark} labelColor={C.redDark} indent noBorder />
-            )}
-            {(showAnnualSub || showSubDiscount) && (showOneTime || showSigningBonus) && (
+            {showAnnualSub && (showOneTime || showSigningBonus) && (
               <div style={{ height: 1, background: T.border, margin: '0' }} />
             )}
             {/* Block 2: One-time */}
@@ -789,13 +790,13 @@ function InvestmentSummaryTab({ snapshot, columnVisibility, aePreview, onColumnV
             {/* Block 3: Partner — sub + impl roll into Year 1 Total */}
             {showSummary && partnerSubTotal > 0 && (
               <>
-                {((showAnnualSub || showSubDiscount) || (showOneTime || showSigningBonus)) && <div style={{ height: 1, background: T.border }} />}
+                {(showAnnualSub || showOneTime || showSigningBonus) && <div style={{ height: 1, background: T.border }} />}
                 <SumRow label="Partner subscription" value={money(partnerSubTotal)} bold noBorder={partnerImplTotal > 0} />
               </>
             )}
             {showSummary && partnerImplTotal > 0 && (
               <>
-                {partnerSubTotal === 0 && ((showAnnualSub || showSubDiscount) || (showOneTime || showSigningBonus)) && <div style={{ height: 1, background: T.border }} />}
+                {partnerSubTotal === 0 && (showAnnualSub || showOneTime || showSigningBonus) && <div style={{ height: 1, background: T.border }} />}
                 <SumRow label="Partner implementation" value={money(partnerImplTotal)} bold />
               </>
             )}
