@@ -1419,6 +1419,7 @@ function TcoTab({ snapshot }) {
 
   const sageLines = snapshot.sage_lines || []
   const sageImpl = snapshot.sage_implementation || []
+  const partnerBlocks = snapshot.partner_blocks || []
   const parents = sageLines.filter(l => !l.parent_line_id)
 
   const annualListTotal = parents.reduce((s, l) => s + num(l.quantity) * num(l.unit_price), 0)
@@ -1428,6 +1429,10 @@ function TcoTab({ snapshot }) {
   const discountPctDisplay = annualListTotal > 0 ? Math.round(discountPct * 100) : 0
 
   const implTotal = sageImpl.reduce((s, i) => s + num(i.total_amount ?? i.extended ?? i.amount), 0)
+  // Partner subscription is flat across the term — no annual uplift (DataBlend
+  // and similar partner SKUs aren't on a YoY cap schedule).
+  const partnerSubAnnual = partnerBlocks.reduce((s, pb) =>
+    s + (pb.lines || []).reduce((ss, l) => ss + num(l.extended), 0), 0)
   const signingBonusAmount = num(snapshot.signing_bonus_amount)
   const signingBonusMonths = num(snapshot.signing_bonus_months)
   const monthlySub = annualNetTotal / 12
@@ -1452,15 +1457,17 @@ function TcoTab({ snapshot }) {
   const yearDisc = yearList.map(l => l * discountPct)
 
   // Final cost rows
-  // Subscription net is gross net (post-discount) — signing bonus and free
-  // months are shown as their own concession rows, not folded in. Annual
-  // cost reflects the actual cash:
-  //   Y1   = subNet + impl − signingBonus
-  //   Y2+  = subNet
+  // Subscription total is gross net (post-discount) — signing bonus and free
+  // months are shown as their own concession rows, not folded in. Partner
+  // subscription is flat across the term (no annual uplift). Annual cost
+  // reflects the actual cash:
+  //   Y1   = subNet + impl + partnerSub − signingBonus
+  //   Y2+  = subNet + partnerSub
   //   Total = sum of per-year annual cost − freeMonthsValue
   const yearSubNet = yearNet
   const yearImpl = yearNet.map((_, i) => i === 0 ? implTotal : 0)
-  const yearAnnualCost = yearSubNet.map((n, i) => n + yearImpl[i] - (i === 0 ? signingBonusValue : 0))
+  const yearPartnerSub = yearNet.map(() => partnerSubAnnual)
+  const yearAnnualCost = yearSubNet.map((n, i) => n + yearImpl[i] + yearPartnerSub[i] - (i === 0 ? signingBonusValue : 0))
 
   const tot = (arr) => arr.reduce((s, n) => s + n, 0)
 
@@ -1516,12 +1523,21 @@ function TcoTab({ snapshot }) {
                 Annual cost is the terminal row, deeper green, bigger value,
                 so the eye lands on the bottom-line number. */}
 
-            {/* Subscription · net */}
+            {/* Subscription total */}
             <tr style={{ background: C.greenSoftBg }}>
-              <td style={{ ...cellLabel, color: C.greenDark, fontWeight: 600 }}>Subscription · net</td>
+              <td style={{ ...cellLabel, color: C.greenDark, fontWeight: 600 }}>Subscription total</td>
               {yearSubNet.map((v, i) => <td key={i} style={cellNum({ color: C.greenDark, fontWeight: 600 })}>{money(v)}</td>)}
               <td style={cellNum({ color: C.greenDark, fontWeight: 700 })}>{money(subNetTotal)}</td>
             </tr>
+
+            {/* Partner subscription — flat across the term, no annual uplift */}
+            {partnerSubAnnual > 0 && (
+              <tr style={{ background: C.greenSoftBg }}>
+                <td style={{ ...cellLabel, color: C.greenDark, fontWeight: 600 }}>Partner subscription</td>
+                {yearPartnerSub.map((v, i) => <td key={i} style={cellNum({ color: C.greenDark, fontWeight: 600 })}>{money(v)}</td>)}
+                <td style={cellNum({ color: C.greenDark, fontWeight: 700 })}>{money(partnerSubAnnual * termYears)}</td>
+              </tr>
+            )}
 
             {/* Implementation — Y1 only */}
             {readSection(snapshot, 'tco_implementation') && (
