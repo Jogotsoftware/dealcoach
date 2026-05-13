@@ -917,7 +917,23 @@ export default function Pipeline() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
           <h1 style={{ fontSize: 18, fontWeight: 800, margin: 0, color: T.text }}>Home</h1>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-            <AddMenuButton onNewDeal={() => navigate('/deal/new')} onTranscript={() => setShowTranscript(true)} />
+            {isDealRoomOnly ? (
+              // Beta users only ever do one action from here — skip the +menu
+              // and render an explicit "New Deal +" button.
+              <button onClick={() => navigate('/deal/new')}
+                style={{
+                  padding: '6px 14px', background: T.primary, border: 'none', borderRadius: 6,
+                  color: '#fff', cursor: 'pointer', fontFamily: T.font, fontSize: 13, fontWeight: 700,
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                }}>
+                New Deal
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+              </button>
+            ) : (
+              <AddMenuButton onNewDeal={() => navigate('/deal/new')} onTranscript={() => setShowTranscript(true)} />
+            )}
             {!isDealRoomOnly && <EditDashboardButton editMode={editMode} onToggle={() => {
               // Persist on lock — same path as the explicit Done button so users
               // don't have to remember which control commits the layout.

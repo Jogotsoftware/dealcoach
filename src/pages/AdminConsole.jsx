@@ -6,6 +6,7 @@ import { theme as T, formatCurrency, formatDate } from '../lib/theme'
 import { Button, Badge, Spinner, TabBar, inputStyle, labelStyle } from '../components/Shared'
 import ModuleAccessPicker from '../components/ModuleAccessPicker'
 import { callSendInvitation } from '../lib/webhooks'
+import { BETA_FEATURES } from '../lib/betaFeatures'
 
 // Org scope context — when set, all tabs filter their queries to this org_id.
 const OrgScopeContext = createContext({ orgId: null, setOrgId: () => {}, orgName: null })
@@ -485,6 +486,18 @@ function UsersTab() {
     loadUsers()
   }
 
+  // Per-user beta feature toggle. Reads the current jsonb, sets/unsets the
+  // key, and persists. Default-off so newly-onboarded beta users always start
+  // with the minimal experience.
+  async function updateBetaFeature(userId, featureKey, on) {
+    const user = users.find(u => u.id === userId)
+    const current = user?.beta_features || {}
+    const next = { ...current, [featureKey]: !!on }
+    if (!on) delete next[featureKey]
+    await supabase.from('profiles').update({ beta_features: next }).eq('id', userId)
+    loadUsers()
+  }
+
   function toggleSort(col) {
     if (sortCol === col) setSortDir(sortDir === 'asc' ? 'desc' : 'asc')
     else { setSortCol(col); setSortDir('asc') }
@@ -612,7 +625,7 @@ function UsersTab() {
                 <td style={cellStyle}>
                   <select style={smallInput} value={editData.access_mode || 'full'} onChange={e => setEditData({ ...editData, access_mode: e.target.value })}>
                     <option value="full">Full</option>
-                    <option value="dealroom_only">Deal Room only</option>
+                    <option value="dealroom_only">Beta</option>
                   </select>
                 </td>
                 <td style={cellStyle}>{modCount > 0 ? `${modCount} override${modCount === 1 ? '' : 's'}` : <span style={{ color: T.textMuted, fontSize: 11 }}>Plan default</span>}</td>
@@ -643,10 +656,10 @@ function UsersTab() {
                     onClick={e => e.stopPropagation()}
                     onChange={e => updateAccessMode(u.id, e.target.value)}
                     style={{ ...smallInput, padding: '3px 6px', fontSize: 11, width: 'auto' }}
-                    title="Full = standard access. Deal Room only = pilot AE, sees only their deals + Deal Room tab."
+                    title="Full = standard access. Beta = stripped-down experience (Deals + Deal Room only). Beta features can be enabled per user from the row below."
                   >
                     <option value="full">Full</option>
-                    <option value="dealroom_only">Deal Room only</option>
+                    <option value="dealroom_only">Beta</option>
                   </select>
                 </td>
                 <td style={cellStyle} onClick={() => { setEditingId(u.id); setEditData({ role: u.role || 'rep', org_id: u.org_id || '', access_mode: u.access_mode || 'full' }) }}>
@@ -657,6 +670,18 @@ function UsersTab() {
               </tr>
             )
           })}
+          {/* Beta feature panels — one row per Beta user. Each row spans all
+              columns and exposes per-feature on/off toggles. Empty until a
+              feature is registered in src/lib/betaFeatures.js. */}
+          {sortedUsers
+            .filter(u => u.access_mode === 'dealroom_only' && !platformAdminIds.has(u.id))
+            .map(u => (
+              <BetaFeaturesRow
+                key={`beta-${u.id}`}
+                user={u}
+                onToggle={(featureKey, on) => updateBetaFeature(u.id, featureKey, on)}
+              />
+            ))}
         </tbody>
       </table>
 
@@ -1235,3 +1260,43 @@ function UsageTab() {
     </div>
   )
 }
+
+
+// Per-user beta features sub-row. Renders under each Beta user in UsersTab.
+// Empty when no features are registered yet (see src/lib/betaFeatures.js).
+function BetaFeaturesRow({ user, onToggle }) {
+  const flags = user.beta_features || {}
+  return (
+    <tr style={{ background: '#fafbfd', borderBottom: `1px solid ${T.borderLight}` }}>
+      <td colSpan={8} style={{ padding: '8px 16px 12px 24px' }}>
+        <div style={{ fontSize: 10, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
+          Beta features for {user.full_name || user.email}
+        </div>
+        {BETA_FEATURES.length === 0 ? (
+          <div style={{ fontSize: 11, color: T.textMuted, fontStyle: 'italic' }}>
+            No beta features registered yet. Add entries to src/lib/betaFeatures.js as we ship them and they'll appear here as per-user toggles.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {BETA_FEATURES.map(f => {
+              const on = flags[f.key] === true
+              return (
+                <button key={f.key} onClick={() => onToggle(f.key, !on)} title={f.description || ''}
+                  style={{
+                    padding: '4px 11px', borderRadius: 14, fontSize: 11, fontWeight: 600,
+                    border: `1px solid ${on ? T.primary : T.border}`,
+                    background: on ? (T.primaryLight || 'rgba(93,173,226,0.1)') : T.surface,
+                    color: on ? T.primary : T.textMuted,
+                    cursor: 'pointer', fontFamily: T.font,
+                  }}>
+                  {on ? '✓ ' : ''}{f.label}
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </td>
+    </tr>
+  )
+}
+
