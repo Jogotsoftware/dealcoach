@@ -912,8 +912,10 @@ export default function Pipeline() {
         .react-resizable-handle::after { content: ""; position: absolute; right: 3px; bottom: 3px; width: 8px; height: 8px; border-right: 2px solid rgba(136,153,170,0.4); border-bottom: 2px solid rgba(136,153,170,0.4); }
       `}</style>
 
-      {/* Header — paddingRight: 72 reserves a clear lane for the floating notification bell */}
-      <div style={{ padding: '12px 24px 0', paddingRight: 72, borderBottom: '1px solid ' + T.border, background: T.surface }}>
+      {/* Header — paddingRight: 72 reserves a clear lane for the floating notification bell.
+          Bottom padding grows when the home tabs row is hidden (Beta users) so the
+          header doesn't read as a thin strip jammed against the New Deal button. */}
+      <div style={{ padding: isDealRoomOnly ? '18px 24px' : '12px 24px 0', paddingRight: 72, borderBottom: '1px solid ' + T.border, background: T.surface }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
           <h1 style={{ fontSize: 18, fontWeight: 800, margin: 0, color: T.text }}>Home</h1>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
