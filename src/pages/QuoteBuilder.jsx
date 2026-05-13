@@ -544,6 +544,8 @@ function QuoteTab({ quote, deal, quoteId, lines, products, productMap, bundleChi
         registerFlusher={registerFlusher}
         onChanged={onSubChanged}
         refreshFavorites={refreshFavorites}
+        columnVisibility={columnVisibility}
+        onColumnVisibilityChange={onColumnVisibilityChange}
       />
       <div style={{ marginTop: 24 }}>
         <ImplementationSection
@@ -600,7 +602,7 @@ function QuoteTab({ quote, deal, quoteId, lines, products, productMap, bundleChi
 // ──────────────────────────────────────────────────────────
 // SUBSCRIPTION SECTION
 // ──────────────────────────────────────────────────────────
-function SubscriptionSection({ quote, lines, products, productMap, bundleChildrenMap, favorites, profileId, saveQuoteHeader, registerFlusher, onChanged, refreshFavorites }) {
+function SubscriptionSection({ quote, lines, products, productMap, bundleChildrenMap, favorites, profileId, saveQuoteHeader, registerFlusher, onChanged, refreshFavorites, columnVisibility = null, onColumnVisibilityChange = null }) {
   const [pickerOpen, setPickerOpen] = useState(false)
   const [showFavManager, setShowFavManager] = useState(false)
   const [draggingId, setDraggingId] = useState(null)
@@ -657,17 +659,32 @@ function SubscriptionSection({ quote, lines, products, productMap, bundleChildre
 
   const globalDiscountUiPct = Math.round((Number(quote.global_discount_pct) || 0) * 10000) / 100
 
-  // Per-column deal-room visibility (toggles in column headers)
+  // Per-column visibility for the customer-facing proposal. Source of truth is
+  // deal_rooms.proposal_column_visibility (read via the columnVisibility prop,
+  // written via onColumnVisibilityChange). Customer-side ProposalView reads
+  // the same column with these key names: qty, list, disc_pct, disc_amt, net.
+  // Fallback to the legacy quote.deal_room_display_config keys when the parent
+  // isn't wired up (e.g. standalone QuoteBuilder usage without a deal room).
+  const cvInner = (columnVisibility?.columns || columnVisibility || {})
+  const cvRead = (k, legacyKey) => cvInner[k] !== undefined ? cvInner[k] !== false : drGet(quote, `columns.${legacyKey}`, true)
   const colVis = {
-    qty: drGet(quote, 'columns.qty', true),
-    list: drGet(quote, 'columns.list', true),
-    discount: drGet(quote, 'columns.discount', true),
-    discount_amount: drGet(quote, 'columns.discount_amount', true),
-    price: drGet(quote, 'columns.price', true),
+    qty:             cvRead('qty', 'qty'),
+    list:            cvRead('list', 'list'),
+    discount:        cvRead('disc_pct', 'discount'),
+    discount_amount: cvRead('disc_amt', 'discount_amount'),
+    price:           cvRead('net', 'price'),
   }
+  const COL_KEY_MAP = { qty: 'qty', list: 'list', discount: 'disc_pct', discount_amount: 'disc_amt', price: 'net' }
   async function toggleColVis(key) {
-    const patch = drSetPatch(quote, `columns.${key}`, !colVis[key])
-    await saveQuoteHeader(patch)
+    const next = !colVis[key]
+    if (onColumnVisibilityChange) {
+      // Write to deal_rooms.proposal_column_visibility — the customer reads this.
+      onColumnVisibilityChange({ [COL_KEY_MAP[key]]: next })
+    } else {
+      // Fallback: standalone QuoteBuilder without a deal room context.
+      const patch = drSetPatch(quote, `columns.${key}`, next)
+      await saveQuoteHeader(patch)
+    }
   }
 
   async function addProductLines(productIds) {
