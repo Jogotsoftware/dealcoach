@@ -41,7 +41,6 @@ import SlideGenerator from '../components/SlideGenerator'
 import WidgetRenderer from '../components/WidgetRenderer'
 import ContactsOrgTree from '../components/ContactsOrgTree'
 import CallAnalysisBody from '../components/CallAnalysisBody'
-import DisqualifyDealModal from '../components/DisqualifyDealModal'
 import { useAuth } from '../hooks/useAuth'
 import { useModules } from '../hooks/useModules'
 import { Responsive, WidthProvider } from 'react-grid-layout'
@@ -464,7 +463,6 @@ export default function DealDetail() {
   const [showEditMenu, setShowEditMenu] = useState(false)
   const [showStagePopover, setShowStagePopover] = useState(false)
   const [showForecastPopover, setShowForecastPopover] = useState(false)
-  const [showDisqualifyModal, setShowDisqualifyModal] = useState(false)
   // Sage canon: platform-admin-only Recalculate Path to Close debug action
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false)
   const [recalcLoading, setRecalcLoading] = useState(false)
@@ -1817,23 +1815,10 @@ export default function DealDetail() {
                   ]}
                   selected={deal.stage}
                   onPick={async (k) => {
-                    // Intercept disqualification — open modal for reason + BDR feedback (M7).
-                    if (k === 'disqualified') {
-                      setShowDisqualifyModal(true)
-                      setShowStagePopover(false)
-                      return
-                    }
                     const { error: e } = await supabase.from('deals').update({ stage: k }).eq('id', deal.id)
                     if (!e) setDeal(p => ({ ...p, stage: k, stage_changed_at: new Date().toISOString(), closed_at: ['closed_won','closed_lost','disqualified'].includes(k) ? new Date().toISOString() : null }))
                     setShowStagePopover(false)
                   }}
-                />
-              )}
-              {showDisqualifyModal && (
-                <DisqualifyDealModal
-                  deal={deal}
-                  onClose={() => setShowDisqualifyModal(false)}
-                  onDone={() => setDeal(p => ({ ...p, stage: 'disqualified', stage_changed_at: new Date().toISOString(), closed_at: new Date().toISOString() }))}
                 />
               )}
               {showForecastPopover && (
