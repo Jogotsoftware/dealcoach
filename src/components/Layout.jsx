@@ -156,6 +156,13 @@ export default function Layout() {
       { to: '/admin/sme-routing', icon: '\u21BB', label: 'SME Routing', show: isAdmin },
       { to: '/admin/sme-flags', icon: '\u26A0', label: 'SME Flags', show: isAdmin },
     ]},
+    // Platform admins get the BDR/XDR surfaces in their sidebar for support
+    // and QA \u2014 they can reach the routes directly anyway (BdrGuard only fires
+    // for role === 'bdr'), but without these links they're invisible in nav.
+    { label: 'XDR', show: isPlatformAdmin, items: [
+      { to: '/bdr/submit',   iconKey: 'bdr_submit', label: 'Submit a Lead', show: true },
+      { to: '/bdr/my-leads', iconKey: 'bdr_leads',  label: 'BDR Leads',     show: true },
+    ]},
     { label: 'Super Admin', show: isPlatformAdmin, items: [
       { to: '/admin', icon: '\u2691', label: 'Organizations', show: true },
       { to: '/admin/invitations', icon: '\u2709', label: 'Invitations', show: true },
