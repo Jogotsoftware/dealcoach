@@ -789,3 +789,56 @@ Four edge functions replaced with deprecation stubs that:
 **Build state:** no frontend changes in M10. Edge function stubs deployed only. CLAUDE.md updated.
 
 **M10 complete. The BDR submission & deal routing build (M0–M10) is fully landed.**
+
+---
+
+## M11 — Configurable QDC Criteria (admin-driven submission fields)
+
+**Date:** 2026-05-14
+
+**Trigger:** Joe asked for the "Denial Criteria" admin to become "QDC Criteria" with two sub-tabs — Denial Criteria (existing M6 behavior preserved) and Submission Criteria (new: add/remove/toggle-required fields for the BDR submit form, including custom fields beyond the 12 built-ins). Admin-only.
+
+### Scope chosen (B): Full custom-field support with per-field required + hide toggles
+
+- 12 built-in fields (company_name, website, employee_count, tech_stack, annual_revenue, num_entities, accounting_team_size, industry, vertical, hq_state, bant, transcript) — admin can hide or toggle required, but cannot delete.
+- Custom fields — admin can add new fields with input_type ∈ {text, number, currency, tag_input, dropdown, textarea, state, vertical, url, date}, optional help_text/placeholder/options, required toggle, and full delete.
+- Custom-field values persist to `bdr_leads.custom_fields` JSONB (built-ins continue to use typed columns).
+
+### Migration
+
+`20260514_bdr_submission_fields_config`:
+1. `ALTER TABLE bdr_leads ADD COLUMN custom_fields jsonb NOT NULL DEFAULT '{}'::jsonb;`
+2. `CREATE TABLE bdr_submission_fields (id, org_id, field_key, label, input_type CHECK IN (...), is_builtin, required, active, priority, help_text, placeholder, options jsonb, created_by, created_at, updated_at, UNIQUE (org_id, field_key))`
+3. RLS:
+   - `SELECT` for any org member.
+   - `INSERT/UPDATE/DELETE` for role ∈ (admin, system_admin, manager) OR platform_admin.
+   - Built-in rows protected: `is_builtin=true` rows blocked from `DELETE` via row-level policy.
+4. Seed: for each active org, insert the 12 built-in fields with `is_builtin=true, active=true, required=<existing-form-default>, priority=10..120`.
+
+### Code landed
+
+| File | Change |
+|------|--------|
+| `src/pages/admin/QdcCriteriaAdmin.jsx` | New page. `TabBar` with Denial Criteria + Submission Criteria. `DenialPanel` preserves the M6 `DenialCriteriaAdmin` UI/behavior verbatim. `SubmissionPanel` lists `bdr_submission_fields` rows; inline `Required` + `Active` toggles; `+ New custom field` form with input_type select and options-list editor for `dropdown`; built-ins editable (label, required, active, priority) but not deletable. |
+| `src/pages/bdr/Submit.jsx` | Rewritten as fully config-driven. On mount queries `bdr_submission_fields` for `org_id, active=true` ordered by priority. `FieldRenderer` switches on `input_type` for the 10 supported widgets. Submit splits payload: built-in `field_key`s → typed `bdr_leads` columns; custom keys → `bdr_leads.custom_fields` JSONB. Validation enforces `required=true` fields on the client; server still gates via `pre-qdc-decision` (judgment, not validation). |
+| `src/components/Layout.jsx` | Sidebar entry `Denial Criteria` → `QDC Criteria` pointing at `/admin/qdc-criteria`. |
+| `src/App.jsx` | Imports `QdcCriteriaAdmin`. New route `/admin/qdc-criteria` guarded by `RequireAEManagerOrAdmin`. Legacy `/admin/denial-criteria` now `<Navigate to="/admin/qdc-criteria" replace />` for bookmark back-compat. |
+| `supabase/functions/pre-qdc-decision/index.ts` → v4 | Loads `bdr_submission_fields` (active, ordered by priority) instead of the v3 hardcoded 10-field list. Each field formatted via `formatFieldValue(field_key, input_type, is_builtin)` which reads built-ins from `lead[field_key]` and customs from `lead.custom_fields[field_key]`. Tail block `# Custom fields (no longer in current config)` surfaces any `custom_fields` keys whose `field_key` isn't in the active config so deactivating/renaming a field doesn't silently strip past submissions' values from the AI's view. All response/error `version` strings bumped from `"v3"` → `"v4"`. |
+
+### Test plan executed in-session
+
+- ✅ `npm run build` clean (51s, 1312 modules).
+- ✅ `supabase functions deploy pre-qdc-decision --no-verify-jwt` clean.
+- Manual smoke (deferred to Joe per "don't turn it on for beta yet"):
+  - Admin → /admin/qdc-criteria → Submission tab → toggle `vertical` Required off → Submit form should hide the asterisk and stop blocking on empty.
+  - Admin → Submission tab → "+ New custom field" with `key=erp_module, label=ERP Module, input_type=dropdown, options=[NetSuite, Sage Intacct, Workday, Other]` → BDR submit shows new field → submission writes to `bdr_leads.custom_fields.erp_module` → `pre-qdc-decision` v4 prompt should include `ERP Module: <value>` line.
+  - Toggle that custom field `active=false` → existing submissions still surface under `# Custom fields (no longer in current config)` in v4 prompt; new submissions don't render the field.
+
+### Cosmetic follow-ups still carried forward (unchanged from M10)
+
+1. `route-lead` `routed_by_function` data field still says `"v1"` instead of `"v2"`.
+2. AE-side handoff notification not yet implemented (spec §4.2 step 9).
+3. `send-handoff-notification` orphan status — still defer or deprecate alongside in follow-up.
+
+**Commit:** `f4614b1` — feat: M11 — configurable QDC criteria with custom submission fields.
+**M11 complete pending Joe's manual smoke.**
