@@ -6,9 +6,9 @@ import { theme as T } from '../lib/theme'
 import { track, identify } from '../lib/analytics'
 
 const BENEFITS = [
-  'Transcripts turned into deal intelligence, automatically',
-  'AI coaching that compounds with every call',
-  'Pipeline context that never goes stale',
+  'Transcripts turned into valuable deal intelligence to help you win',
+  'AI feedback and research that is constantly learning',
+  "Process automation so you can spend less time doing things that don't make you money",
 ]
 
 export default function Login() {
@@ -108,10 +108,10 @@ export default function Login() {
             </div>
           </div>
           <div style={{ width: 40, height: 1, background: T.border, margin: '14px 0' }} />
-          <div style={{ fontSize: 14, color: T.textSecondary, maxWidth: 260, lineHeight: 1.55 }}>
-            The deal execution platform for Sage Intacct AEs
+          <div style={{ fontSize: 14, color: T.textSecondary, maxWidth: 320, lineHeight: 1.55 }}>
+            Lumen is an AI-powered deal execution and intelligence platform built by your fellow salespeople to make buying and selling Sage Intacct easier for all parties involved.
           </div>
-          <div style={{ height: 28 }} />
+          <div style={{ height: 22 }} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {BENEFITS.map((b, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
@@ -119,6 +119,10 @@ export default function Login() {
                 <span style={{ fontSize: 13, color: T.text, lineHeight: 1.6 }}>{b}</span>
               </div>
             ))}
+          </div>
+          <div style={{ height: 24 }} />
+          <div style={{ fontSize: 13, fontStyle: 'italic', color: T.textSecondary, maxWidth: 320, lineHeight: 1.5 }}>
+            Sign in to see the light at the end of the tunnel.
           </div>
         </div>
       </div>
