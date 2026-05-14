@@ -8,6 +8,35 @@ import { track } from '../lib/analytics'
 import { theme as T } from '../lib/theme'
 import BetaFeedbackModal from './BetaFeedbackModal'
 import { executeReportQueryStandalone } from '../pages/Reports'
+import { escalateToSme, recordSmeCitation } from '../lib/sme'
+
+// PR A (thinking indicator): inline component, 3-dot Carolina-blue pulse.
+// Keyframes live in src/styles/index.css (also handles prefers-reduced-motion).
+function ThinkingDots() {
+  const dot = (i) => ({
+    width: 6, height: 6, borderRadius: '50%', background: '#5DADE2',
+    animation: `lux-thinking-pulse 1.2s ease-in-out ${i * 0.15}s infinite`,
+  })
+  return (
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '8px 4px', height: 20 }}>
+      <span className="lux-thinking-dot" style={dot(0)} />
+      <span className="lux-thinking-dot" style={dot(1)} />
+      <span className="lux-thinking-dot" style={dot(2)} />
+    </div>
+  )
+}
+
+// v21 / SME: detect when Lux can't confidently answer, so the "Ask the team"
+// affordance renders prominently inline. Catches both hard "I don't know"
+// signals AND softer hedges ("varies by company", "you'll need to confirm",
+// "depends on your org") that are equally good triggers for escalation.
+const LOW_CONFIDENCE_REGEX = /\b(i (?:do(?:n'?| no)?t know|am not sure|don'?t have access|cannot determine|can'?t (?:say|tell|confirm)|don'?t have visibility)|outside (?:my|the scope)|can'?t say for sure|might want to verify|should be escalated|escalat(?:e|ing) to|ask (?:an? )?(?:sme|subject matter expert|expert|teammate|the team)|varies (?:by|widely)|depends on (?:your|the (?:specific|exact))|you'?ll need to (?:confirm|check|verify|ask)|this (?:might|could) be documented|reach out to (?:your|a) (?:manager|lead|sme|expert))\b/i
+
+// Also fire the inline "Ask the team" card when the USER's last message
+// indicates they want to escalate, even if Lux's response wasn't itself a hedge.
+// e.g. user typed "if you don't know, escalate this" — the helpful move is to
+// render the one-click submit button right there, not make them hunt for it.
+const USER_ESCALATION_REGEX = /\b(ask (?:an? )?(?:sme|subject matter expert|expert|teammate|the team)|escalat(?:e|ed|ing|ion)|need (?:an? )?(?:expert|sme|human))\b/i
 
 // Pull fenced ```report {json}``` blocks out of an assistant message.
 // Returns { displayText, drafts[] } — drafts array can have 0+ entries.
@@ -22,6 +51,69 @@ function parseReportBlocks(content) {
     } catch { return '' }
   }).trim()
   return { displayText, drafts }
+}
+
+// v21: pull fenced ```source {json}``` blocks out of an assistant message.
+// Each block represents a single citation (web_search, sme_answer, etc.).
+// We replace it with a placeholder token and render an inline pill via the
+// SourcePill component when displaying.
+function parseSourceBlocks(content) {
+  if (!content) return { segments: [{ kind: 'text', value: '' }], sources: [] }
+  const sources = []
+  const segments = []
+  let cursor = 0
+  const re = /```source\s*\n([\s\S]*?)\n```/g
+  let m
+  while ((m = re.exec(content)) !== null) {
+    if (m.index > cursor) segments.push({ kind: 'text', value: content.slice(cursor, m.index) })
+    try {
+      const parsed = JSON.parse(m[1].trim())
+      const idx = sources.length
+      sources.push(parsed)
+      segments.push({ kind: 'source', idx })
+    } catch {
+      // Malformed block — show the raw text so the user can see something is off.
+      segments.push({ kind: 'text', value: m[0] })
+    }
+    cursor = m.index + m[0].length
+  }
+  if (cursor < content.length) segments.push({ kind: 'text', value: content.slice(cursor) })
+  return { segments, sources }
+}
+
+function hostnameOf(url) {
+  try { return new URL(url).hostname.replace(/^www\./, '') } catch { return '' }
+}
+
+// v21: small inline pill for a parsed source block. type='web_search' opens
+// the URL; type='sme_answer' will deep-link to /sme/question/:id once that
+// route ships in PR 4 (renders as a non-clickable badge for now).
+function SourcePill({ src }) {
+  const t = src?.type
+  if (t === 'web_search' && src.url) {
+    const host = src.hostname || hostnameOf(src.url) || 'web'
+    return (
+      <a href={src.url} target="_blank" rel="noopener noreferrer" title={src.snippet || src.url}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 3, margin: '0 2px', padding: '1px 6px', borderRadius: 10, background: T.primaryLight || 'rgba(93,173,226,0.12)', border: `1px solid ${T.primary}40`, color: T.primary, fontSize: 9, fontWeight: 600, textDecoration: 'none', verticalAlign: 'middle' }}>
+        {host}
+        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+        </svg>
+      </a>
+    )
+  }
+  if (t === 'sme_answer' && src.sme_question_id) {
+    const name = src.sme_name || 'SME'
+    const date = (src.answered_at || '').slice(0, 10)
+    const helpful = typeof src.helpful_marks === 'number' ? ` · ${src.helpful_marks} helpful` : ''
+    return (
+      <a href={`/sme/question/${src.sme_question_id}`} title={`SME answer · ${name}${helpful}`}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 3, margin: '0 2px', padding: '1px 6px', borderRadius: 10, background: '#fef3c7', border: `1px solid #f59e0b40`, color: '#92400e', fontSize: 9, fontWeight: 600, textDecoration: 'none', verticalAlign: 'middle' }}>
+        SME: {name}{date ? ` · ${date}` : ''}{helpful}
+      </a>
+    )
+  }
+  return null
 }
 
 const HIDDEN_ROUTES = ['/login']
@@ -75,8 +167,58 @@ function routeContext(pathname) {
 }
 
 export default function GlobalChatbot() {
-  const { profile } = useAuth()
-  const { org } = useOrg() || {}
+  const { profile, refreshProfile, setProfile } = useAuth()
+  const { org, allowChatWebSearch, enableChatReports, isDemoOrg } = useOrg() || {}
+  // v21 web search toggle. Optimistic local mirror of profile.chat_web_search_enabled.
+  const webOn = !!profile?.chat_web_search_enabled
+  async function toggleWebSearch() {
+    if (!profile?.id) return
+    const next = !webOn
+    if (setProfile) setProfile({ ...profile, chat_web_search_enabled: next })
+    const { error } = await supabase.from('profiles').update({ chat_web_search_enabled: next }).eq('id', profile.id)
+    if (error) {
+      console.error('toggleWebSearch failed:', error)
+      if (setProfile) setProfile({ ...profile, chat_web_search_enabled: !next }) // rollback
+      return
+    }
+    if (refreshProfile) refreshProfile()
+    track('chatbot_web_search_toggled', { enabled: next })
+  }
+  // v21 Correct-this modal state.
+  const [correctionFor, setCorrectionFor] = useState(null) // { messageId, originalText }
+  const [correctionText, setCorrectionText] = useState('')
+  const [correctionSubmitting, setCorrectionSubmitting] = useState(false)
+  const [correctionToast, setCorrectionToast] = useState(null)
+  // SME: Ask-an-SME modal state + recorded-citations debounce set.
+  const [askSmeOpen, setAskSmeOpen] = useState(false)
+  const [askSmePrefill, setAskSmePrefill] = useState('')
+  const [askSmeSubmitting, setAskSmeSubmitting] = useState(false)
+  const [askSmeToast, setAskSmeToast] = useState(null)
+  const recordedCitationsRef = useRef(new Set())
+
+  async function openAskSme(prefill) {
+    setAskSmePrefill(prefill || '')
+    setAskSmeOpen(true)
+  }
+  async function submitAskSme() {
+    const text = (askSmePrefill || '').trim()
+    if (!text || askSmeSubmitting) return
+    setAskSmeSubmitting(true)
+    const r = await escalateToSme({
+      user_id: profile?.id, org_id: profile?.org_id,
+      deal_id: activeDealId || null,
+      chat_session_id: sessionId || null,
+      chat_message_id: null,
+      question_text: text,
+    })
+    setAskSmeSubmitting(false)
+    if (r?.error) { setAskSmeToast({ kind: 'error', text: 'Escalation failed: ' + r.error }); return }
+    const tag = r?.routed_tag ? ` (${r.routed_tag})` : ''
+    setAskSmeToast({ kind: 'ok', text: r?.routed_to_sme_id ? `Sent to an SME${tag}. You'll be notified when they answer.` : 'Queued. An admin will route this question manually.' })
+    setAskSmeOpen(false); setAskSmePrefill('')
+    track('chatbot_sme_escalated', { has_deal: !!activeDealId, routed: !!r?.routed_to_sme_id })
+    setTimeout(() => setAskSmeToast(null), 5000)
+  }
   const location = useLocation()
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
@@ -96,6 +238,20 @@ export default function GlobalChatbot() {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
+  // PR B: auto-focus pending card. When deal-chat returns a switch_suggestion or
+  // clarifying_question payload, we hold the card here and render after the user
+  // message until they pick a branch. lastSentMessage stores the original user
+  // text so re-firing on button click is exact.
+  const [pendingFocusCard, setPendingFocusCard] = useState(null)
+  const [lastSentMessage, setLastSentMessage] = useState('')
+  // PR A: thinking indicator. Shown only after a 200ms grace so trivial sub-200ms
+  // responses don't flash a wasted indicator.
+  const [showThinking, setShowThinking] = useState(false)
+  useEffect(() => {
+    if (!sending) { setShowThinking(false); return }
+    const t = setTimeout(() => setShowThinking(true), 200)
+    return () => clearTimeout(t)
+  }, [sending])
   const [feedbackState, setFeedbackState] = useState({})
   const [feedbackModalOpen, setFeedbackModalOpen] = useState(false)
   const messagesEndRef = useRef(null)
@@ -108,6 +264,24 @@ export default function GlobalChatbot() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, sending])
+
+  // SME citation recording: scan new assistant messages for fenced sme_answer
+  // source blocks and fire record-sme-citation once per (question, message) tuple.
+  useEffect(() => {
+    if (!profile?.id) return
+    for (const m of messages) {
+      if (m.role !== 'assistant' || !m.id || !m.content) continue
+      const { sources } = parseSourceBlocks(m.content)
+      for (const s of (sources || [])) {
+        if (s?.type !== 'sme_answer' || !s.sme_question_id) continue
+        const key = `${s.sme_question_id}:${m.id}`
+        if (recordedCitationsRef.current.has(key)) continue
+        recordedCitationsRef.current.add(key)
+        recordSmeCitation({ sme_question_id: s.sme_question_id, citing_user_id: profile.id, citing_chat_message_id: m.id })
+          .catch(e => console.warn('record-sme-citation failed (non-fatal):', e))
+      }
+    }
+  }, [messages, profile?.id])
 
   // Track recent visited routes in localStorage so the Jump panel can show them.
   useEffect(() => {
@@ -191,33 +365,109 @@ export default function GlobalChatbot() {
     setSessionsOpen(false)
   }
 
-  async function sendMessage() {
-    const text = input.trim()
+  async function sendMessage(opts) {
+    const opt = opts || {}
+    const text = (opt.overrideText !== undefined ? opt.overrideText : input).trim()
     if (!text || sending) return
 
-    setInput('')
+    if (opt.overrideText === undefined) setInput('')
     setSending(true)
-    track('chatbot_message_sent', { context_type: activeContextType, has_deal: !!activeDealId, message_length: text.length })
-    setMessages(prev => [...prev, { role: 'user', content: text, created_at: new Date().toISOString() }])
+    setPendingFocusCard(null)
+    setLastSentMessage(text)
+    track('chatbot_message_sent', { context_type: activeContextType, has_deal: !!activeDealId, message_length: text.length, re_fired: !!opt.refire })
+    if (!opt.skipLocalUserInsert) setMessages(prev => [...prev, { role: 'user', content: text, created_at: new Date().toISOString() }])
 
     const pageContext = { path: location.pathname, page_name: routePageName, hint: routeHint }
-    const res = await callDealChat(activeDealId, sessionId, text, profile?.id, activeContextType, pageContext)
+    const dealForCall = opt.dealOverride !== undefined ? opt.dealOverride : activeDealId
+    const res = await callDealChat(dealForCall, sessionId, text, profile?.id, activeContextType, pageContext, null, opt.cross_deal_question ? { cross_deal_question: true } : null)
     setSending(false)
 
     if (res.error) {
       setMessages(prev => [...prev, { role: 'assistant', content: 'Error: ' + res.error, created_at: new Date().toISOString() }])
       return
     }
-
     if (!sessionId && res.session_id) setSessionId(res.session_id)
-    setMessages(prev => [...prev, { role: 'assistant', content: res.message || '', actions_taken: res.actions_taken || [], created_at: new Date().toISOString() }])
+
+    // PR B: branch on response type. Card payloads short-circuit; no assistant message inserted yet.
+    if (res.type === 'switch_suggestion') {
+      setPendingFocusCard({ type: 'switch_suggestion', current_focused: res.current_focused, suggested: res.suggested, user_message: res.user_message || text })
+      return
+    }
+    if (res.type === 'clarifying_question') {
+      setPendingFocusCard({ type: 'clarifying_question', suggested_deal: res.suggested_deal, user_message: res.user_message || text })
+      return
+    }
+
+    // PR B: if the edge function auto-focused us into a deal, mirror that into local state so future turns honor it.
+    if (res.auto_focused?.deal_id && !overrideDealId) {
+      setOverrideDealId(res.auto_focused.deal_id)
+    }
+
+    setMessages(prev => [...prev, { role: 'assistant', content: res.message || '', actions_taken: res.actions_taken || [], created_at: new Date().toISOString(), auto_focused: res.auto_focused || null }])
 
     const sid = res.session_id || sessionId
     if (sid) {
       const { data, error: refetchErr } = await supabase.from('deal_chat_messages').select('*').eq('session_id', sid).order('created_at')
       if (refetchErr) console.error('deal_chat_messages refetch failed:', refetchErr)
-      if (data?.length) setMessages(data)
+      if (data?.length) {
+        // Carry the auto_focused field forward on the latest assistant message (DB doesn't store it).
+        if (res.auto_focused && data.length) {
+          const last = data[data.length - 1]
+          if (last.role === 'assistant') last.auto_focused = res.auto_focused
+        }
+        setMessages(data)
+      }
     }
+  }
+
+  // PR B: re-fire the original message after the user picks a branch in the card.
+  async function focusCardChoice(choice) {
+    if (!pendingFocusCard) return
+    if (choice === 'switch') {
+      setOverrideDealId(pendingFocusCard.suggested.id)
+      await sendMessage({ overrideText: pendingFocusCard.user_message, dealOverride: pendingFocusCard.suggested.id, skipLocalUserInsert: true, refire: true })
+    } else if (choice === 'keep') {
+      await sendMessage({ overrideText: pendingFocusCard.user_message, skipLocalUserInsert: true, refire: true, cross_deal_question: true })
+    } else if (choice === 'clarify_yes') {
+      setOverrideDealId(pendingFocusCard.suggested_deal.id)
+      await sendMessage({ overrideText: pendingFocusCard.user_message, dealOverride: pendingFocusCard.suggested_deal.id, skipLocalUserInsert: true, refire: true })
+    } else if (choice === 'clarify_no') {
+      setOverrideDealId(null)
+      await sendMessage({ overrideText: pendingFocusCard.user_message, dealOverride: null, skipLocalUserInsert: true, refire: true })
+    } else if (choice === 'clarify_pick') {
+      setPendingFocusCard(null)
+      setDealPickerOpen(true)
+      loadDeals()
+    }
+  }
+
+  async function submitCorrection() {
+    if (!correctionFor || !correctionText.trim() || correctionSubmitting) return
+    setCorrectionSubmitting(true)
+    track('chatbot_correction_submitted', { has_deal: !!activeDealId, message_length: correctionText.length })
+    const res = await callDealChat(
+      activeDealId, sessionId,
+      '(rep submitted a correction — see correction_payload)',
+      profile?.id, activeContextType,
+      { path: location.pathname, page_name: routePageName, hint: routeHint },
+      { original_message_id: correctionFor.messageId, correction_text: correctionText.trim() },
+    )
+    setCorrectionSubmitting(false)
+    if (res?.error) {
+      setCorrectionToast({ kind: 'error', text: 'Correction failed: ' + res.error })
+      return
+    }
+    const memoryWritten = !!res?.correction?.memory_id
+    const smeRouted = !!res?.correction?.sme_question_id
+    setCorrectionToast({
+      kind: 'ok',
+      text: memoryWritten
+        ? `Correction logged.${smeRouted ? ' An SME has been asked to validate.' : ''} Lux will remember it for this deal.`
+        : 'Correction noted but no durable fact extracted (Lux thought it was a style preference).',
+    })
+    setCorrectionFor(null)
+    setCorrectionText('')
+    setTimeout(() => setCorrectionToast(null), 5000)
   }
 
   async function submitThumbs(msg, sentiment, reasonKey, notes) {
@@ -320,21 +570,47 @@ export default function GlobalChatbot() {
 
   return (
     <>
-      {/* Floating button — clean speech-bubble icon, no emoji */}
+      {/* Floating button — Lumen sun nested inside a speech bubble. The sun
+          (yellow disc + 8 rays) sits in the lower-left of the bubble's white
+          fill so the bubble's tail still reads as "chat" while the sun marks
+          it as Lumen. White bubble on white-page would be invisible, so we
+          give the bubble a 1px Carolina-Blue border + a soft shadow. */}
       {!open && (
-        <button onClick={openBot} title="Revenue Instruments assistant"
+        <button onClick={openBot} title="Ask Lumen"
           style={{
             position: 'fixed', bottom: 20, right: 20, zIndex: 9000,
-            width: 48, height: 48, borderRadius: '50%',
-            background: T.primary, color: '#fff', border: 'none', cursor: 'pointer',
-            boxShadow: '0 6px 18px rgba(93, 173, 226, 0.35)',
+            width: 56, height: 56, borderRadius: 0,
+            background: 'transparent', border: 'none', cursor: 'pointer',
+            padding: 0,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            transition: 'transform 0.12s ease, box-shadow 0.12s ease',
+            filter: 'drop-shadow(0 6px 14px rgba(93, 173, 226, 0.35))',
+            transition: 'transform 0.12s ease, filter 0.12s ease',
           }}
-          onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 8px 22px rgba(93, 173, 226, 0.45)' }}
-          onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 6px 18px rgba(93, 173, 226, 0.35)' }}>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+          onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.filter = 'drop-shadow(0 8px 18px rgba(93, 173, 226, 0.5))' }}
+          onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.filter = 'drop-shadow(0 6px 14px rgba(93, 173, 226, 0.35))' }}
+          aria-label="Ask Lumen">
+          <svg width="56" height="56" viewBox="0 0 56 56" aria-hidden="true">
+            {/* Speech bubble — Carolina Blue fill with the chat tail */}
+            <path
+              d="M10 8 H46 a4 4 0 0 1 4 4 v26 a4 4 0 0 1 -4 4 H22 l-8 8 v-8 a4 4 0 0 1 -4 -4 V12 a4 4 0 0 1 4 -4 z"
+              fill="#5DADE2"
+              stroke="#3D8FBE"
+              strokeWidth="1"
+            />
+            {/* Lumen sun — centered in the bubble's body */}
+            <g transform="translate(28 24)">
+              <circle r="5.5" fill="#FFC000" />
+              {/* 8 rays around the disc */}
+              {Array.from({ length: 8 }).map((_, i) => {
+                const a = (i * Math.PI * 2) / 8
+                const x1 = Math.cos(a) * 8
+                const y1 = Math.sin(a) * 8
+                const x2 = Math.cos(a) * 12
+                const y2 = Math.sin(a) * 12
+                return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2}
+                  stroke="#FFC000" strokeWidth="2.2" strokeLinecap="round" />
+              })}
+            </g>
           </svg>
         </button>
       )}
@@ -382,7 +658,7 @@ export default function GlobalChatbot() {
           {/* Header */}
           <div style={{ padding: '12px 14px', borderBottom: `1px solid ${T.border}`, background: T.surfaceAlt, display: 'flex', alignItems: 'center', gap: 8 }}>
             <div style={{ width: 8, height: 8, borderRadius: '50%', background: T.success }} />
-            <div style={{ flex: 1, fontSize: 13, fontWeight: 700, color: T.text }}>Revenue Instruments</div>
+            <div style={{ flex: 1, fontSize: 13, fontWeight: 700, color: T.text }}>Lux</div>
             <button onClick={openJump} title="Search opportunities, quotes, recent pages"
               style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, padding: 2, display: 'inline-flex', alignItems: 'center' }}>
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
@@ -412,6 +688,25 @@ export default function GlobalChatbot() {
               style={{ marginLeft: 'auto', background: 'none', border: 'none', color: T.textMuted, fontSize: 10, cursor: 'pointer', padding: 0, textDecoration: 'underline', fontFamily: T.font }}>
               {activeContextType === 'deal' && activeDealId ? 'Change deal' : 'Focus on a deal'}
             </button>
+            {/* v21 web search toggle. Hidden entirely when org has disabled it OR when the org isn't the demo org. */}
+            {allowChatWebSearch && isDemoOrg && (
+              <button onClick={toggleWebSearch} title="When on, Lux can search the web. Costs 3× credits when used."
+                style={{
+                  marginLeft: 8, display: 'inline-flex', alignItems: 'center', gap: 4,
+                  padding: '2px 8px', borderRadius: 10,
+                  background: webOn ? T.primary : T.surfaceAlt,
+                  border: `1px solid ${webOn ? T.primary : T.border}`,
+                  color: webOn ? '#fff' : T.textMuted,
+                  fontWeight: 600, fontSize: 10, cursor: 'pointer', fontFamily: T.font,
+                  boxShadow: webOn ? '0 1px 2px rgba(0,0,0,0.08)' : 'none',
+                }}>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/>
+                  <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+                </svg>
+                Web: {webOn ? 'on' : 'off'}
+              </button>
+            )}
           </div>
 
           {/* Sessions dropdown */}
@@ -550,10 +845,28 @@ export default function GlobalChatbot() {
                 {messages.map((m, i) => (
                   <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: m.role === 'user' ? 'flex-end' : 'flex-start', marginBottom: 10 }}>
                     <div style={{ maxWidth: '85%', padding: '8px 12px', borderRadius: m.role === 'user' ? '10px 10px 2px 10px' : '10px 10px 10px 2px', background: m.role === 'user' ? T.primary : T.surfaceAlt, color: m.role === 'user' ? '#fff' : T.text, fontSize: 12, lineHeight: 1.5, border: m.role === 'user' ? 'none' : `1px solid ${T.borderLight}` }}>
+                      {/* PR B: auto-focus indicator chip — only on assistant messages where Branch A auto-focused this turn. */}
+                      {m.role === 'assistant' && m.auto_focused?.company_name && (
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 9px', marginBottom: 6, background: T.primaryLight || 'rgba(93,173,226,0.12)', borderRadius: 10, fontSize: 10, color: T.primary, fontWeight: 600 }}>
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+                          Auto-focused on <strong style={{ marginLeft: 2 }}>{m.auto_focused.company_name}</strong>
+                          <button onClick={() => { setDealPickerOpen(true); loadDeals() }} style={{ marginLeft: 4, background: 'none', border: 'none', color: T.primary, fontSize: 10, fontWeight: 600, textDecoration: 'underline', cursor: 'pointer', padding: 0, fontFamily: T.font }}>change</button>
+                        </div>
+                      )}
                       {(() => {
                         if (m.role !== 'assistant') return <div style={{ whiteSpace: 'pre-wrap' }}>{m.content}</div>
+                        // First strip ```report``` blocks, then split remaining text into source-aware segments.
                         const { displayText } = parseReportBlocks(m.content)
-                        return <div style={{ whiteSpace: 'pre-wrap' }}>{displayText || m.content}</div>
+                        const { segments, sources } = parseSourceBlocks(displayText || m.content || '')
+                        return (
+                          <div style={{ whiteSpace: 'pre-wrap' }}>
+                            {segments.map((seg, si) => {
+                              if (seg.kind === 'text') return <span key={si}>{seg.value}</span>
+                              const src = sources[seg.idx]
+                              return <SourcePill key={si} src={src} />
+                            })}
+                          </div>
+                        )
                       })()}
                       {m.role === 'assistant' && m.id && (() => {
                         const fb = feedbackState[m.id] || {}
@@ -568,9 +881,52 @@ export default function GlobalChatbot() {
                               style={{ background: 'none', border: 'none', cursor: fb.submitted ? 'default' : 'pointer', padding: 2, display: 'inline-flex', color: fb.sentiment === 'thumbs_down' ? T.error : T.textMuted, opacity: fb.sentiment === 'thumbs_down' ? 1 : 0.5 }}>
                               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"/></svg>
                             </button>
+                            {/* v20 Correct-this affordance — only on deal-context turns AND only for demo-org users.
+                                For other orgs the backend ignores correction_payload, so we hide the affordance to avoid confusion. */}
+                            {activeContextType === 'deal' && activeDealId && isDemoOrg && (
+                              <button title="Correct this — Lux will remember for this deal and an SME will validate" onClick={() => { setCorrectionFor({ messageId: m.id, originalText: m.content || '' }); setCorrectionText('') }}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, display: 'inline-flex', color: T.textMuted, opacity: 0.6, fontSize: 9, fontWeight: 600 }}>
+                                Correct
+                              </button>
+                            )}
+                            {/* SME: Ask-the-team affordance — always available. Prefills with the user's prior message (the thing Lux was answering). */}
+                            <button title="Ask the team — escalate to a human expert in your org" onClick={() => {
+                                // Prefill with the most recent user message preceding this assistant turn.
+                                const idx = messages.findIndex(x => x.id === m.id)
+                                let prior = ''
+                                for (let i = idx - 1; i >= 0; i--) { if (messages[i].role === 'user') { prior = messages[i].content || ''; break } }
+                                openAskSme(prior)
+                              }}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, display: 'inline-flex', color: T.textMuted, opacity: 0.6, fontSize: 9, fontWeight: 600 }}>
+                              Ask the team ↗
+                            </button>
                           </div>
                         )
                       })()}
+                      {/* SME: prominent inline card when Lux hedges OR the user explicitly asked to escalate. */}
+                      {m.role === 'assistant' && m.id && m.content && (() => {
+                        const luxHedged = LOW_CONFIDENCE_REGEX.test(m.content)
+                        // User-escalation trigger: look at the immediately preceding user message.
+                        const idx = messages.findIndex(x => x.id === m.id)
+                        let priorUser = ''
+                        for (let i = idx - 1; i >= 0; i--) { if (messages[i].role === 'user') { priorUser = messages[i].content || ''; break } }
+                        const userAskedToEscalate = USER_ESCALATION_REGEX.test(priorUser)
+                        return luxHedged || userAskedToEscalate
+                      })() && (
+                        <div style={{ marginTop: 8, padding: 10, borderRadius: 8, background: '#fef3c7', border: '1px solid #fcd34d' }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: '#92400e', marginBottom: 4 }}>Lux isn't sure — ask the team</div>
+                          <div style={{ fontSize: 10, color: '#92400e', marginBottom: 8, lineHeight: 1.4 }}>A teammate likely knows this. Submitting sends the question to an SME; you'll be notified when they answer, and the answer gets baked into Lux's knowledge for future asks.</div>
+                          <button onClick={() => {
+                              const idx = messages.findIndex(x => x.id === m.id)
+                              let prior = ''
+                              for (let i = idx - 1; i >= 0; i--) { if (messages[i].role === 'user') { prior = messages[i].content || ''; break } }
+                              openAskSme(prior)
+                            }}
+                            style={{ padding: '6px 14px', fontSize: 11, fontWeight: 700, borderRadius: 6, border: 'none', background: '#92400e', color: '#fff', cursor: 'pointer', fontFamily: T.font }}>
+                            Ask the team →
+                          </button>
+                        </div>
+                      )}
                       {m.role === 'assistant' && m.id && feedbackState[m.id]?.showPicker && !feedbackState[m.id]?.submitted && (
                         <div style={{ marginTop: 6, paddingTop: 6, borderTop: `1px solid ${T.borderLight}` }}>
                           <div style={{ fontSize: 10, color: T.textMuted, marginBottom: 4 }}>What was wrong?</div>
@@ -601,7 +957,9 @@ export default function GlobalChatbot() {
                         </div>
                       )
                     })()}
-                    {/* Report drafts emitted by the assistant */}
+                    {/* Report drafts emitted by the assistant — v22 defense in depth: when
+                        the org has reports disabled, do not render the cards even if a stray
+                        ```report``` block or build_report action somehow emitted. */}
                     {m.role === 'assistant' && (() => {
                       const toolDrafts = (m.actions_taken || [])
                         .filter(a => a.type === 'build_report' && a.result?.success !== false)
@@ -612,6 +970,10 @@ export default function GlobalChatbot() {
                         ...legacyDrafts.map(c => ({ config: c, preview: null })),
                       ]
                       if (!drafts.length) return null
+                      if (enableChatReports === false) {
+                        console.debug('[Lux] Report block emitted but reports disabled for org')
+                        return null
+                      }
                       return (
                         <div style={{ maxWidth: '85%', marginTop: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
                           {drafts.map((d, di) => (
@@ -627,10 +989,47 @@ export default function GlobalChatbot() {
                     })()}
                   </div>
                 ))}
-                {sending && (
+                {/* PR A: 3-dot pulsing thinking indicator, gated on a 200ms debounce. */}
+                {showThinking && (
                   <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: 10 }}>
-                    <div style={{ padding: '8px 14px', borderRadius: '10px 10px 10px 2px', background: T.surfaceAlt, border: `1px solid ${T.borderLight}` }}>
-                      <span style={{ fontSize: 11, color: T.textMuted }}>thinking...</span>
+                    <div style={{ padding: '4px 12px', borderRadius: '10px 10px 10px 2px', background: T.surfaceAlt, border: `1px solid ${T.borderLight}` }}>
+                      <ThinkingDots />
+                    </div>
+                  </div>
+                )}
+                {/* PR B: auto-focus decision cards — switch suggestion + clarifying question. */}
+                {pendingFocusCard?.type === 'switch_suggestion' && !sending && (
+                  <div style={{ marginBottom: 10, padding: 12, background: T.surface, border: `1px solid ${T.primary}40`, borderRadius: 10 }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: T.primary, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>One quick check</div>
+                    <div style={{ fontSize: 12, color: T.text, lineHeight: 1.5, marginBottom: 10 }}>
+                      Looks like you're asking about <strong>{pendingFocusCard.suggested.company_name}</strong>, not <strong>{pendingFocusCard.current_focused.company_name}</strong>. Switch deals?
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <button onClick={() => focusCardChoice('switch')} style={{ flex: '1 1 auto', padding: '7px 12px', fontSize: 11, fontWeight: 700, borderRadius: 6, border: 'none', background: T.primary, color: '#fff', cursor: 'pointer', fontFamily: T.font }}>
+                        Switch to {pendingFocusCard.suggested.company_name}
+                      </button>
+                      <button onClick={() => focusCardChoice('keep')} style={{ flex: '1 1 auto', padding: '7px 12px', fontSize: 11, fontWeight: 600, borderRadius: 6, border: `1px solid ${T.border}`, background: T.surface, color: T.textSecondary, cursor: 'pointer', fontFamily: T.font }}>
+                        Keep {pendingFocusCard.current_focused.company_name}, answer anyway
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {pendingFocusCard?.type === 'clarifying_question' && !sending && (
+                  <div style={{ marginBottom: 10, padding: 12, background: T.surface, border: `1px solid ${T.primary}40`, borderRadius: 10 }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: T.primary, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Help me focus</div>
+                    <div style={{ fontSize: 12, color: T.text, lineHeight: 1.5, marginBottom: 10 }}>
+                      Sounds like you're asking about <strong>{pendingFocusCard.suggested_deal.company_name}</strong> — should I focus there?
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <button onClick={() => focusCardChoice('clarify_yes')} style={{ padding: '7px 12px', fontSize: 11, fontWeight: 700, borderRadius: 6, border: 'none', background: T.primary, color: '#fff', cursor: 'pointer', fontFamily: T.font }}>
+                        Yes, focus there
+                      </button>
+                      <button onClick={() => focusCardChoice('clarify_no')} style={{ padding: '7px 12px', fontSize: 11, fontWeight: 600, borderRadius: 6, border: `1px solid ${T.border}`, background: T.surface, color: T.textSecondary, cursor: 'pointer', fontFamily: T.font }}>
+                        No, answer without focusing
+                      </button>
+                      <button onClick={() => focusCardChoice('clarify_pick')} style={{ padding: '7px 12px', fontSize: 11, fontWeight: 600, borderRadius: 6, border: `1px solid ${T.border}`, background: T.surface, color: T.textSecondary, cursor: 'pointer', fontFamily: T.font }}>
+                        Different deal
+                      </button>
                     </div>
                   </div>
                 )}
@@ -652,6 +1051,66 @@ export default function GlobalChatbot() {
 
       {/* Beta feedback modal (rendered outside panel so it isn't clipped) */}
       {feedbackModalOpen && <BetaFeedbackModal onClose={() => setFeedbackModalOpen(false)} />}
+
+      {/* v20 Correct-this modal */}
+      {correctionFor && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={() => !correctionSubmitting && setCorrectionFor(null)}>
+          <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 520, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: 18, fontFamily: T.font }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 6 }}>Correct this answer</div>
+            <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 10, lineHeight: 1.5 }}>Lux will remember the correction for this deal. An SME will be asked to validate so it can become org-wide knowledge.</div>
+            <div style={{ fontSize: 10, color: T.textMuted, marginBottom: 4, textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.04em' }}>What Lux said</div>
+            <div style={{ fontSize: 11, color: T.textSecondary, background: T.surfaceAlt, border: `1px solid ${T.borderLight}`, borderRadius: 6, padding: '8px 10px', marginBottom: 10, maxHeight: 100, overflow: 'auto', whiteSpace: 'pre-wrap' }}>{(correctionFor.originalText || '').slice(0, 800)}{(correctionFor.originalText || '').length > 800 ? '…' : ''}</div>
+            <div style={{ fontSize: 10, color: T.textMuted, marginBottom: 4, textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.04em' }}>Your correction</div>
+            <textarea value={correctionText} onChange={e => setCorrectionText(e.target.value)} autoFocus placeholder="What's actually correct? Be specific — Lux will keep this for the deal."
+              style={{ width: '100%', minHeight: 90, padding: '8px 10px', fontSize: 12, border: `1px solid ${T.border}`, borderRadius: 6, background: T.surface, color: T.text, fontFamily: T.font, resize: 'vertical' }} />
+            <div style={{ display: 'flex', gap: 8, marginTop: 12, justifyContent: 'flex-end' }}>
+              <button onClick={() => setCorrectionFor(null)} disabled={correctionSubmitting}
+                style={{ padding: '6px 14px', fontSize: 11, border: `1px solid ${T.border}`, borderRadius: 6, background: T.surface, color: T.textMuted, cursor: correctionSubmitting ? 'default' : 'pointer', fontFamily: T.font }}>Cancel</button>
+              <button onClick={submitCorrection} disabled={correctionSubmitting || !correctionText.trim()}
+                style={{ padding: '6px 14px', fontSize: 11, fontWeight: 700, border: 'none', borderRadius: 6, background: correctionSubmitting || !correctionText.trim() ? T.borderLight : T.primary, color: '#fff', cursor: correctionSubmitting || !correctionText.trim() ? 'default' : 'pointer', fontFamily: T.font }}>
+                {correctionSubmitting ? 'Submitting…' : 'Submit correction'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* v20 correction toast */}
+      {correctionToast && (
+        <div style={{
+          position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
+          padding: '10px 16px', borderRadius: 10, background: correctionToast.kind === 'ok' ? T.primary : (T.error || '#e74c3c'),
+          color: '#fff', fontSize: 12, fontWeight: 600, fontFamily: T.font, boxShadow: '0 6px 20px rgba(0,0,0,0.2)', zIndex: 70, maxWidth: 460,
+        }}>{correctionToast.text}</div>
+      )}
+
+      {/* SME Ask-the-team modal */}
+      {askSmeOpen && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={() => !askSmeSubmitting && setAskSmeOpen(false)}>
+          <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 520, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: 18, fontFamily: T.font }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 6 }}>Ask the team</div>
+            <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 10, lineHeight: 1.5 }}>Send this question to an internal SME for an authoritative answer. They'll be routed automatically based on the topic. When they mark it helpful, the answer flows into Lux's long-term knowledge for the whole org.</div>
+            <textarea value={askSmePrefill} onChange={e => setAskSmePrefill(e.target.value)} autoFocus placeholder="Phrase your question…"
+              style={{ width: '100%', minHeight: 110, padding: '8px 10px', fontSize: 12, border: `1px solid ${T.border}`, borderRadius: 6, background: T.surface, color: T.text, fontFamily: T.font, resize: 'vertical' }} />
+            <div style={{ display: 'flex', gap: 8, marginTop: 12, justifyContent: 'flex-end' }}>
+              <button onClick={() => setAskSmeOpen(false)} disabled={askSmeSubmitting}
+                style={{ padding: '6px 14px', fontSize: 11, border: `1px solid ${T.border}`, borderRadius: 6, background: T.surface, color: T.textMuted, cursor: askSmeSubmitting ? 'default' : 'pointer', fontFamily: T.font }}>Cancel</button>
+              <button onClick={submitAskSme} disabled={askSmeSubmitting || !askSmePrefill.trim()}
+                style={{ padding: '6px 14px', fontSize: 11, fontWeight: 700, border: 'none', borderRadius: 6, background: askSmeSubmitting || !askSmePrefill.trim() ? T.borderLight : T.primary, color: '#fff', cursor: askSmeSubmitting || !askSmePrefill.trim() ? 'default' : 'pointer', fontFamily: T.font }}>
+                {askSmeSubmitting ? 'Sending…' : 'Send to SME'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {askSmeToast && (
+        <div style={{
+          position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
+          padding: '10px 16px', borderRadius: 10, background: askSmeToast.kind === 'ok' ? '#a855f7' : (T.error || '#e74c3c'),
+          color: '#fff', fontSize: 12, fontWeight: 600, fontFamily: T.font, boxShadow: '0 6px 20px rgba(0,0,0,0.2)', zIndex: 70, maxWidth: 460,
+        }}>{askSmeToast.text}</div>
+      )}
     </>
   )
 }
