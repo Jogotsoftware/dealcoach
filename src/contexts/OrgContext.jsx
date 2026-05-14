@@ -69,6 +69,20 @@ export function OrgProvider({ children }) {
   // v22 Lux reports: org kill switch (default FALSE — opt-in only while quality
   // issues are unresolved).
   const enableChatReports = org ? org.enable_chat_reports === true : false
+  // Demo-org gate — the v22/v23 Lux chat features (web search pill,
+  // Correct-this affordance, auto-focus card UI) only render for users in
+  // demo orgs. Other orgs see the baseline chat surface.
+  //   0acebff8 = Intacct - Direct - NA
+  //   c8a7ea52 = Sage Intacct — Demo
+  const DEMO_ORG_IDS = new Set([
+    '0acebff8-8827-4984-b478-cbcad404539d',
+    'c8a7ea52-42b8-4b66-9d38-91c9b1dda883',
+  ])
+  const isDemoOrg = !!org?.id && DEMO_ORG_IDS.has(org.id)
+  // Per-org performance benchmarks (head of sales sets these on /my-goals).
+  // Always returns an object; empty {} if not yet configured. Dashboard tiles
+  // call benchmarks.win_rate ?? FALLBACK_DEFAULT to avoid undefined math.
+  const benchmarks = org?.benchmarks && typeof org.benchmarks === 'object' ? org.benchmarks : {}
 
   return (
     <OrgContext.Provider value={{
@@ -77,6 +91,8 @@ export function OrgProvider({ children }) {
       fyEndMonth, fyEndDay,
       allowChatWebSearch,
       enableChatReports,
+      isDemoOrg,
+      benchmarks,
       refreshOrg: loadOrg, loading,
     }}>
       {children}

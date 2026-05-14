@@ -581,7 +581,7 @@ export default function ManagerDashboard() {
           return out
         }
         const [profRows, dealRows, predRows, perfRows] = await Promise.all([
-          fetchAllPaged(() => supabase.from('profiles').select('id, full_name, email, manager_id, role_level, role, segment, team, annual_quota, metadata').eq('org_id', orgId)),
+          fetchAllPaged(() => supabase.from('profiles').select('id, full_name, email, manager_id, role_level, role, segment, team, annual_quota, goal_monthly, goal_quarterly, goal_annual, metadata').eq('org_id', orgId)),
           fetchAllPaged(() => supabase.from('deals').select('id, rep_id, company_name, stage, forecast_category, deal_value, target_close_date, closed_at, created_at, stage_changed_at, fit_score, deal_health_score, source').eq('org_id', orgId)),
           fetchAllPaged(() => supabase.from('deal_forecast_predictions').select('deal_id, predicted_close_probability, predicted_forecast_category, key_factors').eq('org_id', orgId)),
           fetchAllPaged(() => supabase.from('rep_historical_performance').select('rep_id, fiscal_period, total_bookings, rep_forecast_variance, win_rate, avg_cycle_days_won, avg_discovery_depth_score, avg_compelling_event_coverage, avg_msp_completion_at_close, avg_transcripts_per_won_deal').eq('org_id', orgId)),

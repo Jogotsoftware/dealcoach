@@ -36,6 +36,8 @@ function NavIcon({ k }) {
     bdr_submit: <><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></>,
     bdr_leads:  <><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></>,
     coach: <><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></>,
+    // Benchmarks / Goals — trophy
+    goals: <><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></>,
   }
   const child = paths[k]
   if (!child) return <span style={{ display: 'inline-block', width: 18, height: 18 }} />
@@ -129,13 +131,16 @@ export default function Layout() {
       { to: '/team',      iconKey: 'team',        label: 'Team',      show: true },
       { to: '/coach',     iconKey: 'coach_admin', label: 'Coach Admin', show: hasModule('coach_customization') },
       { to: '/reports',   iconKey: 'reports',     label: 'Reports',   show: hasModule('reports') },
-      { to: '/my-goals',  iconKey: 'goals',       label: 'My Goals',  show: true },
+      // "Benchmarks & Goals" — manager-only page where the head of sales
+      // sets the targets every dashboard tile measures against.
+      { to: '/my-goals',  iconKey: 'goals',       label: 'Benchmarks',  show: true },
       { to: '/settings',  iconKey: 'settings',    label: 'Settings',  show: true },
     ] : [
       { to: '/',          iconKey: 'home',        label: 'Home',      show: hasModule('pipeline') },
       { to: '/coach',     iconKey: 'coach',       label: 'Coach',     show: hasModule('coach_customization') },
       { to: '/reports',   iconKey: 'reports',     label: 'Reports',   show: hasModule('reports') },
-      { to: '/my-goals',  iconKey: 'goals',       label: 'My Goals',  show: true },
+      // Benchmarks page is leadership-only; AEs don't see it. Their personal
+      // stretch lives on Settings → My Goals (separate concept).
       { to: '/settings',  iconKey: 'settings',    label: 'Settings',  show: true },
     ]},
     { label: 'SME', show: !isManager, items: [
