@@ -38,6 +38,8 @@ function NavIcon({ k }) {
     coach: <><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></>,
     // Benchmarks / Goals — trophy
     goals: <><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></>,
+    // Analyze — staggered bars (waterfall feel)
+    analyze: <><path d="M3 3v18h18"/><rect x="6" y="11" width="3" height="7" rx="0.5"/><rect x="11" y="7" width="3" height="11" rx="0.5"/><rect x="16" y="13" width="3" height="5" rx="0.5"/></>,
   }
   const child = paths[k]
   if (!child) return <span style={{ display: 'inline-block', width: 18, height: 18 }} />
@@ -147,6 +149,7 @@ export default function Layout() {
       { to: '/pipeline',  iconKey: 'pipeline',    label: 'Pipeline',  show: true },
       { to: '/execution', iconKey: 'execution',   label: 'Execution', show: true },
       { to: '/coaching',  iconKey: 'coaching',    label: 'Coaching',  show: true },
+      { to: '/analyze',   iconKey: 'analyze',     label: 'Analyze',   show: true },
       { to: '/team',      iconKey: 'team',        label: 'Team',      show: true },
       { to: '/coach',     iconKey: 'coach_admin', label: 'Coach Admin', show: hasModule('coach_customization') },
       { to: '/reports',   iconKey: 'reports',     label: 'Reports',   show: hasModule('reports') },

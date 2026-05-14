@@ -146,6 +146,7 @@ export default function App() {
                 <Route path="/pipeline"  element={<ErrorBoundary label="pipeline"><ManagerDashboard /></ErrorBoundary>} />
                 <Route path="/execution" element={<ErrorBoundary label="execution"><ManagerDashboard /></ErrorBoundary>} />
                 <Route path="/coaching"  element={<ErrorBoundary label="coaching"><ManagerDashboard /></ErrorBoundary>} />
+                <Route path="/analyze"   element={<ErrorBoundary label="analyze"><ManagerDashboard /></ErrorBoundary>} />
                 <Route path="/team"      element={<ErrorBoundary label="team"><ManagerDashboard /></ErrorBoundary>} />
                 <Route path="/my-goals"  element={<ErrorBoundary label="my goals"><MyGoals /></ErrorBoundary>} />
                 <Route path="/deal/new" element={<ErrorBoundary label="new deal"><NewDeal /></ErrorBoundary>} />
