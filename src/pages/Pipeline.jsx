@@ -9,6 +9,7 @@ import {
   formatCurrency, formatDate, daysUntil, pctOf, getNext3Months, getFiscalPeriods, getFiscalYear, getFiscalQuarter,
 } from '../lib/theme'
 import { Badge, ForecastBadge, StageBadge, ScoreBar, StatusDot, Spinner, Button } from '../components/Shared'
+import DealChat from '../components/DealChat'
 import TranscriptUpload from '../components/TranscriptUpload'
 import CompanyLogo from '../components/CompanyLogo'
 import WidgetRenderer from '../components/WidgetRenderer'
@@ -111,6 +112,7 @@ function getARR(deal) { return deal.deal_value || (deal.cmrr ? deal.cmrr * 12 : 
 export default function Pipeline() {
   const { profile } = useAuth()
   const { fyEndMonth } = useOrg()
+  const [pipelineChatOpen, setPipelineChatOpen] = useState(false)
   const navigate = useNavigate()
   // Pilot AEs see only the Pipeline widget — no dashboard chrome, no other widgets.
   const isDealRoomOnly = profile?.access_mode === 'dealroom_only'
@@ -127,6 +129,14 @@ export default function Pipeline() {
 
   // Filters
   const [dealFilter, setDealFilter] = useState('my')
+  // Manager detection — head_of_sales/avp/rvp see org-wide pipeline by default
+  // and can drill into a specific rep via the dropdown.
+  const isManager = !!profile && (
+    ['head_of_sales','avp','rvp'].includes(profile.role_level) ||
+    ['admin','system_admin','manager'].includes(profile.role)
+  )
+  const [drillRepId, setDrillRepId] = useState(null)
+  const [orgReps, setOrgReps] = useState([])
   const [forecastPeriod, setForecastPeriod] = useState('full')
   const [pipelineView, setPipelineViewState] = useState(() => {
     try { return localStorage.getItem('ri_pipeline_view') || 'kanban' } catch { return 'kanban' }
@@ -212,13 +222,30 @@ export default function Pipeline() {
     return () => timers.forEach(clearTimeout)
   }, [])
 
-  useEffect(() => { if (profile) loadData() }, [profile, dealFilter])
+  useEffect(() => { if (profile) loadData() }, [profile, dealFilter, drillRepId, isManager])
+
+  // Load org AEs for the manager rep-selector dropdown.
+  useEffect(() => {
+    if (!isManager || !profile?.org_id) { setOrgReps([]); return }
+    async function loadReps() {
+      const { data } = await supabase.from('profiles')
+        .select('id, full_name, email, role_level')
+        .eq('org_id', profile.org_id)
+        .eq('role_level', 'ae')
+        .order('full_name')
+      setOrgReps(data || [])
+    }
+    loadReps()
+  }, [isManager, profile?.org_id])
 
   async function loadData() {
     setLoading(true)
     try {
       let dq = supabase.from('deals').select('*, company_profile(logo_url)')
-      if (dealFilter === 'all' && profile.org_id) dq = dq.eq('org_id', profile.org_id)
+      // Precedence: drill-into-rep > manager-org-wide > existing 'all' > own deals.
+      if (drillRepId) dq = dq.eq('rep_id', drillRepId)
+      else if (isManager && profile.org_id) dq = dq.eq('org_id', profile.org_id)
+      else if (dealFilter === 'all' && profile.org_id) dq = dq.eq('org_id', profile.org_id)
       else dq = dq.eq('rep_id', profile.id)
 
       const [dealsRes, tasksRes, quotaRes, csRes, actRes] = await Promise.all([
@@ -876,27 +903,51 @@ export default function Pipeline() {
   if (loading) return <Spinner />
 
   // Empty state — brand new user with zero deals: guide them to the first action.
-  if (!deals.length) return (
+  // Managers never see the rep-onboarding empty state (their org has deals).
+  // Beta users (isDealRoomOnly) see a tailored "Beta Testing Mode" card instead of
+  // the full-access onboarding flow — no Configure Coach button, no transcript talk.
+  if (!deals.length && !isManager) return (
     <div style={{ padding: '16px 24px' }}>
       <div style={{ padding: '16px 24px', paddingRight: 72, borderBottom: '1px solid ' + T.border, display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: T.surface, marginLeft: -24, marginRight: -24, marginTop: -16, marginBottom: 24 }}>
-        <h1 style={{ fontSize: 18, fontWeight: 800, margin: 0, color: T.text }}>Pipeline</h1>
+        <h1 style={{ fontSize: 18, fontWeight: 800, margin: 0, color: T.text }}>{isDealRoomOnly ? 'Home' : 'Pipeline'}</h1>
       </div>
       <div style={{ maxWidth: 640, margin: '40px auto', background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: 32, boxShadow: T.shadow }}>
-        <div style={{ fontSize: 10, fontWeight: 800, color: T.primary, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Welcome</div>
-        <div style={{ fontSize: 22, fontWeight: 800, color: T.text, marginBottom: 8 }}>Let's get your first deal in</div>
-        <div style={{ fontSize: 13, color: T.textSecondary, lineHeight: 1.6, marginBottom: 20 }}>
-          Deals work best once they have a company name + website. We'll research the company in the background, and once you upload your first transcript, coaching insights, pain points, and tasks flow in automatically.
-        </div>
-        <ol style={{ margin: 0, paddingLeft: 20, fontSize: 13, color: T.text, lineHeight: 1.8 }}>
-          <li>Create your first deal (company name + website is enough)</li>
-          <li>We auto-research the company — usually 20–30 seconds</li>
-          <li>Upload a call transcript (.txt / .vtt / .srt, or paste text)</li>
-          <li>Coaching, scores, contacts, and tasks land on the deal page</li>
-        </ol>
-        <div style={{ display: 'flex', gap: 10, marginTop: 24 }}>
-          <button onClick={() => navigate('/deal/new')} style={{ padding: '10px 20px', background: T.primary, color: '#fff', border: 'none', borderRadius: 6, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: T.font }}>Create first deal →</button>
-          <button onClick={() => navigate('/coach')} style={{ padding: '10px 20px', background: T.surface, color: T.text, border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: T.font }}>Configure coach first</button>
-        </div>
+        {isDealRoomOnly ? (
+          <>
+            <div style={{ fontSize: 10, fontWeight: 800, color: T.primary, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Beta Testing Mode</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: T.text, marginBottom: 12 }}>Welcome to the Lumen beta</div>
+            <div style={{ fontSize: 13, color: T.textSecondary, lineHeight: 1.65, marginBottom: 16 }}>
+              You currently only have access to the Deal Room &amp; Client Evaluation Room. This is meant to make it easier to build and share proposals, project plans, and valuable content for your prospects.
+            </div>
+            <div style={{ fontSize: 13, color: T.textSecondary, lineHeight: 1.65, marginBottom: 16 }}>
+              We value your feedback. The sooner we have user acceptance on the first tool, the sooner we can release call intelligence, an AI sales assistant, Salesforce admin automation, and the rest of the AI-powered tools we're working on.
+            </div>
+            <div style={{ fontSize: 13, fontStyle: 'italic', color: T.textSecondary, marginBottom: 24 }}>
+              — Always Be Curious
+            </div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => navigate('/deal/new')} style={{ padding: '10px 20px', background: T.primary, color: '#fff', border: 'none', borderRadius: 6, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: T.font }}>Create your first deal →</button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ fontSize: 10, fontWeight: 800, color: T.primary, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Welcome</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: T.text, marginBottom: 8 }}>Let's get your first deal in</div>
+            <div style={{ fontSize: 13, color: T.textSecondary, lineHeight: 1.6, marginBottom: 20 }}>
+              Deals work best once they have a company name + website. We'll research the company in the background, and once you upload your first transcript, coaching insights, pain points, and tasks flow in automatically.
+            </div>
+            <ol style={{ margin: 0, paddingLeft: 20, fontSize: 13, color: T.text, lineHeight: 1.8 }}>
+              <li>Create your first deal (company name + website is enough)</li>
+              <li>We auto-research the company — usually 20–30 seconds</li>
+              <li>Upload a call transcript (.txt / .vtt / .srt, or paste text)</li>
+              <li>Coaching, scores, contacts, and tasks land on the deal page</li>
+            </ol>
+            <div style={{ display: 'flex', gap: 10, marginTop: 24 }}>
+              <button onClick={() => navigate('/deal/new')} style={{ padding: '10px 20px', background: T.primary, color: '#fff', border: 'none', borderRadius: 6, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: T.font }}>Create first deal →</button>
+              <button onClick={() => navigate('/coach')} style={{ padding: '10px 20px', background: T.surface, color: T.text, border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: T.font }}>Configure coach first</button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   )
@@ -917,7 +968,27 @@ export default function Pipeline() {
           header doesn't read as a thin strip jammed against the New Deal button. */}
       <div style={{ padding: isDealRoomOnly ? '18px 24px' : '12px 24px 0', paddingRight: 72, borderBottom: '1px solid ' + T.border, background: T.surface }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-          <h1 style={{ fontSize: 18, fontWeight: 800, margin: 0, color: T.text }}>Home</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1 }}>
+            <h1 style={{ fontSize: 18, fontWeight: 800, margin: 0, color: T.text }}>
+              {drillRepId ? `${orgReps.find(r => r.id === drillRepId)?.full_name || 'Rep'}'s Pipeline` : isManager ? 'Org Pipeline' : 'Home'}
+            </h1>
+            {isManager && (
+              <select
+                value={drillRepId || ''}
+                onChange={e => setDrillRepId(e.target.value || null)}
+                style={{
+                  padding: '6px 10px', borderRadius: 6, border: `1px solid ${T.border}`,
+                  background: T.surfaceAlt, color: T.text, fontFamily: T.font, fontSize: 13, fontWeight: 600,
+                  cursor: 'pointer', maxWidth: 240,
+                }}
+              >
+                <option value="">Org-wide ({orgReps.length} reps)</option>
+                {orgReps.map(r => (
+                  <option key={r.id} value={r.id}>{r.full_name}</option>
+                ))}
+              </select>
+            )}
+          </div>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             {isDealRoomOnly ? (
               // Beta users only ever do one action from here — skip the +menu
@@ -1165,6 +1236,32 @@ function DashboardTabView({ dashboard, customWidgetDefs, profile, onManage }) {
             )
           })}
         </div>
+      )}
+
+      {/* Floating "Ask Lumen" pipeline-scope chat trigger */}
+      <button
+        onClick={() => setPipelineChatOpen(true)}
+        title="Ask Lumen about your pipeline"
+        style={{
+          position: 'fixed', bottom: 24, right: 24, zIndex: 1090,
+          width: 56, height: 56, borderRadius: '50%',
+          background: T.primary, color: '#fff', border: 'none',
+          cursor: 'pointer', boxShadow: '0 6px 20px rgba(93,173,226,0.45)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontFamily: T.font, fontSize: 13, fontWeight: 700,
+        }}
+      >
+        Ask
+      </button>
+      {profile?.id && (
+        <DealChat
+          scope="pipeline"
+          dealId={null}
+          userId={drillRepId || profile.id}
+          orgId={profile.org_id}
+          isOpen={pipelineChatOpen}
+          onClose={() => setPipelineChatOpen(false)}
+        />
       )}
     </div>
   )
