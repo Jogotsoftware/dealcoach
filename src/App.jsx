@@ -51,9 +51,11 @@ function AppLoadingSkeleton() {
       alignItems: 'center', justifyContent: 'center', background: '#fff',
       fontFamily: T.font,
     }}>
-      <div style={{ fontSize: 18, fontWeight: 700, color: T.text,
-        marginBottom: 24, letterSpacing: '-0.02em' }}>
-        Revenue Instruments
+      <img src="/lumen-logo.svg" alt="Lumen"
+        style={{ width: 64, height: 64, objectFit: 'contain', marginBottom: 18 }} />
+      <div style={{ fontSize: 13, color: T.textSecondary, fontStyle: 'italic',
+        marginBottom: 18, letterSpacing: '0.01em' }}>
+        Finding the light at the end of the tunnel…
       </div>
       <div style={{ width: 200, height: 3, background: T.border,
         borderRadius: 2, overflow: 'hidden' }}>
