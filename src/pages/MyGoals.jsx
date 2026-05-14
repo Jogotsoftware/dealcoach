@@ -314,67 +314,134 @@ export default function MyGoals() {
   }
 
   return (
-    <div style={{ padding: '32px 40px', maxWidth: 1100, margin: '0 auto', fontFamily: T.font, color: T.text }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 6 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 600, margin: 0 }}>Benchmarks & Goals</h1>
-        <div style={{ fontSize: 13, color: T.textMuted }}>{org?.name || ''}</div>
-      </div>
-      <div style={{ fontSize: 13, color: T.textMuted, lineHeight: 1.55, marginBottom: 24, maxWidth: 720 }}>
-        These are the bars every dashboard tile compares against. Numbers shown next to each input
-        are <strong style={{ color: T.text }}>your team's current actuals</strong> — set targets in
-        context, not in a vacuum. Changes apply org-wide as soon as you save.
+    <div style={{ padding: '40px 48px 96px', maxWidth: 1180, margin: '0 auto', fontFamily: T.font, color: T.text, background: '#F5F7FA', minHeight: '100vh' }}>
+      {/* Hero header */}
+      <div style={{ marginBottom: 28 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8 }}>
+          <h1 style={{ fontSize: 28, fontWeight: 700, margin: 0, letterSpacing: '-0.5px', color: '#2C3E50' }}>Benchmarks & Goals</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#8A99AB' }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#27AE60' }} />
+            {org?.name || ''}
+          </div>
+        </div>
+        <div style={{ fontSize: 13, color: '#5B6B7B', lineHeight: 1.6, maxWidth: 740 }}>
+          The bars every dashboard tile measures against. The number on the right of each row is{' '}
+          <strong style={{ color: '#2C3E50' }}>your team's current actual</strong> — colored green when
+          you're hitting the bar, red when you're not. Set targets in context, not in a vacuum.
+        </div>
       </div>
 
       {SECTIONS.map(section => (
-        <section key={section.label} style={{ marginBottom: 28 }}>
-          <div style={{ marginBottom: 10 }}>
-            <h2 style={{ fontSize: 12, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.08em', margin: 0 }}>{section.label}</h2>
-            {section.desc && <div style={{ fontSize: 12, color: T.textMuted, marginTop: 2 }}>{section.desc}</div>}
+        <section key={section.label} style={{ marginBottom: 24 }}>
+          <div style={{ marginBottom: 12, paddingLeft: 4 }}>
+            <h2 style={{ fontSize: 11, fontWeight: 700, color: '#5DADE2', textTransform: 'uppercase', letterSpacing: '0.1em', margin: 0 }}>{section.label}</h2>
+            {section.desc && <div style={{ fontSize: 12, color: '#8A99AB', marginTop: 3 }}>{section.desc}</div>}
           </div>
-          <div style={{ background: T.surface, border: `0.5px solid ${T.border}`, borderRadius: 12, overflow: 'hidden' }}>
+          <div style={{ background: '#FFFFFF', border: '0.5px solid #E1E8ED', borderRadius: 14, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
             {section.metrics.map((m, i) => {
               const a = actuals?.[m.key]
               const last = i === section.metrics.length - 1
+              const draftVal = draft[m.key] ?? ''
+              const targetNum = parseInput(m.type, draftVal)
+              // Status color for the actual: green if at/above target, red if below.
+              // For "lower is better" metrics (talk_ratio, cycle_days, single_thread_max,
+              // slip_risk_count, stale_count) flip the comparison.
+              const lowerIsBetter = ['cycle_days','talk_ratio_target','single_thread_pct_max','slip_risk_acceptable_count','stale_acceptable_count','sv_qualify_to_discovery','sv_discovery_to_solval','sv_solval_to_confval','sv_confval_to_selection','sv_selection_to_close'].includes(m.key)
+              let statusColor = '#8A99AB'
+              let statusBg = 'transparent'
+              if (a?.current != null && targetNum != null) {
+                const passing = lowerIsBetter ? a.current <= targetNum : a.current >= targetNum
+                const margin = lowerIsBetter ? (targetNum - a.current) / Math.abs(targetNum || 1) : (a.current - targetNum) / Math.abs(targetNum || 1)
+                if (passing) { statusColor = '#27AE60'; statusBg = '#E8F8EE' }
+                else if (margin > -0.15) { statusColor = '#F39C12'; statusBg = '#FFF4E0' }
+                else { statusColor = '#E74C3C'; statusBg = '#FDECEA' }
+              }
               return (
                 <div key={m.key} style={{
-                  display: 'grid', gridTemplateColumns: '2fr 1fr 1.5fr', gap: 18, alignItems: 'center',
-                  padding: '14px 18px', borderBottom: last ? 'none' : `0.5px solid ${T.borderLight}`,
-                }}>
+                  display: 'grid', gridTemplateColumns: '1.6fr 200px 160px', gap: 24, alignItems: 'center',
+                  padding: '16px 20px', borderBottom: last ? 'none' : '0.5px solid #EDF2F7',
+                  transition: 'background 0.12s',
+                }}
+                  onMouseEnter={e => { e.currentTarget.style.background = '#FAFBFC' }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}>
+                  {/* Label + description */}
                   <div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{m.label}</div>
-                    {m.desc && <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>{m.desc}</div>}
+                    <div style={{ fontSize: 14, fontWeight: 600, color: '#2C3E50', marginBottom: 2 }}>{m.label}</div>
+                    {m.desc && <div style={{ fontSize: 11.5, color: '#8A99AB', lineHeight: 1.5 }}>{m.desc}</div>}
                   </div>
+
+                  {/* Input — clean styling, prefix/suffix doesn't overlap value */}
                   <div style={{ position: 'relative' }}>
-                    {m.type === 'money' && <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: T.textMuted, fontSize: 13 }}>$</span>}
+                    {m.type === 'money' && (
+                      <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#8A99AB', fontSize: 14, fontWeight: 500, pointerEvents: 'none' }}>$</span>
+                    )}
                     <input
                       type="text"
                       inputMode="decimal"
-                      value={draft[m.key] ?? ''}
+                      value={draftVal}
                       onChange={e => setDraft(d => ({ ...d, [m.key]: e.target.value }))}
                       placeholder="—"
                       style={{
-                        width: '100%', padding: m.type === 'money' ? '9px 12px 9px 22px' : '9px 12px',
-                        fontSize: 14, fontWeight: 600,
-                        border: `1px solid ${T.border}`, borderRadius: 6,
-                        background: T.surface, color: T.text, fontFamily: T.font, textAlign: 'right',
+                        width: '100%',
+                        padding: m.type === 'money'
+                          ? '11px 44px 11px 26px'
+                          : (['pct','days','score'].includes(m.type) || (m.type === 'ratio' && m.suffix))
+                            ? '11px 44px 11px 14px'
+                            : '11px 14px',
+                        fontSize: 15, fontWeight: 600,
+                        border: '1px solid #D0D7DE', borderRadius: 8,
+                        background: '#FFFFFF', color: '#2C3E50', fontFamily: T.font, textAlign: 'right',
+                        outline: 'none', transition: 'border 0.15s, box-shadow 0.15s',
                       }}
+                      onFocus={e => { e.currentTarget.style.borderColor = '#5DADE2'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(93,173,226,0.12)' }}
+                      onBlur={e => { e.currentTarget.style.borderColor = '#D0D7DE'; e.currentTarget.style.boxShadow = 'none' }}
                     />
-                    {m.type === 'pct' && <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: T.textMuted, fontSize: 12 }}>%</span>}
-                    {m.type === 'days' && <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: T.textMuted, fontSize: 12 }}>d</span>}
-                    {m.type === 'ratio' && m.suffix && <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: T.textMuted, fontSize: 12 }}>{m.suffix}</span>}
-                    {m.type === 'score' && <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: T.textMuted, fontSize: 12 }}>/10</span>}
+                    {m.type === 'pct' && (
+                      <span style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', color: '#8A99AB', fontSize: 13, fontWeight: 500, pointerEvents: 'none' }}>%</span>
+                    )}
+                    {m.type === 'days' && (
+                      <span style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', color: '#8A99AB', fontSize: 13, fontWeight: 500, pointerEvents: 'none' }}>days</span>
+                    )}
+                    {m.type === 'ratio' && m.suffix && (
+                      <span style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', color: '#8A99AB', fontSize: 13, fontWeight: 500, pointerEvents: 'none' }}>{m.suffix}</span>
+                    )}
+                    {m.type === 'score' && (
+                      <span style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', color: '#8A99AB', fontSize: 13, fontWeight: 500, pointerEvents: 'none' }}>/ 10</span>
+                    )}
                   </div>
-                  <div style={{ fontSize: 11, color: T.textMuted, lineHeight: 1.55 }}>
+
+                  {/* Today's actual — colored badge that signals pass/warn/fail */}
+                  <div>
                     {loadingActuals ? (
-                      <span style={{ color: T.textMuted }}>loading…</span>
-                    ) : a ? (
-                      <>
-                        <div><span style={{ color: T.textMuted }}>Today:</span> <strong style={{ color: T.text, fontWeight: 600 }}>{formatVal(m.type, a.current)}</strong></div>
-                        {a.lastQ != null && <div><span style={{ color: T.textMuted }}>Last Q:</span> <strong style={{ color: T.text, fontWeight: 600 }}>{formatVal(m.type, a.lastQ)}</strong></div>}
-                        {a.lastY != null && <div><span style={{ color: T.textMuted }}>Last yr:</span> <strong style={{ color: T.text, fontWeight: 600 }}>{formatVal(m.type, a.lastY)}</strong></div>}
-                      </>
+                      <div style={{ fontSize: 11, color: '#C5CED6' }}>loading…</div>
+                    ) : a?.current != null ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 10, color: '#8A99AB', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', minWidth: 38 }}>Today</span>
+                          <span style={{
+                            display: 'inline-flex', alignItems: 'center',
+                            padding: '4px 10px', borderRadius: 100,
+                            background: statusBg, color: statusColor,
+                            fontSize: 13, fontWeight: 700, lineHeight: 1.2,
+                          }}>
+                            {formatVal(m.type, a.current)}
+                          </span>
+                        </div>
+                        {a.lastQ != null && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontSize: 10, color: '#C5CED6', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em', minWidth: 38 }}>Last Q</span>
+                            <span style={{ fontSize: 12, color: '#5B6B7B', fontWeight: 500 }}>{formatVal(m.type, a.lastQ)}</span>
+                          </div>
+                        )}
+                        {a.lastY != null && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontSize: 10, color: '#C5CED6', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em', minWidth: 38 }}>Last yr</span>
+                            <span style={{ fontSize: 12, color: '#5B6B7B', fontWeight: 500 }}>{formatVal(m.type, a.lastY)}</span>
+                          </div>
+                        )}
+                      </div>
                     ) : (
-                      <span style={{ color: T.textMuted }}>no historical data</span>
+                      <div style={{ fontSize: 11, color: '#C5CED6', fontStyle: 'italic' }}>—</div>
                     )}
                   </div>
                 </div>
@@ -384,22 +451,28 @@ export default function MyGoals() {
         </section>
       ))}
 
-      {/* Sticky save bar */}
+      {/* Sticky save bar — sits above content with shadow lift */}
       <div style={{
-        position: 'sticky', bottom: 0, marginTop: 12,
-        background: T.surface, border: `0.5px solid ${T.border}`, borderRadius: 12,
-        padding: '12px 18px', display: 'flex', alignItems: 'center', gap: 12,
-        boxShadow: '0 -4px 12px rgba(0,0,0,0.04)',
+        position: 'sticky', bottom: 16, marginTop: 24, zIndex: 10,
+        background: '#FFFFFF', border: '0.5px solid #E1E8ED', borderRadius: 14,
+        padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 14,
+        boxShadow: '0 8px 24px rgba(44, 62, 80, 0.08), 0 2px 6px rgba(44, 62, 80, 0.04)',
       }}>
         <button onClick={save} disabled={saving} style={{
-          padding: '10px 22px', background: T.primary, color: '#fff', border: 'none', borderRadius: 8,
+          padding: '11px 24px', background: '#5DADE2', color: '#fff', border: 'none', borderRadius: 8,
           fontSize: 13, fontWeight: 700, cursor: saving ? 'wait' : 'pointer', fontFamily: T.font,
-          opacity: saving ? 0.6 : 1,
+          opacity: saving ? 0.6 : 1, letterSpacing: '0.02em',
+          boxShadow: '0 1px 3px rgba(93,173,226,0.3)',
         }}>
           {saving ? 'Saving…' : 'Save benchmarks'}
         </button>
-        {savedAt && <span style={{ fontSize: 12, color: T.success, fontWeight: 600 }}>Saved · {savedAt.toLocaleTimeString()}</span>}
-        <div style={{ marginLeft: 'auto', fontSize: 11, color: T.textMuted, lineHeight: 1.4, maxWidth: 380, textAlign: 'right' }}>
+        {savedAt && (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#1E8449', fontWeight: 600 }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#27AE60' }} />
+            Saved at {savedAt.toLocaleTimeString()}
+          </span>
+        )}
+        <div style={{ marginLeft: 'auto', fontSize: 11, color: '#8A99AB', lineHeight: 1.4, maxWidth: 380, textAlign: 'right' }}>
           Saved benchmarks apply org-wide. Dashboards re-render with the new bars on next reload.
         </div>
       </div>
