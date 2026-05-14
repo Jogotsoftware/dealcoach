@@ -241,10 +241,17 @@ export default function Pipeline() {
   async function loadData() {
     setLoading(true)
     try {
-      let dq = supabase.from('deals').select('*, company_profile(logo_url)')
-      // Precedence: drill-into-rep > manager-org-wide > existing 'all' > own deals.
+      // Join the rep so the table view can show the owner + sort by rep.
+      let dq = supabase.from('deals').select('*, company_profile(logo_url), rep:profiles!rep_id(id, full_name, initials)')
+      // Precedence: drill-into-rep > manager strict team > existing 'all' > own deals.
       if (drillRepId) dq = dq.eq('rep_id', drillRepId)
-      else if (isManager && profile.org_id) dq = dq.eq('org_id', profile.org_id)
+      else if (isManager && profile.org_id) {
+        // Strict team-only: fetch deals where rep_id is one of the manager's
+        // direct reports (or the manager themself, in case they own deals).
+        const { data: team } = await supabase.from('profiles').select('id').eq('manager_id', profile.id)
+        const teamIds = [profile.id, ...((team || []).map(t => t.id))]
+        dq = dq.in('rep_id', teamIds)
+      }
       else if (dealFilter === 'all' && profile.org_id) dq = dq.eq('org_id', profile.org_id)
       else dq = dq.eq('rep_id', profile.id)
 
@@ -512,19 +519,24 @@ export default function Pipeline() {
   function TableView({ deals: tDeals }) {
     const [tSort, setTSort] = useState('deal_value')
     const [tDir, setTDir] = useState('desc')
+    const repName = (d) => d.rep?.full_name || ''
     const tSorted = [...tDeals].sort((a, b) => {
       const d = tDir === 'desc' ? -1 : 1
       if (tSort === 'company_name') return d * (a.company_name || '').localeCompare(b.company_name || '')
       if (tSort === 'target_close_date') return d * (a.target_close_date || '9999').localeCompare(b.target_close_date || '9999')
+      if (tSort === 'rep') return d * repName(a).localeCompare(repName(b))
       return d * ((a[tSort] || 0) - (b[tSort] || 0))
     })
     function th(key, label) {
       return <th onClick={() => { if (tSort === key) setTDir(d => d === 'desc' ? 'asc' : 'desc'); else { setTSort(key); setTDir('desc') } }}
         style={{ textAlign: 'left', padding: '6px 8px', fontSize: 10, fontWeight: 700, color: tSort === key ? T.primary : '#8899aa', textTransform: 'uppercase', cursor: 'pointer', whiteSpace: 'nowrap', borderBottom: `1px solid ${T.border}` }}>{label}{tSort === key ? (tDir === 'desc' ? ' \u2193' : ' \u2191') : ''}</th>
     }
+    // Show the Rep column for managers (and anyone who's looking at deals not
+    // all owned by themselves \u2014 e.g. drillRepId, dealFilter='all').
+    const showRep = isManager || drillRepId || dealFilter === 'all'
     return (
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-        <thead><tr>{th('company_name', 'Company')}{th('stage', 'Stage')}{th('forecast_category', 'Forecast')}{th('deal_value', 'ARR')}{th('cmrr', 'CMRR')}{th('target_close_date', 'Close')}{th('icp_fit_score', 'ICP')}{th('fit_score', 'Fit')}{th('deal_health_score', 'Health')}<th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 10, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase', borderBottom: `1px solid ${T.border}` }}>Next Steps</th></tr></thead>
+        <thead><tr>{th('company_name', 'Company')}{showRep && th('rep', 'Rep')}{th('stage', 'Stage')}{th('forecast_category', 'Forecast')}{th('deal_value', 'ARR')}{th('cmrr', 'CMRR')}{th('target_close_date', 'Close')}{th('icp_fit_score', 'ICP')}{th('fit_score', 'Fit')}{th('deal_health_score', 'Health')}<th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 10, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase', borderBottom: `1px solid ${T.border}` }}>Next Steps</th></tr></thead>
         <tbody>
           {tSorted.map(d => {
             const days = daysUntil(d.target_close_date)
@@ -533,6 +545,14 @@ export default function Pipeline() {
               <tr key={d.id} onClick={() => navigate(`/deal/${d.id}`)} style={{ cursor: 'pointer', borderBottom: `1px solid ${T.borderLight}` }}
                 onMouseEnter={e => e.currentTarget.style.background = T.surfaceHover} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                 <td style={{ padding: '8px', fontWeight: 600 }}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><CompanyLogo logoUrl={d.company_profile?.logo_url} customerLogoUrl={d.customer_logo_url} companyName={d.company_name} size="sm" />{d.company_name}</div></td>
+                {showRep && <td style={{ padding: '8px', color: T.text, whiteSpace: 'nowrap' }}>
+                  {d.rep ? (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ width: 20, height: 20, borderRadius: '50%', background: T.primaryLight || 'rgba(93,173,226,0.15)', color: T.primary, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800 }}>{d.rep.initials || (d.rep.full_name || '?').charAt(0)}</span>
+                      <span style={{ fontSize: 11 }}>{d.rep.full_name || '\u2014'}</span>
+                    </span>
+                  ) : <span style={{ color: T.textMuted }}>\u2014</span>}
+                </td>}
                 <td style={{ padding: '8px' }}><StageBadge stage={d.stage} /></td>
                 <td style={{ padding: '8px' }}><ForecastBadge category={d.forecast_category} /></td>
                 <td style={{ padding: '8px', fontWeight: 700, fontFeatureSettings: '"tnum"' }}>{formatCurrency(getARR(d))}</td>
