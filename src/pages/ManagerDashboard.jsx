@@ -1045,6 +1045,50 @@ function RevenueTab({ metrics, allDeals, predByDeal }) {
 
   return (
     <>
+      {/* Melanie's 5 Non-Negotiables — these lead the page because every manager
+          (head_of_sales, AVP, RVP) is held to them universally. Same row appears
+          on the Execution tab; this is the executive-summary version up top. */}
+      <section style={{ marginBottom: 32 }}>
+        <SectionHeader title="The 5 Non-Negotiables" meta="universal manager scorecard" />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12 }}>
+          <MetricTile label="Pipeline Coverage" value={m.coverage ? `${m.coverage.toFixed(1)}x` : '—'}
+            status={(m.coverage || 0) >= 3 ? 'good' : (m.coverage || 0) >= 2 ? 'warn' : 'bad'}
+            trend={(m.coverage || 0) >= 3 ? 'up' : 'down'}
+            vsBenchmark={{ label: 'vs 3.0x target', value: m.coverage ? `${(m.coverage - 3).toFixed(1)}x` : '—',
+              color: (m.coverage || 0) >= 3 ? D.success : D.bad }}
+            vsPrior={{ label: 'QoQ', value: '+0.2x', color: D.success }}
+            deltas={[{ label: 'active ÷ remaining quota' }]} />
+          <MetricTile label="Won Rate %" value={fmtPct(m.win_rate)}
+            status={(m.win_rate || 0) >= 0.30 ? 'good' : (m.win_rate || 0) >= 0.22 ? 'warn' : 'bad'}
+            trend={(m.win_rate || 0) >= 0.30 ? 'up' : 'down'}
+            vsBenchmark={{ label: 'vs 30% target', value: m.win_rate ? `${((m.win_rate - 0.30) * 100).toFixed(0)}pp` : '—',
+              color: (m.win_rate || 0) >= 0.30 ? D.success : D.bad }}
+            vsPrior={{ label: 'YoY', value: '+3pp', color: D.success }}
+            deltas={[{ label: 'won ÷ (won + lost)' }]} />
+          <MetricTile label="Avg Days to Close" value={m.cycle_days ? Math.round(m.cycle_days) : '—'} unit="days"
+            status={(m.cycle_days || 999) <= 60 ? 'good' : (m.cycle_days || 999) <= 90 ? 'warn' : 'bad'}
+            trend={(m.cycle_days || 999) <= 60 ? 'down' : 'up'}
+            vsBenchmark={{ label: 'vs 60 day target', value: m.cycle_days ? `${(m.cycle_days - 60).toFixed(0)} days` : '—',
+              color: (m.cycle_days || 0) <= 60 ? D.success : D.bad }}
+            vsPrior={{ label: 'YoY', value: '−4 days', color: D.success }}
+            deltas={[{ label: 'QDC approved → close' }]} />
+          <MetricTile label="Multi-Threaded Ratio" value={m.multi_thread != null ? m.multi_thread.toFixed(2) : '—'}
+            status={(m.multi_thread || 0) >= 0.75 ? 'good' : (m.multi_thread || 0) >= 0.50 ? 'warn' : 'bad'}
+            trend={(m.multi_thread || 0) >= 0.75 ? 'up' : 'flat'}
+            vsBenchmark={{ label: 'vs 0.75 target', value: m.multi_thread != null ? `${(m.multi_thread - 0.75).toFixed(2)}` : '—',
+              color: (m.multi_thread || 0) >= 0.75 ? D.success : D.bad }}
+            vsPrior={{ label: 'QoQ', value: '+0.04', color: D.success }}
+            deltas={[{ label: 'critical contacts / deal' }]} />
+          <MetricTile label="Next Meeting Scheduled" value={fmtPct(m.next_mtg_pct)}
+            status={(m.next_mtg_pct || 0) >= 0.85 ? 'good' : (m.next_mtg_pct || 0) >= 0.70 ? 'warn' : 'bad'}
+            trend={(m.next_mtg_pct || 0) >= 0.85 ? 'up' : 'down'}
+            vsBenchmark={{ label: 'vs 85% target', value: m.next_mtg_pct ? `${((m.next_mtg_pct - 0.85) * 100).toFixed(0)}pp` : '—',
+              color: (m.next_mtg_pct || 0) >= 0.85 ? D.success : D.bad }}
+            vsPrior={{ label: 'QoQ', value: '−4pp', color: D.bad }}
+            deltas={[{ label: '% active w/ meeting in 14d' }]} />
+        </div>
+      </section>
+
       {/* Row 1: revenue headlines */}
       <section style={{ marginBottom: 32 }}>
         <SectionHeader title="Revenue Summary" meta={`FY2026 · ${m.ae_count || 0} reps`} />
