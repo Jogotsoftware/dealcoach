@@ -72,6 +72,8 @@ export default function DealRoomConfig({ embedded = false, dealId: dealIdProp } 
   const [commentFilter, setCommentFilter] = useState('unresolved')   // 'all' | 'unresolved' | 'resolved'
   const [requestFilter, setRequestFilter] = useState('pending')       // 'pending' | 'accepted' | 'rejected' | 'all'
   const [themeOpen, setThemeOpen] = useState(false)
+  const [shareSettingsOpen, setShareSettingsOpen] = useState(false)
+  const [regenerating, setRegenerating] = useState(false)
   const [tab, setTab] = useState(() => {
     if (typeof window === 'undefined') return 'msp'
     const h = (window.location.hash || '').replace('#', '')
@@ -403,6 +405,31 @@ export default function DealRoomConfig({ embedded = false, dealId: dealIdProp } 
     } catch (e) { /* error already surfaced via setError in saveRoom */ }
   }
 
+  // Regenerate the share_token — invalidates every existing share URL.
+  // Used when the AE shared the link too widely, or just wants a fresh URL.
+  async function regenerateShareToken() {
+    if (!room) return
+    if (!window.confirm('Generate a new share link? The current link will stop working immediately.')) return
+    setRegenerating(true)
+    try {
+      // Token uses pgcrypto for collision-resistance; same length/shape as default.
+      const { data, error: e } = await supabase
+        .from('deal_rooms')
+        .update({ share_token: crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '').slice(0, 16) })
+        .eq('id', room.id)
+        .select('share_token')
+        .single()
+      if (e) throw e
+      setRoom(prev => ({ ...prev, share_token: data.share_token }))
+    } catch (e) {
+      setError(e?.message || 'Regenerate failed')
+    } finally { setRegenerating(false) }
+  }
+
+  function openShareUrlInNewTab() {
+    window.open(shareUrl, '_blank', 'noopener')
+  }
+
   async function copyShareUrl() {
     const url = `${APP_BASE}/room/${room.share_token}`
     try { await navigator.clipboard.writeText(url); alert('Link copied — paste it into a message to your team or your customer.') } catch { window.prompt('Copy this URL:', url) }
@@ -534,58 +561,123 @@ export default function DealRoomConfig({ embedded = false, dealId: dealIdProp } 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 24px', paddingRight: 72, flexWrap: 'wrap' }}>
           {archived && <Badge color={T.warning}>Archived</Badge>}
 
-          {/* Share URL with inline copy icon */}
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 0, border: `1px solid ${T.border}`, borderRadius: 6, background: T.surface, overflow: 'hidden' }}>
-            <input readOnly value={shareUrl}
-              onClick={e => e.target.select()}
-              style={{ border: 'none', outline: 'none', padding: '6px 10px', fontFamily: T.mono, fontSize: 11, color: T.text, width: 220, background: 'transparent' }} />
-            <button onClick={copyShareUrl} title="Copy link"
-              style={{ background: 'transparent', border: 'none', borderLeft: `1px solid ${T.borderLight}`, cursor: 'pointer', padding: '6px 10px', color: T.textMuted, display: 'inline-flex', alignItems: 'center' }}
-              onMouseEnter={e => e.currentTarget.style.color = T.primary}
-              onMouseLeave={e => e.currentTarget.style.color = T.textMuted}>
+          {/* Client share link — label + action row. Each action is an icon button
+              matched in size + treatment to the right-side Theme/Refresh/Preview buttons. */}
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', marginRight: 4 }}>
+              Client Share Link
+            </span>
+
+            {/* View — opens the share URL in a new tab */}
+            <button onClick={openShareUrlInNewTab} title="View the share link in a new tab"
+              aria-label="View share link"
+              style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 32, height: 32, padding: 0, border: `1px solid ${T.border}`, borderRadius: 6, background: T.surface, color: T.text, cursor: 'pointer', fontFamily: T.font }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+              </svg>
+            </button>
+
+            {/* Copy */}
+            <button onClick={copyShareUrl} title="Copy share link to clipboard"
+              aria-label="Copy share link"
+              style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 32, height: 32, padding: 0, border: `1px solid ${T.border}`, borderRadius: 6, background: T.surface, color: T.text, cursor: 'pointer', fontFamily: T.font }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
               </svg>
             </button>
-          </div>
 
-          {/* Mode pills */}
-          <div style={{ display: 'inline-flex', border: `1px solid ${T.border}`, borderRadius: 6, overflow: 'hidden' }}>
-            {[
-              { k: 'open_token', l: 'Open' },
-              { k: 'magic_link', l: 'Magic' },
-            ].map((m, i) => (
-              <button key={m.k}
-                onClick={() => saveRoom({ access_mode: m.k })}
-                style={{ padding: '6px 10px', fontSize: 11, fontWeight: 600, border: 'none', borderLeft: i > 0 ? `1px solid ${T.border}` : 'none', background: room.access_mode === m.k ? T.primary : T.surface, color: room.access_mode === m.k ? '#fff' : T.textMuted, cursor: 'pointer', fontFamily: T.font }}>
-                {m.l}
+            {/* Refresh — regenerate the share token, invalidating prior URLs */}
+            <button onClick={regenerateShareToken} disabled={regenerating}
+              title="Generate a new share link (invalidates the current one)"
+              aria-label="Refresh share link"
+              style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 32, height: 32, padding: 0, border: `1px solid ${T.border}`, borderRadius: 6, background: T.surface, color: regenerating ? T.textMuted : T.text, cursor: regenerating ? 'default' : 'pointer', fontFamily: T.font }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+                style={regenerating ? { animation: 'ri-spin 1s linear infinite' } : undefined}>
+                <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+              </svg>
+            </button>
+
+            {/* Share settings popover trigger */}
+            <div style={{ position: 'relative' }}>
+              <button onClick={() => setShareSettingsOpen(o => !o)} title="Share settings"
+                aria-label="Share settings"
+                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 32, height: 32, padding: 0, border: `1px solid ${shareSettingsOpen ? T.primary : T.border}`, borderRadius: 6, background: shareSettingsOpen ? T.primaryLight || 'rgba(93,173,226,0.1)' : T.surface, color: shareSettingsOpen ? T.primary : T.text, cursor: 'pointer', fontFamily: T.font }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                </svg>
               </button>
-            ))}
-          </div>
+              {shareSettingsOpen && (
+                <>
+                  <div onClick={() => setShareSettingsOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 500 }} />
+                  <div style={{ position: 'absolute', left: 0, top: '110%', zIndex: 501, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, boxShadow: '0 10px 30px rgba(0,0,0,0.15)', padding: 16, width: 340 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 12 }}>Share settings</div>
 
-          {/* Expiration — empty input means "no expiration"; clearing it null's the column */}
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase' }}>Expires</span>
-            <input type="date" defaultValue={room.expires_at ? new Date(room.expires_at).toISOString().split('T')[0] : ''}
-              onChange={e => {
-                const v = e.target.value ? new Date(e.target.value + 'T23:59:59').toISOString() : null
-                if (v !== room.expires_at) saveRoom({ expires_at: v })
-              }}
-              title={room.expires_at ? `Expires ${new Date(room.expires_at).toLocaleDateString()}` : 'No expiration set'}
-              style={{ ...inputStyle, padding: '4px 8px', fontSize: 11, width: 132, color: room.expires_at ? T.text : T.textMuted }} />
-            {room.expires_at && (
-              <span style={{ fontSize: 10, color: expiringInDays < 0 ? T.error : T.textMuted, whiteSpace: 'nowrap' }}>
-                {expiringInDays >= 0 ? `${expiringInDays}d left` : `${Math.abs(expiringInDays)}d ago`}
-              </span>
-            )}
-          </div>
+                    {/* Who Can View */}
+                    <div style={{ marginBottom: 14 }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Who can view</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        <label style={{ display: 'inline-flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', fontSize: 12 }}>
+                          <input type="radio" name="share-mode" checked={room.access_mode !== 'magic_link'} onChange={() => saveRoom({ access_mode: 'open_token' })}
+                            style={{ marginTop: 2 }} />
+                          <span><strong style={{ color: T.text }}>Anyone with the link</strong><br/><span style={{ color: T.textSecondary, fontSize: 11 }}>Read-only access for any visitor.</span></span>
+                        </label>
+                        <label style={{ display: 'inline-flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', fontSize: 12 }}>
+                          <input type="radio" name="share-mode" checked={room.access_mode === 'magic_link'} onChange={() => saveRoom({ access_mode: 'magic_link' })}
+                            style={{ marginTop: 2 }} />
+                          <span><strong style={{ color: T.text }}>Specific people only</strong><br/><span style={{ color: T.textSecondary, fontSize: 11 }}>Each recipient gets a personal magic link they can comment from. Add viewers from the Inbox tab.</span></span>
+                        </label>
+                      </div>
+                    </div>
 
-          {/* Enabled toggle */}
-          <button onClick={() => saveRoom({ enabled: !room.enabled })} disabled={busy}
-            title={room.enabled ? 'Click to disable customer access' : 'Click to enable customer access'}
-            style={{ padding: '4px 10px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', border: `1px solid ${room.enabled ? T.success : T.error}40`, borderRadius: 999, background: room.enabled ? T.success + '18' : T.error + '18', color: room.enabled ? T.success : T.error, cursor: 'pointer', fontFamily: T.font }}>
-            {room.enabled ? 'Enabled' : 'Disabled'}
-          </button>
+                    {/* Expires */}
+                    <div style={{ marginBottom: 14 }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Expires</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer' }}>
+                          <input type="checkbox" checked={!!room.expires_at}
+                            onChange={e => {
+                              if (e.target.checked) {
+                                const d = new Date(); d.setDate(d.getDate() + 30); d.setHours(23, 59, 59, 0)
+                                saveRoom({ expires_at: d.toISOString() })
+                              } else {
+                                saveRoom({ expires_at: null })
+                              }
+                            }} />
+                          <span style={{ color: T.text }}>Set expiration</span>
+                        </label>
+                        {room.expires_at && (
+                          <input type="date" defaultValue={new Date(room.expires_at).toISOString().split('T')[0]}
+                            onChange={e => {
+                              const v = e.target.value ? new Date(e.target.value + 'T23:59:59').toISOString() : null
+                              if (v !== room.expires_at) saveRoom({ expires_at: v })
+                            }}
+                            style={{ ...inputStyle, padding: '4px 8px', fontSize: 11, width: 140 }} />
+                        )}
+                      </div>
+                      {room.expires_at && (
+                        <div style={{ fontSize: 10, color: expiringInDays < 0 ? T.error : T.textMuted, marginTop: 4 }}>
+                          {expiringInDays >= 0 ? `${expiringInDays} day${expiringInDays === 1 ? '' : 's'} left` : `Expired ${Math.abs(expiringInDays)} day${Math.abs(expiringInDays) === 1 ? '' : 's'} ago`}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Link Active */}
+                    <div>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Link status</div>
+                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 12 }}>
+                        <span onClick={() => saveRoom({ enabled: !room.enabled })}
+                          style={{ width: 36, height: 20, borderRadius: 10, background: room.enabled ? T.success : T.borderLight, position: 'relative', transition: 'background 0.15s', flexShrink: 0 }}>
+                          <span style={{ position: 'absolute', top: 2, left: room.enabled ? 18 : 2, width: 16, height: 16, borderRadius: '50%', background: '#fff', transition: 'left 0.15s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
+                        </span>
+                        <span style={{ color: T.text, fontWeight: 600 }}>{room.enabled ? 'Active' : 'Disabled'}</span>
+                        <span style={{ color: T.textMuted, fontSize: 11 }}>— {room.enabled ? 'Visitors can open this link.' : 'Link is dark; nobody can load the room.'}</span>
+                      </label>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
 
           <div style={{ flex: 1 }} />
 
