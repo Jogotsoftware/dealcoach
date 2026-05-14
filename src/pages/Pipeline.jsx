@@ -13,6 +13,7 @@ import DealChat from '../components/DealChat'
 import TranscriptUpload from '../components/TranscriptUpload'
 import CompanyLogo from '../components/CompanyLogo'
 import WidgetRenderer from '../components/WidgetRenderer'
+import DealsListWidget from '../components/DealsListWidget'
 import { Responsive, WidthProvider } from 'react-grid-layout'
 import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
@@ -22,21 +23,51 @@ const PIPELINE_LAYOUT = [
   { i: 'forecast_summary', x: 0, y: 0, w: 12, h: 2, minW: 8, minH: 2 },
   { i: 'quota_tracker', x: 0, y: 2, w: 6, h: 3, minW: 4, minH: 2 },
   { i: 'coaching_feedback', x: 6, y: 2, w: 6, h: 3, minW: 4, minH: 2 },
-  { i: 'pipeline_view', x: 0, y: 5, w: 12, h: 6, minW: 8, minH: 4 },
-  { i: 'scoreboard', x: 0, y: 11, w: 6, h: 4, minW: 4, minH: 3 },
-  { i: 'task_list', x: 6, y: 11, w: 6, h: 4, minW: 4, minH: 3 },
-  { i: 'recent_activity', x: 0, y: 15, w: 6, h: 3, minW: 4, minH: 2 },
+  { i: 'deals_qdc', x: 0, y: 5, w: 6, h: 6, minW: 3, minH: 4 },
+  { i: 'deals_pipeline', x: 6, y: 5, w: 6, h: 8, minW: 4, minH: 4 },
+  { i: 'pipeline_view', x: 0, y: 13, w: 12, h: 6, minW: 8, minH: 4 },
+  { i: 'scoreboard', x: 0, y: 19, w: 6, h: 4, minW: 4, minH: 3 },
+  { i: 'task_list', x: 6, y: 19, w: 6, h: 4, minW: 4, minH: 3 },
+  { i: 'recent_activity', x: 0, y: 23, w: 6, h: 3, minW: 4, minH: 2 },
 ]
 
 const PIPELINE_WIDGETS = [
   { id: 'forecast_summary', title: 'Forecast Summary', visible: true },
-  { id: 'pipeline_view', title: 'Pipeline', visible: true },
+  { id: 'deals_qdc', title: 'QDC', visible: true },
+  { id: 'deals_pipeline', title: 'Pipeline', visible: true },
+  { id: 'pipeline_view', title: 'Pipeline (kanban)', visible: true },
   { id: 'quota_tracker', title: 'Quota Tracker', visible: true },
   { id: 'coaching_feedback', title: 'Coaching Feedback', visible: true },
   { id: 'scoreboard', title: 'Scoreboard', visible: true },
   { id: 'task_list', title: 'Tasks', visible: true },
   { id: 'recent_activity', title: 'Recent Activity', visible: true },
 ]
+
+// Merge any default widgets that aren't in a stored layout/widgets pair.
+// Existing orgs/users have saved layouts that predate new default widgets;
+// without this merge, new defaults never show up for them.
+function mergeMissingDefaults(storedWidgets, storedLayout) {
+  const widgets = Array.isArray(storedWidgets) ? storedWidgets : []
+  const layout  = Array.isArray(storedLayout)  ? storedLayout  : []
+  const haveIds = new Set(widgets.map(w => w?.id).filter(Boolean))
+  const missing = PIPELINE_WIDGETS.filter(w => !haveIds.has(w.id))
+  if (missing.length === 0) return { widgets, layout }
+  let cursorY = layout.reduce((m, l) => Math.max(m, (l.y || 0) + (l.h || 0)), 0)
+  const newLayoutItems = missing.map(mw => {
+    const dl = PIPELINE_LAYOUT.find(l => l.i === mw.id)
+    const item = {
+      i: mw.id, x: 0, y: cursorY,
+      w: dl?.w || 6, h: dl?.h || 4,
+      minW: dl?.minW || 3, minH: dl?.minH || 2,
+    }
+    cursorY += item.h
+    return item
+  })
+  return {
+    widgets: [...widgets, ...missing],
+    layout:  [...layout,  ...newLayoutItems],
+  }
+}
 
 function MoreMenuItem({ label, onClick }) {
   const [h, setH] = useState(false)
@@ -310,10 +341,19 @@ export default function Pipeline() {
       if (!profile?.org_id) return
       const { data: orgLayout } = await supabase.from('org_widget_layouts')
         .select('*').eq('org_id', profile.org_id).eq('page', 'pipeline').eq('is_default', true).single()
-      if (orgLayout) { setPOrgLayoutId(orgLayout.id); setPLayout(orgLayout.layout || PIPELINE_LAYOUT); setPWidgets(orgLayout.widgets || PIPELINE_WIDGETS) }
+      if (orgLayout) {
+        setPOrgLayoutId(orgLayout.id)
+        const merged = mergeMissingDefaults(orgLayout.widgets || PIPELINE_WIDGETS, orgLayout.layout || PIPELINE_LAYOUT)
+        setPLayout(merged.layout)
+        setPWidgets(merged.widgets)
+      }
       if (profile.role !== 'admin' && profile.role !== 'system_admin') {
         const { data: override } = await supabase.from('user_widget_overrides').select('*').eq('user_id', profile.id).eq('page', 'pipeline').single()
-        if (override) { setPLayout(override.layout); setPWidgets(override.widgets) }
+        if (override) {
+          const merged = mergeMissingDefaults(override.widgets, override.layout)
+          setPLayout(merged.layout)
+          setPWidgets(merged.widgets)
+        }
       }
     }
     if (profile?.id) loadPipelineLayout()
@@ -967,6 +1007,13 @@ export default function Pipeline() {
   function renderWidget(id) {
     switch (id) {
       case 'forecast_summary': return <ForecastSummaryWidget />
+      case 'deals_qdc':
+        return <DealsListWidget stageFilter={['qualify']} title="QDC" sortBy="created_asc" />
+      case 'deals_pipeline':
+        return <DealsListWidget
+          stageFilter={['discovery', 'solution_validation', 'confirming_value', 'selection']}
+          title="Pipeline"
+          sortBy="target_close_date_asc" />
       case 'pipeline_view':
       case 'pipeline_kanban':
       case 'kanban':

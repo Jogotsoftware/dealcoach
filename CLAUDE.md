@@ -226,6 +226,8 @@ Also write parallel rows to `deal_sources` for the universal evidence layer.
 ### Widgets & Reports
 `custom_widget_definitions`, `org_widget_layouts`, `user_widget_overrides`, `widget_registry`, `saved_reports`, `dashboard_snapshots`
 
+**AE pipeline dashboard — deals widgets.** The `QDC` (`deals_qdc`) and `Pipeline` (`deals_pipeline`) widgets on the AE pipeline dashboard are filtered instances of the shared `DealsListWidget` (`src/components/DealsListWidget.jsx`). QDC filters to stage = `qualify` and sorts by `created_at` ascending — this will move to a scheduled QDC date once the BDR/intake overhaul adds that field. The per-card QDC quality score badge is reserved for the same overhaul (renders as `—` until then). Both are registered in the in-page registry (`PIPELINE_WIDGETS` / `PIPELINE_LAYOUT` in `src/pages/Pipeline.jsx`) and default-on for all orgs; `mergeMissingDefaults` injects them into existing stored layouts on load so users don't have to reset.
+
 ### Multi-tenant / Auth
 `platform_admins`, `invitations`, `email_log`, `modules`, `user_module_access`, `org_credits`, `credit_costs`, `credit_ledger`, `plans`
 
