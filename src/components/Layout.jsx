@@ -6,6 +6,7 @@ import { useOrg } from '../contexts/OrgContext'
 import { supabase } from '../lib/supabase'
 import { theme as T } from '../lib/theme'
 import GlobalChatbot from './GlobalChatbot'
+import BetaFeedbackButton from './BetaFeedbackButton'
 import NotificationBell from './NotificationBell'
 
 // Pilot AEs with profile.access_mode='dealroom_only' may only reach: their pipeline,
@@ -122,7 +123,7 @@ export default function Layout() {
               {(org?.name || 'R').charAt(0).toUpperCase()}
             </div>
           )}
-          {sidebarExpanded && <span style={{ fontSize: 16, fontWeight: 700, color: '#fff' }}>{org?.name || 'Revenue Instruments'}</span>}
+          {sidebarExpanded && <span style={{ fontSize: 16, fontWeight: 700, color: '#fff' }}>{org?.name || 'Lumen'}</span>}
         </div>
 
         {/* Nav sections */}
@@ -228,8 +229,10 @@ export default function Layout() {
         )}
         <Outlet />
       </div>
-      {/* GlobalChatbot is hidden for dealroom_only pilot AEs — Deal Room only. */}
-      {!isDealRoomOnly && <GlobalChatbot />}
+      {/* Beta users get a feedback-only floating button (writes to beta_feedback table)
+          in place of the full Lumen chat — chat in the beta is exclusively for
+          collecting product feedback, not for AI coaching. */}
+      {isDealRoomOnly ? <BetaFeedbackButton /> : <GlobalChatbot />}
     </div>
   )
 }
