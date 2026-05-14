@@ -45,27 +45,35 @@ import GateDimensionPage from './pages/path/GateDimensionPage'
 import { theme as T } from './lib/theme'
 
 function AppLoadingSkeleton() {
+  // Rotating sun — yellow disk with eight rays. 4s/revolution feels organic
+  // rather than spinner-y. Inner ray radius 22 → outer 36, matching the
+  // Lumen logo's yellow (#FFC000) for visual continuity.
+  const RAY_COUNT = 8
+  const RAY_INNER = 22
+  const RAY_OUTER = 36
   return (
     <div style={{
-      minHeight: '100vh', display: 'flex', flexDirection: 'column',
-      alignItems: 'center', justifyContent: 'center', background: '#fff',
-      fontFamily: T.font,
+      minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: '#fff',
     }}>
-      <img src="/lumen-logo.svg" alt="Lumen"
-        style={{ width: 64, height: 64, objectFit: 'contain', marginBottom: 18 }} />
-      <div style={{ fontSize: 13, color: T.textSecondary, fontStyle: 'italic',
-        marginBottom: 18, letterSpacing: '0.01em' }}>
-        Finding the light at the end of the tunnel…
-      </div>
-      <div style={{ width: 200, height: 3, background: T.border,
-        borderRadius: 2, overflow: 'hidden' }}>
-        <div style={{
-          width: '40%', height: '100%', background: T.primary,
-          borderRadius: 2,
-          animation: 'shimmer 1.4s ease-in-out infinite',
-          transformOrigin: 'left',
-        }} />
-      </div>
+      <svg width="80" height="80" viewBox="0 0 100 100"
+        style={{ animation: 'spin 4s linear infinite', transformOrigin: '50% 50%' }}
+        aria-label="Loading">
+        <circle cx="50" cy="50" r="14" fill="#FFC000" />
+        {Array.from({ length: RAY_COUNT }).map((_, i) => {
+          const a = (i * 2 * Math.PI) / RAY_COUNT
+          const x1 = 50 + RAY_INNER * Math.cos(a)
+          const y1 = 50 + RAY_INNER * Math.sin(a)
+          const x2 = 50 + RAY_OUTER * Math.cos(a)
+          const y2 = 50 + RAY_OUTER * Math.sin(a)
+          return (
+            <line key={i}
+              x1={x1} y1={y1} x2={x2} y2={y2}
+              stroke="#FFC000" strokeWidth="6" strokeLinecap="round"
+            />
+          )
+        })}
+      </svg>
     </div>
   )
 }
