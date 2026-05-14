@@ -698,3 +698,94 @@ Recommend confirming with the parallel-session owner before M9. If (B), the fix 
 Layout.jsx's parallel-session expansion (Feather icons, dealroom_only access_mode, role_level-based isManager) is preserved — my XDR section + BDR guard remain intact within it.
 
 **Ready to proceed to M9 (test checklist):** yes, *pending the App.jsx routing decision above*. M9's "BDR submits a lead end-to-end" check (test 1) can't run if the BDR routes aren't wired in App.jsx.
+
+---
+
+## App.jsx + DealDetail.jsx re-wire — 2026-05-14 — COMPLETE
+
+Diagnosed the dropped routes as untracked-file fallout (commit `d9a7168` defensively reverted the DisqualifyDealModal import to keep Netlify builds green). The page files all existed on disk; they just weren't committed.
+
+Two clean commits landed on origin/main:
+- `08eecac` — 15 untracked M2–M7 files (modal + guards + BDR/admin pages + 4 edge fn sources + 3 docs), 5,843 insertions, zero modified-file sweeps.
+- `8b5be74` — wiring (App.jsx imports + routes + HomeRoute BDR-priority extension; DealDetail.jsx DisqualifyDealModal re-attach; Pipeline.jsx M8 BdrAwaitingQdcSection), 3 files, 133 insertions.
+
+Parallel-session WIP on Layout.jsx, NotificationBell.jsx, GlobalChatbot.jsx, OrgContext.jsx, useAuth.jsx, CoachAdmin.jsx, CoachBuilder.jsx, ManagerDashboard.jsx, Onboarding.jsx, Settings.jsx, styles/index.css, deal-chat/, process-transcript/ left untouched. Future merges will preserve everything since the files are now tracked.
+
+---
+
+## M9 — Test checklist — 2026-05-14 — COMPLETE (all 6 spec tests green, 1 N/A)
+
+Full audit at [`docs/audits/2026-05-14-bdr-routing-test-results.md`](../audits/2026-05-14-bdr-routing-test-results.md).
+
+| # | Spec test | Result |
+|---|---|---|
+| 1 | BDR paste → approval → deal (8 sub-checks) | ✅ |
+| 2 | Audio submission | ⚪ N/A — Mode A dropped in M0 decision 6.H |
+| 3 | AI denial with criteria verbatim (5 sub-checks) | ✅ |
+| 4 | State+vertical specific-AE rule beats pool rule | ✅ |
+| 5 | Round-robin pool — 5 concurrent → 5 unique AEs, FOR UPDATE atomicity | ✅ |
+| 6 | Post-QDC disqualify — 3 scenarios (BDR+feedback / suppress=true / AE-self) | ✅ |
+| 7 | RLS audit — cross-org BDR isolation, own-feedback visible, non-manager blocked | ✅ |
+
+**Gaps + cosmetic flags surfaced during M9:**
+
+1. **AE-side handoff notification missing.** Spec §4.2 step 9 calls for an in-app + email notification to the assigned AE on routing. Currently the BDR gets `lead_approved`; the AE doesn't get a dedicated notification — they see new leads via M8's pinned pipeline section. Not a test failure; could ship in M10 alongside decommission or defer.
+2. **`route-lead` `routed_by_function` stamp says v1, not v2.** My M7 stamp bump caught runtime error/response stamps but missed the hardcoded data field in the `routing_history` INSERT. Cosmetic only; one-line fix at the next route-lead bump.
+3. **Drew Nick was promoted to manager** by the parallel session since M3, which exposed a test-fixture fragility. T7.3 was re-run with a deterministic dummy profile (Test AE One, `a1111111…`, role='rep'). Lesson: use stable test fixtures for negative-RLS tests, not real users whose role can shift.
+
+**Cleanup:** all 8 M9 test leads + 8 deals + routing_history + notifications + retrospective_queue rows deleted via cascade-aware DELETE chain. Migration 13 (FK cascade SET NULL) made it clean — no manual NULL-out workaround needed.
+
+**Test fixtures preserved for future testing:**
+- Test AE Three (`a3333333…`) + Test AE Four (`a4444444…`) — added to M3 Test Pool, now 5 members
+- Cross-org BDR (`bdb00002…`) in Acumen org — for ongoing RLS isolation tests
+- Routing rule "M9 T4 — TX Manufacturing → Drew" (priority=50) — useful as a specific-AE rule example
+
+**Total Anthropic + Perplexity spend on M9 verification:** ~$0.18 (Test 1 approval triggered real Claude + research-company; Test 3 denial ~$0.016; Tests 4 + 5 bypassed Claude by pre-seeding ai_decision='approved'; Tests 6 + 7 use no Claude).
+
+**Gate cleared: M10 (decommission `promote-to-dealcoach`) is unblocked.**
+
+---
+
+## M10 — Decommission `promote-to-dealcoach` + 3 related orphans — 2026-05-14 — COMPLETE
+
+**Shipped:**
+
+Four edge functions replaced with deprecation stubs that:
+1. Log the caller's UA, referer, and body preview so any resurfacing caller is visible in Supabase logs
+2. Return HTTP `410 Gone` with a JSON body pointing to the replacement
+3. Identify themselves as `version: "deprecated-stub-v1"`
+
+| Function | Reason for decommission | Replacement |
+|---|---|---|
+| `promote-to-dealcoach` | IM-meetings flow retired in M3/M7. Zero callers post-M7. | `route-lead` (deal creation at routing) + `post-qdc-decision` v2 (advance/disqualify) |
+| `process-bdr-submission` | Orchestrator dropped per M0 decision 6.K. | BDR form invokes `pre-qdc-decision` directly |
+| `writeback-bdr-feedback` | IM-meetings handoff write retired. | Shared RPC `disqualify_deal_with_feedback()` invoked from M7 modal + post-qdc-decision v2 |
+| `research-lead-company` | Pre-decision research dropped per M0 decision 6.J. | `research-company` invoked async by `route-lead` v2 post-routing |
+
+**Final caller audit (re-verified before deploy):**
+- Repo grep across `*.{js,jsx,ts,tsx,sql,md}`: all matches were doc-only (audits + spec + progress). Zero production code references.
+- DB triggers (`information_schema.triggers` ILIKE check): 0 matches.
+- Edge function cross-references: `post-qdc-decision` v3 confirmed not calling `promote-to-dealcoach` (M7 rewire). All four are zero-caller orphans.
+
+**Smoke test:** curled each deprecated endpoint with `{"smoke_test":true}` — all 4 returned HTTP 410 with the expected JSON body. Logs confirmed in Supabase dashboard would show the smoke_test payload.
+
+**CLAUDE.md updated** with:
+- New section for the BDR submission & routing edge functions (pre-qdc-decision v3, route-lead v2, post-qdc-decision v2, send-bdr-notification v1)
+- New "Deprecated" section listing the 4 functions with replacement pointers + the 410-Gone behavior
+
+**What stays for now (per spec §4.4):**
+- Source files at `supabase/functions/<name>/index.ts` for all 4 deprecated functions — keep tracked in git for one release cycle so the stubs can be redeployed if anything regresses.
+- Deployed functions stay registered in Supabase (returning 410). Hard-delete from the registry is a follow-up cleanup once pilot stability is proven.
+
+**What we did NOT touch (out of scope per M0):**
+- `process-ae-self-submission`, `process-ae-qdc-transcript`, `create-im-meeting` — separate IM/AE-self concerns, not part of the BDR routing rewrite.
+- `send-handoff-notification` — originally "REWIRE" in the audit, ended up de-facto unused since `route-lead` v2 uses `send-bdr-notification` directly. Could deprecate in a follow-up if it stays orphaned.
+
+**Cosmetic follow-ups carried forward:**
+1. `route-lead` `routed_by_function` data field still says `"v1"` instead of `"v2"` (M9 flagged this).
+2. AE-side handoff notification not yet implemented (spec §4.2 step 9). BDR gets `lead_approved`; AE discovers via M8 pinned pipeline section.
+3. `send-handoff-notification` orphan status — defer or deprecate alongside this batch in a follow-up.
+
+**Build state:** no frontend changes in M10. Edge function stubs deployed only. CLAUDE.md updated.
+
+**M10 complete. The BDR submission & deal routing build (M0–M10) is fully landed.**

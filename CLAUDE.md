@@ -116,6 +116,20 @@ All functions use `verify_jwt: false` and implement auth internally. Embed versi
 - `ingest-deal-knowledge` — chunks transcripts + research for RAG ingestion
 - `process-retrospective-queue` — polls retrospective_queue every 5 min
 
+**BDR submission & routing (new, M2–M7):**
+- `pre-qdc-decision` v3 — AI first-glance approve/deny for BDR-submitted leads against `ae_denial_criteria`. Uses `assemble_coach_prompt(coach_id, 'bdr_first_glance', 'process_transcript')`. On approval, invokes `route-lead` synchronously.
+- `route-lead` v2 — routes an approved bdr_lead to an AE (specific or pool via `advance_routing_pool` RPC), creates the qualify-stage deal, links a conversations row, fires `research-company` + `process-transcript` async (audited via `inbound_event_log`), emits `lead_approved` BDR notification via `send-bdr-notification`.
+- `post-qdc-decision` v2 — AE's post-QDC decision on a deal. Approve → qualify→discovery + `lead_advanced` notification. Disqualify → calls `disqualify_deal_with_feedback` RPC (single source of truth, shared with the frontend modal) + fires `lead_disqualified_post_qdc` notification.
+- `send-bdr-notification` v1 — writes a row to `bdr_notifications` (authoritative) + fires Resend email if `RESEND_API_KEY` is set. Accepts notification types: `lead_approved`, `lead_denied`, `lead_advanced`, `lead_disqualified_post_qdc`.
+
+**Deprecated (deployed-but-410-Gone since 2026-05-14, kept one release cycle for rollback):**
+- `promote-to-dealcoach` — IM-meetings flow retired. Use `route-lead` + `post-qdc-decision` (v2).
+- `process-bdr-submission` — orchestrator pattern dropped. BDR form invokes `pre-qdc-decision` directly.
+- `writeback-bdr-feedback` — replaced by `disqualify_deal_with_feedback` RPC.
+- `research-lead-company` — pre-decision research dropped (decision 6.J); post-routing research handled by `research-company`.
+
+Each deprecated function returns HTTP 410 with a JSON `{ error, deprecated: true, replacement, version: "deprecated-stub-v1" }` body and logs the caller's UA + referer + body preview so any resurfacing caller is visible.
+
 ---
 
 ## Key Architecture Patterns
