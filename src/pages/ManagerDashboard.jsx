@@ -857,10 +857,9 @@ export default function ManagerDashboard() {
           </div>
         </div>
 
-        {/* FILTER BAR — date picker + segment filter chip. Hidden on the Team tab
-            because Team is about org structure, not metric windowing — filters
-            from a prior tab were silently emptying the team view. */}
-        {activeTab !== 'teams' && (
+        {/* FILTER BAR — date picker + segment filter chip. Date stays visible
+            on Team (windowing per-person attainment is useful) but segment is
+            hidden there since it would silently drop AVPs/RVPs from the list. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: D.surface, border: `0.5px solid ${D.border}`, borderRadius: 12, marginBottom: 16, position: 'relative' }}>
           {/* Filters — single subtle icon. All filter controls live in the popover. */}
           <div style={{ position: 'relative' }}>
@@ -909,7 +908,6 @@ export default function ManagerDashboard() {
             )}
           </div>
         </div>
-        )}
 
         {/* SCOPE BREADCRUMB */}
         {drillStack.length > 0 && (
@@ -957,12 +955,13 @@ export default function ManagerDashboard() {
               {activeTab === 'teams'     && (
                 <TeamsTab
                   currentParent={currentParent}
-                  /* Team tab is unfiltered by design — date + segment filters
-                     would silently empty the org structure view. Pass null
-                     for both dateRange + segmentOverride so per-person numbers
-                     show full FY YTD across all segments regardless of state. */
+                  /* Team tab honors the active date range (per-person attainment
+                     for the chosen window) but bypasses the segment filter so
+                     RVPs/AVPs aren't silently dropped from the direct-reports
+                     list. metricsFor's third arg `null` explicitly disables the
+                     closure segmentFilter for these rollups. */
                   directReports={directReports}
-                  metricsFor={(id) => metricsFor(id, null, null)}
+                  metricsFor={(id) => metricsFor(id, dateRange, null)}
                   showDealsLevel={showDealsLevel}
                   allDeals={allDeals.filter(d => d.rep_id === currentParent.id)}
                   predByDeal={predByDeal}
@@ -1798,8 +1797,6 @@ function TeamsTab({ currentParent, directReports, metricsFor, showDealsLevel, al
 function DealList({ deals, predByDeal, onDealClick, ae, aeMetrics }) {
   const active = deals.filter(d => ['qualify','discovery','solution_validation','confirming_value','selection'].includes(d.stage))
   const closed = deals.filter(d => ['closed_won','closed_lost','disqualified','needs_nurture'].includes(d.stage))
-  const fcatRank = { commit: 0, forecast: 1, upside: 2, pipeline: 3 }
-  active.sort((a, b) => (fcatRank[a.forecast_category] ?? 4) - (fcatRank[b.forecast_category] ?? 4) || (Number(b.deal_value) || 0) - (Number(a.deal_value) || 0))
   closed.sort((a, b) => new Date(b.closed_at || 0) - new Date(a.closed_at || 0))
 
   return (
@@ -1824,14 +1821,135 @@ function DealList({ deals, predByDeal, onDealClick, ae, aeMetrics }) {
         </div>
       </div>
 
-      <SectionHeader title={`Active Deals (${active.length})`} meta="commit-first, by value" />
-      {active.length === 0 && <div style={{ color: D.textMuted, padding: '12px 4px' }}>No active deals.</div>}
-      {active.map(d => <DealRow key={d.id} deal={d} prediction={predByDeal[d.id]} onClick={() => onDealClick(d)} />)}
+      <ActiveDealsTable deals={active} predByDeal={predByDeal} onDealClick={onDealClick} />
+
       {closed.length > 0 && (
         <>
           <div style={{ marginTop: 24 }}><SectionHeader title={`Recent Closed (${closed.length})`} meta="trailing 12 months" /></div>
           {closed.slice(0, 25).map(d => <DealRow key={d.id} deal={d} prediction={predByDeal[d.id]} onClick={() => onDealClick(d)} />)}
         </>
+      )}
+    </>
+  )
+}
+
+// ActiveDealsTable — sortable. Columns: Company / Stage / Forecast / Size /
+// Close / Confidence. Click a header to sort by that key; click again to
+// flip direction. Default sort = forecast (commit first) then size desc.
+function ActiveDealsTable({ deals, predByDeal, onDealClick }) {
+  const [sortKey, setSortKey] = useState('forecast')
+  const [sortDir, setSortDir] = useState('asc') // forecast asc = commit first
+  const stageOrder = { qualify: 1, discovery: 2, solution_validation: 3, confirming_value: 4, selection: 5 }
+  const fcatRank = { commit: 0, forecast: 1, upside: 2, pipeline: 3 }
+
+  const rows = deals.map(d => {
+    const conf = predByDeal[d.id]?.predicted_close_probability ?? null
+    return {
+      ...d,
+      _conf: conf != null ? Number(conf) : null,
+      _stageRank: stageOrder[d.stage] ?? 99,
+      _fcatRank: fcatRank[d.forecast_category] ?? 99,
+      _close: d.target_close_date ? new Date(d.target_close_date).getTime() : null,
+      _value: Number(d.deal_value) || 0,
+    }
+  })
+
+  const sorted = [...rows].sort((a, b) => {
+    const dir = sortDir === 'asc' ? 1 : -1
+    let av, bv
+    switch (sortKey) {
+      case 'company':   return (a.company_name || '').localeCompare(b.company_name || '') * dir
+      case 'stage':     av = a._stageRank;  bv = b._stageRank; break
+      case 'forecast':  av = a._fcatRank;   bv = b._fcatRank;  break
+      case 'size':      av = a._value;      bv = b._value;     break
+      case 'close':
+        // Nulls last regardless of direction
+        if (a._close == null && b._close == null) return 0
+        if (a._close == null) return 1
+        if (b._close == null) return -1
+        return (a._close - b._close) * dir
+      case 'confidence':
+        if (a._conf == null && b._conf == null) return 0
+        if (a._conf == null) return 1
+        if (b._conf == null) return -1
+        return (a._conf - b._conf) * dir
+      default: return 0
+    }
+    return (av - bv) * dir
+  })
+
+  const onHeader = (k) => {
+    if (sortKey === k) {
+      setSortDir(sortDir === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortKey(k)
+      // Sensible defaults: text/stage/forecast asc; numeric desc.
+      setSortDir(['size','confidence','close'].includes(k) ? 'desc' : 'asc')
+    }
+  }
+
+  const SortHead = ({ k, label, align = 'left', width }) => (
+    <th onClick={() => onHeader(k)} style={{
+      padding: '10px 12px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em',
+      color: sortKey === k ? D.primary : D.textMuted, textAlign: align, cursor: 'pointer', userSelect: 'none',
+      whiteSpace: 'nowrap', borderBottom: `1px solid ${D.border}`,
+      width: width || 'auto',
+    }}>
+      {label}{sortKey === k && <span style={{ marginLeft: 4, fontSize: 9 }}>{sortDir === 'asc' ? '▲' : '▼'}</span>}
+    </th>
+  )
+
+  return (
+    <>
+      <SectionHeader title={`Active Deals (${deals.length})`} meta="click any column header to sort" />
+      {deals.length === 0 ? (
+        <div style={{ color: D.textMuted, padding: '12px 4px' }}>No active deals.</div>
+      ) : (
+        <div style={{ background: D.surface, border: `0.5px solid ${D.border}`, borderRadius: 12, overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead style={{ background: D.surfaceAlt }}>
+              <tr>
+                <SortHead k="company"    label="Company" />
+                <SortHead k="stage"      label="Stage" />
+                <SortHead k="forecast"   label="Forecast" align="center" width="110px" />
+                <SortHead k="size"       label="Size" align="right" width="110px" />
+                <SortHead k="close"      label="Close" align="right" width="120px" />
+                <SortHead k="confidence" label="Confidence" align="right" width="120px" />
+                <th style={{ width: 28, borderBottom: `1px solid ${D.border}` }} />
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map(d => {
+                const conf = d._conf
+                const confColor = conf == null ? D.textMuted : conf >= 0.85 ? D.success : conf >= 0.65 ? D.warn : D.bad
+                const fcatColor = { commit: D.success, forecast: D.primary, upside: D.warn, pipeline: D.flat }[d.forecast_category] || D.flat
+                return (
+                  <tr key={d.id} onClick={() => onDealClick(d)} style={{
+                    borderBottom: `0.5px solid ${D.borderLight}`, cursor: 'pointer', transition: 'background 0.12s',
+                  }}
+                    onMouseEnter={e => { e.currentTarget.style.background = D.surfaceAlt }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}>
+                    <td style={{ padding: '12px', fontWeight: 600, color: D.text }}>{d.company_name}</td>
+                    <td style={{ padding: '12px', color: D.textSec, fontSize: 12, textTransform: 'capitalize' }}>{d.stage?.replace(/_/g, ' ')}</td>
+                    <td style={{ padding: '12px', textAlign: 'center' }}>
+                      <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 10px', borderRadius: 100, background: `${fcatColor}22`, color: fcatColor, textTransform: 'uppercase' }}>
+                        {d.forecast_category}
+                      </span>
+                    </td>
+                    <td style={{ padding: '12px', textAlign: 'right', fontWeight: 700, color: D.text }}>{fmtMoneyShort(d.deal_value)}</td>
+                    <td style={{ padding: '12px', textAlign: 'right', color: D.textMuted, fontSize: 12 }}>{d.target_close_date || '—'}</td>
+                    <td style={{ padding: '12px', textAlign: 'right' }}>
+                      {conf != null
+                        ? <span style={{ fontSize: 12, fontWeight: 700, color: confColor }}>{(conf * 100).toFixed(0)}%</span>
+                        : <span style={{ fontSize: 12, color: D.textMuted }}>—</span>}
+                    </td>
+                    <td style={{ padding: '12px', color: D.textMuted, fontSize: 16, textAlign: 'right' }}>›</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
     </>
   )

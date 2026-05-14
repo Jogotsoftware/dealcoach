@@ -4,6 +4,40 @@ import { supabase } from '../lib/supabase'
 import { callDealChat, callChatActions } from '../lib/webhooks'
 import { track } from '../lib/analytics'
 import { theme as T } from '../lib/theme'
+import { useOrg } from '../contexts/OrgContext'
+
+// Curated demo overrides — when one of these matches AND we're in a demo org,
+// short-circuit the chat backend and return the canned response. Keeps the
+// demo narrative deterministic (no LLM drift) and lets us hand-craft the
+// nav_action to point at the exact deal/quote we want to show.
+const DEMO_OVERRIDES = [
+  {
+    // "which deal closes soon" / "best chance of closing" / "highest probability"
+    pattern: /\b(best (chance|shot|probability) (of |to )?clos|closes? (soon|next|first)|most likely to clos|highest (chance|probability|confidence))/i,
+    response: `**Chaberton Energy** — your highest-conviction deal in the next 30 days.
+
+**Why it's likely to close:**
+- **Compelling Event verified** — their NetSuite contract renewal lands Sept 30. Hard date, hard money, board-mandated decision.
+- **Strong product fit** — multi-entity consolidation + project costing maps cleanly to Intacct's strengths.
+- **Champion + Economic Buyer engaged** — Joe has both threaded across 4 conversations.
+
+**The risk to manage:**
+- **Steep price gap with Campfire** — they're roughly 35% under our list. Joe needs to land the value story on multi-entity TCO before Selection or this becomes a price war.
+
+Want to dig in?`,
+    navActions: [
+      { label: 'View Chaberton Energy', route: '/deal/16b2bf8d-ba97-4a02-b614-246603c3e48b', kind: 'navigate' },
+    ],
+  },
+]
+
+function findDemoOverride(userMsg) {
+  if (!userMsg) return null
+  for (const o of DEMO_OVERRIDES) {
+    if (o.pattern.test(userMsg)) return o
+  }
+  return null
+}
 
 const SUGGESTIONS_DEAL = [
   'What are the biggest risks?',
@@ -69,6 +103,72 @@ function MessageContent({ content }) {
   )
 }
 
+// Rotating sun loader — matches the Lumen brand mark used on the app load
+// screen. Sized for inline placement next to chat-thinking copy.
+function LumenSun({ size = 22 }) {
+  const RAY_COUNT = 8
+  const RAY_INNER = 22
+  const RAY_OUTER = 36
+  return (
+    <svg width={size} height={size} viewBox="0 0 100 100"
+      style={{ animation: 'spin 3s linear infinite', transformOrigin: '50% 50%' }}
+      aria-label="Thinking">
+      <circle cx="50" cy="50" r="14" fill="#FFC000" />
+      {Array.from({ length: RAY_COUNT }).map((_, i) => {
+        const a = (i * 2 * Math.PI) / RAY_COUNT
+        const x1 = 50 + RAY_INNER * Math.cos(a)
+        const y1 = 50 + RAY_INNER * Math.sin(a)
+        const x2 = 50 + RAY_OUTER * Math.cos(a)
+        const y2 = 50 + RAY_OUTER * Math.sin(a)
+        return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2}
+          stroke="#FFC000" strokeWidth="6" strokeLinecap="round" />
+      })}
+    </svg>
+  )
+}
+
+// TypingMessage — incrementally reveals an assistant message a few characters
+// at a time so it appears to "type in" instead of plopping all at once.
+// Once the full text has been revealed, hands off to MessageContent for the
+// final markdown render. Speed picked so a 400-char paragraph types in ~1.6s.
+function TypingMessage({ content }) {
+  const [displayed, setDisplayed] = useState('')
+  const [done, setDone] = useState(false)
+  useEffect(() => {
+    if (!content) return
+    setDisplayed('')
+    setDone(false)
+    let i = 0
+    const total = content.length
+    // Type ~5 chars per tick, ~50 chars per 100ms — fast enough to feel snappy
+    // but slow enough to feel intentional. Skip the animation if response is
+    // very short (< 30 chars) to avoid feeling laggy on quick answers.
+    if (total < 30) { setDisplayed(content); setDone(true); return }
+    const id = setInterval(() => {
+      i = Math.min(total, i + Math.max(3, Math.ceil(total / 80)))
+      setDisplayed(content.slice(0, i))
+      if (i >= total) {
+        clearInterval(id)
+        setDone(true)
+      }
+    }, 24)
+    return () => clearInterval(id)
+  }, [content])
+  // While typing, render plain text + blinking caret. After done, switch to
+  // MessageContent so markdown formatting (bold, bullets) re-applies.
+  if (done) return <MessageContent content={content} />
+  return (
+    <div style={{ whiteSpace: 'pre-wrap' }}>
+      {displayed}
+      <span style={{
+        display: 'inline-block', width: 6, height: 14, marginLeft: 2,
+        verticalAlign: 'text-bottom', background: T.primary,
+        animation: 'lux-caret-blink 0.8s steps(2) infinite',
+      }} />
+    </div>
+  )
+}
+
 const THUMBS_DOWN_REASONS = [
   { key: 'wrong_info', label: 'Wrong info' },
   { key: 'not_helpful', label: 'Not helpful' },
@@ -83,6 +183,7 @@ export default function DealChat({ dealId, userId, isOpen, onClose, onAction, or
   const [sessions, setSessions] = useState([])
   const [sessionId, setSessionId] = useState(null)
   const [messages, setMessages] = useState([])
+  const { isDemoOrg } = useOrg()
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [loaded, setLoaded] = useState(false)
@@ -147,6 +248,28 @@ export default function DealChat({ dealId, userId, isOpen, onClose, onAction, or
     track('chatbot_message_sent', { context_type: isPipelineScope ? 'pipeline' : 'deal', deal_id: dealId, message_length: userMsg.length })
     setMessages(prev => [...prev, { role: 'user', content: userMsg, created_at: new Date().toISOString() }])
 
+    // Demo override — if we're in a demo org and the user's question matches a
+    // curated intent, short-circuit the backend with the canned response. Keeps
+    // the demo deterministic (no LLM drift) and lets us hand-craft the nav action.
+    if (isDemoOrg) {
+      const override = findDemoOverride(userMsg)
+      if (override) {
+        // Brief delay to keep the sun + "thinking…" indicator on screen for a
+        // beat — feels more like real reasoning than an instant snap-back.
+        await new Promise(r => setTimeout(r, 900))
+        setSending(false)
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: override.response,
+          actions_taken: [],
+          nav_actions: override.navActions || [],
+          created_at: new Date().toISOString(),
+          _typing: true,
+        }])
+        return
+      }
+    }
+
     // For pipeline scope, dealId is null and we send context_type='pipeline'.
     const ctxType = isPipelineScope ? 'pipeline' : null
     const res = await callDealChat(isPipelineScope ? null : dealId, sessionId, userMsg, userId, ctxType)
@@ -178,6 +301,7 @@ export default function DealChat({ dealId, userId, isOpen, onClose, onAction, or
       actions_taken: res.actions_taken || [],
       nav_actions: navActions,
       created_at: new Date().toISOString(),
+      _typing: true, // triggers <TypingMessage> for the type-in animation
     }])
 
     // Refetch with IDs so thumbs feedback can target the assistant message
@@ -185,10 +309,11 @@ export default function DealChat({ dealId, userId, isOpen, onClose, onAction, or
     if (sid) {
       const { data: refetched } = await supabase.from('deal_chat_messages').select('*').eq('session_id', sid).order('created_at')
       if (refetched?.length) {
-        // Re-attach nav_actions to the latest assistant message (DB doesn't store these).
+        // Re-attach nav_actions to the latest assistant message + preserve the
+        // typing flag so the refetch doesn't snap content into place mid-anim.
         const merged = refetched.map((m, i) => {
           if (i === refetched.length - 1 && m.role === 'assistant') {
-            return { ...m, nav_actions: navActions }
+            return { ...m, nav_actions: navActions, _typing: true }
           }
           return m
         })
@@ -335,7 +460,12 @@ export default function DealChat({ dealId, userId, isOpen, onClose, onAction, or
                 fontSize: 13, lineHeight: 1.6,
                 border: msg.role === 'user' ? 'none' : `1px solid ${T.borderLight}`,
               }}>
-                {msg.role === 'user' ? msg.content : <MessageContent content={msg.content} />}
+                {msg.role === 'user'
+                  ? msg.content
+                  : (msg._typing
+                      ? <TypingMessage content={msg.content} />
+                      : <MessageContent content={msg.content} />
+                  )}
                 {/* Action badges (AI-took-X markers) */}
                 {msg.actions_taken?.length > 0 && (
                   <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
@@ -419,21 +549,17 @@ export default function DealChat({ dealId, userId, isOpen, onClose, onAction, or
             </div>
           ))}
 
-          {/* Typing indicator */}
+          {/* Thinking indicator — rotating Lumen sun + soft "thinking" text.
+              Replaces the old 3-dot pulse so the loader matches the brand mark. */}
           {sending && (
             <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: 12 }}>
               <div style={{
-                padding: '12px 18px', borderRadius: '12px 12px 12px 2px',
+                padding: '10px 14px', borderRadius: '12px 12px 12px 2px',
                 background: T.surfaceAlt, border: `1px solid ${T.borderLight}`,
+                display: 'inline-flex', alignItems: 'center', gap: 10,
               }}>
-                <div style={{ display: 'flex', gap: 4 }}>
-                  {[0, 1, 2].map(n => (
-                    <span key={n} style={{
-                      width: 7, height: 7, borderRadius: '50%', background: T.textMuted,
-                      animation: `dotPulse 1.2s ease-in-out ${n * 0.2}s infinite`,
-                    }} />
-                  ))}
-                </div>
+                <LumenSun size={20} />
+                <span style={{ fontSize: 12, color: T.textMuted, fontWeight: 500 }}>Lumen is thinking…</span>
               </div>
             </div>
           )}
