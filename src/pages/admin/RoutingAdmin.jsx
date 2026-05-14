@@ -12,7 +12,12 @@ const US_STATES = [
 ]
 
 const FALLBACK_VERTICALS = [
-  'Manufacturing','Distribution','SaaS','Professional Services','Nonprofit','PE-backed Services',
+  'General Business',
+  'Hospitality',
+  'Healthcare',
+  'Not For Profit',
+  'Software & Professional Services',
+  'Financial Services',
 ]
 
 function describeEmployeeBand(min, max) {

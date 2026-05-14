@@ -63,11 +63,13 @@ const blankDenial = () => ({
   ai_guidance: '',
   priority: 100,
   active: true,
+  field_id: null,
 })
 
 function DenialPanel({ orgId }) {
   const { profile } = useAuth()
   const [rows, setRows] = useState([])
+  const [fields, setFields] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [editingId, setEditingId] = useState(null)
@@ -78,22 +80,40 @@ function DenialPanel({ orgId }) {
   async function load() {
     setLoading(true); setError(null)
     try {
-      const { data, error: e } = await supabase
-        .from('ae_denial_criteria').select('*')
-        .eq('org_id', orgId).order('priority', { ascending: true })
-      if (e) throw e
-      setRows(data || [])
+      const [{ data: rData, error: rErr }, { data: fData, error: fErr }] = await Promise.all([
+        supabase.from('ae_denial_criteria').select('*').eq('org_id', orgId).order('priority', { ascending: true }),
+        supabase.from('bdr_submission_fields').select('id, label, field_key').eq('org_id', orgId).order('priority', { ascending: true }),
+      ])
+      if (rErr) throw rErr
+      if (fErr) throw fErr
+      setRows(rData || [])
+      setFields(fData || [])
     } catch (err) { setError(err.message || String(err)) }
     finally { setLoading(false) }
   }
   useEffect(() => { load() /* eslint-disable-next-line */ }, [orgId])
+
+  const fieldsById = useMemo(() => {
+    const m = {}
+    for (const f of fields) m[f.id] = f
+    return m
+  }, [fields])
 
   const startCreate = () => {
     const maxPriority = rows.reduce((m, r) => Math.max(m, r.priority || 0), 0)
     setEditingId('new')
     setForm({ ...blankDenial(), priority: maxPriority + 10 })
   }
-  const startEdit = (r) => { setEditingId(r.id); setForm({ description: r.description ?? '', ai_guidance: r.ai_guidance ?? '', priority: r.priority ?? 100, active: r.active ?? true }) }
+  const startEdit = (r) => {
+    setEditingId(r.id)
+    setForm({
+      description: r.description ?? '',
+      ai_guidance: r.ai_guidance ?? '',
+      priority: r.priority ?? 100,
+      active: r.active ?? true,
+      field_id: r.field_id ?? null,
+    })
+  }
   const cancel = () => { setEditingId(null); setForm(blankDenial()); setError(null) }
 
   const save = async () => {
@@ -106,6 +126,7 @@ function DenialPanel({ orgId }) {
         ai_guidance: form.ai_guidance.trim(),
         priority: Number(form.priority) || 100,
         active: !!form.active,
+        field_id: form.field_id || null,
       }
       if (editingId === 'new') {
         const { error: e } = await supabase.from('ae_denial_criteria').insert({ ...payload, org_id: orgId, created_by: profile.id })
@@ -146,7 +167,7 @@ function DenialPanel({ orgId }) {
       </div>
 
       {editingId === 'new' && (
-        <DenialEditForm form={form} setF={setF} onSave={save} onCancel={cancel} saving={saving} isNew />
+        <DenialEditForm form={form} setF={setF} fields={fields} onSave={save} onCancel={cancel} saving={saving} isNew />
       )}
 
       {error && (
@@ -168,7 +189,7 @@ function DenialPanel({ orgId }) {
       {!loading && rows.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {rows.map(r => editingId === r.id ? (
-            <DenialEditForm key={r.id} form={form} setF={setF} onSave={save} onCancel={cancel} saving={saving} />
+            <DenialEditForm key={r.id} form={form} setF={setF} fields={fields} onSave={save} onCancel={cancel} saving={saving} />
           ) : (
             <div key={r.id} style={{
               border: `1px solid ${T.border}`, borderRadius: 6, padding: 12,
@@ -182,8 +203,11 @@ function DenialPanel({ orgId }) {
                   fontSize: 11, fontWeight: 700, flexShrink: 0,
                 }}>{r.priority}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{r.description}</span>
+                    {r.field_id && fieldsById[r.field_id]
+                      ? <Badge color={T.primary}>Scoped: {fieldsById[r.field_id].label}</Badge>
+                      : <Badge color={T.textMuted}>Global</Badge>}
                     {!r.active && <Badge color={T.textMuted}>Inactive</Badge>}
                   </div>
                   {r.ai_guidance && (
@@ -215,14 +239,21 @@ function DenialPanel({ orgId }) {
   )
 }
 
-function DenialEditForm({ form, setF, onSave, onCancel, saving, isNew }) {
+function DenialEditForm({ form, setF, fields = [], onSave, onCancel, saving, isNew }) {
   return (
     <div style={{ border: `1px solid ${T.primary}40`, borderRadius: 6, background: T.primaryLight, padding: 14, marginBottom: 12 }}>
       <div style={{ fontSize: 12, fontWeight: 700, color: T.primary, marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{isNew ? 'New criterion' : 'Edit criterion'}</div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px', gap: 12, marginBottom: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 200px 120px', gap: 12, marginBottom: 10 }}>
         <div>
           <label style={labelStyle}>Description (shown to BDR when triggered) *</label>
           <input style={inputStyle} value={form.description} onChange={e => setF('description', e.target.value)} placeholder="Lead is outside ICP: under 50 employees AND under $10M annual revenue." />
+        </div>
+        <div>
+          <label style={labelStyle}>Scope</label>
+          <select style={inputStyle} value={form.field_id ?? ''} onChange={e => setF('field_id', e.target.value || null)}>
+            <option value="">Global (any field)</option>
+            {fields.map(f => <option key={f.id} value={f.id}>Field: {f.label}</option>)}
+          </select>
         </div>
         <div>
           <label style={labelStyle}>Priority *</label>
@@ -295,30 +326,50 @@ function snakeCase(s) {
 function SubmissionPanel({ orgId }) {
   const { profile } = useAuth()
   const [rows, setRows] = useState([])
+  const [denialRules, setDenialRules] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [editingId, setEditingId] = useState(null)
   const [form, setForm] = useState(blankCustom())
   const [saving, setSaving] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(null)
+  const [expandedDenialFor, setExpandedDenialFor] = useState(null)
+  // Drag-and-drop state. dragId = the row currently being dragged; dragOverId =
+  // the row the cursor is hovering over. We only render the row order from local
+  // `rows` state during the drag; on drop we persist new priorities.
+  const [dragId, setDragId] = useState(null)
+  const [dragOverId, setDragOverId] = useState(null)
 
   async function load() {
     setLoading(true); setError(null)
     try {
-      const { data, error: e } = await supabase
-        .from('bdr_submission_fields').select('*')
-        .eq('org_id', orgId).order('priority', { ascending: true })
-      if (e) throw e
-      setRows(data || [])
+      const [{ data: rData, error: rErr }, { data: dData, error: dErr }] = await Promise.all([
+        supabase.from('bdr_submission_fields').select('*').eq('org_id', orgId).order('priority', { ascending: true }),
+        supabase.from('ae_denial_criteria').select('*').eq('org_id', orgId).order('priority', { ascending: true }),
+      ])
+      if (rErr) throw rErr
+      if (dErr) throw dErr
+      setRows(rData || [])
+      setDenialRules(dData || [])
     } catch (err) { setError(err.message || String(err)) }
     finally { setLoading(false) }
   }
   useEffect(() => { load() /* eslint-disable-next-line */ }, [orgId])
 
+  // Denial rules grouped by field_id for the per-row inline panel + count badge.
+  const scopedByField = useMemo(() => {
+    const m = {}
+    for (const r of denialRules) {
+      if (!r.field_id) continue
+      if (!m[r.field_id]) m[r.field_id] = []
+      m[r.field_id].push(r)
+    }
+    return m
+  }, [denialRules])
+
   const startCreate = () => {
-    const maxPriority = rows.reduce((m, r) => Math.max(m, r.priority || 0), 0)
     setEditingId('new')
-    setForm({ ...blankCustom(), priority: maxPriority + 10 })
+    setForm({ ...blankCustom(), priority: 0 })  // priority set on save based on row count
   }
 
   const startEdit = (r) => {
@@ -347,7 +398,6 @@ function SubmissionPanel({ orgId }) {
         label: form.label.trim(),
         required: !!form.required,
         active: !!form.active,
-        priority: Number(form.priority) || 100,
         help_text: form.help_text.trim() || null,
         placeholder: form.placeholder.trim() || null,
         options: form.input_type === 'dropdown'
@@ -360,6 +410,7 @@ function SubmissionPanel({ orgId }) {
         payload.input_type = form.input_type
         payload.is_builtin = false
         payload.created_by = profile.id
+        payload.priority = (rows.reduce((m, r) => Math.max(m, r.priority || 0), 0) || 0) + 10
         const { error: e } = await supabase.from('bdr_submission_fields').insert(payload)
         if (e) throw e
       } else {
@@ -392,9 +443,80 @@ function SubmissionPanel({ orgId }) {
     } catch (err) { setError(err.message || String(err)) }
   }
 
-  const setF = (k, v) => setForm(prev => ({ ...prev, [k]: v }))
+  // Drag-and-drop reorder. On drop we splice rows locally, re-number priorities
+  // (10, 20, 30...), and push individual updates in parallel. Re-load at the end
+  // to confirm what's in the DB matches what we showed optimistically.
+  const onDrop = async () => {
+    if (!dragId || !dragOverId || dragId === dragOverId) {
+      setDragId(null); setDragOverId(null); return
+    }
+    const fromIdx = rows.findIndex(r => r.id === dragId)
+    const toIdx = rows.findIndex(r => r.id === dragOverId)
+    if (fromIdx < 0 || toIdx < 0) { setDragId(null); setDragOverId(null); return }
+    const next = rows.slice()
+    const [moved] = next.splice(fromIdx, 1)
+    next.splice(toIdx, 0, moved)
+    // Optimistic local renumber so the UI doesn't snap back during the await.
+    const renumbered = next.map((r, i) => ({ ...r, priority: (i + 1) * 10 }))
+    setRows(renumbered)
+    setDragId(null); setDragOverId(null)
+    try {
+      const updates = renumbered.map(r =>
+        supabase.from('bdr_submission_fields')
+          .update({ priority: r.priority, updated_at: new Date().toISOString() })
+          .eq('id', r.id)
+      )
+      const results = await Promise.all(updates)
+      const firstError = results.find(x => x.error)
+      if (firstError?.error) throw firstError.error
+      await load()
+    } catch (err) {
+      setError(err.message || String(err))
+      await load()
+    }
+  }
 
-  const editingRow = useMemo(() => rows.find(r => r.id === editingId) || null, [rows, editingId])
+  const addScopedDenial = async (fieldId, description, ai_guidance) => {
+    if (!description.trim() || !ai_guidance.trim()) {
+      setError('Description and AI guidance are required.')
+      return
+    }
+    try {
+      const maxPriority = denialRules.reduce((m, r) => Math.max(m, r.priority || 0), 0)
+      const { error: e } = await supabase.from('ae_denial_criteria').insert({
+        org_id: orgId,
+        created_by: profile.id,
+        description: description.trim(),
+        ai_guidance: ai_guidance.trim(),
+        priority: maxPriority + 10,
+        active: true,
+        field_id: fieldId,
+      })
+      if (e) throw e
+      await load()
+    } catch (err) { setError(err.message || String(err)) }
+  }
+
+  const deleteScopedDenial = async (id) => {
+    try {
+      const { error: e } = await supabase.from('ae_denial_criteria').delete().eq('id', id)
+      if (e) throw e
+      await load()
+    } catch (err) { setError(err.message || String(err)) }
+  }
+
+  const toggleScopedDenial = async (rule) => {
+    try {
+      const { error: e } = await supabase
+        .from('ae_denial_criteria')
+        .update({ active: !rule.active, updated_at: new Date().toISOString() })
+        .eq('id', rule.id)
+      if (e) throw e
+      await load()
+    } catch (err) { setError(err.message || String(err)) }
+  }
+
+  const setF = (k, v) => setForm(prev => ({ ...prev, [k]: v }))
 
   return (
     <Card>
@@ -402,7 +524,7 @@ function SubmissionPanel({ orgId }) {
         padding: 12, background: T.surfaceAlt, borderRadius: 6,
         fontSize: 12, color: T.textSecondary, lineHeight: 1.5, marginBottom: 12,
       }}>
-        <strong style={{ color: T.text }}>How this works:</strong> these fields control the BDR submission form for your org. Toggle <em>Required</em> to enforce on submit; toggle <em>Active</em> to hide a field. Built-in fields map to dedicated lead columns (and the AI sees them by their original semantic). Custom fields you add are stored on the lead's <code>custom_fields</code> JSONB and appended to the AI prompt as a "Custom fields" block.
+        <strong style={{ color: T.text }}>How this works:</strong> drag rows to reorder — the visual order is what the BDR sees and how the AI receives them. Toggle <em>Required</em> to enforce on submit; toggle <em>Active</em> to hide a field. Click the chevron on any row to add denial rules scoped to that specific field — those rules fire only against that field's value during AI first-glance review.
       </div>
 
       {editingId === 'new' && (
@@ -424,13 +546,13 @@ function SubmissionPanel({ orgId }) {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr style={{ background: T.surfaceAlt }}>
-                <Th>Priority</Th>
+                <Th></Th>
                 <Th>Label</Th>
                 <Th>Field key</Th>
                 <Th>Type</Th>
-                <Th>Builtin</Th>
                 <Th>Required</Th>
                 <Th>Active</Th>
+                <Th>Denial rules</Th>
                 <Th></Th>
               </tr>
             </thead>
@@ -452,33 +574,90 @@ function SubmissionPanel({ orgId }) {
                     </td>
                   </tr>
                 )]
-                : [(
-                  <tr key={r.id} style={{ borderBottom: `1px solid ${T.borderLight}`, opacity: r.active ? 1 : 0.55 }}>
-                    <Td><strong>{r.priority}</strong></Td>
-                    <Td><span style={{ fontWeight: 600 }}>{r.label}</span></Td>
-                    <Td><code style={{ fontSize: 11, color: T.textSecondary }}>{r.field_key}</code></Td>
-                    <Td>{ALL_INPUT_TYPE_LABELS[r.input_type] || r.input_type}</Td>
-                    <Td>{r.is_builtin ? <Badge color={T.primary}>builtin</Badge> : <Badge color={T.textMuted}>custom</Badge>}</Td>
-                    <Td>
-                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontSize: 11 }}>
-                        <input type="checkbox" checked={!!r.required} onChange={() => toggle(r, 'required')} />
-                        {r.required ? 'yes' : 'no'}
-                      </label>
-                    </Td>
-                    <Td>
-                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontSize: 11 }}>
-                        <input type="checkbox" checked={!!r.active} onChange={() => toggle(r, 'active')} />
-                        {r.active ? 'on' : 'off'}
-                      </label>
-                    </Td>
-                    <Td>
-                      <div style={{ display: 'flex', gap: 4 }}>
-                        <Button onClick={() => startEdit(r)} style={{ padding: '4px 10px', fontSize: 11 }}>Edit</Button>
-                        {!r.is_builtin && <Button danger onClick={() => setConfirmDelete(r.id)} style={{ padding: '4px 10px', fontSize: 11 }}>Delete</Button>}
-                      </div>
-                    </Td>
-                  </tr>
-                )])}
+                : (() => {
+                  const scoped = scopedByField[r.id] || []
+                  const isOverTarget = dragOverId === r.id && dragId !== r.id
+                  const isDragging = dragId === r.id
+                  const isExpanded = expandedDenialFor === r.id
+                  const baseRow = (
+                    <tr key={r.id}
+                      draggable
+                      onDragStart={e => { setDragId(r.id); e.dataTransfer.effectAllowed = 'move' }}
+                      onDragOver={e => { e.preventDefault(); if (dragOverId !== r.id) setDragOverId(r.id); e.dataTransfer.dropEffect = 'move' }}
+                      onDragEnd={() => { setDragId(null); setDragOverId(null) }}
+                      onDrop={e => { e.preventDefault(); onDrop() }}
+                      style={{
+                        borderBottom: `1px solid ${T.borderLight}`,
+                        opacity: r.active ? (isDragging ? 0.4 : 1) : 0.55,
+                        background: isOverTarget ? T.primaryLight : 'transparent',
+                        cursor: 'grab',
+                      }}>
+                      <Td>
+                        <span title="Drag to reorder" style={{
+                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                          width: 22, height: 22, color: T.textMuted, cursor: 'grab',
+                          fontSize: 14, userSelect: 'none',
+                        }}>⋮⋮</span>
+                      </Td>
+                      <Td><span style={{ fontWeight: 600 }}>{r.label}</span></Td>
+                      <Td><code style={{ fontSize: 11, color: T.textSecondary }}>{r.field_key}</code></Td>
+                      <Td>{ALL_INPUT_TYPE_LABELS[r.input_type] || r.input_type}</Td>
+                      <Td>
+                        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontSize: 11 }}>
+                          <input type="checkbox" checked={!!r.required} onChange={() => toggle(r, 'required')} />
+                          {r.required ? 'yes' : 'no'}
+                        </label>
+                      </Td>
+                      <Td>
+                        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontSize: 11 }}>
+                          <input type="checkbox" checked={!!r.active} onChange={() => toggle(r, 'active')} />
+                          {r.active ? 'on' : 'off'}
+                        </label>
+                      </Td>
+                      <Td>
+                        <button
+                          type="button"
+                          onClick={() => setExpandedDenialFor(isExpanded ? null : r.id)}
+                          title={isExpanded ? 'Hide denial rules' : 'Show / add denial rules for this field'}
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 4,
+                            background: scoped.length ? T.primaryLight : 'transparent',
+                            border: `1px solid ${scoped.length ? T.primary : T.border}`,
+                            borderRadius: 4, padding: '3px 8px', cursor: 'pointer',
+                            fontSize: 11, color: scoped.length ? T.primary : T.textSecondary,
+                            fontFamily: T.font, fontWeight: 600,
+                          }}
+                        >
+                          {scoped.length === 0 ? '+ Add' : `${scoped.length} rule${scoped.length === 1 ? '' : 's'}`}
+                          <span style={{
+                            display: 'inline-block', transition: 'transform 0.15s',
+                            transform: isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)',
+                          }}>▾</span>
+                        </button>
+                      </Td>
+                      <Td>
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <Button onClick={() => startEdit(r)} style={{ padding: '4px 10px', fontSize: 11 }}>Edit</Button>
+                          <Button danger onClick={() => setConfirmDelete(r.id)} style={{ padding: '4px 10px', fontSize: 11 }}>Delete</Button>
+                        </div>
+                      </Td>
+                    </tr>
+                  )
+                  const expandedRow = isExpanded ? (
+                    <tr key={r.id + '_denial'}>
+                      <td colSpan={8} style={{ padding: 0, background: '#fafbfc', borderBottom: `1px solid ${T.borderLight}` }}>
+                        <ScopedDenialPanel
+                          field={r}
+                          rules={scoped}
+                          onAdd={(desc, guide) => addScopedDenial(r.id, desc, guide)}
+                          onDelete={deleteScopedDenial}
+                          onToggle={toggleScopedDenial}
+                        />
+                      </td>
+                    </tr>
+                  ) : null
+                  return expandedRow ? [baseRow, expandedRow] : [baseRow]
+                })())}
             </tbody>
           </table>
         </div>
@@ -486,13 +665,76 @@ function SubmissionPanel({ orgId }) {
 
       {confirmDelete && (
         <ConfirmModal
-          title="Delete custom field?"
-          body="Historical leads keep the value in their custom_fields JSONB, but new submissions won't collect this field anymore."
+          title="Delete this field?"
+          body="Historical leads keep their captured values (custom fields under custom_fields JSONB; built-ins on their dedicated lead columns). New submissions won't collect this field anymore, and any denial rules scoped to it will be promoted to global criteria you can re-scope or delete from the Denial Criteria tab."
           onCancel={() => setConfirmDelete(null)}
           onConfirm={() => doDelete(confirmDelete)}
         />
       )}
     </Card>
+  )
+}
+
+function ScopedDenialPanel({ field, rules, onAdd, onDelete, onToggle }) {
+  const [description, setDescription] = useState('')
+  const [aiGuidance, setAiGuidance] = useState('')
+  const [adding, setAdding] = useState(false)
+  return (
+    <div style={{ padding: 14 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: T.textSecondary, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+        Denial rules scoped to "{field.label}"
+      </div>
+      {rules.length === 0 && !adding && (
+        <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 8 }}>
+          No scoped rules yet. The AI will still apply your global denial criteria — these add field-specific checks on top.
+        </div>
+      )}
+      {rules.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+          {rules.map(rule => (
+            <div key={rule.id} style={{
+              display: 'flex', alignItems: 'flex-start', gap: 10,
+              background: '#fff', border: `1px solid ${T.borderLight}`, borderRadius: 4, padding: 8,
+              opacity: rule.active ? 1 : 0.6,
+            }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: T.text }}>{rule.description}</div>
+                <div style={{ fontSize: 11, color: T.textSecondary, fontStyle: 'italic', marginTop: 2 }}>AI guidance: {rule.ai_guidance}</div>
+              </div>
+              <button
+                type="button" onClick={() => onToggle(rule)}
+                style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 4, padding: '3px 8px', fontSize: 11, cursor: 'pointer', color: T.textSecondary, fontFamily: T.font }}
+              >{rule.active ? 'Deactivate' : 'Activate'}</button>
+              <button
+                type="button" onClick={() => onDelete(rule.id)}
+                style={{ background: 'none', border: `1px solid ${T.error}50`, borderRadius: 4, padding: '3px 8px', fontSize: 11, cursor: 'pointer', color: T.error, fontFamily: T.font }}
+              >Delete</button>
+            </div>
+          ))}
+        </div>
+      )}
+      {adding ? (
+        <div style={{ background: '#fff', border: `1px solid ${T.primary}40`, borderRadius: 4, padding: 10 }}>
+          <div style={{ marginBottom: 8 }}>
+            <label style={labelStyle}>Description (shown to BDR when triggered)</label>
+            <input style={inputStyle} value={description} onChange={e => setDescription(e.target.value)} placeholder={`e.g. "${field.label}" not aligned with target ICP`} />
+          </div>
+          <div style={{ marginBottom: 8 }}>
+            <label style={labelStyle}>AI guidance (internal — when to fire)</label>
+            <textarea style={{ ...inputStyle, minHeight: 60, fontFamily: T.font, resize: 'vertical' }} rows={3} value={aiGuidance} onChange={e => setAiGuidance(e.target.value)} placeholder={`e.g. Trigger if the value for ${field.label} is empty or "Other".`} />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
+            <Button onClick={() => { setAdding(false); setDescription(''); setAiGuidance('') }}>Cancel</Button>
+            <Button primary onClick={async () => {
+              await onAdd(description, aiGuidance)
+              setDescription(''); setAiGuidance(''); setAdding(false)
+            }}>Add rule</Button>
+          </div>
+        </div>
+      ) : (
+        <Button onClick={() => setAdding(true)} style={{ fontSize: 11, padding: '4px 10px' }}>+ Add denial rule for this field</Button>
+      )}
+    </div>
   )
 }
 

@@ -21,8 +21,16 @@ const US_STATES = [
   ['WA','Washington'],['WV','West Virginia'],['WI','Wisconsin'],['WY','Wyoming'],
 ]
 
+// Canonical Sage vertical list (locked — used wherever a BDR/AE picks a vertical).
+// The bdr_submission_fields options column will override this if an admin configures it,
+// but the default is this canonical list.
 const FALLBACK_VERTICALS = [
-  'Manufacturing', 'Distribution', 'SaaS', 'Professional Services', 'Nonprofit', 'PE-backed Services',
+  'General Business',
+  'Hospitality',
+  'Healthcare',
+  'Not For Profit',
+  'Software & Professional Services',
+  'Financial Services',
 ]
 
 // Field keys whose values map to dedicated bdr_leads columns (vs custom_fields JSONB).
