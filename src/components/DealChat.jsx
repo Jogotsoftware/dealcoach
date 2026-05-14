@@ -1,16 +1,25 @@
 import { useState, useEffect, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { callDealChat } from '../lib/webhooks'
+import { callDealChat, callChatActions } from '../lib/webhooks'
 import { track } from '../lib/analytics'
 import { theme as T } from '../lib/theme'
 
-const SUGGESTIONS = [
+const SUGGESTIONS_DEAL = [
   'What are the biggest risks?',
   'Who should I talk to next?',
   'Questions for the next call?',
   'Create a follow-up task',
   'Summarize this deal',
   "What's my competitive strategy?",
+]
+
+const SUGGESTIONS_PIPELINE = [
+  'Which deal has the best shot at closing soon?',
+  'Which deals are at risk of slipping?',
+  'What are my top pull-in candidates?',
+  "Where am I single-threaded?",
+  "What's my forecast accuracy this quarter?",
 ]
 
 function relativeTime(date) {
@@ -67,7 +76,10 @@ const THUMBS_DOWN_REASONS = [
   { key: 'other', label: 'Other' },
 ]
 
-export default function DealChat({ dealId, userId, isOpen, onClose, onAction, orgId }) {
+export default function DealChat({ dealId, userId, isOpen, onClose, onAction, orgId, scope = 'deal' }) {
+  // scope: 'deal' (default, requires dealId) | 'pipeline' (rep-wide, requires userId only)
+  const navigate = useNavigate()
+  const isPipelineScope = scope === 'pipeline'
   const [sessions, setSessions] = useState([])
   const [sessionId, setSessionId] = useState(null)
   const [messages, setMessages] = useState([])
@@ -83,13 +95,13 @@ export default function DealChat({ dealId, userId, isOpen, onClose, onAction, or
 
   // Load sessions on open
   useEffect(() => {
-    if (isOpen && dealId && userId && !loaded) {
+    if (isOpen && userId && !loaded && (isPipelineScope || dealId)) {
       loadSessions()
     }
     if (isOpen && inputRef.current) {
       setTimeout(() => inputRef.current?.focus(), 300)
     }
-  }, [isOpen, dealId, userId])
+  }, [isOpen, dealId, userId, isPipelineScope])
 
   // Auto-scroll
   useEffect(() => {
@@ -97,8 +109,14 @@ export default function DealChat({ dealId, userId, isOpen, onClose, onAction, or
   }, [messages, sending])
 
   async function loadSessions() {
-    const { data: sess } = await supabase.from('deal_chat_sessions').select('*')
-      .eq('deal_id', dealId).eq('user_id', userId).order('updated_at', { ascending: false })
+    let query = supabase.from('deal_chat_sessions').select('*').eq('user_id', userId).order('updated_at', { ascending: false })
+    if (isPipelineScope) {
+      // Pipeline-scope: only sessions with no deal_id (or with context_type='pipeline')
+      query = query.is('deal_id', null)
+    } else {
+      query = query.eq('deal_id', dealId)
+    }
+    const { data: sess } = await query
     setSessions(sess || [])
     if (sess?.length) {
       setSessionId(sess[0].id)
@@ -126,10 +144,12 @@ export default function DealChat({ dealId, userId, isOpen, onClose, onAction, or
     if (!userMsg || sending) return
     setInput('')
     setSending(true)
-    track('chatbot_message_sent', { context_type: 'deal', deal_id: dealId, message_length: userMsg.length })
+    track('chatbot_message_sent', { context_type: isPipelineScope ? 'pipeline' : 'deal', deal_id: dealId, message_length: userMsg.length })
     setMessages(prev => [...prev, { role: 'user', content: userMsg, created_at: new Date().toISOString() }])
 
-    const res = await callDealChat(dealId, sessionId, userMsg, userId)
+    // For pipeline scope, dealId is null and we send context_type='pipeline'.
+    const ctxType = isPipelineScope ? 'pipeline' : null
+    const res = await callDealChat(isPipelineScope ? null : dealId, sessionId, userMsg, userId, ctxType)
     setSending(false)
 
     if (res.error) {
@@ -142,16 +162,38 @@ export default function DealChat({ dealId, userId, isOpen, onClose, onAction, or
       setSessions(prev => [{ id: res.session_id, title: userMsg.substring(0, 50) }, ...prev])
     }
 
+    // Sidecar: enrich the assistant response with clickable navigation actions.
+    // Non-blocking failure — empty actions on any error.
+    const enrich = await callChatActions({
+      scope: isPipelineScope ? 'rep' : 'deal',
+      userId: userId,
+      dealId: isPipelineScope ? null : dealId,
+      message: userMsg,
+      assistantText: res.message || '',
+    })
+    const navActions = enrich?.actions || []
+
     setMessages(prev => [...prev, {
       role: 'assistant', content: res.message,
-      actions_taken: res.actions_taken || [], created_at: new Date().toISOString(),
+      actions_taken: res.actions_taken || [],
+      nav_actions: navActions,
+      created_at: new Date().toISOString(),
     }])
 
     // Refetch with IDs so thumbs feedback can target the assistant message
     const sid = res.session_id || sessionId
     if (sid) {
       const { data: refetched } = await supabase.from('deal_chat_messages').select('*').eq('session_id', sid).order('created_at')
-      if (refetched?.length) setMessages(refetched)
+      if (refetched?.length) {
+        // Re-attach nav_actions to the latest assistant message (DB doesn't store these).
+        const merged = refetched.map((m, i) => {
+          if (i === refetched.length - 1 && m.role === 'assistant') {
+            return { ...m, nav_actions: navActions }
+          }
+          return m
+        })
+        setMessages(merged)
+      }
     }
 
     if (res.actions_taken?.length > 0 && onAction) onAction()
@@ -229,7 +271,12 @@ export default function DealChat({ dealId, userId, isOpen, onClose, onAction, or
           padding: '14px 16px', borderBottom: `1px solid ${T.border}`,
           display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0,
         }}>
-          <div style={{ fontSize: 16, fontWeight: 800, color: T.text, flex: 1 }}>Ask Coach</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 16, fontWeight: 800, color: T.text }}>Ask Lumen</div>
+            <div style={{ fontSize: 11, color: T.textMuted, marginTop: 1 }}>
+              {isPipelineScope ? 'Asking about your pipeline' : 'Asking about this deal'}
+            </div>
+          </div>
           {sessions.length > 1 && (
             <select style={{
               fontSize: 11, padding: '4px 8px', borderRadius: 4, border: `1px solid ${T.border}`,
@@ -257,10 +304,10 @@ export default function DealChat({ dealId, userId, isOpen, onClose, onAction, or
           {messages.length === 0 && !sending && (
             <div>
               <div style={{ textAlign: 'center', padding: '24px 0 16px', color: T.textMuted, fontSize: 13 }}>
-                Ask your AI coach anything about this deal
+                {isPipelineScope ? 'Ask Lumen anything about your pipeline' : 'Ask your AI coach anything about this deal'}
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}>
-                {SUGGESTIONS.map(s => (
+                {(isPipelineScope ? SUGGESTIONS_PIPELINE : SUGGESTIONS_DEAL).map(s => (
                   <button key={s} onClick={() => sendMessage(s)} style={{
                     border: `1px solid ${T.border}`, borderRadius: 20, padding: '6px 14px',
                     fontSize: 12, cursor: 'pointer', background: T.surface, color: T.text,
@@ -289,7 +336,7 @@ export default function DealChat({ dealId, userId, isOpen, onClose, onAction, or
                 border: msg.role === 'user' ? 'none' : `1px solid ${T.borderLight}`,
               }}>
                 {msg.role === 'user' ? msg.content : <MessageContent content={msg.content} />}
-                {/* Action badges */}
+                {/* Action badges (AI-took-X markers) */}
                 {msg.actions_taken?.length > 0 && (
                   <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                     {msg.actions_taken.map((a, ai) => (
@@ -299,6 +346,29 @@ export default function DealChat({ dealId, userId, isOpen, onClose, onAction, or
                       }}>
                         &#10003; {a.action || a.type || 'Action'}{a.title ? `: ${a.title}` : ''}
                       </span>
+                    ))}
+                  </div>
+                )}
+                {/* Clickable navigation actions (chat-actions sidecar) */}
+                {msg.nav_actions?.length > 0 && (
+                  <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {msg.nav_actions.map((a, ai) => (
+                      <button
+                        key={ai}
+                        onClick={() => { onClose && onClose(); navigate(a.route) }}
+                        style={{
+                          fontSize: 12, fontWeight: 600,
+                          color: '#fff', background: T.primary,
+                          border: 'none', borderRadius: 6,
+                          padding: '6px 12px', cursor: 'pointer',
+                          fontFamily: T.font,
+                          display: 'inline-flex', alignItems: 'center', gap: 4,
+                        }}
+                        onMouseEnter={e => { e.currentTarget.style.background = T.primaryDark || '#4A95C8' }}
+                        onMouseLeave={e => { e.currentTarget.style.background = T.primary }}
+                      >
+                        {a.label} <span style={{ fontSize: 13, marginLeft: 2 }}>&rarr;</span>
+                      </button>
                     ))}
                   </div>
                 )}
@@ -379,7 +449,7 @@ export default function DealChat({ dealId, userId, isOpen, onClose, onAction, or
         }}>
           <textarea ref={inputRef} value={input} onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown} disabled={sending}
-            placeholder="Ask about this deal..."
+            placeholder={isPipelineScope ? 'Ask about your pipeline...' : 'Ask about this deal...'}
             rows={1}
             style={{
               flex: 1, border: 'none', outline: 'none', resize: 'none',

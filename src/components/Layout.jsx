@@ -9,6 +9,48 @@ import GlobalChatbot from './GlobalChatbot'
 import BetaFeedbackButton from './BetaFeedbackButton'
 import NotificationBell from './NotificationBell'
 
+// Sidebar nav icons — Feather-style line SVGs at consistent 18×18 with stroke="currentColor".
+// Keyed for the items[].icon field so the render loop can look them up uniformly.
+function NavIcon({ k }) {
+  const common = { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true }
+  const paths = {
+    // Revenue — bar chart trending up
+    revenue: <><line x1="3" y1="20" x2="21" y2="20"/><line x1="6" y1="20" x2="6" y2="14"/><line x1="11" y1="20" x2="11" y2="9"/><line x1="16" y1="20" x2="16" y2="11"/><polyline points="3 14 8 9 13 13 21 5"/></>,
+    // Pipeline — funnel
+    pipeline: <><path d="M3 4h18l-7 9v6l-4 2v-8L3 4z"/></>,
+    // Execution — lightning bolt
+    execution: <><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></>,
+    // Coaching — chat bubble with question
+    coaching: <><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><line x1="9.5" y1="10" x2="9.5" y2="10.01"/><line x1="14.5" y1="10" x2="14.5" y2="10.01"/></>,
+    // Team — three people
+    team: <><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></>,
+    // Coach admin — sliders
+    coach_admin: <><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></>,
+    // Reports — document with bars
+    reports: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></>,
+    // Settings — gear
+    settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></>,
+    // Home — house
+    home: <><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></>,
+    // BDR — paper plane / send
+    bdr_submit: <><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></>,
+    bdr_leads:  <><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></>,
+    coach: <><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></>,
+  }
+  const child = paths[k]
+  if (!child) return <span style={{ display: 'inline-block', width: 18, height: 18 }} />
+  return <svg {...common}>{child}</svg>
+}
+
+// BDR-role users may visit only these path prefixes. Everything else redirects
+// to /bdr/my-leads — belt-and-suspenders on top of RLS, gives a clean demo answer
+// for "what stops a BDR from seeing the admin console".
+const BDR_ALLOWED_PATTERNS = [
+  /^\/bdr(\/|$)/,
+  /^\/settings(\/?$)/,
+  /^\/onboarding(\/|$)/,
+]
+
 // Pilot AEs with profile.access_mode='dealroom_only' may only reach: their pipeline,
 // create-new-deal, and an individual deal (where DealDetail will further restrict tabs to
 // just Deal Room). NO Settings, Onboarding, Notifications, Coach, Reports, Admin —
@@ -31,8 +73,14 @@ export default function Layout() {
   const [sidebarExpanded, setSidebarExpanded] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
 
+  // BdrGuard: BDR-role users can only reach allow-listed paths. Everything else
+  // redirects to My Leads. Layered on top of RLS (the real defense).
+  if (profile?.role === 'bdr' && !BDR_ALLOWED_PATTERNS.some(p => p.test(location.pathname))) {
+    return <Navigate to="/bdr/my-leads" replace />
+  }
+
   // Pilot AE guard: profile.access_mode='dealroom_only' users may only reach pipeline,
-  // create-deal, and an individual deal. Pairs with the DealDetail tab filter.
+  // create-deal, an individual deal, and Settings. Pairs with DealDetail tab filter.
   if (profile?.access_mode === 'dealroom_only' && !DEALROOM_ONLY_ALLOWED_PATTERNS.some(p => p.test(location.pathname))) {
     return <Navigate to="/" replace />
   }
@@ -52,18 +100,56 @@ export default function Layout() {
   const initials = profile?.initials || profile?.full_name?.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() || '?'
 
   const isAdmin = ['admin', 'system_admin'].includes(profile?.role)
+  const isAEOpsManager = ['admin', 'system_admin', 'manager'].includes(profile?.role) || isPlatformAdmin
+  const isBdr = profile?.role === 'bdr'
   const isDealRoomOnly = profile?.access_mode === 'dealroom_only'
 
-  const fullSections = [
-    { label: 'Workspace', items: [
-      { to: '/', icon: '\u25A6', label: 'Home', show: hasModule('pipeline') },
-      { to: '/coach', icon: '\u25CE', label: 'Coach', show: hasModule('coach_customization') },
-      { to: '/reports', icon: '\u2261', label: 'Reports', show: hasModule('reports') },
-      { to: '/settings', icon: '\u2699', label: 'Settings', show: true },
+  // BDR-role users get a constrained sidebar with a labelled "XDR" section
+  // (XDR = Extended Development Rep, the umbrella for BDRs/SDRs/etc; under the hood
+  // schema stays bdr_*). Settings sits in an unlabeled "Workspace" section per
+  // the existing convention (section.label === 'Workspace' suppresses the header).
+  // Everything else is hidden at the nav layer; BdrGuard + RLS enforce server-side.
+  const bdrSections = [
+    { label: 'XDR', items: [
+      { to: '/bdr/submit',   iconKey: 'bdr_submit', label: 'Submit a Lead', show: true },
+      { to: '/bdr/my-leads', iconKey: 'bdr_leads',  label: 'My Leads',      show: true },
     ]},
-    { label: 'Admin', show: isAdmin, items: [
-      { to: '/settings/organization', icon: '\u2302', label: 'Organization', show: true },
-      { to: '/admin/widgets', icon: '\u2637', label: 'Widgets', show: hasModule('coach_customization') },
+    { label: 'Workspace', items: [
+      { to: '/settings', iconKey: 'settings', label: 'Settings', show: true },
+    ]},
+  ]
+
+  const isManager = !!profile && ['head_of_sales','avp','rvp'].includes(profile.role_level)
+  const fullSections = [
+    { label: 'Workspace', items: isManager ? [
+      { to: '/revenue',   iconKey: 'revenue',     label: 'Revenue',   show: true },
+      { to: '/pipeline',  iconKey: 'pipeline',    label: 'Pipeline',  show: true },
+      { to: '/execution', iconKey: 'execution',   label: 'Execution', show: true },
+      { to: '/coaching',  iconKey: 'coaching',    label: 'Coaching',  show: true },
+      { to: '/team',      iconKey: 'team',        label: 'Team',      show: true },
+      { to: '/coach',     iconKey: 'coach_admin', label: 'Coach Admin', show: hasModule('coach_customization') },
+      { to: '/reports',   iconKey: 'reports',     label: 'Reports',   show: hasModule('reports') },
+      { to: '/my-goals',  iconKey: 'goals',       label: 'My Goals',  show: true },
+      { to: '/settings',  iconKey: 'settings',    label: 'Settings',  show: true },
+    ] : [
+      { to: '/',          iconKey: 'home',        label: 'Home',      show: hasModule('pipeline') },
+      { to: '/coach',     iconKey: 'coach',       label: 'Coach',     show: hasModule('coach_customization') },
+      { to: '/reports',   iconKey: 'reports',     label: 'Reports',   show: hasModule('reports') },
+      { to: '/my-goals',  iconKey: 'goals',       label: 'My Goals',  show: true },
+      { to: '/settings',  iconKey: 'settings',    label: 'Settings',  show: true },
+    ]},
+    { label: 'SME', show: !isManager, items: [
+      { to: '/sme/inbox', icon: '\u2709', label: 'Inbox', show: true },
+      { to: '/sme/my-questions', icon: '?', label: 'My questions', show: true },
+      { to: '/sme/leaderboard', icon: '\u2605', label: 'Leaderboard', show: true },
+    ]},
+    { label: 'Admin', show: isAEOpsManager && !isManager, items: [
+      { to: '/admin/denial-criteria', icon: '\u2717', label: 'Denial Criteria', show: isAEOpsManager },
+      { to: '/admin/routing',         icon: '\u21C4', label: 'Lead Routing',    show: isAEOpsManager },
+      { to: '/settings/organization', icon: '\u2302', label: 'Organization', show: isAdmin },
+      { to: '/admin/widgets', icon: '\u2637', label: 'Widgets', show: isAdmin && hasModule('coach_customization') },
+      { to: '/admin/sme-routing', icon: '\u21BB', label: 'SME Routing', show: isAdmin },
+      { to: '/admin/sme-flags', icon: '\u26A0', label: 'SME Flags', show: isAdmin },
     ]},
     { label: 'Super Admin', show: isPlatformAdmin, items: [
       { to: '/admin', icon: '\u2691', label: 'Organizations', show: true },
@@ -73,16 +159,16 @@ export default function Layout() {
     ]},
   ]
 
-  // Pilot AE sidebar: just Deals. The Deal Room is reached by clicking into a deal \u2014
-  // DealDetail then hides every other tab. No Settings \u2014 pilot users get a
-  // single-purpose Deal Room surface.
+  // Pilot AE sidebar: just Deals (Pipeline). The Deal Room is reached by clicking
+  // into a deal — DealDetail then hides every other tab. No Settings — pilot users
+  // get a single-purpose Deal Room surface.
   const dealRoomOnlySections = [
     { label: 'Workspace', items: [
-      { to: '/', icon: '\u25A6', label: 'Deals', show: true },
+      { to: '/', icon: '▦', label: 'Deals', show: true },
     ]},
   ]
 
-  const sections = isDealRoomOnly ? dealRoomOnlySections : fullSections
+  const sections = isDealRoomOnly ? dealRoomOnlySections : (isBdr ? bdrSections : fullSections)
 
   return (
     <div style={{ display: 'flex', fontFamily: T.font, background: T.bg, minHeight: '100vh', color: T.text, fontSize: 14 }}>
@@ -101,9 +187,9 @@ export default function Layout() {
           zIndex: 100,
         }}
       >
-        {/* Logo */}
+        {/* Logo — BDRs land on My Leads, everyone else on Pipeline */}
         <div
-          onClick={() => navigate('/')}
+          onClick={() => navigate(isBdr ? '/bdr/my-leads' : '/')}
           style={{
             padding: sidebarExpanded ? '16px 16px' : '16px 14px',
             borderBottom: '1px solid #1a1f2e',
@@ -120,7 +206,7 @@ export default function Layout() {
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontWeight: 800, fontSize: 13, color: '#fff', flexShrink: 0,
             }}>
-              {(org?.name || 'R').charAt(0).toUpperCase()}
+              {(org?.name || 'L').charAt(0).toUpperCase()}
             </div>
           )}
           {sidebarExpanded && <span style={{ fontSize: 16, fontWeight: 700, color: '#fff' }}>{org?.name || 'Lumen'}</span>}
@@ -146,7 +232,9 @@ export default function Layout() {
                       color: isActive ? '#5DADE2' : '#8899aa',
                       whiteSpace: 'nowrap', overflow: 'hidden', transition: 'all 0.15s',
                     })}>
-                    <span style={{ fontSize: 18, width: 24, textAlign: 'center', flexShrink: 0 }}>{item.icon}</span>
+                    <span style={{ width: 24, height: 18, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      {item.iconKey ? <NavIcon k={item.iconKey} /> : item.icon}
+                    </span>
                     {sidebarExpanded && <span>{item.label}</span>}
                   </NavLink>
                 ))}

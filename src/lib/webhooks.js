@@ -161,7 +161,7 @@ export async function callGenerateEmail(dealId, templateId, conversationId = nul
 /**
  * Call the Supabase Edge Function for deal chat (AI coaching).
  */
-export async function callDealChat(dealId, sessionId, message, userId, contextType = null, pageContext = null) {
+export async function callDealChat(dealId, sessionId, message, userId, contextType = null, pageContext = null, correctionPayload = null, extra = null) {
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) return { error: 'Not authenticated' }
 
@@ -173,6 +173,10 @@ export async function callDealChat(dealId, sessionId, message, userId, contextTy
     const body = { deal_id: dealId || null, session_id: sessionId, message, user_id: userId }
     if (contextType) body.context_type = contextType
     if (pageContext) body.page_context = pageContext
+    if (correctionPayload) body.correction_payload = correctionPayload
+    // PR B: optional cross_deal_question flag — set when the user explicitly
+    // chose to ask a cross-deal question while keeping a different focused deal.
+    if (extra && extra.cross_deal_question) body.cross_deal_question = true
     const response = await fetch(
       `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/deal-chat`,
       {
@@ -188,6 +192,37 @@ export async function callDealChat(dealId, sessionId, message, userId, contextTy
     return await response.json()
   } catch (err) {
     return { error: err.message }
+  }
+}
+
+/**
+ * Call the chat-actions sidecar edge function to enrich a chat exchange with
+ * clickable navigation actions. Returns { version, actions: [...] }.
+ * Safe to call after callDealChat — non-blocking failure (returns empty actions).
+ */
+export async function callChatActions({ scope, userId = null, dealId = null, message, assistantText = '' }) {
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) return { version: 'v1', actions: [] }
+  try {
+    const response = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat-actions`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({
+          scope, user_id: userId, deal_id: dealId, message, assistant_text: assistantText,
+        }),
+      }
+    )
+    const res = await response.json()
+    return res?.actions ? res : { version: 'v1', actions: [] }
+  } catch (err) {
+    console.warn('callChatActions failed (non-fatal):', err.message)
+    return { version: 'v1', actions: [] }
   }
 }
 

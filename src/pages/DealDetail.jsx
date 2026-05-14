@@ -32,7 +32,8 @@ import CoachingNudgeBanner from '../components/coaching/CoachingNudgeBanner'
 import EOMHeaderStrip from '../components/coaching/EOMHeaderStrip'
 import DualDateDisplay from '../components/coaching/DualDateDisplay'
 import NextStepsAISuggestion from '../components/coaching/NextStepsAISuggestion'
-import PathToCloseWidget from '../components/widgets/PathToCloseWidget'
+// Path to Close widget removed per Sage demo direction
+// import PathToCloseWidget from '../components/widgets/PathToCloseWidget'
 import { checkIsPlatformAdmin } from '../lib/platformAdmin'
 import CompanyLogo from '../components/CompanyLogo'
 import DealRoomConfig from './DealRoomConfig'
@@ -1931,21 +1932,7 @@ export default function DealDetail() {
           Hidden for dealroom_only pilot AEs (they don't see methodology surfaces). */}
       {!isDealRoomOnly && <CoachingNudgeBanner dealId={deal.id} userId={profile?.id} />}
 
-      {/* Sage canon: Path to Close v4 widget — single visible methodology surface.
-          Visibility: render on discovery / solution_validation / confirming_value / selection.
-          Hidden on qualify (too early — deal lacks substance) and on closed_won / closed_lost / disqualified (done).
-          Also hidden for dealroom_only pilot AEs — Deal Room is their only surface. */}
-      {!isDealRoomOnly && (deal.stage === 'discovery' || deal.stage === 'solution_validation' || deal.stage === 'confirming_value' || deal.stage === 'selection') && (
-        <div style={{ padding: '12px 24px 0 24px' }}>
-          <PathToCloseWidget
-            key={ptcRefreshKey}
-            dealId={deal.id}
-            dealStage={deal.stage}
-            dealCloseDate={deal.target_close_date}
-            onAskLumen={(prompt) => console.log('Ask Lumen:', prompt)}
-          />
-        </div>
-      )}
+      {/* Path to Close widget removed per Sage demo direction. */}
 
       <div style={{ padding: '16px 24px', width: '100%' }}>
 
@@ -2559,6 +2546,18 @@ export default function DealDetail() {
         )}
       </div>
 
+      {/* Floating "Ask Lumen" trigger — DealChat panel slides in on click. */}
+      <button
+        onClick={() => setShowChat(true)}
+        title="Ask Lumen about this deal"
+        style={{
+          position: 'fixed', bottom: 24, right: 24, zIndex: 1090,
+          width: 56, height: 56, borderRadius: '50%', background: T.primary, color: '#fff',
+          border: 'none', cursor: 'pointer', boxShadow: '0 6px 20px rgba(93,173,226,0.45)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontFamily: T.font, fontSize: 13, fontWeight: 700,
+        }}
+      >Ask</button>
       <DealChat dealId={id} userId={profile?.id} orgId={profile?.org_id} isOpen={showChat} onClose={() => setShowChat(false)} onAction={() => loadDeal()} />
       {showSlideGenerator && <SlideGenerator dealId={id} companyName={deal.company_name} onClose={() => setShowSlideGenerator(false)} />}
 

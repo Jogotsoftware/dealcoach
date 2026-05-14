@@ -32,11 +32,24 @@ export function OrgProvider({ children }) {
         setPlan(orgRes.data.plans || null)
       }
       setCredits(creditsRes.data || null)
+      // resolve_org_modules can return either an array of {module_key, enabled}
+      // rows OR (when the RPC errors) null. Fall back to the plan's modules
+      // array OR the org's modules_override (jsonb — may be array OR
+      // {slug: bool} object). Normalize all shapes to a Set of slug strings.
       const moduleRows = modulesRes?.data
-      if (moduleRows) {
+      if (Array.isArray(moduleRows)) {
         setEnabledModuleKeys(new Set(moduleRows.filter(m => m.enabled).map(m => m.module_key)))
       } else {
-        setEnabledModuleKeys(new Set(orgRes.data?.plans?.modules || []))
+        const override = orgRes.data?.modules_override
+        let slugs = []
+        if (Array.isArray(override)) {
+          slugs = override
+        } else if (override && typeof override === 'object') {
+          slugs = Object.entries(override).filter(([, v]) => v === true || v === 'true').map(([k]) => k)
+        } else if (Array.isArray(orgRes.data?.plans?.modules)) {
+          slugs = orgRes.data.plans.modules
+        }
+        setEnabledModuleKeys(new Set(slugs))
       }
     } catch (err) {
       console.error('Error loading org:', err)
@@ -51,12 +64,19 @@ export function OrgProvider({ children }) {
   const isTrialing = org?.trial_ends_at && new Date(org.trial_ends_at) > new Date()
   const fyEndMonth = org?.fiscal_year_end_month ?? 12
   const fyEndDay = org?.fiscal_year_end_day ?? 31
+  // v21 Lux web search: org kill switch (default true if column missing/null).
+  const allowChatWebSearch = org ? org.allow_chat_web_search !== false : true
+  // v22 Lux reports: org kill switch (default FALSE — opt-in only while quality
+  // issues are unresolved).
+  const enableChatReports = org ? org.enable_chat_reports === true : false
 
   return (
     <OrgContext.Provider value={{
       user: profile, org, plan, credits,
       isAdmin, isSystemAdmin, hasModule, isTrialing,
       fyEndMonth, fyEndDay,
+      allowChatWebSearch,
+      enableChatReports,
       refreshOrg: loadOrg, loading,
     }}>
       {children}

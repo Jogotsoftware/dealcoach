@@ -14,12 +14,24 @@ export function useModules() {
     supabase.rpc('resolve_user_modules', { p_user_id: user.id }).then(({ data, error }) => {
       if (cancelled) return
       if (error || !Array.isArray(data)) {
-        // Fallback: load from plan modules via org
+        // Fallback: load from plan modules via org. modules_override is jsonb and
+        // may be either an array of slug strings (legacy) OR an object map of
+        // { slug: bool } (current). Normalize to a slug array either way so
+        // hasModule(key) can do a simple .includes check.
         supabase.from('profiles').select('org_id').eq('id', user.id).single().then(async ({ data: prof }) => {
           if (cancelled || !prof?.org_id) { setModules([]); setLoading(false); return }
           const { data: org } = await supabase.from('organizations').select('plan_id, modules_override, plans(modules)').eq('id', prof.org_id).single()
           if (cancelled) return
-          setModules(org?.modules_override || org?.plans?.modules || [])
+          const override = org?.modules_override
+          let resolved = []
+          if (Array.isArray(override)) {
+            resolved = override
+          } else if (override && typeof override === 'object') {
+            resolved = Object.entries(override).filter(([, v]) => v === true || v === 'true').map(([k]) => k)
+          } else if (Array.isArray(org?.plans?.modules)) {
+            resolved = org.plans.modules
+          }
+          setModules(resolved)
           setLoading(false)
         })
       } else {
@@ -31,7 +43,7 @@ export function useModules() {
   }, [user?.id])
 
   function hasModule(key) {
-    if (modules === null) return false
+    if (!Array.isArray(modules)) return false
     return modules.includes(key)
   }
 
