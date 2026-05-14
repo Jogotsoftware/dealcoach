@@ -616,13 +616,23 @@ export default function ManagerDashboard() {
           setAllContacts([])
           setAllScores([])
         }
-        // Fetch rep_coaching_summary scoped to this org's profiles (no org_id column on the table)
-        const profileIds = (prof.data || []).map(p => p.id)
+        // Fetch rep_coaching_summary scoped to this org's profiles. The pagination
+        // refactor changed `prof` to `profRows` (array, not {data:[...]}), so the
+        // old `prof.data` was undefined → empty profileIds → no coaching fetch →
+        // heat map empty. Use profRows directly and chunk to dodge the URL cap.
+        const profileIds = profRows.map(p => p.id)
         if (profileIds.length) {
-          const { data: cdata } = await supabase.from('rep_coaching_summary')
-            .select('user_id, top_strengths, top_improvements, score_averages, calls_analyzed')
-            .in('user_id', profileIds)
-          if (!cancelled) setAllCoaching(cdata || [])
+          const coachingRows = []
+          for (let i = 0; i < profileIds.length; i += 500) {
+            const chunk = profileIds.slice(i, i + 500)
+            const cdata = await fetchAllPaged(() =>
+              supabase.from('rep_coaching_summary')
+                .select('user_id, top_strengths, top_improvements, score_averages, calls_analyzed')
+                .in('user_id', chunk)
+            )
+            coachingRows.push(...cdata)
+          }
+          if (!cancelled) setAllCoaching(coachingRows)
         }
       } catch (err) { console.error('ManagerDashboard load:', err) }
       finally { if (!cancelled) setLoading(false) }
