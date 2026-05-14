@@ -75,6 +75,25 @@ export default function Layout() {
   const [sidebarExpanded, setSidebarExpanded] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
 
+  // Per-section collapsed state, persisted to localStorage so the user's preference
+  // sticks across reloads. Key shape: { [sectionLabel]: true } means collapsed.
+  // Workspace stays always-expanded (no header anyway). Other sections click-to-toggle.
+  const [collapsedSections, setCollapsedSections] = useState(() => {
+    try {
+      const raw = localStorage.getItem('lumen.sidebar.collapsed')
+      return raw ? JSON.parse(raw) : {}
+    } catch {
+      return {}
+    }
+  })
+  const toggleSection = (label) => {
+    setCollapsedSections(prev => {
+      const next = { ...prev, [label]: !prev[label] }
+      try { localStorage.setItem('lumen.sidebar.collapsed', JSON.stringify(next)) } catch {}
+      return next
+    })
+  }
+
   // BdrGuard: BDR-role users can only reach allow-listed paths. Everything else
   // redirects to My Leads. Layered on top of RLS (the real defense).
   if (profile?.role === 'bdr' && !BDR_ALLOWED_PATTERNS.some(p => p.test(location.pathname))) {
@@ -156,10 +175,12 @@ export default function Layout() {
       { to: '/admin/sme-routing', icon: '\u21BB', label: 'SME Routing', show: isAdmin },
       { to: '/admin/sme-flags', icon: '\u26A0', label: 'SME Flags', show: isAdmin },
     ]},
-    // Platform admins get the BDR/XDR surfaces in their sidebar for support
-    // and QA \u2014 they can reach the routes directly anyway (BdrGuard only fires
-    // for role === 'bdr'), but without these links they're invisible in nav.
-    { label: 'XDR', show: isPlatformAdmin, items: [
+    // XDR surface in sidebar for AE managers/admins + platform admins. AE managers
+    // need it to preview the BDR experience and walk through the routing flow;
+    // platform admins for cross-org support/QA. BdrGuard only fires for role === 'bdr',
+    // so these users could always reach the routes directly \u2014 making the entries
+    // visible just removes the "where do I click" friction.
+    { label: 'XDR', show: isAEOpsManager, items: [
       { to: '/bdr/submit',   iconKey: 'bdr_submit', label: 'Submit a Lead', show: true },
       { to: '/bdr/my-leads', iconKey: 'bdr_leads',  label: 'BDR Leads',     show: true },
     ]},
@@ -229,12 +250,35 @@ export default function Layout() {
           {sections.filter(s => s.show !== false).map(section => {
             const items = section.items.filter(i => i.show !== false)
             if (!items.length) return null
+            const hasHeader = sidebarExpanded && section.label !== 'Workspace'
+            // Only labelled sections collapse. When the sidebar is in icon-only
+            // mode (hover-collapsed) we ignore the collapsed flag — there's no
+            // header to click anyway, so items always render.
+            const isCollapsed = hasHeader && !!collapsedSections[section.label]
             return (
               <div key={section.label} style={{ marginBottom: 8 }}>
-                {sidebarExpanded && section.label !== 'Workspace' && (
-                  <div style={{ fontSize: 9, fontWeight: 700, color: '#556677', textTransform: 'uppercase', letterSpacing: '0.08em', padding: '8px 16px 4px', userSelect: 'none' }}>{section.label}</div>
+                {hasHeader && (
+                  <button
+                    type="button"
+                    onClick={() => toggleSection(section.label)}
+                    title={isCollapsed ? `Expand ${section.label}` : `Collapse ${section.label}`}
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      width: '100%', padding: '8px 16px 4px',
+                      background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+                      fontSize: 9, fontWeight: 700, color: '#556677',
+                      textTransform: 'uppercase', letterSpacing: '0.08em', userSelect: 'none',
+                    }}
+                  >
+                    <span>{section.label}</span>
+                    <span style={{
+                      display: 'inline-block', transition: 'transform 0.15s',
+                      transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
+                      fontSize: 10, color: '#556677',
+                    }} aria-hidden>▾</span>
+                  </button>
                 )}
-                {items.map(item => (
+                {!isCollapsed && items.map(item => (
                   <NavLink key={item.to} to={item.to} end title={!sidebarExpanded ? item.label : undefined}
                     style={({ isActive }) => ({
                       display: 'flex', alignItems: 'center', gap: 12,
