@@ -159,20 +159,9 @@ export default function MSPClientPortal() {
           </a>
         )}
         {portal?.company_logo_url && <img src={portal.company_logo_url} alt="" style={{ height: 40, marginBottom: 12 }} />}
-        <div style={{ fontSize: 12, fontWeight: 600, color: primaryColor, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: primaryColor, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>
           {portal?.portal_title || 'Project Plan'}
-          <span title={livePulse ? `${livePulse} live update${livePulse === 1 ? '' : 's'} received` : 'Live — updates appear automatically'}
-            style={{
-              display: 'inline-flex', alignItems: 'center', gap: 4,
-              padding: '2px 8px', borderRadius: 999, fontSize: 9, fontWeight: 800,
-              background: '#16a34a22', color: '#16a34a',
-              transition: 'transform 0.2s', transform: livePulse ? 'scale(1.05)' : 'scale(1)',
-            }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#16a34a', animation: 'live-pulse 1.6s ease-in-out infinite' }} />
-            LIVE
-          </span>
         </div>
-        <style>{`@keyframes live-pulse { 0%,100% { opacity: 0.45 } 50% { opacity: 1 } }`}</style>
         <div style={{ fontSize: 24, fontWeight: 700, color: T.text }}>{deal?.company_name || 'Implementation Plan'}</div>
         {portal?.portal_subtitle && <div style={{ fontSize: 14, color: T.textSecondary, marginTop: 4 }}>{portal.portal_subtitle}</div>}
 
@@ -186,7 +175,6 @@ export default function MSPClientPortal() {
           </div>
           <div style={{ fontSize: 11, color: T.textMuted, marginTop: 4 }}>
             {completedSteps} of {progressSteps.length} steps completed
-            {deal?.target_close_date && ` | Target: ${formatDateLong(deal.target_close_date)}`}
           </div>
         </div>
       </div>
