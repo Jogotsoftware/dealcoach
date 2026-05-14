@@ -35,6 +35,14 @@ import ExtractionDefinitions from './pages/admin/ExtractionDefinitions'
 import CoachBuilder from './pages/CoachBuilder'
 import Reports from './pages/Reports'
 import DealRetrospective from './pages/DealRetrospective'
+import ManagerDashboard from './pages/ManagerDashboard'
+import MyGoals from './pages/MyGoals'
+import BdrSubmit from './pages/bdr/Submit'
+import BdrLeadStatus from './pages/bdr/LeadStatus'
+import BdrMyLeads from './pages/bdr/MyLeads'
+import DenialCriteriaAdmin from './pages/admin/DenialCriteriaAdmin'
+import RoutingAdmin from './pages/admin/RoutingAdmin'
+import RequireAEManagerOrAdmin from './components/guards/RequireAEManagerOrAdmin'
 import PlatformAdminGuard from './components/guards/PlatformAdminGuard'
 import PathToClosePage from './pages/path/PathToClosePage'
 import ConfidencePage from './pages/path/ConfidencePage'
@@ -96,6 +104,19 @@ function PublicRoute({ children }) {
   return children
 }
 
+// Role-aware home route. Priority:
+//   1. BDR users → My Leads (Pipeline excludes them via RLS anyway; this avoids the empty-screen confusion).
+//   2. Manager role levels → Revenue tab on the manager dashboard.
+//   3. Everyone else → the standard Pipeline view.
+function HomeRoute() {
+  const { profile } = useAuth()
+  if (profile?.role === 'bdr') return <Navigate to="/bdr/my-leads" replace />
+  if (profile && ['head_of_sales','avp','rvp'].includes(profile.role_level)) {
+    return <Navigate to="/revenue" replace />
+  }
+  return <Pipeline />
+}
+
 export default function App() {
   return (
     <AuthProvider>
@@ -115,9 +136,29 @@ export default function App() {
             {/* Protected routes requiring org — inside Layout (sidebar) */}
             <Route element={<ProtectedRoute><RequireOrg /></ProtectedRoute>}>
               <Route element={<Layout />}>
-                <Route path="/" element={<ErrorBoundary label="the pipeline"><Pipeline /></ErrorBoundary>} />
+                <Route path="/" element={<ErrorBoundary label="the pipeline"><HomeRoute /></ErrorBoundary>} />
+                {/* Manager dashboard tabs — sidebar nav drives the URL. All five
+                    routes render <ManagerDashboard /> which reads location.pathname
+                    to pick the active tab. /manager is a legacy alias. */}
+                <Route path="/manager"   element={<ErrorBoundary label="manager dashboard"><ManagerDashboard /></ErrorBoundary>} />
+                <Route path="/revenue"   element={<ErrorBoundary label="revenue"><ManagerDashboard /></ErrorBoundary>} />
+                <Route path="/pipeline"  element={<ErrorBoundary label="pipeline"><ManagerDashboard /></ErrorBoundary>} />
+                <Route path="/execution" element={<ErrorBoundary label="execution"><ManagerDashboard /></ErrorBoundary>} />
+                <Route path="/coaching"  element={<ErrorBoundary label="coaching"><ManagerDashboard /></ErrorBoundary>} />
+                <Route path="/team"      element={<ErrorBoundary label="team"><ManagerDashboard /></ErrorBoundary>} />
+                <Route path="/my-goals"  element={<ErrorBoundary label="my goals"><MyGoals /></ErrorBoundary>} />
                 <Route path="/deal/new" element={<ErrorBoundary label="new deal"><NewDeal /></ErrorBoundary>} />
                 <Route path="/deal/:id" element={<ErrorBoundary label="this deal"><DealDetail /></ErrorBoundary>} />
+                {/* BDR portal — Layout's BDR guard restricts these to BDR users; RLS
+                    is the canonical defense server-side. Submit form + status views. */}
+                <Route path="/bdr/submit"     element={<ErrorBoundary label="BDR submit"><BdrSubmit /></ErrorBoundary>} />
+                <Route path="/bdr/my-leads"   element={<ErrorBoundary label="BDR my leads"><BdrMyLeads /></ErrorBoundary>} />
+                <Route path="/bdr/leads/:id"  element={<ErrorBoundary label="BDR lead status"><BdrLeadStatus /></ErrorBoundary>} />
+                {/* AE manager admin — denial criteria + routing rules + pools.
+                    Guarded at the route layer (admin/manager/system_admin OR platform_admin)
+                    and at the RLS layer server-side. */}
+                <Route path="/admin/denial-criteria" element={<ErrorBoundary label="denial criteria"><RequireAEManagerOrAdmin><DenialCriteriaAdmin /></RequireAEManagerOrAdmin></ErrorBoundary>} />
+                <Route path="/admin/routing"         element={<ErrorBoundary label="lead routing"><RequireAEManagerOrAdmin><RoutingAdmin /></RequireAEManagerOrAdmin></ErrorBoundary>} />
                 <Route path="/deal/:dealId/call/:conversationId" element={<ErrorBoundary label="this call"><CallDetail /></ErrorBoundary>} />
                 <Route path="/deal/:dealId/msp" element={<ErrorBoundary label="the MSP"><MSPPage /></ErrorBoundary>} />
                 <Route path="/deal/:dealId/quotes" element={<ErrorBoundary label="quotes"><QuotesList /></ErrorBoundary>} />
