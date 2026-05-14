@@ -22,11 +22,12 @@ const DEMO_OVERRIDES = [
 - **Champion + Economic Buyer engaged** — Joe has both threaded across 4 conversations.
 
 **The risk to manage:**
-- **Steep price gap with Campfire** — they're roughly 35% under our list. Joe needs to land the value story on multi-entity TCO before Selection or this becomes a price war.
+- **Campfire came in at ~1/4 of our price.** The buyer told Joe he was going with them — he only paused when Joe asked if we could revise the numbers. The deal is alive *because* of that opening, but the gap is real and we need to close it fast.
 
-Want to dig in?`,
+**Recommended next move:** see how you can bridge the gap on pricing — open the Deal Room to review the quote, restructure terms (multi-year ramp, timing of services, modules), and post a revised proposal back into the customer portal.`,
     navActions: [
-      { label: 'View Chaberton Energy', route: '/deal/16b2bf8d-ba97-4a02-b614-246603c3e48b', kind: 'navigate' },
+      { label: 'Open Deal Room', route: '/deal/16b2bf8d-ba97-4a02-b614-246603c3e48b/room', kind: 'navigate' },
+      { label: 'View Chaberton Deal', route: '/deal/16b2bf8d-ba97-4a02-b614-246603c3e48b', kind: 'navigate' },
     ],
   },
 ]
