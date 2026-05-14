@@ -840,17 +840,19 @@ export default function MSPEditor({ dealId, mode = 'standalone', readonlyAdapter
                             </div>
                           </div>
 
-                          {/* + button between steps (writable only) */}
+                          {/* + button between steps (writable only). Sized + positioned
+                              to match the status circles' rail (28×28 at rail center x=15),
+                              dashed border to read as an "insert" affordance. */}
                           {isWritable && si < steps.length - 1 && (
-                            <div style={{ position: 'relative', height: 20, display: 'flex', alignItems: 'center' }}>
+                            <div style={{ position: 'relative', height: 28, marginBottom: 4 }}>
                               <button onClick={() => addTweener(step, steps[si + 1])} style={{
-                                position: 'absolute', left: -40 + 15 - 8, top: 2, width: 16, height: 16, borderRadius: '50%',
-                                background: T.surface, border: `1.5px solid ${T.border}`, cursor: 'pointer',
+                                position: 'absolute', left: -40 + 15 - 11, top: 0, width: 22, height: 22, borderRadius: '50%',
+                                background: T.surface, border: `1.5px dashed ${T.border}`, cursor: 'pointer',
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                fontSize: 12, color: T.textMuted, padding: 0, zIndex: 1, transition: 'all 0.15s',
+                                fontSize: 14, lineHeight: 1, color: T.textMuted, padding: 0, zIndex: 1, transition: 'all 0.15s',
                               }}
-                                onMouseEnter={e => { e.currentTarget.style.borderColor = T.primary; e.currentTarget.style.color = T.primary }}
-                                onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.color = T.textMuted }}
+                                onMouseEnter={e => { e.currentTarget.style.borderColor = T.primary; e.currentTarget.style.color = T.primary; e.currentTarget.style.borderStyle = 'solid' }}
+                                onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.color = T.textMuted; e.currentTarget.style.borderStyle = 'dashed' }}
                                 title="Add step between"
                               >+</button>
                             </div>
@@ -861,9 +863,11 @@ export default function MSPEditor({ dealId, mode = 'standalone', readonlyAdapter
                   </div>
                 )}
 
-                {/* Add Step (writable only) */}
+                {/* Add Step (writable only). The collapsed state renders as the
+                    next "stage circle" sitting on the rail so the affordance reads
+                    as "add the next stage" rather than a floating button. */}
                 {isWritable && (
-                  <div style={{ marginTop: 16 }}>
+                  <div style={{ position: 'relative', marginTop: 12, minHeight: 32 }}>
                     {showAddStep ? (
                       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                         <input style={{ ...inputStyle, flex: 1 }} value={newStepName}
@@ -873,7 +877,18 @@ export default function MSPEditor({ dealId, mode = 'standalone', readonlyAdapter
                         <Button onClick={() => { setShowAddStep(false); setNewStepName('') }}>Cancel</Button>
                       </div>
                     ) : (
-                      <PlusButton onClick={() => setShowAddStep(true)} title="Add a step" />
+                      <button onClick={() => setShowAddStep(true)} title="Add a step"
+                        style={{
+                          position: 'absolute', left: -40 + 15 - 14, top: 0, width: 28, height: 28, borderRadius: '50%',
+                          background: T.surface, border: `2px dashed ${T.primary}`, color: T.primary,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: 16, fontWeight: 700, lineHeight: 1, cursor: 'pointer', padding: 0, zIndex: 1,
+                          transition: 'all 0.15s', fontFamily: T.font,
+                        }}
+                        onMouseEnter={e => { e.currentTarget.style.background = T.primary; e.currentTarget.style.color = '#fff' }}
+                        onMouseLeave={e => { e.currentTarget.style.background = T.surface; e.currentTarget.style.color = T.primary }}>
+                        +
+                      </button>
                     )}
                   </div>
                 )}
