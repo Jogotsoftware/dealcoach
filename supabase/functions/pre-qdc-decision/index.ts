@@ -1,5 +1,13 @@
-// pre-qdc-decision v3
+// pre-qdc-decision v4
 // AI first-glance approve/deny against AE manager denial criteria for BDR-submitted leads.
+//
+// CHANGES FROM v3:
+// - Field iteration is now driven by `bdr_submission_fields` (M11). The hardcoded 10-field
+//   list is gone; we iterate active fields ordered by priority and read built-ins from
+//   the `bdr_leads` column matching `field_key`, customs from `lead.custom_fields[field_key]`.
+//   Inactive fields are omitted entirely. Adds a "Custom fields" tail block listing any
+//   custom_fields entries whose field_key is missing or inactive in the config (so manual
+//   data from a removed field still surfaces to the AI rather than vanishing silently).
 //
 // CHANGES FROM v2:
 // - Fires send-bdr-notification on denial (in-app + email parity to the BDR with the
@@ -21,7 +29,7 @@
 // different lifecycle position.
 //
 // Conventions:
-// - Every error message starts with "pre-qdc-decision v3: ..." for runtime traceability.
+// - Every error message starts with "pre-qdc-decision v4: ..." for runtime traceability.
 // - System prompt comes from assemble_coach_prompt RPC. Fails LOUDLY if RPC errors or
 //   returns empty — never silently falls back to a partial prompt.
 // - Hash-dedups into assembled_prompt_versions (sha256 of system content).
@@ -99,12 +107,12 @@ async function recordAssembledPrompt(
       .select("id")
       .single();
     if (error) {
-      console.log("pre-qdc-decision v3: assembled_prompt_versions insert error", error.message);
+      console.log("pre-qdc-decision v4: assembled_prompt_versions insert error", error.message);
       return null;
     }
     return inserted?.id ?? null;
   } catch (e) {
-    console.log("pre-qdc-decision v3: recordAssembledPrompt threw", e);
+    console.log("pre-qdc-decision v4: recordAssembledPrompt threw", e);
     return null;
   }
 }
@@ -162,12 +170,12 @@ Deno.serve(async (req: Request) => {
 
   try {
     if (!ANTHROPIC_API_KEY) {
-      throw new Error("pre-qdc-decision v3: ANTHROPIC_API_KEY not configured");
+      throw new Error("pre-qdc-decision v4: ANTHROPIC_API_KEY not configured");
     }
 
     const reqBody = await req.json().catch(() => ({} as Record<string, unknown>));
     const lead_id = reqBody.lead_id as string | undefined;
-    if (!lead_id) throw new Error("pre-qdc-decision v3: lead_id required");
+    if (!lead_id) throw new Error("pre-qdc-decision v4: lead_id required");
 
     // 1. Load bdr_leads
     const { data: lead, error: lErr } = await sb
@@ -175,14 +183,14 @@ Deno.serve(async (req: Request) => {
       .select("*")
       .eq("id", lead_id)
       .maybeSingle();
-    if (lErr) throw new Error(`pre-qdc-decision v3: bdr_leads select error: ${lErr.message}`);
-    if (!lead) throw new Error(`pre-qdc-decision v3: lead_id not found: ${lead_id}`);
+    if (lErr) throw new Error(`pre-qdc-decision v4: bdr_leads select error: ${lErr.message}`);
+    if (!lead) throw new Error(`pre-qdc-decision v4: lead_id not found: ${lead_id}`);
 
     // 2. Idempotency — already decided
     if (lead.ai_decision === "approved" || lead.ai_decision === "denied") {
       return jr({
         success: true,
-        version: "v3",
+        version: "v4",
         idempotent: true,
         lead_id,
         decision: lead.ai_decision,
@@ -195,7 +203,7 @@ Deno.serve(async (req: Request) => {
     const transcript = (lead.transcript as string | null) ?? "";
     if (!transcript || transcript.length < 200) {
       throw new Error(
-        `pre-qdc-decision v3: transcript not ready (length=${transcript.length}); minimum 200 chars`,
+        `pre-qdc-decision v4: transcript not ready (length=${transcript.length}); minimum 200 chars`,
       );
     }
 
@@ -234,11 +242,11 @@ Deno.serve(async (req: Request) => {
       .eq("active", true)
       .maybeSingle();
     if (cErr) {
-      throw new Error(`pre-qdc-decision v3: coach lookup error: ${cErr.message}`);
+      throw new Error(`pre-qdc-decision v4: coach lookup error: ${cErr.message}`);
     }
     if (!coach) {
       throw new Error(
-        `pre-qdc-decision v3: BDR Submission Coach not active for org ${lead.org_id} — clone it via /coach or contact the AE manager`,
+        `pre-qdc-decision v4: BDR Submission Coach not active for org ${lead.org_id} — clone it via /coach or contact the AE manager`,
       );
     }
 
@@ -255,12 +263,12 @@ Deno.serve(async (req: Request) => {
       .maybeSingle();
     if (pErr) {
       throw new Error(
-        `pre-qdc-decision v3: call_type_prompts existence check failed for coach ${coach.id} (org ${lead.org_id}): ${pErr.message}`,
+        `pre-qdc-decision v4: call_type_prompts existence check failed for coach ${coach.id} (org ${lead.org_id}): ${pErr.message}`,
       );
     }
     if (!prompt) {
       throw new Error(
-        `pre-qdc-decision v3: bdr_first_glance prompt missing or inactive for coach ${coach.id} (org ${lead.org_id}). An AE manager likely deactivated it via /coach. Re-enable and retry.`,
+        `pre-qdc-decision v4: bdr_first_glance prompt missing or inactive for coach ${coach.id} (org ${lead.org_id}). An AE manager likely deactivated it via /coach. Re-enable and retry.`,
       );
     }
 
@@ -272,12 +280,12 @@ Deno.serve(async (req: Request) => {
     });
     if (rpcErr) {
       throw new Error(
-        `pre-qdc-decision v3: assemble_coach_prompt RPC failed for coach ${coach.id} (org ${lead.org_id}): ${rpcErr.message}`,
+        `pre-qdc-decision v4: assemble_coach_prompt RPC failed for coach ${coach.id} (org ${lead.org_id}): ${rpcErr.message}`,
       );
     }
     if (typeof assembled !== "string" || assembled.length < 50) {
       throw new Error(
-        `pre-qdc-decision v3: assemble_coach_prompt returned empty or invalid result (length=${
+        `pre-qdc-decision v4: assemble_coach_prompt returned empty or invalid result (length=${
           typeof assembled === "string" ? assembled.length : -1
         }) for coach ${coach.id} (org ${lead.org_id}).`,
       );
@@ -290,6 +298,42 @@ Deno.serve(async (req: Request) => {
       assembled,
     );
 
+    // 7b. Load active submission fields (M11). Drives the lead-submission section of the
+    //     prompt. Built-in field_keys map to bdr_leads columns; custom field_keys live in
+    //     lead.custom_fields JSONB. Ordered by priority so admin-set ordering carries
+    //     through to the AI prompt.
+    const { data: fieldsData } = await sb
+      .from("bdr_submission_fields")
+      .select("field_key, label, input_type, is_builtin, active, priority")
+      .eq("org_id", lead.org_id)
+      .eq("active", true)
+      .order("priority", { ascending: true });
+    const fields = (fieldsData ?? []) as Array<{
+      field_key: string;
+      label: string;
+      input_type: string;
+      is_builtin: boolean;
+      active: boolean;
+      priority: number;
+    }>;
+
+    const customFields = (lead.custom_fields ?? {}) as Record<string, unknown>;
+
+    function formatFieldValue(fieldKey: string, inputType: string, isBuiltin: boolean): string {
+      const raw = isBuiltin
+        ? (lead as Record<string, unknown>)[fieldKey]
+        : customFields[fieldKey];
+      if (raw == null || raw === "") return "Unknown";
+      if (inputType === "currency" || (isBuiltin && fieldKey === "annual_revenue")) {
+        return formatRevenue(raw as number | string);
+      }
+      if (inputType === "tag_input" || Array.isArray(raw)) {
+        const arr = Array.isArray(raw) ? raw : [raw];
+        return arr.length ? arr.map((x) => String(x)).join(", ") : "Unknown";
+      }
+      return String(raw);
+    }
+
     // 8. Build the user message — denial criteria + lead fields + BANT + transcript
     const criteriaBlock = criteria.length === 0
       ? "(NO ACTIVE DENIAL CRITERIA configured for this org. Approve unless the submission is obviously inadequate: missing transcript, BANT notes contradict the company stated, or transcript is clearly unrelated to the lead.)"
@@ -300,6 +344,29 @@ Deno.serve(async (req: Request) => {
         )
         .join("\n\n");
 
+    const leadLines = fields.length === 0
+      // Defensive fallback: no submission fields config (e.g. fresh org pre-seed).
+      // Surface a clear note rather than an empty section.
+      ? ["(No submission fields configured for this org. Judge on transcript + BANT alone.)"]
+      : fields.map((f) => `${f.label}: ${formatFieldValue(f.field_key, f.input_type, f.is_builtin)}`);
+
+    // Surface orphaned custom_fields keys (data submitted under a field that's since been
+    // deactivated or renamed) so they aren't silently dropped from the AI's view.
+    const activeKeys = new Set(fields.map((f) => f.field_key));
+    const orphanCustomEntries = Object.entries(customFields)
+      .filter(([k, v]) => !activeKeys.has(k) && v != null && v !== "");
+    const orphanCustomBlock = orphanCustomEntries.length
+      ? [
+        "",
+        "# Custom fields (no longer in current config)",
+        "",
+        ...orphanCustomEntries.map(([k, v]) => {
+          const valStr = Array.isArray(v) ? (v as unknown[]).join(", ") : String(v);
+          return `${k}: ${valStr}`;
+        }),
+      ]
+      : [];
+
     const userMessage = [
       "# Denial criteria (deny the lead if any apply)",
       "",
@@ -307,20 +374,8 @@ Deno.serve(async (req: Request) => {
       "",
       "# Lead submission",
       "",
-      `Company: ${lead.company_name ?? "Unknown"}`,
-      `Website: ${lead.website ?? "Unknown"}`,
-      `Employees: ${lead.employee_count ?? "Unknown"}`,
-      `Tech Stack / Integrations Needed: ${
-        Array.isArray(lead.tech_stack) && (lead.tech_stack as string[]).length
-          ? (lead.tech_stack as string[]).join(", ")
-          : "Unknown"
-      }`,
-      `Annual Revenue: ${formatRevenue(lead.annual_revenue as number | null)}`,
-      `Number of Entities: ${lead.num_entities ?? "Unknown"}`,
-      `Accounting Team Size: ${lead.accounting_team_size ?? "Unknown"}`,
-      `Industry: ${lead.industry ?? "Unknown"}`,
-      `Vertical: ${lead.vertical ?? "Unknown"}`,
-      `HQ State: ${lead.hq_state ?? "Unknown"}`,
+      ...leadLines,
+      ...orphanCustomBlock,
       "",
       "# BDR BANT notes",
       "",
@@ -347,7 +402,7 @@ Deno.serve(async (req: Request) => {
     if (!cr.ok) {
       const errText = await cr.text().catch(() => "");
       throw new Error(
-        `pre-qdc-decision v3: Claude API ${cr.status}: ${errText.substring(0, 300)}`,
+        `pre-qdc-decision v4: Claude API ${cr.status}: ${errText.substring(0, 300)}`,
       );
     }
     const claudeData = await cr.json();
@@ -363,7 +418,7 @@ Deno.serve(async (req: Request) => {
       parsed = JSON.parse(cleaned);
     } catch (e) {
       throw new Error(
-        `pre-qdc-decision v3: JSON parse failure: ${
+        `pre-qdc-decision v4: JSON parse failure: ${
           e instanceof Error ? e.message : String(e)
         }. Raw[0..400]: ${raw.substring(0, 400)}`,
       );
@@ -371,7 +426,7 @@ Deno.serve(async (req: Request) => {
 
     if (parsed.decision !== "approved" && parsed.decision !== "denied") {
       throw new Error(
-        `pre-qdc-decision v3: invalid decision value: ${JSON.stringify(parsed.decision)}`,
+        `pre-qdc-decision v4: invalid decision value: ${JSON.stringify(parsed.decision)}`,
       );
     }
     const decision = parsed.decision;
@@ -396,7 +451,7 @@ Deno.serve(async (req: Request) => {
       })
       .eq("id", lead_id);
     if (updErr) {
-      throw new Error(`pre-qdc-decision v3: bdr_leads update failed: ${updErr.message}`);
+      throw new Error(`pre-qdc-decision v4: bdr_leads update failed: ${updErr.message}`);
     }
 
     // 12. Log to ai_response_log
@@ -431,7 +486,7 @@ Deno.serve(async (req: Request) => {
         assembled_prompt_version_id: assembledPromptVersionId,
       });
     } catch (e) {
-      console.log("pre-qdc-decision v3: ai_response_log insert error (non-fatal)", e);
+      console.log("pre-qdc-decision v4: ai_response_log insert error (non-fatal)", e);
     }
 
     // 13a. If approved, invoke route-lead (synchronous so the response reflects routed state).
@@ -449,13 +504,13 @@ Deno.serve(async (req: Request) => {
         });
         if (!rr.ok) {
           console.log(
-            "pre-qdc-decision v3: route-lead non-OK (non-fatal — BDR sees ai_reviewing until route succeeds)",
+            "pre-qdc-decision v4: route-lead non-OK (non-fatal — BDR sees ai_reviewing until route succeeds)",
             rr.status,
             await rr.text().catch(() => ""),
           );
         }
       } catch (e) {
-        console.log("pre-qdc-decision v3: route-lead invocation threw (non-fatal)", e);
+        console.log("pre-qdc-decision v4: route-lead invocation threw (non-fatal)", e);
       }
     }
 
@@ -480,7 +535,7 @@ Deno.serve(async (req: Request) => {
             ? `\n\nCriteria triggered:\n- ${triggered.join("\n- ")}`
             : ""),
         }),
-      }).catch((e) => console.log("pre-qdc-decision v3: send-bdr-notification fire failed (non-fatal)", e));
+      }).catch((e) => console.log("pre-qdc-decision v4: send-bdr-notification fire failed (non-fatal)", e));
       // @ts-ignore EdgeRuntime is available in Supabase edge functions runtime
       if (typeof EdgeRuntime !== "undefined" && EdgeRuntime?.waitUntil) {
         // @ts-ignore
@@ -490,7 +545,7 @@ Deno.serve(async (req: Request) => {
 
     return jr({
       success: true,
-      version: "v3",
+      version: "v4",
       lead_id,
       decision,
       reason,
@@ -501,7 +556,7 @@ Deno.serve(async (req: Request) => {
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    console.log("pre-qdc-decision v1 FATAL:", msg);
-    return jr({ error: msg, version: "v2" }, 500);
+    console.log("pre-qdc-decision v4 FATAL:", msg);
+    return jr({ error: msg, version: "v4" }, 500);
   }
 });

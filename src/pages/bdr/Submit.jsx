@@ -21,10 +21,15 @@ const US_STATES = [
   ['WA','Washington'],['WV','West Virginia'],['WI','Wisconsin'],['WY','Wyoming'],
 ]
 
-// Fallback vertical list if coach_research_config.verticals is empty (defensive)
 const FALLBACK_VERTICALS = [
   'Manufacturing', 'Distribution', 'SaaS', 'Professional Services', 'Nonprofit', 'PE-backed Services',
 ]
+
+// Field keys whose values map to dedicated bdr_leads columns (vs custom_fields JSONB).
+const BUILTIN_LEAD_COLUMNS = new Set([
+  'company_name', 'website', 'employee_count', 'tech_stack', 'annual_revenue',
+  'num_entities', 'accounting_team_size', 'industry', 'vertical', 'hq_state',
+])
 
 const MIN_TRANSCRIPT_CHARS = 200
 const MIN_BANT_CHARS = 50
@@ -35,32 +40,25 @@ function normalizeWebsite(s) {
   if (/^https?:\/\//i.test(v)) return v
   return `https://${v}`
 }
-
 function isValidUrl(s) {
   if (!s) return false
   try { new URL(s); return true } catch { return false }
 }
-
 function formatCurrencyDisplay(intDollars) {
   if (intDollars == null || intDollars === '') return ''
   return '$' + Number(intDollars).toLocaleString('en-US')
 }
-
-// Strip everything but digits, return integer string (or '')
 function parseCurrencyInput(s) {
   const digits = String(s ?? '').replace(/[^\d]/g, '')
   return digits === '' ? '' : String(parseInt(digits, 10))
 }
-
-// Strip VTT/SRT metadata lines, keep speech text only
 function extractFromVttOrSrt(text) {
-  const lines = text.split(/\r?\n/)
-  const out = []
+  const lines = text.split(/\r?\n/), out = []
   for (const raw of lines) {
     const line = raw.trim()
     if (!line) continue
     if (/^WEBVTT/i.test(line)) continue
-    if (/^\d+$/.test(line)) continue                                          // SRT cue number
+    if (/^\d+$/.test(line)) continue
     if (/^\d{2}:\d{2}:\d{2}[.,]\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}[.,]\d{3}/.test(line)) continue
     if (/^\d{2}:\d{2}[.,]\d{3}\s*-->\s*\d{2}:\d{2}[.,]\d{3}/.test(line)) continue
     if (/^NOTE\b/i.test(line)) continue
@@ -69,21 +67,17 @@ function extractFromVttOrSrt(text) {
   return out.join('\n')
 }
 
-// --- Tag input for tech_stack (no external lib) ---
-function TechStackInput({ value, onChange }) {
+// ─── Tag input (built-in fields only — coupled UX) ────────────────────────────
+function TagInput({ value, onChange, placeholder, idSuffix }) {
   const [input, setInput] = useState('')
-
+  const inputId = `tag-input-${idSuffix || 'main'}`
   const addChip = (raw) => {
     const trimmed = String(raw ?? '').trim()
     if (!trimmed) return
-    if (value.some(v => v.toLowerCase() === trimmed.toLowerCase())) {
-      setInput('')
-      return
-    }
-    onChange([...value, trimmed])
+    if ((value || []).some(v => v.toLowerCase() === trimmed.toLowerCase())) { setInput(''); return }
+    onChange([...(value || []), trimmed])
     setInput('')
   }
-
   return (
     <div
       style={{
@@ -92,53 +86,83 @@ function TechStackInput({ value, onChange }) {
         background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6,
         fontFamily: T.font,
       }}
-      onClick={() => {
-        const el = document.getElementById('tech-stack-input')
-        if (el) el.focus()
-      }}
+      onClick={() => { const el = document.getElementById(inputId); if (el) el.focus() }}
     >
-      {value.map((chip, i) => (
-        <span
-          key={`${chip}-${i}`}
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 4,
-            background: T.primaryLight, color: T.primary,
-            border: `1px solid ${T.primaryBorder}`, borderRadius: 4,
-            padding: '2px 6px', fontSize: 12, fontWeight: 600,
-          }}
-        >
+      {(value || []).map((chip, i) => (
+        <span key={`${chip}-${i}`} style={{
+          display: 'inline-flex', alignItems: 'center', gap: 4,
+          background: T.primaryLight, color: T.primary,
+          border: `1px solid ${T.primaryBorder}`, borderRadius: 4,
+          padding: '2px 6px', fontSize: 12, fontWeight: 600,
+        }}>
           {chip}
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); onChange(value.filter((_, j) => j !== i)) }}
+          <button type="button" onClick={(e) => { e.stopPropagation(); onChange(value.filter((_, j) => j !== i)) }}
             aria-label={`Remove ${chip}`}
-            style={{
-              background: 'transparent', border: 'none', cursor: 'pointer',
-              color: T.primary, fontSize: 14, padding: 0, lineHeight: 1,
-              fontWeight: 700,
-            }}
-          >×</button>
+            style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: T.primary, fontSize: 14, padding: 0, lineHeight: 1, fontWeight: 700 }}>×</button>
         </span>
       ))}
       <input
-        id="tech-stack-input"
+        id={inputId}
         value={input}
         onChange={(e) => setInput(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addChip(input) }
-          else if (e.key === 'Backspace' && !input && value.length > 0) {
-            onChange(value.slice(0, -1))
-          }
+          else if (e.key === 'Backspace' && !input && (value || []).length > 0) onChange(value.slice(0, -1))
         }}
         onBlur={() => { if (input.trim()) addChip(input) }}
-        placeholder={value.length === 0 ? 'Type a tool name and press Enter (e.g. QuickBooks, Salesforce)' : 'Add another…'}
-        style={{
-          flex: 1, minWidth: 160, border: 'none', outline: 'none',
-          background: 'transparent', fontSize: 13, fontFamily: T.font, color: T.text,
-        }}
+        placeholder={(value || []).length === 0 ? (placeholder || 'Type and press Enter') : 'Add another…'}
+        style={{ flex: 1, minWidth: 160, border: 'none', outline: 'none', background: 'transparent', fontSize: 13, fontFamily: T.font, color: T.text }}
       />
     </div>
   )
+}
+
+// ─── Generic field renderer ───────────────────────────────────────────────────
+// Renders ONE field based on its input_type. Returns null for tag_input / textarea
+// where field_key='bant_notes' / 'transcript' — those have dedicated sections.
+function FieldRenderer({ field, value, onChange, verticals }) {
+  const it = field.input_type
+  const ph = field.placeholder || undefined
+  const common = {
+    style: inputStyle,
+    value: value ?? '',
+    onChange: (e) => onChange(e.target.value),
+    placeholder: ph,
+  }
+  if (it === 'text') return <input {...common} />
+  if (it === 'url')  return <input {...common} onBlur={(e) => onChange(normalizeWebsite(e.target.value))} />
+  if (it === 'number') return <input {...common} type="number" min="0" value={value ?? ''} onChange={e => onChange(e.target.value.replace(/[^\d]/g, ''))} />
+  if (it === 'date')   return <input {...common} type="date" />
+  if (it === 'currency') return <input {...common} type="text" inputMode="numeric" value={formatCurrencyDisplay(value)} onChange={e => onChange(parseCurrencyInput(e.target.value))} placeholder={ph || '$1,000,000'} />
+  if (it === 'state') return (
+    <select style={inputStyle} value={value ?? ''} onChange={e => onChange(e.target.value)}>
+      <option value="">Select…</option>
+      {US_STATES.map(([code, name]) => <option key={code} value={code}>{code} — {name}</option>)}
+    </select>
+  )
+  if (it === 'vertical') return (
+    <select style={inputStyle} value={value ?? ''} onChange={e => onChange(e.target.value)}>
+      <option value="">Select…</option>
+      {(verticals || []).map(v => <option key={v} value={v}>{v}</option>)}
+    </select>
+  )
+  if (it === 'dropdown') return (
+    <select style={inputStyle} value={value ?? ''} onChange={e => onChange(e.target.value)}>
+      <option value="">Select…</option>
+      {(field.options || []).map(opt => <option key={opt} value={opt}>{opt}</option>)}
+    </select>
+  )
+  if (it === 'textarea') return (
+    <textarea
+      style={{ ...inputStyle, minHeight: 100, fontFamily: T.font, lineHeight: 1.5, resize: 'vertical' }}
+      rows={4}
+      value={value ?? ''}
+      onChange={e => onChange(e.target.value)}
+      placeholder={ph}
+    />
+  )
+  // tag_input is handled inline in its dedicated section, not here
+  return <div style={{ fontSize: 11, color: T.error }}>(unsupported input_type: {it})</div>
 }
 
 export default function BdrSubmit() {
@@ -146,85 +170,108 @@ export default function BdrSubmit() {
   const { org } = useOrg()
   const navigate = useNavigate()
 
-  const [form, setForm] = useState({
-    company_name: '', website: '', employee_count: '',
-    tech_stack: [],
-    annual_revenue: '', num_entities: '', accounting_team_size: '',
-    industry: '', vertical: '', hq_state: '',
-    bant_notes: '',
-  })
-  const [transcriptMode, setTranscriptMode] = useState('paste')  // 'audio' | 'paste' | 'file'
+  const [fields, setFields] = useState([])
+  const [form, setForm] = useState({})
+  const [verticals, setVerticals] = useState(FALLBACK_VERTICALS)
+  const [transcriptMode, setTranscriptMode] = useState('paste')
   const [transcriptText, setTranscriptText] = useState('')
   const [fileName, setFileName] = useState('')
-  const [verticals, setVerticals] = useState(FALLBACK_VERTICALS)
-  const [submitState, setSubmitState] = useState('idle')         // 'idle' | 'inserting' | 'reviewing' | 'error'
+  const [submitState, setSubmitState] = useState('idle') // idle | inserting | reviewing | error
+  const [reviewingExpanded, setReviewingExpanded] = useState(false)
   const [errorMsg, setErrorMsg] = useState(null)
-  const [reviewingExpanded, setReviewingExpanded] = useState(false) // swap copy after ~3s on slow connections
+  const [loadingConfig, setLoadingConfig] = useState(true)
   const fileInputRef = useRef(null)
 
-  // Load verticals from active BDR Submission Coach's coach_research_config
+  // Load org's field config + verticals on mount
   useEffect(() => {
     let cancelled = false
-    async function loadVerticals() {
+    async function load() {
       if (!org?.id) return
+      setLoadingConfig(true)
       try {
-        const { data: coach } = await supabase
-          .from('coaches')
-          .select('id')
-          .eq('org_id', org.id)
-          .eq('name', 'BDR Submission Coach')
-          .eq('active', true)
-          .maybeSingle()
-        if (!coach) return
-        const { data: cfg } = await supabase
-          .from('coach_research_config')
-          .select('verticals')
-          .eq('coach_id', coach.id)
-          .maybeSingle()
+        const { data: cfg, error: cfgErr } = await supabase
+          .from('bdr_submission_fields').select('*')
+          .eq('org_id', org.id).eq('active', true)
+          .order('priority', { ascending: true })
+        if (cfgErr) throw cfgErr
         if (cancelled) return
-        if (Array.isArray(cfg?.verticals) && cfg.verticals.length > 0) {
-          setVerticals(cfg.verticals)
+        setFields(cfg || [])
+
+        // Initialize form state with type-appropriate defaults
+        const initial = {}
+        for (const f of (cfg || [])) {
+          if (f.input_type === 'tag_input') initial[f.field_key] = []
+          else initial[f.field_key] = ''
         }
-      } catch (e) {
-        console.warn('Vertical load failed (using fallback):', e?.message)
+        setForm(initial)
+
+        // Vertical options from active coach
+        const { data: coach } = await supabase.from('coaches')
+          .select('id').eq('org_id', org.id).eq('name', 'BDR Submission Coach').eq('active', true).maybeSingle()
+        if (coach?.id && !cancelled) {
+          const { data: rc } = await supabase.from('coach_research_config').select('verticals').eq('coach_id', coach.id).maybeSingle()
+          if (Array.isArray(rc?.verticals) && rc.verticals.length > 0) setVerticals(rc.verticals)
+        }
+      } catch (err) {
+        if (!cancelled) setErrorMsg(`Could not load form config: ${err.message}`)
+      } finally {
+        if (!cancelled) setLoadingConfig(false)
       }
     }
-    loadVerticals()
+    load()
     return () => { cancelled = true }
   }, [org?.id])
 
-  const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }))
+  const setFieldValue = (k, v) => setForm(prev => ({ ...prev, [k]: v }))
 
-  // Validation
+  // Split fields by where they render
+  const transcriptField = useMemo(() => fields.find(f => f.field_key === 'transcript'), [fields])
+  const bantField = useMemo(() => fields.find(f => f.field_key === 'bant_notes'), [fields])
+  const tagFields = useMemo(() => fields.filter(f => f.input_type === 'tag_input'), [fields])
+  const inlineFields = useMemo(() =>
+    fields.filter(f =>
+      f.input_type !== 'tag_input' &&
+      f.input_type !== 'textarea'
+    ), [fields])
+  const otherTextareaFields = useMemo(() =>
+    fields.filter(f =>
+      f.input_type === 'textarea' &&
+      f.field_key !== 'bant_notes' &&
+      f.field_key !== 'transcript'
+    ), [fields])
+
   const errors = useMemo(() => {
     const errs = {}
-    if (!form.company_name.trim()) errs.company_name = 'Required'
-    const normalized = normalizeWebsite(form.website)
-    if (!normalized) errs.website = 'Required'
-    else if (!isValidUrl(normalized)) errs.website = 'Invalid URL'
-    if (!form.employee_count || Number(form.employee_count) < 1) errs.employee_count = 'Must be at least 1'
-    if (form.tech_stack.length < 1) errs.tech_stack = 'Add at least one tool'
-    if (!form.annual_revenue || Number(form.annual_revenue) < 1) errs.annual_revenue = 'Required'
-    if (!form.num_entities || Number(form.num_entities) < 1) errs.num_entities = 'Must be at least 1'
-    if (!form.accounting_team_size || Number(form.accounting_team_size) < 1) errs.accounting_team_size = 'Must be at least 1'
-    if (!form.industry.trim()) errs.industry = 'Required'
-    if (!form.vertical) errs.vertical = 'Required'
-    if (!form.hq_state) errs.hq_state = 'Required'
-    if (!form.bant_notes.trim() || form.bant_notes.trim().length < MIN_BANT_CHARS) {
-      errs.bant_notes = `At least ${MIN_BANT_CHARS} characters required`
-    }
-    if (!transcriptText.trim() || transcriptText.trim().length < MIN_TRANSCRIPT_CHARS) {
-      errs.transcript = `At least ${MIN_TRANSCRIPT_CHARS} characters required`
+    for (const f of fields) {
+      if (!f.required) continue
+      const v = form[f.field_key]
+      if (f.input_type === 'tag_input') {
+        if (!Array.isArray(v) || v.length === 0) errs[f.field_key] = `Add at least one ${f.label.toLowerCase()}`
+      } else if (f.field_key === 'transcript') {
+        if (!transcriptText.trim() || transcriptText.trim().length < MIN_TRANSCRIPT_CHARS) {
+          errs.transcript = `At least ${MIN_TRANSCRIPT_CHARS} characters required`
+        }
+      } else if (f.input_type === 'textarea') {
+        const min = f.field_key === 'bant_notes' ? MIN_BANT_CHARS : 1
+        if (!String(v ?? '').trim() || String(v).trim().length < min) {
+          errs[f.field_key] = `At least ${min} character${min === 1 ? '' : 's'} required`
+        }
+      } else if (f.input_type === 'url') {
+        const norm = normalizeWebsite(v)
+        if (!norm) errs[f.field_key] = 'Required'
+        else if (!isValidUrl(norm)) errs[f.field_key] = 'Invalid URL'
+      } else if (f.input_type === 'number' || f.input_type === 'currency') {
+        if (v === '' || v == null || Number(v) < 1) errs[f.field_key] = 'Required (min 1)'
+      } else {
+        if (v === '' || v == null) errs[f.field_key] = 'Required'
+      }
     }
     return errs
-  }, [form, transcriptText])
+  }, [fields, form, transcriptText])
 
-  // Allow re-submit after an error (submitState='error') once the form is valid again.
-  // Block submit only while in-flight (inserting/reviewing).
   const canSubmit = Object.keys(errors).length === 0 &&
-    submitState !== 'inserting' && submitState !== 'reviewing'
+    submitState !== 'inserting' && submitState !== 'reviewing' && !loadingConfig
 
-  // Transcript file handler — Mode C
   const handleFileChange = async (e) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -232,96 +279,88 @@ export default function BdrSubmit() {
     const ext = file.name.toLowerCase().split('.').pop()
     try {
       const text = await file.text()
-      if (ext === 'vtt' || ext === 'srt') {
-        setTranscriptText(extractFromVttOrSrt(text))
-      } else if (ext === 'txt') {
-        setTranscriptText(text)
-      } else if (ext === 'docx') {
-        setErrorMsg(
-          '.docx parsing is not yet supported. Open the file, copy the transcript text, and use the Paste tab instead.',
-        )
+      if (ext === 'vtt' || ext === 'srt') setTranscriptText(extractFromVttOrSrt(text))
+      else if (ext === 'txt') setTranscriptText(text)
+      else if (ext === 'docx') {
+        setErrorMsg('.docx parsing is not yet supported. Copy the content into the Paste tab.')
         setFileName('')
-      } else {
-        // Best effort — try as plain text
-        setTranscriptText(text)
-      }
-    } catch (err) {
-      setErrorMsg(`Could not read file: ${err.message}`)
-      setFileName('')
-    }
+      } else setTranscriptText(text)
+    } catch (err) { setErrorMsg(`Could not read file: ${err.message}`); setFileName('') }
   }
 
-  const handleSubmit = async (e) => {
+  async function handleSubmit(e) {
     e.preventDefault()
     if (!canSubmit) return
-    if (!profile?.id || !org?.id) {
-      setErrorMsg('Profile or org not loaded. Please refresh.')
-      return
-    }
-    setErrorMsg(null)
-    setSubmitState('inserting')
-    setReviewingExpanded(false)
+    if (!profile?.id || !org?.id) { setErrorMsg('Profile or org not loaded. Refresh the page.'); return }
+    setErrorMsg(null); setSubmitState('inserting'); setReviewingExpanded(false)
 
     try {
-      // 1. Insert bdr_leads
+      // Build the bdr_leads INSERT payload. Built-in field_keys → dedicated columns;
+      // everything else → custom_fields JSONB.
+      const leadPayload = {
+        org_id: org.id,
+        bdr_id: profile.id,
+        stage: 'ai_reviewing',
+        ai_decision: 'pending',
+        lead_source: 'bdr',
+        custom_fields: {},
+      }
+      // Transcript always lives on bdr_leads.transcript (the special UI controls it).
+      leadPayload.transcript = transcriptText.trim()
+      // BANT goes to bdr_notes separately (handled after the lead insert).
+
+      for (const f of fields) {
+        if (!f.active) continue
+        if (f.field_key === 'transcript' || f.field_key === 'bant_notes') continue
+        const v = form[f.field_key]
+        if (f.is_builtin && BUILTIN_LEAD_COLUMNS.has(f.field_key)) {
+          if (f.input_type === 'number') leadPayload[f.field_key] = v === '' ? null : parseInt(v, 10)
+          else if (f.input_type === 'currency') leadPayload[f.field_key] = v === '' ? null : parseInt(v, 10)
+          else if (f.input_type === 'tag_input') leadPayload[f.field_key] = v || []
+          else if (f.input_type === 'url') leadPayload[f.field_key] = normalizeWebsite(v)
+          else if (typeof v === 'string') leadPayload[f.field_key] = v.trim() || null
+          else leadPayload[f.field_key] = v ?? null
+        } else {
+          // Custom field → custom_fields JSONB. Preserve type-friendly representation.
+          if (f.input_type === 'number' || f.input_type === 'currency') {
+            leadPayload.custom_fields[f.field_key] = v === '' ? null : Number(v)
+          } else if (f.input_type === 'tag_input') {
+            leadPayload.custom_fields[f.field_key] = v || []
+          } else if (f.input_type === 'url') {
+            leadPayload.custom_fields[f.field_key] = normalizeWebsite(v) || null
+          } else if (typeof v === 'string') {
+            leadPayload.custom_fields[f.field_key] = v.trim() || null
+          } else {
+            leadPayload.custom_fields[f.field_key] = v ?? null
+          }
+        }
+      }
+
       const { data: lead, error: insErr } = await supabase
-        .from('bdr_leads')
-        .insert({
-          org_id: org.id,
-          bdr_id: profile.id,
-          company_name: form.company_name.trim(),
-          website: normalizeWebsite(form.website),
-          employee_count: parseInt(form.employee_count, 10),
-          tech_stack: form.tech_stack,
-          annual_revenue: parseInt(form.annual_revenue, 10),
-          num_entities: parseInt(form.num_entities, 10),
-          accounting_team_size: parseInt(form.accounting_team_size, 10),
-          industry: form.industry.trim(),
-          vertical: form.vertical,
-          hq_state: form.hq_state,
-          transcript: transcriptText.trim(),
-          stage: 'ai_reviewing',
-          ai_decision: 'pending',
-          lead_source: 'bdr',
-        })
-        .select('id')
-        .single()
+        .from('bdr_leads').insert(leadPayload).select('id').single()
       if (insErr) throw new Error(`Lead insert failed: ${insErr.message}`)
 
-      // 2. Insert bdr_notes (BANT). Non-fatal — log if it fails but proceed.
-      try {
-        const { error: noteErr } = await supabase
-          .from('bdr_notes')
-          .insert({
-            lead_id: lead.id,
-            org_id: org.id,
-            created_by: profile.id,
-            note_type: 'bant',
-            content: form.bant_notes.trim(),
+      // BANT note (only if the bant_notes field is active and has content)
+      const bantContent = String(form['bant_notes'] ?? '').trim()
+      if (bantField && bantField.active && bantContent) {
+        try {
+          await supabase.from('bdr_notes').insert({
+            lead_id: lead.id, org_id: org.id, created_by: profile.id,
+            note_type: 'bant', content: bantContent,
           })
-        if (noteErr) console.warn('bdr_notes insert failed (non-fatal):', noteErr.message)
-      } catch (e) {
-        console.warn('bdr_notes insert threw (non-fatal):', e)
+        } catch (err) { console.warn('bdr_notes insert failed (non-fatal):', err) }
       }
 
-      // 3. AWAIT pre-qdc-decision so the redirect target shows the real decision
+      // Fire pre-qdc-decision
       setSubmitState('reviewing')
-      // After 3s, swap "AI is reviewing your submission…" → "AI is reviewing — this usually
-      // takes 5–10 seconds." Sets expectation on slow connections without adding visual noise.
       const expandTimer = setTimeout(() => setReviewingExpanded(true), 3000)
       const { data: decision, error: fnErr } = await supabase.functions.invoke(
-        'pre-qdc-decision',
-        { body: { lead_id: lead.id } },
+        'pre-qdc-decision', { body: { lead_id: lead.id } },
       )
       clearTimeout(expandTimer)
-      if (fnErr) {
-        throw new Error(`AI review failed: ${fnErr.message}. The lead was saved (id ${lead.id}) but the decision did not complete — an AE manager can re-run the review.`)
-      }
-      if (decision?.error) {
-        throw new Error(`AI review error: ${decision.error}. Lead saved (id ${lead.id}).`)
-      }
+      if (fnErr) throw new Error(`AI review failed: ${fnErr.message}. Lead saved (id ${lead.id}).`)
+      if (decision?.error) throw new Error(`AI review error: ${decision.error}. Lead saved (id ${lead.id}).`)
 
-      // 4. Redirect — by now bdr_leads.stage is 'denied' or 'routed'
       navigate(`/bdr/leads/${lead.id}`)
     } catch (err) {
       console.error('Submission failed:', err)
@@ -330,281 +369,205 @@ export default function BdrSubmit() {
     }
   }
 
-  const fieldErr = (k) => errors[k]
-  const showErr = (k) => submitState === 'error' ? fieldErr(k) : null
+  const showErr = (k) => submitState === 'error' ? errors[k] : null
 
-  // Header bar — back link + title
   return (
     <div>
       <div style={{
         padding: '14px 24px', paddingRight: 72, borderBottom: `1px solid ${T.border}`,
         display: 'flex', alignItems: 'center', gap: 12, background: T.surface,
       }}>
-        <button
-          type="button"
-          onClick={() => navigate('/')}
-          style={{
-            background: T.surfaceAlt, border: `1px solid ${T.border}`, borderRadius: 6,
-            padding: '6px 12px', cursor: 'pointer', fontSize: 12, color: T.primary,
-            fontWeight: 600, fontFamily: T.font,
-          }}
-        >&larr; Back</button>
+        <button type="button" onClick={() => navigate('/')} style={{
+          background: T.surfaceAlt, border: `1px solid ${T.border}`, borderRadius: 6,
+          padding: '6px 12px', cursor: 'pointer', fontSize: 12, color: T.primary,
+          fontWeight: 600, fontFamily: T.font,
+        }}>&larr; Back</button>
         <h2 style={{ fontSize: 18, fontWeight: 700, color: T.text, margin: 0 }}>Submit a New Lead</h2>
       </div>
 
       <div style={{ padding: 24, maxWidth: 820 }}>
-        <form onSubmit={handleSubmit}>
-          <Card title="Company">
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-              <div>
-                <label style={labelStyle}>Company Name *</label>
-                <input
-                  style={inputStyle}
-                  value={form.company_name}
-                  onChange={(e) => set('company_name', e.target.value)}
-                  placeholder="Acme Corp"
-                  required
-                  autoFocus
-                />
-                {showErr('company_name') && <ErrLine msg={showErr('company_name')} />}
-              </div>
-              <div>
-                <label style={labelStyle}>Website *</label>
-                <input
-                  style={inputStyle}
-                  value={form.website}
-                  onChange={(e) => set('website', e.target.value)}
-                  onBlur={(e) => set('website', normalizeWebsite(e.target.value))}
-                  placeholder="acme.com"
-                  required
-                />
-                {showErr('website') && <ErrLine msg={showErr('website')} />}
-              </div>
-              <div>
-                <label style={labelStyle}>Employees *</label>
-                <input
-                  style={inputStyle} type="number" min="1"
-                  value={form.employee_count}
-                  onChange={(e) => set('employee_count', e.target.value.replace(/[^\d]/g, ''))}
-                  required
-                />
-                {showErr('employee_count') && <ErrLine msg={showErr('employee_count')} />}
-              </div>
-              <div>
-                <label style={labelStyle}>Annual Revenue *</label>
-                <input
-                  style={inputStyle} type="text" inputMode="numeric"
-                  value={formatCurrencyDisplay(form.annual_revenue)}
-                  onChange={(e) => set('annual_revenue', parseCurrencyInput(e.target.value))}
-                  placeholder="$50,000,000"
-                  required
-                />
-                {showErr('annual_revenue') && <ErrLine msg={showErr('annual_revenue')} />}
-              </div>
-              <div>
-                <label style={labelStyle}>Number of Entities *</label>
-                <input
-                  style={inputStyle} type="number" min="1"
-                  value={form.num_entities}
-                  onChange={(e) => set('num_entities', e.target.value.replace(/[^\d]/g, ''))}
-                  required
-                />
-                {showErr('num_entities') && <ErrLine msg={showErr('num_entities')} />}
-              </div>
-              <div>
-                <label style={labelStyle}>Accounting Team Size *</label>
-                <input
-                  style={inputStyle} type="number" min="1"
-                  value={form.accounting_team_size}
-                  onChange={(e) => set('accounting_team_size', e.target.value.replace(/[^\d]/g, ''))}
-                  required
-                />
-                {showErr('accounting_team_size') && <ErrLine msg={showErr('accounting_team_size')} />}
-              </div>
-              <div>
-                <label style={labelStyle}>Industry *</label>
-                <input
-                  style={inputStyle}
-                  value={form.industry}
-                  onChange={(e) => set('industry', e.target.value)}
-                  placeholder="Third-party logistics"
-                  required
-                />
-                {showErr('industry') && <ErrLine msg={showErr('industry')} />}
-              </div>
-              <div>
-                <label style={labelStyle}>Vertical *</label>
-                <select
-                  style={inputStyle}
-                  value={form.vertical}
-                  onChange={(e) => set('vertical', e.target.value)}
-                  required
-                >
-                  <option value="">Select…</option>
-                  {verticals.map(v => <option key={v} value={v}>{v}</option>)}
-                </select>
-                {showErr('vertical') && <ErrLine msg={showErr('vertical')} />}
-              </div>
-              <div>
-                <label style={labelStyle}>HQ State *</label>
-                <select
-                  style={inputStyle}
-                  value={form.hq_state}
-                  onChange={(e) => set('hq_state', e.target.value)}
-                  required
-                >
-                  <option value="">Select…</option>
-                  {US_STATES.map(([code, name]) => <option key={code} value={code}>{code} — {name}</option>)}
-                </select>
-                {showErr('hq_state') && <ErrLine msg={showErr('hq_state')} />}
-              </div>
-            </div>
-          </Card>
+        {loadingConfig && <Card><div style={{ padding: 16, color: T.textMuted }}>Loading form…</div></Card>}
 
-          <Card title="Tech Stack / Integrations Needed">
-            <label style={labelStyle}>Tools they use today or need to integrate *</label>
-            <TechStackInput value={form.tech_stack} onChange={v => set('tech_stack', v)} />
-            <div style={{ fontSize: 11, color: T.textMuted, marginTop: 4 }}>
-              Press Enter or comma to add. Backspace on empty input removes the last chip. Minimum one.
-            </div>
-            {showErr('tech_stack') && <ErrLine msg={showErr('tech_stack')} />}
-          </Card>
-
-          <Card title="BANT Notes">
-            <label style={labelStyle}>Budget, Authority, Need, Timeline notes *</label>
-            <textarea
-              style={{
-                ...inputStyle, minHeight: 140, fontFamily: T.font, lineHeight: 1.5, resize: 'vertical',
-              }}
-              rows={6}
-              value={form.bant_notes}
-              onChange={(e) => set('bant_notes', e.target.value)}
-              placeholder={`Budget: ...\nAuthority: ...\nNeed: ...\nTimeline: ...\n\nCompelling event:`}
-              required
-            />
-            <div style={{ fontSize: 11, color: T.textMuted, marginTop: 4 }}>
-              {form.bant_notes.trim().length} / {MIN_BANT_CHARS} characters minimum
-            </div>
-            {showErr('bant_notes') && <ErrLine msg={showErr('bant_notes')} />}
-          </Card>
-
-          <Card title="Call Recording / Transcript">
-            <TabBar
-              tabs={[
-                { key: 'audio', label: 'Audio (coming soon)' },
-                { key: 'paste', label: 'Paste Transcript' },
-                { key: 'file',  label: 'Upload Text File' },
-              ]}
-              active={transcriptMode}
-              onChange={setTranscriptMode}
-            />
-
-            {transcriptMode === 'audio' && (
-              <AudioComingSoonPanel onSwitchToPaste={() => setTranscriptMode('paste')} />
+        {!loadingConfig && (
+          <form onSubmit={handleSubmit}>
+            {/* Inline fields in a 2-col grid */}
+            {inlineFields.length > 0 && (
+              <Card title="Submission">
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                  {inlineFields.map(f => (
+                    <div key={f.field_key}>
+                      <label style={labelStyle}>{f.label}{f.required ? ' *' : ''}</label>
+                      <FieldRenderer
+                        field={f}
+                        value={form[f.field_key]}
+                        onChange={(v) => setFieldValue(f.field_key, v)}
+                        verticals={verticals}
+                      />
+                      {f.help_text && (
+                        <div style={{ fontSize: 11, color: T.textMuted, marginTop: 4 }}>{f.help_text}</div>
+                      )}
+                      {showErr(f.field_key) && <ErrLine msg={showErr(f.field_key)} />}
+                    </div>
+                  ))}
+                </div>
+              </Card>
             )}
 
-            {transcriptMode === 'paste' && (
-              <div style={{ marginTop: 12 }}>
-                <label style={labelStyle}>Paste transcript text *</label>
-                <textarea
-                  style={{
-                    ...inputStyle, minHeight: 220, fontFamily: T.mono, fontSize: 12,
-                    lineHeight: 1.5, resize: 'vertical',
-                  }}
-                  rows={12}
-                  value={transcriptText}
-                  onChange={(e) => setTranscriptText(e.target.value)}
-                  placeholder="BDR: Thanks for taking the call...&#10;Prospect: Sure...&#10;..."
+            {/* Tag inputs (one card per tag_input field — usually just tech_stack) */}
+            {tagFields.map(f => (
+              <Card key={f.field_key} title={f.label}>
+                <label style={labelStyle}>{f.label}{f.required ? ' *' : ''}</label>
+                <TagInput
+                  value={form[f.field_key]}
+                  onChange={(v) => setFieldValue(f.field_key, v)}
+                  placeholder={f.placeholder}
+                  idSuffix={f.field_key}
                 />
                 <div style={{ fontSize: 11, color: T.textMuted, marginTop: 4 }}>
-                  {transcriptText.trim().length} / {MIN_TRANSCRIPT_CHARS} characters minimum.
-                  Use Fathom, Gong, or Chorus to capture transcripts and paste here.
+                  {f.help_text || 'Press Enter or comma to add. Backspace on empty input removes the last chip.'}
                 </div>
-                {showErr('transcript') && <ErrLine msg={showErr('transcript')} />}
-              </div>
+                {showErr(f.field_key) && <ErrLine msg={showErr(f.field_key)} />}
+              </Card>
+            ))}
+
+            {/* BANT notes (if active) */}
+            {bantField && bantField.active && (
+              <Card title={bantField.label}>
+                <label style={labelStyle}>{bantField.label}{bantField.required ? ' *' : ''}</label>
+                <textarea
+                  style={{ ...inputStyle, minHeight: 140, fontFamily: T.font, lineHeight: 1.5, resize: 'vertical' }}
+                  rows={6}
+                  value={form['bant_notes'] ?? ''}
+                  onChange={(e) => setFieldValue('bant_notes', e.target.value)}
+                  placeholder={bantField.placeholder || 'Budget...\nAuthority...\nNeed...\nTimeline...\n\nCompelling event:'}
+                />
+                <div style={{ fontSize: 11, color: T.textMuted, marginTop: 4 }}>
+                  {String(form['bant_notes'] ?? '').trim().length} / {MIN_BANT_CHARS} characters minimum
+                  {bantField.help_text && <> — {bantField.help_text}</>}
+                </div>
+                {showErr('bant_notes') && <ErrLine msg={showErr('bant_notes')} />}
+              </Card>
             )}
 
-            {transcriptMode === 'file' && (
-              <div style={{ marginTop: 12 }}>
-                <label style={labelStyle}>Upload transcript text file *</label>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".txt,.vtt,.srt"
-                  onChange={handleFileChange}
-                  style={{ display: 'block', fontFamily: T.font, fontSize: 12 }}
-                />
-                <div style={{ fontSize: 11, color: T.textMuted, marginTop: 6 }}>
-                  Accepts .txt, .vtt, .srt. For .docx, open the file and paste the content into the Paste tab.
+            {/* Other textarea fields (custom notes beyond BANT) */}
+            {otherTextareaFields.length > 0 && (
+              <Card title="Additional Notes">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  {otherTextareaFields.map(f => (
+                    <div key={f.field_key}>
+                      <label style={labelStyle}>{f.label}{f.required ? ' *' : ''}</label>
+                      <FieldRenderer
+                        field={f}
+                        value={form[f.field_key]}
+                        onChange={(v) => setFieldValue(f.field_key, v)}
+                        verticals={verticals}
+                      />
+                      {f.help_text && <div style={{ fontSize: 11, color: T.textMuted, marginTop: 4 }}>{f.help_text}</div>}
+                      {showErr(f.field_key) && <ErrLine msg={showErr(f.field_key)} />}
+                    </div>
+                  ))}
                 </div>
-                {fileName && (
-                  <div style={{ fontSize: 12, color: T.textSecondary, marginTop: 8 }}>
-                    Loaded: <strong>{fileName}</strong> — {transcriptText.length.toLocaleString()} characters
+              </Card>
+            )}
+
+            {/* Transcript section (special 3-tab UI) */}
+            {transcriptField && transcriptField.active && (
+              <Card title={transcriptField.label || 'Call Recording / Transcript'}>
+                <TabBar
+                  tabs={[
+                    { key: 'audio', label: 'Audio (coming soon)' },
+                    { key: 'paste', label: 'Paste Transcript' },
+                    { key: 'file',  label: 'Upload Text File' },
+                  ]}
+                  active={transcriptMode}
+                  onChange={setTranscriptMode}
+                />
+
+                {transcriptMode === 'audio' && (
+                  <AudioComingSoonPanel onSwitchToPaste={() => setTranscriptMode('paste')} />
+                )}
+
+                {transcriptMode === 'paste' && (
+                  <div style={{ marginTop: 12 }}>
+                    <label style={labelStyle}>Paste transcript text{transcriptField.required ? ' *' : ''}</label>
+                    <textarea
+                      style={{ ...inputStyle, minHeight: 220, fontFamily: T.mono, fontSize: 12, lineHeight: 1.5, resize: 'vertical' }}
+                      rows={12}
+                      value={transcriptText}
+                      onChange={(e) => setTranscriptText(e.target.value)}
+                      placeholder="BDR: Thanks for taking the call...&#10;Prospect: Sure...&#10;..."
+                    />
+                    <div style={{ fontSize: 11, color: T.textMuted, marginTop: 4 }}>
+                      {transcriptText.trim().length} / {MIN_TRANSCRIPT_CHARS} characters minimum. Capture in Fathom / Gong / Chorus and paste here.
+                    </div>
+                    {showErr('transcript') && <ErrLine msg={showErr('transcript')} />}
                   </div>
                 )}
-                {transcriptText && (
-                  <details style={{ marginTop: 10 }}>
-                    <summary style={{ cursor: 'pointer', fontSize: 12, color: T.primary, fontWeight: 600 }}>
-                      Preview extracted text
-                    </summary>
-                    <pre style={{
-                      marginTop: 8, padding: 10, background: T.surfaceAlt,
-                      border: `1px solid ${T.border}`, borderRadius: 6,
-                      fontSize: 11, fontFamily: T.mono, color: T.text,
-                      maxHeight: 220, overflow: 'auto', whiteSpace: 'pre-wrap',
-                    }}>{transcriptText.substring(0, 4000)}{transcriptText.length > 4000 ? '\n…(truncated for preview)' : ''}</pre>
-                  </details>
+
+                {transcriptMode === 'file' && (
+                  <div style={{ marginTop: 12 }}>
+                    <label style={labelStyle}>Upload transcript text file{transcriptField.required ? ' *' : ''}</label>
+                    <input ref={fileInputRef} type="file" accept=".txt,.vtt,.srt"
+                      onChange={handleFileChange} style={{ display: 'block', fontFamily: T.font, fontSize: 12 }} />
+                    <div style={{ fontSize: 11, color: T.textMuted, marginTop: 6 }}>
+                      Accepts .txt, .vtt, .srt. For .docx, paste the content into the Paste tab.
+                    </div>
+                    {fileName && (
+                      <div style={{ fontSize: 12, color: T.textSecondary, marginTop: 8 }}>
+                        Loaded: <strong>{fileName}</strong> — {transcriptText.length.toLocaleString()} characters
+                      </div>
+                    )}
+                    {transcriptText && (
+                      <details style={{ marginTop: 10 }}>
+                        <summary style={{ cursor: 'pointer', fontSize: 12, color: T.primary, fontWeight: 600 }}>
+                          Preview extracted text
+                        </summary>
+                        <pre style={{
+                          marginTop: 8, padding: 10, background: T.surfaceAlt,
+                          border: `1px solid ${T.border}`, borderRadius: 6,
+                          fontSize: 11, fontFamily: T.mono, color: T.text,
+                          maxHeight: 220, overflow: 'auto', whiteSpace: 'pre-wrap',
+                        }}>{transcriptText.substring(0, 4000)}{transcriptText.length > 4000 ? '\n…(truncated for preview)' : ''}</pre>
+                      </details>
+                    )}
+                    {showErr('transcript') && <ErrLine msg={showErr('transcript')} />}
+                  </div>
                 )}
-                {showErr('transcript') && <ErrLine msg={showErr('transcript')} />}
-              </div>
+              </Card>
             )}
-          </Card>
 
-          {errorMsg && (
-            <div style={{
-              background: T.errorLight, border: `1px solid ${T.error}33`,
-              borderRadius: 6, padding: '10px 12px', marginBottom: 12,
-              fontSize: 12, color: T.error, lineHeight: 1.5,
-            }}>
-              {errorMsg}
+            {errorMsg && (
+              <div style={{
+                background: T.errorLight, border: `1px solid ${T.error}33`,
+                borderRadius: 6, padding: '10px 12px', marginBottom: 12,
+                fontSize: 12, color: T.error, lineHeight: 1.5,
+              }}>{errorMsg}</div>
+            )}
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 8 }}>
+              <Button type="submit" primary disabled={!canSubmit} style={{ padding: '10px 24px', fontSize: 13 }}>
+                {submitState === 'inserting' ? 'Submitting…' :
+                 submitState === 'reviewing'
+                   ? (reviewingExpanded ? 'AI is reviewing — this usually takes 5–10 seconds.' : 'AI is reviewing your submission…')
+                   : 'Submit Lead'}
+              </Button>
+              {!canSubmit && submitState === 'idle' && Object.keys(errors).length > 0 && (
+                <span style={{ fontSize: 12, color: T.textMuted }}>
+                  {Object.keys(errors).length} field{Object.keys(errors).length === 1 ? '' : 's'} still need attention
+                </span>
+              )}
             </div>
-          )}
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 8 }}>
-            <Button
-              type="submit"
-              primary
-              disabled={!canSubmit}
-              style={{ padding: '10px 24px', fontSize: 13 }}
-            >
-              {submitState === 'inserting' ? 'Submitting…' :
-               submitState === 'reviewing'
-                 ? (reviewingExpanded ? 'AI is reviewing — this usually takes 5–10 seconds.' : 'AI is reviewing your submission…')
-                 : 'Submit Lead'}
-            </Button>
-            {!canSubmit && submitState === 'idle' && Object.keys(errors).length > 0 && (
-              <span style={{ fontSize: 12, color: T.textMuted }}>
-                {Object.keys(errors).length} field{Object.keys(errors).length === 1 ? '' : 's'} still need attention
-              </span>
-            )}
-          </div>
-        </form>
+          </form>
+        )}
       </div>
     </div>
   )
 }
 
 function ErrLine({ msg }) {
-  return (
-    <div style={{ fontSize: 11, color: T.error, marginTop: 4, fontWeight: 600 }}>
-      {msg}
-    </div>
-  )
+  return <div style={{ fontSize: 11, color: T.error, marginTop: 4, fontWeight: 600 }}>{msg}</div>
 }
 
-// Coming-soon panel rendered when transcriptMode === 'audio'. Clicking the audio tab
-// switches the mode, the panel displays, the form's transcript validation prevents
-// submit until the user switches to Paste or Upload. Audio pipeline lands post-pilot.
 function AudioComingSoonPanel({ onSwitchToPaste }) {
   return (
     <div style={{
@@ -620,4 +583,3 @@ function AudioComingSoonPanel({ onSwitchToPaste }) {
     </div>
   )
 }
-

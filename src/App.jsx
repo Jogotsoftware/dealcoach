@@ -41,6 +41,7 @@ import BdrSubmit from './pages/bdr/Submit'
 import BdrLeadStatus from './pages/bdr/LeadStatus'
 import BdrMyLeads from './pages/bdr/MyLeads'
 import DenialCriteriaAdmin from './pages/admin/DenialCriteriaAdmin'
+import QdcCriteriaAdmin from './pages/admin/QdcCriteriaAdmin'
 import RoutingAdmin from './pages/admin/RoutingAdmin'
 import RequireAEManagerOrAdmin from './components/guards/RequireAEManagerOrAdmin'
 import PlatformAdminGuard from './components/guards/PlatformAdminGuard'
@@ -157,7 +158,8 @@ export default function App() {
                 {/* AE manager admin — denial criteria + routing rules + pools.
                     Guarded at the route layer (admin/manager/system_admin OR platform_admin)
                     and at the RLS layer server-side. */}
-                <Route path="/admin/denial-criteria" element={<ErrorBoundary label="denial criteria"><RequireAEManagerOrAdmin><DenialCriteriaAdmin /></RequireAEManagerOrAdmin></ErrorBoundary>} />
+                <Route path="/admin/qdc-criteria"    element={<ErrorBoundary label="QDC criteria"><RequireAEManagerOrAdmin><QdcCriteriaAdmin /></RequireAEManagerOrAdmin></ErrorBoundary>} />
+                <Route path="/admin/denial-criteria" element={<Navigate to="/admin/qdc-criteria" replace />} />
                 <Route path="/admin/routing"         element={<ErrorBoundary label="lead routing"><RequireAEManagerOrAdmin><RoutingAdmin /></RequireAEManagerOrAdmin></ErrorBoundary>} />
                 <Route path="/deal/:dealId/call/:conversationId" element={<ErrorBoundary label="this call"><CallDetail /></ErrorBoundary>} />
                 <Route path="/deal/:dealId/msp" element={<ErrorBoundary label="the MSP"><MSPPage /></ErrorBoundary>} />

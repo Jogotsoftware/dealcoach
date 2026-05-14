@@ -149,7 +149,7 @@ export default function Layout() {
       { to: '/sme/leaderboard', icon: '\u2605', label: 'Leaderboard', show: true },
     ]},
     { label: 'Admin', show: isAEOpsManager && !isManager, items: [
-      { to: '/admin/denial-criteria', icon: '\u2717', label: 'Denial Criteria', show: isAEOpsManager },
+      { to: '/admin/qdc-criteria', icon: '\u2717', label: 'QDC Criteria', show: isAEOpsManager },
       { to: '/admin/routing',         icon: '\u21C4', label: 'Lead Routing',    show: isAEOpsManager },
       { to: '/settings/organization', icon: '\u2302', label: 'Organization', show: isAdmin },
       { to: '/admin/widgets', icon: '\u2637', label: 'Widgets', show: isAdmin && hasModule('coach_customization') },
