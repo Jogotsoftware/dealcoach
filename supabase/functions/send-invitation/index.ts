@@ -59,7 +59,7 @@ serve(async (req) => {
       const { data: org } = await admin.from('organizations').select('name').eq('id', invitation.org_id).single()
       if (org) orgName = org.name
     }
-    let inviterName = 'Revenue Instruments'
+    let inviterName = 'Lumen'
     if (invitation.invited_by) {
       const { data: inviter } = await admin
         .from('profiles').select('full_name').eq('id', invitation.invited_by).single()
@@ -73,8 +73,8 @@ serve(async (req) => {
     const isNewInstance = invitation.invitation_type === 'new_instance'
     const recipientGreeting = invitation.invited_name ? `Hi ${invitation.invited_name},` : 'Hi,'
     const subject = isNewInstance
-      ? `${inviterName} invited you to Revenue Instruments`
-      : `${inviterName} invited you to join ${orgName} on Revenue Instruments`
+      ? `${inviterName} invited you to Lumen`
+      : `${inviterName} invited you to join ${orgName} on Lumen`
 
     const { html, text } = renderEmail({
       isNewInstance, inviterName, orgName, recipientGreeting,
@@ -154,13 +154,13 @@ function escapeHTML(s: string | null | undefined): string {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')
 }
 function renderEmail(a: any): { html: string; text: string } {
-  const heading = a.isNewInstance ? "You're invited to Revenue Instruments" : `Join ${escapeHTML(a.orgName)} on Revenue Instruments`
-  const headingText = a.isNewInstance ? "You're invited to Revenue Instruments" : `Join ${a.orgName} on Revenue Instruments`
+  const heading = a.isNewInstance ? "You're invited to Lumen" : `Join ${escapeHTML(a.orgName)} on Lumen`
+  const headingText = a.isNewInstance ? "You're invited to Lumen" : `Join ${a.orgName} on Lumen`
   const body = a.isNewInstance
-    ? `${escapeHTML(a.inviterName)} invited you to create your own workspace on Revenue Instruments \u2014 an AI-powered sales coaching and deal intelligence platform built for enterprise B2B AEs.`
-    : `${escapeHTML(a.inviterName)} invited you to join the ${escapeHTML(a.orgName)} team on Revenue Instruments as a ${escapeHTML(a.role)}.`
+    ? `${escapeHTML(a.inviterName)} invited you to create your own workspace on Lumen \u2014 an AI-powered sales coaching and deal intelligence platform built for enterprise B2B AEs.`
+    : `${escapeHTML(a.inviterName)} invited you to join the ${escapeHTML(a.orgName)} team on Lumen as a ${escapeHTML(a.role)}.`
   const bodyText = a.isNewInstance
-    ? `${a.inviterName} invited you to create your own workspace on Revenue Instruments.`
+    ? `${a.inviterName} invited you to create your own workspace on Lumen.`
     : `${a.inviterName} invited you to join the ${a.orgName} team as a ${a.role}.`
   const closer = a.isNewInstance
     ? `When you accept, you'll walk through a quick onboarding to set up your company, product, and sales methodology. Takes about 3 minutes.`
@@ -169,7 +169,7 @@ function renderEmail(a: any): { html: string; text: string } {
     ? `<div style="background:#f5f9fc;border-left:4px solid #5DADE2;padding:16px 20px;margin:24px 0;border-radius:4px;"><div style="font-size:13px;font-weight:600;color:#5DADE2;margin-bottom:6px;">Message from ${escapeHTML(a.inviterName)}</div><div style="font-size:15px;line-height:1.6;color:#333;white-space:pre-wrap;">${escapeHTML(a.personalMessage)}</div></div>`
     : ''
   const personalText = a.personalMessage ? `\nMessage from ${a.inviterName}:\n"${a.personalMessage}"\n` : ''
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"></head><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:#1a1a1a;background:#f5f5f5;margin:0;padding:24px;"><div style="max-width:560px;margin:0 auto;background:#fff;border-radius:12px;padding:40px;box-shadow:0 2px 8px rgba(0,0,0,0.04);"><div style="font-size:20px;font-weight:600;color:#5DADE2;margin-bottom:32px;">Revenue Instruments</div><h1 style="font-size:24px;font-weight:600;margin:0 0 16px 0;line-height:1.3;">${heading}</h1><p style="font-size:16px;line-height:1.6;margin:0 0 16px 0;color:#333;">${a.recipientGreeting}</p><p style="font-size:16px;line-height:1.6;margin:0 0 16px 0;color:#333;">${body}</p>${personalBlock}<p style="font-size:16px;line-height:1.6;margin:24px 0 32px 0;color:#333;">${closer}</p><div style="text-align:center;margin:32px 0;"><a href="${a.acceptUrl}" style="display:inline-block;background:#5DADE2;color:#fff;font-size:16px;font-weight:600;text-decoration:none;padding:14px 32px;border-radius:8px;">Accept Invitation</a></div><p style="font-size:14px;color:#666;margin:24px 0 0 0;line-height:1.6;">Or copy and paste: <a href="${a.acceptUrl}" style="color:#5DADE2;word-break:break-all;">${a.acceptUrl}</a></p><p style="font-size:13px;color:#888;margin:32px 0 0 0;padding-top:24px;border-top:1px solid #eee;line-height:1.6;">This invitation expires on ${a.expiresDate}. If you weren't expecting this invitation, you can safely ignore this email.</p></div></body></html>`
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"></head><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:#1a1a1a;background:#f5f5f5;margin:0;padding:24px;"><div style="max-width:560px;margin:0 auto;background:#fff;border-radius:12px;padding:40px;box-shadow:0 2px 8px rgba(0,0,0,0.04);"><div style="font-size:20px;font-weight:600;color:#5DADE2;margin-bottom:32px;">Lumen</div><h1 style="font-size:24px;font-weight:600;margin:0 0 16px 0;line-height:1.3;">${heading}</h1><p style="font-size:16px;line-height:1.6;margin:0 0 16px 0;color:#333;">${a.recipientGreeting}</p><p style="font-size:16px;line-height:1.6;margin:0 0 16px 0;color:#333;">${body}</p>${personalBlock}<p style="font-size:16px;line-height:1.6;margin:24px 0 32px 0;color:#333;">${closer}</p><div style="text-align:center;margin:32px 0;"><a href="${a.acceptUrl}" style="display:inline-block;background:#5DADE2;color:#fff;font-size:16px;font-weight:600;text-decoration:none;padding:14px 32px;border-radius:8px;">Accept Invitation</a></div><p style="font-size:14px;color:#666;margin:24px 0 0 0;line-height:1.6;">Or copy and paste: <a href="${a.acceptUrl}" style="color:#5DADE2;word-break:break-all;">${a.acceptUrl}</a></p><p style="font-size:13px;color:#888;margin:32px 0 0 0;padding-top:24px;border-top:1px solid #eee;line-height:1.6;">This invitation expires on ${a.expiresDate}. If you weren't expecting this invitation, you can safely ignore this email.</p></div></body></html>`
   const text = `${headingText}\n\n${a.recipientGreeting}\n\n${bodyText}\n${personalText}\n${closer}\n\nAccept: ${a.acceptUrl}\n\nThis invitation expires on ${a.expiresDate}. If you weren't expecting this invitation, you can safely ignore this email.\n`
   return { html, text }
 }

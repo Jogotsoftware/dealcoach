@@ -102,7 +102,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const methodNames = (input.methodologies || []).map((id: string) => {
-      const map: Record<string, string> = { bant: 'BANT', meddpicc: 'MEDDPICC', challenger: 'Challenger Sale', sandler: 'Sandler', spin: 'SPIN Selling', solution_selling: 'Solution Selling', jolt: 'JOLT Effect', command_message: 'Command of the Message', rif: 'Revenue Instruments Framework' };
+      const map: Record<string, string> = { bant: 'BANT', meddpicc: 'MEDDPICC', challenger: 'Challenger Sale', sandler: 'Sandler', spin: 'SPIN Selling', solution_selling: 'Solution Selling', jolt: 'JOLT Effect', command_message: 'Command of the Message', rif: 'Lumen Framework' };
       return map[id] || id;
     });
 

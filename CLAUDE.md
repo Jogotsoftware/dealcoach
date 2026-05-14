@@ -1,4 +1,4 @@
-# CLAUDE.md — Revenue Instruments / DealCoach
+# CLAUDE.md — Lumen / DealCoach
 
 *Last updated: April 2026. Replace the existing CLAUDE.md at the repo root with this file.*
 
@@ -6,7 +6,7 @@
 
 ## What This Is
 
-Revenue Instruments is a multi-product AI-powered revenue platform for enterprise B2B sales teams. The current shipped product is **DealCoach** — AI sales coaching, transcript intelligence, deal management, scoring, and pipeline analytics.
+Lumen is a multi-product AI-powered revenue platform for enterprise B2B sales teams. The current shipped product is **DealCoach** — AI sales coaching, transcript intelligence, deal management, scoring, and pipeline analytics.
 
 **Tech stack:**
 - Frontend: React 18 + Vite, deployed to Netlify (`aidealcoach.netlify.app`)
@@ -329,7 +329,7 @@ Also write parallel rows to `deal_sources` for the universal evidence layer.
 
 ## Methodology (public sources only)
 
-Revenue Instruments is built on publicly-sourced frameworks only. Never reference proprietary employer frameworks.
+Lumen is built on publicly-sourced frameworks only. Never reference proprietary employer frameworks.
 
 - **BANT** — IBM
 - **MEDDPICC** — Dunkel & Napoli
@@ -382,7 +382,7 @@ PERPLEXITY_API_KEY          # company research
 APOLLO_API_KEY              # contact enrichment
 NINJAPEAR_API_KEY           # company logo fetch
 RESEND_API_KEY              # transactional email
-INVITATION_FROM_EMAIL       # e.g. "Revenue Instruments <invites@revenueinstruments.com>"
+INVITATION_FROM_EMAIL       # e.g. "Lumen <invites@revenueinstruments.com>"
 APP_BASE_URL                # https://aidealcoach.netlify.app
 SUPABASE_URL                # auto-set
 SUPABASE_SERVICE_ROLE_KEY   # auto-set

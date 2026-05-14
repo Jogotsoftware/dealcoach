@@ -101,12 +101,15 @@ export default function Login() {
         padding: isNarrow ? '40px 24px' : '48px',
       }}>
         <div style={{ maxWidth: 340, width: '100%' }}>
-          <div style={{ fontSize: 26, fontWeight: 700, color: T.text, letterSpacing: '-0.01em' }}>
-            Revenue Instruments
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <img src="/lumen-logo.svg" alt="Lumen" style={{ width: 36, height: 36, objectFit: 'contain' }} />
+            <div style={{ fontSize: 26, fontWeight: 700, color: T.text, letterSpacing: '-0.01em' }}>
+              Lumen
+            </div>
           </div>
           <div style={{ width: 40, height: 1, background: T.border, margin: '14px 0' }} />
           <div style={{ fontSize: 14, color: T.textSecondary, maxWidth: 260, lineHeight: 1.55 }}>
-            AI-powered sales intelligence for enterprise B2B teams
+            The deal execution platform for Sage Intacct AEs
           </div>
           <div style={{ height: 28 }} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>

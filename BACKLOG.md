@@ -1,4 +1,4 @@
-# Revenue Instruments — Master Backlog
+# Lumen — Master Backlog
 
 **How to use this file:**
 - Every sprint prompt starts with: "Read BACKLOG.md. Build everything in the current sprint section. Mark each item done when complete. Move completed items to the Done section."

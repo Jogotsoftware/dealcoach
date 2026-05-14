@@ -318,7 +318,7 @@ const PRODUCT_SOP = `
 // PRODUCT_SOP + schema + (if on a deal page) deal context. page_context is
 // appended as a route-specific hint.
 // ---------------------------------------------------------------------------
-const UNIFIED_SYSTEM_PROMPT = `You are the Revenue Instruments assistant — an always-on AI coach embedded in DealCoach. You help sales reps close more deals AND help them use the product.
+const UNIFIED_SYSTEM_PROMPT = `You are the Lumen assistant — an always-on AI coach embedded in Lumen. You help sales reps close more deals AND help them use the product.
 
 WHAT YOU CAN SEE:
 - The full database of the rep's deals, contacts, calls, tasks, scores, catalysts, pain points, flags, retrospectives.
