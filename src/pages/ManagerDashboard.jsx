@@ -687,8 +687,12 @@ export default function ManagerDashboard() {
   // Compute aggregate metrics for any person (rolls up downstream AEs).
   // dateRange (optional) prorates quota and filters wonDeals by closed_at.
   // Segment filter is read from outer state via closure.
-  function metricsFor(personId, dateRange = null) {
-    const aeIds = downstreamAEIds(personId, segmentFilter)
+  function metricsFor(personId, dateRange = null, segmentOverride) {
+    // segmentOverride === undefined → use the active segmentFilter (default).
+    // segmentOverride === null      → bypass segment filtering entirely.
+    // segmentOverride === 'SMB' etc → use that segment.
+    const seg = segmentOverride === undefined ? segmentFilter : segmentOverride
+    const aeIds = downstreamAEIds(personId, seg)
     const aeIdSet = new Set(aeIds)
     const peopleAEs = allProfiles.filter(p => aeIdSet.has(p.id))
     const dealsScope = allDeals.filter(d => aeIdSet.has(d.rep_id))
@@ -853,7 +857,10 @@ export default function ManagerDashboard() {
           </div>
         </div>
 
-        {/* FILTER BAR — date picker + segment filter chip */}
+        {/* FILTER BAR — date picker + segment filter chip. Hidden on the Team tab
+            because Team is about org structure, not metric windowing — filters
+            from a prior tab were silently emptying the team view. */}
+        {activeTab !== 'teams' && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: D.surface, border: `0.5px solid ${D.border}`, borderRadius: 12, marginBottom: 16, position: 'relative' }}>
           {/* Filters — single subtle icon. All filter controls live in the popover. */}
           <div style={{ position: 'relative' }}>
@@ -902,6 +909,7 @@ export default function ManagerDashboard() {
             )}
           </div>
         </div>
+        )}
 
         {/* SCOPE BREADCRUMB */}
         {drillStack.length > 0 && (
@@ -949,8 +957,12 @@ export default function ManagerDashboard() {
               {activeTab === 'teams'     && (
                 <TeamsTab
                   currentParent={currentParent}
-                  directReports={directReports.filter(p => !segmentFilter || p.role_level !== 'ae' || p.segment === segmentFilter)}
-                  metricsFor={metricsForRanged}
+                  /* Team tab is unfiltered by design — date + segment filters
+                     would silently empty the org structure view. Pass null
+                     for both dateRange + segmentOverride so per-person numbers
+                     show full FY YTD across all segments regardless of state. */
+                  directReports={directReports}
+                  metricsFor={(id) => metricsFor(id, null, null)}
                   showDealsLevel={showDealsLevel}
                   allDeals={allDeals.filter(d => d.rep_id === currentParent.id)}
                   predByDeal={predByDeal}
