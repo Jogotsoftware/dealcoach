@@ -1505,7 +1505,7 @@ function ImplementationSection({ quote, quoteId, implItems, implementorDefault, 
   }
 
   const total = implItems.reduce((s, i) => s + (Number(i.total_amount) || 0), 0)
-  const title = source === 'sage' ? 'Implementation' : 'Partner Implementation'
+  const title = source === 'sage' ? 'One Time Costs' : 'Partner One Time Costs'
 
   return (
     <Card title={title} action={
@@ -1547,7 +1547,7 @@ function ImplementationSection({ quote, quoteId, implItems, implementorDefault, 
       ))}
       {implItems.length > 0 && (
         <div style={{ marginTop: 10, padding: '8px 12px', background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase' }}>{source === 'sage' ? 'Implementation Total' : 'Partner Implementation Total'}</span>
+          <span style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase' }}>{source === 'sage' ? 'One Time Costs Total' : 'Partner One Time Costs Total'}</span>
           <span style={{ fontSize: 18, fontWeight: 800, color: T.primary, fontFeatureSettings: '"tnum"' }}>{dollars(total)}</span>
         </div>
       )}
