@@ -1844,9 +1844,11 @@ export default function DealDetail() {
           {/* Actions: outlined + menu and outlined pencil with dropdown.
               Right-padding reserves space so the floating notification bell
               from Layout doesn't overlap. Chat lives in the global chatbot
-              (sidebar) — no per-page chat icon. */}
+              (sidebar) — no per-page chat icon. Beta users (dealroom_only)
+              don't get these — their flow is read/share the Deal Room only,
+              no transcripts/emails/slides/tasks/edit-details. */}
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', paddingRight: 56 }}>
-            <div style={{ position: 'relative' }}>
+            {!isDealRoomOnly && <div style={{ position: 'relative' }}>
               <button onClick={() => setShowAddMenu(v => !v)} title="Add to deal"
                 style={{ background: T.surface, color: T.text, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', cursor: 'pointer', fontFamily: T.font, height: 30, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 32 }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -1865,8 +1867,8 @@ export default function DealDetail() {
                   </div>
                 </>
               )}
-            </div>
-            <div style={{ position: 'relative' }}>
+            </div>}
+            {!isDealRoomOnly && <div style={{ position: 'relative' }}>
               <button onClick={() => setShowEditMenu(v => !v)} title="Edit"
                 style={{ background: T.surface, color: T.textMuted, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', cursor: 'pointer', fontFamily: T.font, height: 30, display: 'inline-flex', alignItems: 'center' }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -1905,7 +1907,7 @@ export default function DealDetail() {
                   </div>
                 </>
               )}
-            </div>
+            </div>}
           </div>
         </div>
         {/* Next Steps lives in the header so it's always glanceable. The
