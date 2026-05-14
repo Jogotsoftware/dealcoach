@@ -926,7 +926,7 @@ export default function Pipeline() {
               — Always Be Curious
             </div>
             <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => navigate('/deal/new')} style={{ padding: '10px 20px', background: T.primary, color: '#fff', border: 'none', borderRadius: 6, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: T.font }}>Create your first deal →</button>
+              <button onClick={() => navigate('/deal/new')} style={{ padding: '10px 20px', background: T.primary, color: '#fff', border: 'none', borderRadius: 6, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: T.font }}>Close More Deals →</button>
             </div>
           </>
         ) : (
