@@ -6,7 +6,7 @@ import { theme as T } from '../lib/theme'
 import { track, identify } from '../lib/analytics'
 
 const BENEFITS = [
-  "This is not a CRM. This was not built for non-sellers to surveil deals and pretend they know what's going on.",
+  "This is not a CRM. This was not built for non-sellers to surveil reps and pretend they know what's going on in your deals.",
   "This is not another tool from someone who doesn't know your processes, your customers, or your daily frustrations.",
   'This is a deal execution platform built by you, for you, to make your life easier and help you cash bigger checks.',
 ]
