@@ -6,9 +6,9 @@ import { theme as T } from '../lib/theme'
 import { track, identify } from '../lib/analytics'
 
 const BENEFITS = [
-  'Transcripts turned into valuable deal intelligence to help you win',
-  'AI feedback and research that is constantly learning',
-  "Process automation so you can spend less time doing things that don't make you money",
+  "This is not a CRM. This was not built for non-sellers to surveil deals and pretend they know what's going on.",
+  "This is not another tool from someone who doesn't know your processes, your customers, or your daily frustrations.",
+  'This is a deal execution platform built by you, for you, to make your life easier and help you cash bigger checks.',
 ]
 
 export default function Login() {
@@ -122,7 +122,7 @@ export default function Login() {
           </div>
           <div style={{ height: 24 }} />
           <div style={{ fontSize: 13, fontStyle: 'italic', color: T.textSecondary, maxWidth: 320, lineHeight: 1.5 }}>
-            Sign in to see the light at the end of the tunnel.
+            Sign in to start seeing the light at the end of the tunnel.
           </div>
         </div>
       </div>
