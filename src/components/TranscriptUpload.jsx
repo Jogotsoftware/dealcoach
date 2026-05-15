@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { callProcessTranscript } from '../lib/webhooks'
 import { track } from '../lib/analytics'
 import { theme as T, CALL_TYPES } from '../lib/theme'
-import { Button, Badge, inputStyle, labelStyle } from './Shared'
+import { Button, Badge, MiniSun, inputStyle, labelStyle } from './Shared'
 
 export default function TranscriptUpload({ deals, onClose, onUploaded }) {
   const [form, setForm] = useState({
@@ -272,7 +272,7 @@ export default function TranscriptUpload({ deals, onClose, onUploaded }) {
               display: 'flex', alignItems: 'center', gap: 10,
             }}>
               {result.processing && (
-                <span style={{ display: 'inline-block', width: 14, height: 14, border: `2px solid ${T.primary}`, borderTop: '2px solid transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
+                <MiniSun size={16} />
               )}
               <span style={{ fontWeight: result.processing ? 400 : 600 }}>{result.message}</span>
               {result.processing && <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>}

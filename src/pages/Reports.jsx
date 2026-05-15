@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { useModules } from '../hooks/useModules'
 import { theme as T } from '../lib/theme'
-import { Card, Badge, Button, Spinner, inputStyle, labelStyle, EmptyState } from '../components/Shared'
+import { Card, Badge, Button, Spinner, MiniSun, inputStyle, labelStyle, EmptyState } from '../components/Shared'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { TABLES, getDerivedField, getDerivedGroups } from '../lib/widgetSchema'
 import { evalFormula } from '../lib/widgetQuery'
@@ -1242,7 +1242,7 @@ function BuildView({ form, setForm, editingId, baseFields, reports, saving, save
       <Card title="Live Preview" action={
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {liveRunning && <span style={{ fontSize: 10, color: T.textMuted, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ display: 'inline-block', width: 10, height: 10, border: `2px solid ${T.primary}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+            <MiniSun size={12} />
             Running...
           </span>}
           {!liveRunning && livePreview && <span style={{ fontSize: 11, color: T.success, fontWeight: 600 }}>✓ Live</span>}
@@ -1704,7 +1704,7 @@ function BuildViewV2({ form, setForm, editingId, baseFields, reports, saving, sa
         <div style={{ flex: 1, overflow: 'auto', padding: 14 }}>
           {liveRunning && (
             <div style={{ fontSize: 11, color: T.textMuted, padding: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ display: 'inline-block', width: 10, height: 10, border: `2px solid ${T.primary}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'ri-spin 0.8s linear infinite' }} />
+              <MiniSun size={12} />
               Running preview…
               <style>{`@keyframes ri-spin { to { transform: rotate(360deg) } }`}</style>
             </div>
