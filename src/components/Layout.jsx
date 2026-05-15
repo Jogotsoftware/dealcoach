@@ -186,7 +186,7 @@ export default function Layout() {
     // platform admins for cross-org support/QA. BdrGuard only fires for role === 'bdr',
     // so these users could always reach the routes directly \u2014 making the entries
     // visible just removes the "where do I click" friction.
-    { label: 'XDR', show: isAEOpsManager, items: [
+    { label: 'XDR', show: isAEOpsManager && !isDemoOrg, items: [
       { to: '/bdr/submit',   iconKey: 'bdr_submit', label: 'Submit a Lead', show: true },
       { to: '/bdr/my-leads', iconKey: 'bdr_leads',  label: 'BDR Leads',     show: true },
     ]},

@@ -10,6 +10,75 @@ import BetaFeedbackModal from './BetaFeedbackModal'
 import { executeReportQueryStandalone } from '../pages/Reports'
 import { escalateToSme, recordSmeCitation } from '../lib/sme'
 
+// Curated demo overrides — when the user (in a demo org) asks one of these
+// patterns, short-circuit the chat backend and return the canned response so
+// the demo narrative stays bullet-proof. Without this, Lux's RAG can surface
+// unrelated deals (Riverside, Cargo) instead of the Chaberton + Campfire
+// story the demo turns on.
+const DEMO_CHAT_OVERRIDES = [
+  {
+    pattern: /\b(best (chance|shot|probability) (of |to )?clos|closes? (soon|next|first|this (month|quarter))|most likely to clos|highest (chance|probability|confidence)|likely to clos)/i,
+    response: `**Chaberton Energy** — your highest-conviction deal in the next 30 days.
+
+**Why it's likely to close:**
+- **Compelling Event verified** — their NetSuite contract renewal lands Sept 30. Hard date, hard money, board-mandated decision.
+- **Strong product fit** — multi-entity consolidation + project costing maps cleanly to Intacct's strengths.
+- **Champion + Economic Buyer engaged** — Joe has both threaded across 4 conversations.
+
+**The risk to manage:**
+- **Campfire came in at ~1/4 of our price.** The buyer told Joe he was going with them — he only paused when Joe asked if we could revise the numbers. The deal is alive *because* of that opening, but the gap is real and we need to close it fast.
+
+**Recommended next move:** see how you can bridge the gap on pricing — open the Deal Room to review the quote, restructure terms (multi-year ramp, timing of services, modules), and post a revised proposal back into the customer portal.`,
+    navActions: [
+      { label: 'Open Deal Room', route: '/deal/16b2bf8d-ba97-4a02-b614-246603c3e48b/room', kind: 'navigate' },
+      { label: 'View Chaberton Deal', route: '/deal/16b2bf8d-ba97-4a02-b614-246603c3e48b', kind: 'navigate' },
+    ],
+  },
+  {
+    pattern: /\b(biggest risk|main risk|what.{0,8}risk|risks? (in|on|to) (this |my )?(pipeline|chaberton|deal))/i,
+    response: `The biggest risk in your pipeline right now is on **Chaberton Energy** — the Campfire price gap.
+
+**The situation:** Campfire bid roughly **1/4 of our list price**. The buyer told Joe he was going with them; the deal is only still open because Joe asked if we could revise.
+
+**Why it's still winnable:**
+- Compelling Event is verified (NetSuite renewal Sept 30 — hard date)
+- Product fit on multi-entity consolidation + project costing favors us
+- Champion + Economic Buyer are both threaded
+
+**What needs to happen this week:**
+1. Restructure the quote — multi-year ramp, services timing, module unbundling
+2. Land the multi-entity TCO story before Selection
+3. Revised proposal back into the customer portal in the Deal Room`,
+    navActions: [
+      { label: 'Open Deal Room', route: '/deal/16b2bf8d-ba97-4a02-b614-246603c3e48b/room', kind: 'navigate' },
+    ],
+  },
+  {
+    pattern: /\b(chaberton|netsuite renewal|campfire)/i,
+    response: `**Chaberton Energy** is Joe Pacheco's flagship Q3 deal.
+
+**Compelling Event:** NetSuite contract renewal — Sept 30 hard date, board-mandated.
+
+**Risk:** **Campfire came in at ~1/4 of our price.** The buyer told Joe he was going with them; only paused when Joe asked if we could revise. The deal is alive *because* of that opening — but we need to close the gap fast.
+
+**Why we still win:** strong product fit on multi-entity consolidation + project costing, both Champion and Economic Buyer threaded across 4 conversations.
+
+**Next move:** open the Deal Room, restructure the quote (multi-year ramp, services timing, modules), post a revised proposal.`,
+    navActions: [
+      { label: 'Open Deal Room', route: '/deal/16b2bf8d-ba97-4a02-b614-246603c3e48b/room', kind: 'navigate' },
+      { label: 'View Chaberton Deal', route: '/deal/16b2bf8d-ba97-4a02-b614-246603c3e48b', kind: 'navigate' },
+    ],
+  },
+]
+
+function findDemoOverride(userMsg) {
+  if (!userMsg) return null
+  for (const o of DEMO_CHAT_OVERRIDES) {
+    if (o.pattern.test(userMsg)) return o
+  }
+  return null
+}
+
 // PR A (thinking indicator): inline component, 3-dot Carolina-blue pulse.
 // Keyframes live in src/styles/index.css (also handles prefers-reduced-motion).
 function ThinkingDots() {
@@ -376,6 +445,26 @@ export default function GlobalChatbot() {
     setLastSentMessage(text)
     track('chatbot_message_sent', { context_type: activeContextType, has_deal: !!activeDealId, message_length: text.length, re_fired: !!opt.refire })
     if (!opt.skipLocalUserInsert) setMessages(prev => [...prev, { role: 'user', content: text, created_at: new Date().toISOString() }])
+
+    // Demo override — short-circuit specific intents in demo orgs with curated
+    // responses so the demo narrative is bullet-proof. Without this Lux hits
+    // the real RAG and may surface unrelated deals (Riverside, Cargo) instead
+    // of the Chaberton + Campfire story the demo turns on.
+    if (isDemoOrg) {
+      const override = findDemoOverride(text)
+      if (override) {
+        await new Promise(r => setTimeout(r, 900)) // hold the sun spinner for a beat
+        setSending(false)
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: override.response,
+          actions_taken: [],
+          nav_actions: override.navActions || [],
+          created_at: new Date().toISOString(),
+        }])
+        return
+      }
+    }
 
     const pageContext = { path: location.pathname, page_name: routePageName, hint: routeHint }
     const dealForCall = opt.dealOverride !== undefined ? opt.dealOverride : activeDealId
@@ -872,6 +961,27 @@ export default function GlobalChatbot() {
                           </div>
                         )
                       })()}
+                      {/* Demo nav-action buttons — Carolina-blue pills under the
+                          assistant text. Click closes the panel and routes. */}
+                      {m.role === 'assistant' && Array.isArray(m.nav_actions) && m.nav_actions.length > 0 && (
+                        <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                          {m.nav_actions.map((a, ai) => (
+                            <button key={ai}
+                              onClick={() => { setOpen(false); navigate(a.route) }}
+                              style={{
+                                fontSize: 12, fontWeight: 600,
+                                color: ai === 0 ? '#fff' : T.primary,
+                                background: ai === 0 ? T.primary : 'transparent',
+                                border: ai === 0 ? 'none' : `1px solid ${T.primary}`,
+                                borderRadius: 6, padding: '6px 12px',
+                                cursor: 'pointer', fontFamily: T.font,
+                                display: 'inline-flex', alignItems: 'center', gap: 4,
+                              }}>
+                              {a.label} <span style={{ fontSize: 13, marginLeft: 2 }}>&rarr;</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
                       {m.role === 'assistant' && m.id && (() => {
                         const fb = feedbackState[m.id] || {}
                         return (

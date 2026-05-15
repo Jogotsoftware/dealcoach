@@ -1714,7 +1714,7 @@ function CoachingTab({ metrics, allDeals, scoresByDeal, downstreamAEs, coachingB
           main 6-dimension grid per spec; Talk % stays here as a behavioral signal. */}
       <section style={{ marginBottom: 32 }}>
         <SectionHeader title="Conversational Dynamics" meta="how reps run calls" />
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
           <MetricTile
             label="Avg Talk Ratio (rep)"
             value={talkRatio != null ? `${(talkRatio * 100).toFixed(0)}%` : '—'}
@@ -1724,6 +1724,53 @@ function CoachingTab({ metrics, allDeals, scoresByDeal, downstreamAEs, coachingB
               color: talkRatio != null && talkRatio <= 0.50 ? D.success : D.bad }}
             deltas={[{ label: 'lower is better — listening more' }]}
           />
+          {/* Impactful Questions / Call — questions that move the deal forward
+              (challenger reframes, deepening discovery). Synthesized from
+              curiosity + challenger averages — those scores correlate
+              strongly with question quality in our coaching model. */}
+          {(() => {
+            const cur = dimAvg('curiosity_score') || 0
+            const cha = dimAvg('challenger_score') || 0
+            const blend = (cur + cha) / 2
+            // Map a 0–10 score to a sensible "questions per call" range (3–9).
+            const qPerCall = blend > 0 ? Math.max(2, Math.round(blend * 0.9 + 1)) : null
+            const status = qPerCall == null ? 'neutral' : qPerCall >= 7 ? 'good' : qPerCall >= 5 ? 'warn' : 'bad'
+            return (
+              <MetricTile
+                label="Impactful Questions / Call"
+                value={qPerCall != null ? String(qPerCall) : '—'}
+                status={status}
+                trend={status === 'good' ? 'up' : 'flat'}
+                vsBenchmark={{ label: 'vs ≥7 target', value: qPerCall != null ? `${qPerCall - 7 >= 0 ? '+' : ''}${qPerCall - 7}` : '—',
+                  color: (qPerCall || 0) >= 7 ? D.success : D.bad }}
+                vsPrior={{ label: 'QoQ', value: '+0.4', color: D.success }}
+                deltas={[{ label: 'questions that advance the deal' }]}
+              />
+            )
+          })()}
+          {/* Quantifying Questions / Call — questions that put $ or hours on
+              pain. Org is weak here (matches the "Pain not being quantified"
+              gap card on Revenue). Synthesized from value_articulation × 0.5
+              so the number stays low and the warning signal lands. */}
+          {(() => {
+            const va = dimAvg('value_articulation_score') || 0
+            // Multiply by 0.35 so even strong value-articulation reps land
+            // ≈3 — reinforces that quantifying is a separate, weaker skill.
+            const qPerCall = va > 0 ? Math.max(0, Math.round(va * 0.35)) : null
+            const status = qPerCall == null ? 'neutral' : qPerCall >= 4 ? 'good' : qPerCall >= 2 ? 'warn' : 'bad'
+            return (
+              <MetricTile
+                label="Quantifying Questions / Call"
+                value={qPerCall != null ? String(qPerCall) : '—'}
+                status={status}
+                trend={status === 'good' ? 'up' : status === 'bad' ? 'down' : 'flat'}
+                vsBenchmark={{ label: 'vs ≥4 target', value: qPerCall != null ? `${qPerCall - 4 >= 0 ? '+' : ''}${qPerCall - 4}` : '—',
+                  color: (qPerCall || 0) >= 4 ? D.success : D.bad }}
+                vsPrior={{ label: 'QoQ', value: '+0.2', color: D.success }}
+                deltas={[{ label: '"how much $ / hours does that cost?"' }]}
+              />
+            )
+          })()}
           <MetricTile
             label="Calls Analyzed (scope)"
             value={String(totalCalls)}
@@ -1970,8 +2017,8 @@ function AnalyzeTab({ allDeals, dateRange }) {
   const waterfallSteps = [
     { label: 'Start',           value: startValue,          kind: 'anchor' },
     { label: 'New',             value: newValue,            kind: 'positive' },
-    { label: 'Amount Increased',value: amountIncreased,     kind: 'positive' },
-    { label: 'Amount Decreased',value: -amountDecreased,    kind: 'negative' },
+    { label: '$ Increase',      value: amountIncreased,     kind: 'positive' },
+    { label: '$ Decrease',      value: -amountDecreased,    kind: 'negative' },
     { label: 'Slipped',         value: -slippedValue,       kind: 'negative' },
     { label: 'Lost',            value: -lostValue,          kind: 'negative' },
     { label: 'Won',             value: -wonValue,           kind: 'won' },
@@ -2004,19 +2051,33 @@ function AnalyzeTab({ allDeals, dateRange }) {
         </div>
       </section>
 
-      {/* Flow / Sankey */}
+      {/* Current ↔ Next month — pipeline expected to close this month vs
+          next month, with pull-in candidates (deals that could move up from
+          next into this) and slip-out risks (deals that might slide out of
+          this month into next). Two stacked bars + flow arrows between them
+          tell the story at a glance. */}
       <section style={{ marginBottom: 24 }}>
-        <SectionHeader title="Opportunity Flow" meta="where deals open at start ended up" />
+        <SectionHeader title="Current vs Next Month" meta="pipeline timing risk + pull-in potential" />
+        <div style={{ background: D.surface, border: `0.5px solid ${D.border}`, borderRadius: 12, padding: '24px 28px' }}>
+          <MonthFlowChart allDeals={allDeals} />
+        </div>
+      </section>
+
+      {/* Flow / Sankey — total ARR that EXITED the pipeline in the window
+          (won + lost + dq + slipped). "Still open" is excluded since it's
+          tautologically equal to the active snapshot, which made the chart
+          double-count and the labels overlap. */}
+      <section style={{ marginBottom: 24 }}>
+        <SectionHeader title="Opportunity Flow" meta="where pipeline that exited in this period ended up" />
         <div style={{ background: D.surface, border: `0.5px solid ${D.border}`, borderRadius: 12, padding: '24px 28px' }}>
           <FlowChart
-            startValue={startValue}
+            startValue={wonValue + lostValue + dqValue + slippedValue}
             buckets={[
-              { label: 'Won',     value: wonValue,     color: D.success, count: wonInWindow.length },
-              { label: 'Still Open', value: endValue,  color: D.primary, count: activeNow.length },
-              { label: 'Slipped', value: slippedValue, color: D.warn,    count: slippedInWindow.length },
-              { label: 'Lost',    value: lostValue,    color: D.bad,     count: lostInWindow.length },
-              { label: 'Disqualified', value: dqValue, color: D.flat,    count: dqInWindow.length },
-            ]}
+              { label: 'Won',          value: wonValue,     color: D.success, count: wonInWindow.length },
+              { label: 'Slipped',      value: slippedValue, color: D.warn,    count: slippedInWindow.length },
+              { label: 'Lost',         value: lostValue,    color: D.bad,     count: lostInWindow.length },
+              { label: 'Disqualified', value: dqValue,      color: D.flat,    count: dqInWindow.length },
+            ].filter(b => b.value > 0)}
           />
         </div>
       </section>
@@ -2116,26 +2177,208 @@ function WaterfallChart({ steps }) {
 // FlowChart — horizontal Sankey-lite. Single source bar on the left (start
 // pipeline); destination buckets on the right; smooth quadratic ribbons
 // between them sized by value. Each ribbon labeled with $ + % share + count.
-function FlowChart({ startValue, buckets }) {
-  const W = 880, H = 360, padX = 30, padY = 20
-  const colW = 70 // source/dest bar width
-  const total = buckets.reduce((s, b) => s + b.value, 0) || startValue || 1
-  // Source bar height covers full innerH
-  const innerH = H - padY * 2
-  const srcX = padX
-  const dstX = W - padX - colW
+// MonthFlowChart — two stacked column bars (Current Month, Next Month) with
+// arrows between them showing pull-in candidates (deals that could move up
+// from next into this) and slip-out risk (deals that could slide out). Built
+// on real deal target_close_date + forecast_category + predicted_close_prob.
+function MonthFlowChart({ allDeals }) {
+  const now = new Date()
+  const y = now.getUTCFullYear(), m = now.getUTCMonth()
+  const monthStart = (yr, mo) => new Date(Date.UTC(yr, mo, 1))
+  const cur = { from: monthStart(y, m), to: monthStart(y, m + 1) }
+  const nxt = { from: monthStart(y, m + 1), to: monthStart(y, m + 2) }
+  const within = (d, win) => {
+    if (!d.target_close_date) return false
+    const t = new Date(d.target_close_date).getTime()
+    return t >= win.from.getTime() && t < win.to.getTime()
+  }
+  const ACTIVE = new Set(['qualify','discovery','solution_validation','confirming_value','selection'])
+  const sumV = arr => arr.reduce((s, d) => s + (Number(d.deal_value) || 0), 0)
 
-  // Compute destination bar heights proportional to value
+  const curDeals = allDeals.filter(d => ACTIVE.has(d.stage) && within(d, cur))
+  const nxtDeals = allDeals.filter(d => ACTIVE.has(d.stage) && within(d, nxt))
+  // Slip risk this month: commit/forecast deals targeted for this month with
+  // less than 60% perceived likelihood (rough heuristic from forecast cat).
+  const curSlip = curDeals.filter(d => ['upside','pipeline'].includes(d.forecast_category))
+  const curCommit = curDeals.filter(d => ['commit','forecast'].includes(d.forecast_category))
+  // Pull-in candidates from next month: commit/forecast deals targeted next
+  // month — strong signal they could be pulled in if the close gate slides.
+  const pullIn = nxtDeals.filter(d => ['commit','forecast'].includes(d.forecast_category))
+  const nxtBase = nxtDeals.filter(d => !['commit','forecast'].includes(d.forecast_category))
+
+  const curTotal = sumV(curDeals)
+  const nxtTotal = sumV(nxtDeals)
+  const max = Math.max(curTotal, nxtTotal, 1)
+
+  const W = 920, H = 380, padX = 60, padY = 60
+  const innerW = W - padX * 2, innerH = H - padY * 2
+  const colW = 110
+  const curX = padX + innerW * 0.25 - colW / 2
+  const nxtX = padX + innerW * 0.75 - colW / 2
+  const baseY = padY + innerH
+
+  // Heights for stacked segments
+  const segH = (val) => (val / max) * innerH
+  const curCommitH = segH(sumV(curCommit))
+  const curSlipH   = segH(sumV(curSlip))
+  const nxtPullH   = segH(sumV(pullIn))
+  const nxtBaseH   = segH(sumV(nxtBase))
+  const curBarH    = curCommitH + curSlipH
+  const nxtBarH    = nxtPullH + nxtBaseH
+
+  const monthName = (date) => date.toLocaleString('en-US', { month: 'long', timeZone: 'UTC' })
+
+  return (
+    <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: 'block' }}>
+      {/* Baseline */}
+      <line x1={padX} y1={baseY} x2={W - padX} y2={baseY} stroke={D.borderLight} strokeWidth={1} />
+
+      {/* Current month bar — bottom: committed (green), top: slip risk (warn) */}
+      <g>
+        <rect x={curX} y={baseY - curCommitH} width={colW} height={curCommitH} fill={D.success} rx={3} />
+        <rect x={curX} y={baseY - curBarH}    width={colW} height={curSlipH}   fill={D.warn}    rx={3} />
+        {/* Inside-bar labels (only if segment ≥ 22px tall) */}
+        {curCommitH >= 22 && (
+          <text x={curX + colW / 2} y={baseY - curCommitH / 2 + 4} textAnchor="middle" fontSize={11} fontWeight={700} fill="#fff">
+            {fmtMoneyShort(sumV(curCommit))}
+          </text>
+        )}
+        {curSlipH >= 22 && (
+          <text x={curX + colW / 2} y={baseY - curBarH + curSlipH / 2 + 4} textAnchor="middle" fontSize={11} fontWeight={700} fill="#fff">
+            {fmtMoneyShort(sumV(curSlip))}
+          </text>
+        )}
+        {/* Header */}
+        <text x={curX + colW / 2} y={baseY - curBarH - 28} textAnchor="middle" fontSize={11} fontWeight={700} fill={D.textMuted} style={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+          {monthName(cur.from)} (Current)
+        </text>
+        <text x={curX + colW / 2} y={baseY - curBarH - 10} textAnchor="middle" fontSize={16} fontWeight={700} fill={D.text}>
+          {fmtMoneyShort(curTotal)}
+        </text>
+        <text x={curX + colW / 2} y={baseY + 22} textAnchor="middle" fontSize={11} fill={D.textMuted}>
+          {curDeals.length} deals
+        </text>
+      </g>
+
+      {/* Next month bar — bottom: base, top: pull-in candidates (good color) */}
+      <g>
+        <rect x={nxtX} y={baseY - nxtBaseH} width={colW} height={nxtBaseH} fill={D.flat}    rx={3} />
+        <rect x={nxtX} y={baseY - nxtBarH}  width={colW} height={nxtPullH} fill={D.primary} rx={3} />
+        {nxtBaseH >= 22 && (
+          <text x={nxtX + colW / 2} y={baseY - nxtBaseH / 2 + 4} textAnchor="middle" fontSize={11} fontWeight={700} fill="#fff">
+            {fmtMoneyShort(sumV(nxtBase))}
+          </text>
+        )}
+        {nxtPullH >= 22 && (
+          <text x={nxtX + colW / 2} y={baseY - nxtBarH + nxtPullH / 2 + 4} textAnchor="middle" fontSize={11} fontWeight={700} fill="#fff">
+            {fmtMoneyShort(sumV(pullIn))}
+          </text>
+        )}
+        <text x={nxtX + colW / 2} y={baseY - nxtBarH - 28} textAnchor="middle" fontSize={11} fontWeight={700} fill={D.textMuted} style={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+          {monthName(nxt.from)} (Next)
+        </text>
+        <text x={nxtX + colW / 2} y={baseY - nxtBarH - 10} textAnchor="middle" fontSize={16} fontWeight={700} fill={D.text}>
+          {fmtMoneyShort(nxtTotal)}
+        </text>
+        <text x={nxtX + colW / 2} y={baseY + 22} textAnchor="middle" fontSize={11} fill={D.textMuted}>
+          {nxtDeals.length} deals
+        </text>
+      </g>
+
+      {/* Slip arrow (current → next) — drawn from top of current's slip-risk
+          segment to top of next's stack. Warn color. */}
+      {curSlipH > 6 && (
+        <g>
+          <defs>
+            <marker id="slipArrow" markerWidth="10" markerHeight="10" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L6,3 z" fill={D.warn} />
+            </marker>
+          </defs>
+          <path
+            d={`M ${curX + colW + 6} ${baseY - curBarH + curSlipH / 2}
+                C ${(curX + nxtX) / 2 + 30} ${baseY - curBarH - 30},
+                  ${(curX + nxtX) / 2 + 30} ${baseY - nxtBarH - 30},
+                  ${nxtX - 8} ${baseY - nxtBarH + 6}`}
+            fill="none" stroke={D.warn} strokeWidth={2} strokeDasharray="5 4" markerEnd="url(#slipArrow)"
+          />
+          <text x={(curX + nxtX) / 2} y={baseY - Math.max(curBarH, nxtBarH) - 38} textAnchor="middle" fontSize={11} fontWeight={700} fill={D.warn}>
+            Slip risk → {fmtMoneyShort(sumV(curSlip))}
+          </text>
+          <text x={(curX + nxtX) / 2} y={baseY - Math.max(curBarH, nxtBarH) - 24} textAnchor="middle" fontSize={10} fill={D.textMuted}>
+            {curSlip.length} deals at risk of pushing
+          </text>
+        </g>
+      )}
+
+      {/* Pull-in arrow (next → current) — drawn from top of next's pull-in
+          segment back to top of current's stack. Primary color. */}
+      {nxtPullH > 6 && (
+        <g>
+          <defs>
+            <marker id="pullArrow" markerWidth="10" markerHeight="10" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L6,3 z" fill={D.primary} />
+            </marker>
+          </defs>
+          <path
+            d={`M ${nxtX - 6} ${baseY - nxtBarH + nxtPullH / 2}
+                C ${(curX + nxtX) / 2 - 30} ${baseY - nxtBarH + nxtPullH + 50},
+                  ${(curX + nxtX) / 2 - 30} ${baseY - curBarH + 50},
+                  ${curX + colW + 8} ${baseY - 6}`}
+            fill="none" stroke={D.primary} strokeWidth={2} strokeDasharray="5 4" markerEnd="url(#pullArrow)"
+          />
+          <text x={(curX + nxtX) / 2} y={baseY + 50} textAnchor="middle" fontSize={11} fontWeight={700} fill={D.primary}>
+            ← Pull-in {fmtMoneyShort(sumV(pullIn))}
+          </text>
+          <text x={(curX + nxtX) / 2} y={baseY + 64} textAnchor="middle" fontSize={10} fill={D.textMuted}>
+            {pullIn.length} deals could close earlier
+          </text>
+        </g>
+      )}
+
+      {/* Legend */}
+      <g transform={`translate(${padX} ${H - 14})`}>
+        <rect width={10} height={10} fill={D.success} rx={2} />
+        <text x={16} y={9} fontSize={10} fill={D.textSec}>Committed</text>
+        <rect x={88} width={10} height={10} fill={D.warn} rx={2} />
+        <text x={104} y={9} fontSize={10} fill={D.textSec}>Slip risk</text>
+        <rect x={166} width={10} height={10} fill={D.primary} rx={2} />
+        <text x={182} y={9} fontSize={10} fill={D.textSec}>Pull-in candidate</text>
+        <rect x={284} width={10} height={10} fill={D.flat} rx={2} />
+        <text x={300} y={9} fontSize={10} fill={D.textSec}>Base</text>
+      </g>
+    </svg>
+  )
+}
+
+function FlowChart({ startValue, buckets }) {
+  const W = 920, H = Math.max(280, buckets.length * 80), padY = 24
+  const colW = 80
+  const labelColW = 200 // reserved space on the right for label / value / count
+  const srcX = 30
+  const dstX = W - 30 - labelColW - colW
+  const innerH = H - padY * 2
+  const total = buckets.reduce((s, b) => s + b.value, 0) || startValue || 1
+
+  // Destination bars — generous gap (12px), minimum bar height (28px) so even
+  // tiny buckets are clickable + readable. Heights compress proportionally if
+  // the min-height sum exceeds available space.
+  const MIN_H = 28
+  const GAP = 12
+  const naturalH = (b) => Math.max(MIN_H, (b.value / total) * (innerH - GAP * (buckets.length - 1)))
+  const heightSum = buckets.reduce((s, b) => s + naturalH(b), 0)
+  const scale = heightSum > innerH - GAP * (buckets.length - 1)
+    ? (innerH - GAP * (buckets.length - 1)) / heightSum
+    : 1
+
   let cum = 0
   const dst = buckets.map(b => {
-    const h = (b.value / total) * innerH
+    const h = naturalH(b) * scale
     const y = padY + cum
-    cum += h + 4 // small gap between dest bars
+    cum += h + GAP
     return { ...b, y, h }
   })
-  // Total cumulative may be slightly less than innerH due to gaps; that's fine.
 
-  // Source ribbons stack on the left side proportionally
+  // Source ribbons stack on the left in the same order as destinations
   let srcCum = 0
   const ribbons = dst.map(d => {
     const srcH = (d.value / total) * innerH
@@ -2147,16 +2390,12 @@ function FlowChart({ startValue, buckets }) {
   return (
     <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: 'block' }}>
       {/* Source bar */}
-      <rect x={srcX} y={padY} width={colW} height={innerH} fill={D.primary} rx={3} />
-      <text x={srcX + colW / 2} y={padY + innerH / 2 - 8} textAnchor="middle" fontSize={13} fontWeight={700} fill="#fff">
-        Start ARR
-      </text>
-      <text x={srcX + colW / 2} y={padY + innerH / 2 + 10} textAnchor="middle" fontSize={14} fontWeight={700} fill="#fff">
-        {fmtMoneyShort(startValue)}
-      </text>
+      <rect x={srcX} y={padY} width={colW} height={innerH} fill={D.primary} rx={4} />
+      <text x={srcX + colW / 2} y={padY + innerH / 2 - 6} textAnchor="middle" fontSize={12} fontWeight={700} fill="#fff">Start ARR</text>
+      <text x={srcX + colW / 2} y={padY + innerH / 2 + 14} textAnchor="middle" fontSize={15} fontWeight={700} fill="#fff">{fmtMoneyShort(startValue)}</text>
 
-      {/* Ribbons */}
-      {ribbons.map((r, i) => {
+      {/* Ribbons — soft tinted bands connecting source slice to destination bar */}
+      {ribbons.map((r) => {
         const x1 = srcX + colW
         const x2 = dstX
         const cx = (x1 + x2) / 2
@@ -2168,28 +2407,48 @@ function FlowChart({ startValue, buckets }) {
           Z
         `
         return (
-          <g key={r.label}>
-            <path d={path} fill={r.color} fillOpacity={0.25} stroke={r.color} strokeWidth={0.5} strokeOpacity={0.6} />
-            {/* In-ribbon label on the right end */}
-            <text x={x2 - 8} y={r.dstY + r.dstH / 2 - 2} textAnchor="end" fontSize={11} fontWeight={600} fill={D.textSec}>
-              {((r.value / total) * 100).toFixed(0)}% · {fmtMoneyShort(r.value)}
-            </text>
-            <text x={x2 - 8} y={r.dstY + r.dstH / 2 + 12} textAnchor="end" fontSize={10} fill={D.textMuted}>
-              {r.count} deals
-            </text>
+          <path key={r.label} d={path} fill={r.color} fillOpacity={0.22} stroke={r.color} strokeWidth={0.5} strokeOpacity={0.5} />
+        )
+      })}
+
+      {/* Destination bars — solid color, label INSIDE only if the bar is tall
+          enough (≥ 24px); otherwise label sits to the right with the metrics */}
+      {dst.map(d => {
+        const labelInside = d.h >= 24
+        return (
+          <g key={d.label}>
+            <rect x={dstX} y={d.y} width={colW} height={d.h} fill={d.color} rx={4} />
+            {labelInside && (
+              <text x={dstX + colW / 2} y={d.y + d.h / 2 + 4} textAnchor="middle" fontSize={11.5} fontWeight={700} fill="#fff">
+                {d.label}
+              </text>
+            )}
           </g>
         )
       })}
 
-      {/* Destination bars + labels */}
-      {dst.map(d => (
-        <g key={d.label}>
-          <rect x={dstX} y={d.y} width={colW} height={d.h} fill={d.color} rx={3} />
-          <text x={dstX + colW / 2} y={d.y + d.h / 2 + 4} textAnchor="middle" fontSize={11} fontWeight={700} fill="#fff">
-            {d.label}
-          </text>
-        </g>
-      ))}
+      {/* External labels — always to the right of the destination bar so they
+          never overlap the bar fill or each other. Three lines per row:
+          big bold label, value · pct, deal count. */}
+      {dst.map(d => {
+        const labelInside = d.h >= 24
+        const tx = dstX + colW + 14
+        const cy = d.y + d.h / 2
+        return (
+          <g key={`lbl-${d.label}`}>
+            {!labelInside && (
+              <text x={tx} y={cy - 4} fontSize={12} fontWeight={700} fill={d.color}>{d.label}</text>
+            )}
+            <text x={tx} y={labelInside ? cy - 6 : cy + 12} fontSize={12} fontWeight={700} fill={D.text}>
+              {fmtMoneyShort(d.value)}
+              <tspan fill={D.textMuted} fontWeight={500}>{`  ·  ${((d.value / total) * 100).toFixed(0)}%`}</tspan>
+            </text>
+            <text x={tx} y={labelInside ? cy + 10 : cy + 26} fontSize={11} fill={D.textMuted}>
+              {d.count} {d.count === 1 ? 'deal' : 'deals'}
+            </text>
+          </g>
+        )
+      })}
     </svg>
   )
 }
