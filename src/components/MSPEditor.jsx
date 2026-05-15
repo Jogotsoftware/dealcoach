@@ -863,19 +863,34 @@ export default function MSPEditor({ dealId, mode = 'standalone', readonlyAdapter
                   </div>
                 )}
 
-                {/* Add Step (writable only). The collapsed state renders as the
-                    next "stage circle" sitting on the rail so the affordance reads
-                    as "add the next stage" rather than a floating button. */}
+                {/* Add Step (writable only). Standalone keeps the rail-circle
+                    affordance for visual continuity with the timeline; embedded
+                    mode (Deal Room config) renders a clearly-labeled button so
+                    the action isn't lost on a multi-tab page. */}
                 {isWritable && (
                   <div style={{ position: 'relative', marginTop: 12, minHeight: 32 }}>
                     {showAddStep ? (
                       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                         <input style={{ ...inputStyle, flex: 1 }} value={newStepName}
-                          onChange={e => setNewStepName(e.target.value)} placeholder="Step name..."
+                          onChange={e => setNewStepName(e.target.value)} placeholder="Stage name..."
                           onKeyDown={e => e.key === 'Enter' && addStep()} autoFocus />
                         <Button primary onClick={addStep}>Add</Button>
                         <Button onClick={() => { setShowAddStep(false); setNewStepName('') }}>Cancel</Button>
                       </div>
+                    ) : isEmbedded ? (
+                      <button onClick={() => setShowAddStep(true)} title="Add a stage to the project plan"
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 6,
+                          padding: '8px 14px', border: `1.5px dashed ${T.primary}`, borderRadius: 6,
+                          background: T.surface, color: T.primary, cursor: 'pointer',
+                          fontFamily: T.font, fontSize: 12, fontWeight: 700,
+                          transition: 'all 0.15s',
+                        }}
+                        onMouseEnter={e => { e.currentTarget.style.background = T.primary; e.currentTarget.style.color = '#fff'; e.currentTarget.style.borderStyle = 'solid' }}
+                        onMouseLeave={e => { e.currentTarget.style.background = T.surface; e.currentTarget.style.color = T.primary; e.currentTarget.style.borderStyle = 'dashed' }}>
+                        <span style={{ fontSize: 16, lineHeight: 1 }}>+</span>
+                        Add Stage
+                      </button>
                     ) : (
                       <button onClick={() => setShowAddStep(true)} title="Add a step"
                         style={{
