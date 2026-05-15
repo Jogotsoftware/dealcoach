@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams, Navigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { theme as T } from '../lib/theme'
 import { Button, inputStyle, labelStyle } from '../components/Shared'
 
 const METHODOLOGIES = [
-  { id: 'rif', name: 'Revenue Instruments Framework', desc: 'Discovery-first, signal-driven, AI-coached. Seven pillars: Curiosity, Independently Wealthy, Continuous Qualification, Empathetic Listening, Outcome-Goal Alignment, Mutual Authoring, Buyer Risk Mitigation.', is_recommended: true },
+  { id: 'rif', name: 'Lumen Framework', desc: 'Discovery-first, signal-driven, AI-coached. Seven pillars: Curiosity, Independently Wealthy, Continuous Qualification, Empathetic Listening, Outcome-Goal Alignment, Mutual Authoring, Buyer Risk Mitigation.', is_recommended: true },
   { id: 'bant', name: 'BANT', desc: 'Budget, Authority, Need, Timeline — classic qualification' },
   { id: 'meddpicc', name: 'MEDDPICC', desc: 'Metrics, Economic Buyer, Decision Criteria, Decision Process, Paper Process, Identified Pain, Champion, Competition' },
   { id: 'challenger', name: 'Challenger Sale', desc: 'Teach, tailor, take control (Dixon & Adamson)' },
@@ -105,7 +105,7 @@ function StepIndicator({ current, total, currentName }) {
 function Wordmark() {
   return (
     <div style={{ fontSize: 16, fontWeight: 700, color: T.text, marginBottom: 16, letterSpacing: '-0.01em', textAlign: 'center' }}>
-      Revenue Instruments
+      Lumen
     </div>
   )
 }
@@ -116,6 +116,16 @@ export default function Onboarding() {
   const [searchParams] = useSearchParams()
   const inviteToken = searchParams.get('token')
   const inviteId = searchParams.get('invite')
+
+  // Hard guard at the top of render: if the user already has an org, send
+  // them home BEFORE the welcome card renders. The previous useEffect-based
+  // redirect fired after the first paint, causing a "Let's set up your
+  // workspace" flash for any user (e.g. demo-org sign-in) that briefly
+  // touched this route via the router. Returning a <Navigate /> on first
+  // render skips the flash entirely.
+  if (profile?.org_id) {
+    return <Navigate to="/" replace />
+  }
 
   const [step, setStep] = useState(0) // 0=welcome, 1..7 wizard, 8=processing
   const goingBackRef = useRef(false)
@@ -188,7 +198,8 @@ export default function Onboarding() {
     supabase.from('invitations').select('email, invited_name, personal_message').eq('id', inviteId).single()
       .then(({ data: inv }) => {
         if (!inv?.personal_message) return
-        const match = inv.personal_message.match(/set up Revenue Instruments for (.+?)\./)
+        // Match invitations from both pre- and post-rebrand to keep older links working.
+        const match = inv.personal_message.match(/set up (?:Lumen|Revenue Instruments) for (.+?)\./)
         if (match && !orgName) setOrgName(match[1])
       })
   }, [inviteId])
@@ -369,7 +380,7 @@ export default function Onboarding() {
         background: '#fff', fontFamily: T.font, padding: '40px 24px',
       }}>
         <div style={{ fontSize: 18, fontWeight: 700, color: T.text, letterSpacing: '-0.01em' }}>
-          Revenue Instruments
+          Lumen
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
