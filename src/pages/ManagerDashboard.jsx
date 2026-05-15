@@ -787,6 +787,30 @@ export default function ManagerDashboard() {
   const filterTargetId = aeFilter || rvpFilter || avpFilter
   const filterTargetProfile = filterTargetId ? allProfiles.find(p => p.id === filterTargetId) : null
   const currentParent = filterTargetProfile || (drillStack.length > 0 ? drillStack[drillStack.length - 1] : profile)
+
+  // Publish the current drill scope so GlobalChatbot can show it in its header
+  // ("Joe's Pipeline" instead of "General"). sessionStorage is the simplest
+  // cross-component channel — GlobalChatbot reads on every render via window
+  // event hook below. Cleared when drill returns to the org root.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const isDrilledBeyondSelf = currentParent && currentParent.id !== profile?.id
+    if (isDrilledBeyondSelf) {
+      const firstName = (currentParent.full_name || '').split(' ')[0] || 'Rep'
+      const role = currentParent.role_level === 'avp' ? 'Region'
+        : currentParent.role_level === 'rvp' ? 'Team'
+        : 'Pipeline'
+      sessionStorage.setItem('lumen.chatScope', JSON.stringify({
+        label: `${firstName}'s ${role}`,
+        repId: currentParent.id,
+        repName: currentParent.full_name,
+      }))
+    } else {
+      sessionStorage.removeItem('lumen.chatScope')
+    }
+    window.dispatchEvent(new Event('lumen:chat-scope-changed'))
+  }, [currentParent?.id, profile?.id])
+
   const currentMetrics = useMemo(
     () => (currentParent?.id ? metricsFor(currentParent.id, dateRange) : {}),
     [currentParent?.id, allProfiles, allDeals, allPredictions, allContacts, dateRange?.key, dateRange?.from, dateRange?.to, segmentFilter]

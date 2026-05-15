@@ -635,6 +635,23 @@ export default function GlobalChatbot() {
   }
 
   // Context badge shown below the header — gives the user a clear signal of
+  // ManagerDashboard publishes the active drill scope ("Joe's Pipeline",
+  // "Brendan's Region") to sessionStorage whenever the user drills past their
+  // own root. We mirror it here so the context pill shows the actual rep
+  // instead of a generic 'General' / 'Your pipeline' label.
+  const [drillScope, setDrillScope] = useState(() => {
+    if (typeof window === 'undefined') return null
+    try { return JSON.parse(sessionStorage.getItem('lumen.chatScope') || 'null') } catch { return null }
+  })
+  useEffect(() => {
+    function refresh() {
+      try { setDrillScope(JSON.parse(sessionStorage.getItem('lumen.chatScope') || 'null')) }
+      catch { setDrillScope(null) }
+    }
+    window.addEventListener('lumen:chat-scope-changed', refresh)
+    return () => window.removeEventListener('lumen:chat-scope-changed', refresh)
+  }, [])
+
   // what the AI can see right now, without making them click to configure it.
   const contextBadge = (() => {
     if (activeContextType === 'deal' && activeDealId) {
@@ -642,6 +659,8 @@ export default function GlobalChatbot() {
       return { label: dealName ? `Deal: ${dealName}` : 'This deal', changeable: true }
     }
     if (activeContextType === 'deal') return { label: 'Pick a deal', changeable: true }
+    // Drill scope wins over generic pipeline label when set.
+    if (drillScope?.label) return { label: drillScope.label, changeable: true }
     if (activeContextType === 'pipeline') return { label: 'Your pipeline', changeable: true }
     if (activeContextType === 'coaching') return { label: 'Coaching methodology', changeable: true }
     if (activeContextType === 'help') return { label: 'Product help', changeable: true }
