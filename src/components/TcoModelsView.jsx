@@ -108,17 +108,24 @@ function deriveSageMatrix(parentQuote, contractTerm) {
 // Builds a matrix for a user-defined scenario from its JSON fields.
 // scenario.yoy_pct is in percent-points (user enters "5" for 5%); buildMatrix
 // expects decimal form (0.05 = 5%), matching contract_terms.yoy_caps storage.
+// Free months + signing bonus are optional concessions that compute the same
+// way as the Sage Offer baseline: free-months value = (subY1 / 12) * months,
+// applied only at the grand total; signing bonus deducts from Y1.
 function deriveScenarioMatrix(scenario) {
   const yoyPct = (Number(scenario.yoy_pct) || 0) / 100
   const termYears = Number(scenario.term_years) || 3
-  // Same YoY applied each year past Y1.
   const yoyPctList = []
   for (let y = 1; y <= termYears; y++) yoyPctList.push(yoyPct)
+  const subY1 = Number(scenario.subscription_y1) || 0
+  const freeMonths = Number(scenario.free_months) || 0
+  const freeMonthsValue = (subY1 / 12) * freeMonths
+  const signingBonus = Number(scenario.signing_bonus_amount) || 0
   return buildMatrix({
-    subscriptionY1: scenario.subscription_y1,
+    subscriptionY1: subY1,
     implementation: scenario.implementation,
-    signingBonus: 0,
-    freeMonthsValue: 0,
+    signingBonus,
+    freeMonths,
+    freeMonthsValue,
     termYears,
     yoyPctList,
     customLines: scenario.lines || [],
@@ -137,6 +144,8 @@ function defaultScenario(parentQuote) {
     implementation: Number(parentQuote?.sage_implementation_total) || 0,
     term_years: 3,
     yoy_pct: 5,
+    free_months: 0,
+    signing_bonus_amount: 0,
     lines: [],
   }
 }
@@ -492,6 +501,24 @@ function EditableScenarioCard({ scenario, matrix, horizon, baseline, baselineLab
               style={{ ...tinyInput, width: 70 }}
             />
           </Field>
+          <Field label="Free Months">
+            <input
+              type="number"
+              min="0"
+              max="12"
+              step="1"
+              value={scenario.free_months ?? 0}
+              onChange={e => onChange({ free_months: Number(e.target.value) || 0 })}
+              style={{ ...tinyInput, width: 70 }}
+              title="Same as Sage Offer: value is one month of Y1 subscription × months, deducted from the grand total."
+            />
+          </Field>
+          <Field label="Signing Bonus">
+            <CurrencyInput
+              value={scenario.signing_bonus_amount ?? 0}
+              onChange={v => onChange({ signing_bonus_amount: v })}
+            />
+          </Field>
         </div>
       )}
 
@@ -508,6 +535,13 @@ function EditableScenarioCard({ scenario, matrix, horizon, baseline, baselineLab
           <tbody>
             <MatrixRow label="Net Subscription" perYear={y => matrix.subsByYear[y - 1]} total={matrix.subsTotal} years={years} cell={numCellStyle} lbl={labelCellStyle} />
             <MatrixRow label="Implementation" perYear={y => y === 1 ? matrix.impl : null} total={matrix.impl} years={years} cell={numCellStyle} lbl={labelCellStyle} />
+
+            {matrix.signingBonus > 0 && (
+              <MatrixRow label="Signing Bonus" perYear={y => y === 1 ? -matrix.signingBonus : null} total={-matrix.signingBonus} years={years} cell={numCellStyle} lbl={labelCellStyle} />
+            )}
+            {matrix.freeMonthsValue > 0 && (
+              <MatrixRow label={`Free Months (${matrix.freeMonths})`} perYear={() => null} total={-matrix.freeMonthsValue} years={years} cell={numCellStyle} lbl={labelCellStyle} />
+            )}
 
             {/* Custom lines — fully user-controlled, render between Implementation and Total */}
             {(scenario.lines || []).map(line => (
