@@ -115,6 +115,7 @@ export default function ProposalRenderer() {
   const signingBonusValue = Number(quote.signing_bonus_amount) > 0
     ? Number(quote.signing_bonus_amount)
     : sageMonthly * (Number(quote.signing_bonus_months) || 0)
+  const signingBonusLabel = (quote.signing_bonus_label || '').trim() || 'Signing incentive'
 
   const termYears = contractTerm?.term_years || 3
   const sageTcv = sageSubTotal * termYears + sageImplTotal - signingBonusValue
@@ -286,7 +287,7 @@ export default function ProposalRenderer() {
             )}
             {signingBonusValue > 0 && (
               <div>
-                <strong>Signing incentive: {formatCurrency(signingBonusValue)}</strong> off Year 1
+                <strong>{signingBonusLabel}: {formatCurrency(signingBonusValue)}</strong> off Year 1
                 {Number(quote.signing_bonus_months) > 0 && <span style={{ color: T.textSecondary }}> ({quote.signing_bonus_months} months × monthly subscription)</span>}
               </div>
             )}
@@ -303,7 +304,7 @@ export default function ProposalRenderer() {
             </>}
             <div>Implementation</div><div style={{ textAlign: 'right', fontFeatureSettings: '"tnum"' }}>{formatCurrency(sageImplTotal)}</div>
             {signingBonusValue > 0 && <>
-              <div style={{ color: T.success }}>Signing incentive</div>
+              <div style={{ color: T.success }}>{signingBonusLabel}</div>
               <div style={{ textAlign: 'right', fontFeatureSettings: '"tnum"', color: T.success }}>−{formatCurrency(signingBonusValue)}</div>
             </>}
             <div style={{ paddingTop: 10, borderTop: `2px solid ${orgPrimary}`, fontSize: 16, fontWeight: 800 }}>Sage Total ({termYears}-year)</div>

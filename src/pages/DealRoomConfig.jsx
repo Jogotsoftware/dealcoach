@@ -244,6 +244,7 @@ export default function DealRoomConfig({ embedded = false, dealId: dealIdProp } 
         global_discount_pct: src.global_discount_pct,
         signing_bonus_amount: src.signing_bonus_amount,
         signing_bonus_months: src.signing_bonus_months,
+        signing_bonus_label: src.signing_bonus_label,
         created_by: profile?.id,
       }).select('id').single()
       if (qErr) throw qErr

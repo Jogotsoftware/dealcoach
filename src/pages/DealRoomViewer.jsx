@@ -510,6 +510,7 @@ export function ProposalTabContent({ data, archived, onComment, themeColor, them
   const freeMonthsPlacement = snapshot.free_months_placement || 'back'
   const signingBonusAmountRaw = Number(snapshot.signing_bonus_amount) || 0
   const signingBonusMonths = Number(snapshot.signing_bonus_months) || 0
+  const signingBonusLabel = (snapshot.signing_bonus_label || '').trim() || 'Signing Bonus'
 
   const num = (n) => Number(n) || 0
   const fmtUSD = (n) => Math.round(num(n)).toLocaleString('en-US')
@@ -825,7 +826,7 @@ export function ProposalTabContent({ data, archived, onComment, themeColor, them
                 {showSigningBonus && (
                   <tr style={{ background: accentNeg + '12' }}>
                     <td style={{ padding: '12px 14px', fontWeight: 700, color: T.text }}>
-                      {signMonth ? `${signMonth} ` : ''}Signing Bonus
+                      {signMonth ? `${signMonth} ` : ''}{signingBonusLabel}
                     </td>
                     <td style={{ padding: '12px 14px', textAlign: 'right', fontFeatureSettings: '"tnum"', fontWeight: 800, color: T.error, width: 160 }}>
                       {moneyNeg(signingBonusValue)}

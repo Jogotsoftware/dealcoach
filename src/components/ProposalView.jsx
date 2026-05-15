@@ -536,6 +536,8 @@ function InvestmentSummaryTab({ snapshot, columnVisibility, aePreview, onColumnV
   const billingCadence = snapshot.billing_cadence || 'annual'
   const signingBonusAmount = num(snapshot.signing_bonus_amount)
   const signingBonusMonths = num(snapshot.signing_bonus_months)
+  // Optional AE-set name for this concession. Falls back to "Signing Bonus".
+  const signingBonusLabel = (snapshot.signing_bonus_label || '').trim() || 'Signing Bonus'
 
   const parents = sageLines.filter(l => !l.parent_line_id)
   const childrenOf = (parentId) => sageLines.filter(l => l.parent_line_id === parentId)
@@ -697,7 +699,7 @@ function InvestmentSummaryTab({ snapshot, columnVisibility, aePreview, onColumnV
                 {signingBonusValue > 0 && (
                   <div style={{ display: 'flex', alignItems: 'center', padding: '14px 18px' }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 14, fontWeight: 600, color: C.amberDark }}>Signing bonus</div>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: C.amberDark }}>{signingBonusLabel}</div>
                     </div>
                     <div style={{ fontSize: 15, fontWeight: 700, color: C.amberDark, fontFeatureSettings: '"tnum"' }}>{moneyNeg(signingBonusValue)}</div>
                   </div>
@@ -806,7 +808,7 @@ function InvestmentSummaryTab({ snapshot, columnVisibility, aePreview, onColumnV
                 to show. Free months extend the term (not cash), so they don't
                 appear here. */}
             {showSigningBonus && (
-              <SumRow label="One time concessions" value={moneyNeg(signingBonusValue)} bold labelColor={C.redDark} valueColor={C.redDark} />
+              <SumRow label={signingBonusLabel} value={moneyNeg(signingBonusValue)} bold labelColor={C.redDark} valueColor={C.redDark} />
             )}
             {/* Block 3: Partner — sub + impl roll into Year 1 Total. Tinted
                 with the partner palette so it visually splits from Sage rows. */}
@@ -1412,6 +1414,7 @@ function TcoComparisonTab({ snapshot }) {
     sage_implementation_total: totals.sage_implementation,
     signing_bonus_amount: snapshot.signing_bonus_amount,
     signing_bonus_months: snapshot.signing_bonus_months,
+    signing_bonus_label: snapshot.signing_bonus_label,
     free_months: snapshot.free_months,
     contract_term_id: 'snapshot',  // synthetic id matched below
     tco_scenarios: Array.isArray(snapshot.tco_scenarios) ? snapshot.tco_scenarios : [],
@@ -1458,6 +1461,7 @@ function TcoTab({ snapshot }) {
     s + (pb.lines || []).reduce((ss, l) => ss + num(l.extended), 0), 0)
   const signingBonusAmount = num(snapshot.signing_bonus_amount)
   const signingBonusMonths = num(snapshot.signing_bonus_months)
+  const signingBonusLabel = (snapshot.signing_bonus_label || '').trim() || 'Signing Bonus'
   const monthlySub = annualNetTotal / 12
   const signingBonusValue = signingBonusAmount > 0 ? signingBonusAmount : signingBonusMonths * monthlySub
 
@@ -1577,7 +1581,7 @@ function TcoTab({ snapshot }) {
                 and Annual cost so the column math reads cleanly. */}
             {signingBonusValue > 0 && readSection(snapshot, 'tco_signing_bonus') && (
               <tr style={{ background: C.greenSoftBg }}>
-                <td style={{ ...cellLabel, color: C.redDark, fontWeight: 600 }}>Signing Bonus</td>
+                <td style={{ ...cellLabel, color: C.redDark, fontWeight: 600 }}>{signingBonusLabel}</td>
                 {yearNet.map((_, i) => (
                   <td key={i} style={cellNum({ color: C.redDark, fontWeight: 600 })}>
                     {i === 0 ? moneyNeg(signingBonusValue) : '—'}

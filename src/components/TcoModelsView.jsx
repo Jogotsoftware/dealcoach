@@ -40,7 +40,7 @@ function fmt(v) {
 
 // Build the matrix data for one scenario. Free-months value lives in the
 // Total column only — never in any Y1..Yn cell — per spec.
-function buildMatrix({ subscriptionY1, implementation, signingBonus, freeMonths, freeMonthsValue, termYears, yoyPctList, customLines }) {
+function buildMatrix({ subscriptionY1, implementation, signingBonus, signingBonusLabel, freeMonths, freeMonthsValue, termYears, yoyPctList, customLines }) {
   const horizon = Math.max(1, Number(termYears) || 1)
   const subsByYear = []
   let running = Number(subscriptionY1) || 0
@@ -75,7 +75,9 @@ function buildMatrix({ subscriptionY1, implementation, signingBonus, freeMonths,
 
   return {
     horizon, subsByYear, subsTotal,
-    impl, signingBonus: sb, freeMonths: Number(freeMonths) || 0, freeMonthsValue: fmv,
+    impl, signingBonus: sb,
+    signingBonusLabel: (signingBonusLabel || '').trim() || 'Signing Bonus',
+    freeMonths: Number(freeMonths) || 0, freeMonthsValue: fmv,
     customLines: customLines || [], customTotal,
     totalsByYear, grandTotal,
   }
@@ -97,6 +99,7 @@ function deriveSageMatrix(parentQuote, contractTerm) {
     subscriptionY1: sageY1,
     implementation: impl,
     signingBonus,
+    signingBonusLabel: parentQuote.signing_bonus_label,
     freeMonths,
     freeMonthsValue,
     termYears,
@@ -124,6 +127,7 @@ function deriveScenarioMatrix(scenario) {
     subscriptionY1: subY1,
     implementation: scenario.implementation,
     signingBonus,
+    signingBonusLabel: scenario.signing_bonus_label,
     freeMonths,
     freeMonthsValue,
     termYears,
@@ -328,7 +332,7 @@ function buildSageRows(m) {
     { key: 'impl', label: 'Implementation', perYear: y => y === 1 ? m.impl : null, total: m.impl },
   ]
   if (m.signingBonus > 0) {
-    rows.push({ key: 'sb', label: 'Signing Bonus', perYear: y => y === 1 ? -m.signingBonus : null, total: -m.signingBonus })
+    rows.push({ key: 'sb', label: m.signingBonusLabel || 'Signing Bonus', perYear: y => y === 1 ? -m.signingBonus : null, total: -m.signingBonus })
   }
   if (m.freeMonthsValue > 0) {
     rows.push({ key: 'fm', label: `Free Months (${m.freeMonths})`, perYear: () => null, total: -m.freeMonthsValue })
@@ -519,6 +523,21 @@ function EditableScenarioCard({ scenario, matrix, horizon, baseline, baselineLab
               onChange={v => onChange({ signing_bonus_amount: v })}
             />
           </Field>
+          {(Number(scenario.signing_bonus_amount) || 0) > 0 && (
+            <Field label="Bonus Label">
+              <input
+                type="text"
+                defaultValue={scenario.signing_bonus_label || ''}
+                placeholder="Signing Bonus"
+                onBlur={e => {
+                  const v = (e.target.value || '').trim()
+                  if (v !== (scenario.signing_bonus_label || '')) onChange({ signing_bonus_label: v || null })
+                }}
+                style={{ ...tinyInput, width: 150 }}
+                title="Custom label for this scenario's signing-bonus row. Leave blank to use the default."
+              />
+            </Field>
+          )}
         </div>
       )}
 
@@ -537,7 +556,7 @@ function EditableScenarioCard({ scenario, matrix, horizon, baseline, baselineLab
             <MatrixRow label="Implementation" perYear={y => y === 1 ? matrix.impl : null} total={matrix.impl} years={years} cell={numCellStyle} lbl={labelCellStyle} />
 
             {matrix.signingBonus > 0 && (
-              <MatrixRow label="Signing Bonus" perYear={y => y === 1 ? -matrix.signingBonus : null} total={-matrix.signingBonus} years={years} cell={numCellStyle} lbl={labelCellStyle} />
+              <MatrixRow label={matrix.signingBonusLabel || 'Signing Bonus'} perYear={y => y === 1 ? -matrix.signingBonus : null} total={-matrix.signingBonus} years={years} cell={numCellStyle} lbl={labelCellStyle} />
             )}
             {matrix.freeMonthsValue > 0 && (
               <MatrixRow label={`Free Months (${matrix.freeMonths})`} perYear={() => null} total={-matrix.freeMonthsValue} years={years} cell={numCellStyle} lbl={labelCellStyle} />

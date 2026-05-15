@@ -116,6 +116,7 @@ export default function QuotesList() {
         global_discount_pct: quote.global_discount_pct,
         signing_bonus_amount: quote.signing_bonus_amount,
         signing_bonus_months: quote.signing_bonus_months,
+        signing_bonus_label: quote.signing_bonus_label,
         created_by: profile?.id,
       }).select('id').single()
       if (qErr) throw qErr

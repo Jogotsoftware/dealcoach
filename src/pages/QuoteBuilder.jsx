@@ -2035,6 +2035,21 @@ function TermsSection({ quote, contractTerms, saveQuoteHeader, onChanged }) {
               Signing bonus
               <VisibilityToggleIcon visible={signingBonusVisible} onChange={() => save(drSetPatch(quote, 'sections.signing_bonus', !signingBonusVisible))} label="the signing bonus from the customer" size={13} inline />
             </div>
+            {/* Optional custom label — overrides "Signing Bonus" wherever the
+                row renders (proposal, TCO, summary). Empty falls back to default. */}
+            <div style={{ marginBottom: 8 }}>
+              <label style={labelStyle}>Label (optional)</label>
+              <input
+                type="text"
+                style={{ ...inputStyle }}
+                defaultValue={quote.signing_bonus_label || ''}
+                placeholder="Signing Bonus"
+                onBlur={e => {
+                  const v = (e.target.value || '').trim() || null
+                  if (v !== (quote.signing_bonus_label || null)) save({ signing_bonus_label: v })
+                }}
+              />
+            </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
               <div>
                 <label style={labelStyle}>Lump sum</label>
