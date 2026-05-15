@@ -70,7 +70,7 @@ const DEALROOM_ONLY_ALLOWED_PATTERNS = [
 export default function Layout() {
   const { profile, signOut } = useAuth()
   const { hasModule } = useModules()
-  const { org, credits, isTrialing } = useOrg()
+  const { org, credits, isTrialing, isDemoOrg } = useOrg()
   const navigate = useNavigate()
   const location = useLocation()
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false)
@@ -151,12 +151,15 @@ export default function Layout() {
       { to: '/coaching',  iconKey: 'coaching',    label: 'Coaching',  show: true },
       { to: '/forecast',  iconKey: 'analyze',     label: 'Forecast',  show: true },
       { to: '/team',      iconKey: 'team',        label: 'Team',      show: true },
-      { to: '/coach',     iconKey: 'coach_admin', label: 'Coach Admin', show: hasModule('coach_customization') },
-      { to: '/reports',   iconKey: 'reports',     label: 'Reports',   show: hasModule('reports') },
+      // Coach Admin / Reports / Settings hidden in demo orgs — Melanie's
+      // walkthrough is dashboard-only; the back-office surfaces would derail
+      // the narrative and aren't part of the demo script.
+      { to: '/coach',     iconKey: 'coach_admin', label: 'Coach Admin', show: !isDemoOrg && hasModule('coach_customization') },
+      { to: '/reports',   iconKey: 'reports',     label: 'Reports',   show: !isDemoOrg && hasModule('reports') },
       // "Benchmarks & Goals" — manager-only page where the head of sales
       // sets the targets every dashboard tile measures against.
       { to: '/my-goals',  iconKey: 'goals',       label: 'Benchmarks',  show: true },
-      { to: '/settings',  iconKey: 'settings',    label: 'Settings',  show: true },
+      { to: '/settings',  iconKey: 'settings',    label: 'Settings',  show: !isDemoOrg },
     ] : [
       { to: '/',          iconKey: 'home',        label: 'Home',      show: hasModule('pipeline') },
       { to: '/coach',     iconKey: 'coach',       label: 'Coach',     show: hasModule('coach_customization') },
