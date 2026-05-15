@@ -33,6 +33,11 @@ export function AuthProvider({ children }) {
   async function loadProfile(authUser) {
     const userId = typeof authUser === 'string' ? authUser : authUser?.id
     if (!userId) { setLoading(false); return }
+    // Re-enter loading state so RequireOrg doesn't briefly see
+    // (user=set, profile=null, loading=false) on signin and bounce to
+    // /onboarding before this fetch resolves. Without this, sign-in shows
+    // a "Let's set up your workspace" flash.
+    setLoading(true)
     try {
       const { data, error } = await supabase
         .from('profiles')
