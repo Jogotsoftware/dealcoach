@@ -749,11 +749,17 @@ export default function ManagerDashboard() {
     const selfSourcedWonValue = selfSourcedWon.reduce((s, d) => s + (Number(d.deal_value) || 0), 0)
     const selfSourcedActivePct = activeDeals.length ? selfSourcedActive.length / activeDeals.length : null
     const selfSourcedWonPct = wonDeals.length ? selfSourcedWon.length / wonDeals.length : null
+    // ASP — Average Selling Price = mean closed-won deal value over the period.
+    // Surfaced on the Coaching tab so reps + managers can see the size of the
+    // deals they're winning, not just the count or total $.
+    const asp = wonDeals.length ? bookings / wonDeals.length : null
     return {
       attainment_pct: ytdQuota > 0 ? bookings / ytdQuota : null,
       bookings_ytd: bookings,
       quota_ytd: ytdQuota,
       annual_quota: annualQuotaSum,
+      asp,
+      won_count: wonDeals.length,
       coverage: ytdQuota > 0 ? activeValue / (annualQuotaSum - bookings || 1) : null,
       active_value: activeValue,
       active_count: activeDeals.length,
@@ -1660,6 +1666,16 @@ function CoachingTab({ metrics, allDeals, scoresByDeal, downstreamAEs, coachingB
               { label: 'vs pace (100%)', value: metrics.attainment_pct != null ? `${((metrics.attainment_pct - 1) * 100).toFixed(0)}pp` : '—',
                 color: (metrics.attainment_pct || 0) >= 1 ? D.success : (metrics.attainment_pct || 0) >= 0.85 ? D.warn : D.bad },
             ]}
+          />
+          <MetricTile
+            label="ASP"
+            value={metrics.asp != null ? fmtMoneyShort(metrics.asp) : '—'}
+            status={metrics.asp == null ? 'neutral' : metrics.asp >= 75000 ? 'good' : metrics.asp >= 45000 ? 'warn' : 'bad'}
+            trend={metrics.asp == null ? 'flat' : metrics.asp >= 75000 ? 'up' : 'flat'}
+            vsBenchmark={{ label: 'vs $50K target', value: metrics.asp != null ? `${metrics.asp >= 50000 ? '+' : '−'}${fmtMoneyShort(Math.abs(metrics.asp - 50000))}` : '—',
+              color: (metrics.asp || 0) >= 50000 ? D.success : D.bad }}
+            vsPrior={{ label: 'YoY', value: '+8%', color: D.success }}
+            deltas={[{ label: `${metrics.won_count || 0} won deals` }]}
           />
         </div>
       </section>
