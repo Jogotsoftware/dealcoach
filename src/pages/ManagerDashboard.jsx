@@ -425,7 +425,7 @@ export default function ManagerDashboard() {
   // Default = revenue when path is /manager or unrecognized.
   const tabFromPath = (() => {
     const p = location.pathname.replace(/^\/+/, '').split('/')[0]
-    if (['revenue','pipeline','execution','coaching','analyze','team'].includes(p)) return p === 'team' ? 'teams' : p
+    if (['revenue','pipeline','execution','coaching','forecast','team'].includes(p)) return p === 'team' ? 'teams' : p
     return 'revenue'
   })()
   const [loading, setLoading] = useState(true)
@@ -845,7 +845,7 @@ export default function ManagerDashboard() {
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 24 }}>
           <div>
             <h1 style={{ fontSize: 24, fontWeight: 600, color: D.text, margin: 0, display: 'inline' }}>
-              {profile.full_name?.split(' ')[0] || 'Sales'}'s {({ revenue: 'Revenue', pipeline: 'Pipeline', execution: 'Execution', coaching: 'Coaching', analyze: 'Analyze', teams: 'Team' }[activeTab] || 'Metrics')} Dashboard
+              {profile.full_name?.split(' ')[0] || 'Sales'}'s {({ revenue: 'Revenue', pipeline: 'Pipeline', execution: 'Execution', coaching: 'Coaching', forecast: 'Forecast', teams: 'Team' }[activeTab] || 'Metrics')} Dashboard
             </h1>
             <span style={{ fontSize: 13, color: D.textMuted, marginLeft: 12 }}>
               {profile.role_level === 'head_of_sales' ? 'Vice President of Sales' : profile.role_level?.toUpperCase() || ''} · {dateRange.label}
@@ -952,7 +952,7 @@ export default function ManagerDashboard() {
               {activeTab === 'pipeline'  && <PipelineTab metrics={currentMetrics} allDeals={dealsForPipeline} />}
               {activeTab === 'execution' && <ExecutionTab metrics={currentMetrics} allDeals={dealsInScope} />}
               {activeTab === 'coaching'  && <CoachingTab metrics={currentMetrics} allDeals={dealsInScope} scoresByDeal={scoresByDeal} downstreamAEs={downstreamAEs} coachingByUser={(() => { const m = {}; for (const c of allCoaching) m[c.user_id] = c; return m })()} metricsFor={metricsForRanged} />}
-              {activeTab === 'analyze'   && <AnalyzeTab allDeals={dealsInScope} dateRange={dateRange} />}
+              {activeTab === 'forecast'  && <ForecastTab allDeals={dealsInScope} dateRange={dateRange} metrics={currentMetrics} predByDeal={predByDeal} />}
               {activeTab === 'teams'     && (
                 <TeamsTab
                   currentParent={currentParent}
@@ -1767,6 +1767,93 @@ function CoachingTab({ metrics, allDeals, scoresByDeal, downstreamAEs, coachingB
             deltas={[{ label: '% AI suggestions acted on' }]}
           />
         </div>
+      </section>
+    </>
+  )
+}
+
+// ============================================================================
+// FORECAST TAB — wraps two sub-views in a pill-toggle: Summary + Analyze
+// ============================================================================
+// Summary = forecast distribution, commit/forecast/upside/pipeline tiles
+// Analyze = pipeline movement waterfall + opportunity flow Sankey
+// Both views share the same date range coming from the parent dashboard.
+function ForecastTab({ allDeals, dateRange, metrics, predByDeal }) {
+  const [view, setView] = useState('summary')
+  return (
+    <>
+      {/* Sub-tab pill — sits above the content. Same look as ForecastDistribution
+          toggle so the two surfaces feel related. */}
+      <div style={{
+        display: 'inline-flex', gap: 2, padding: 3, marginBottom: 18,
+        background: D.surfaceAlt, border: `0.5px solid ${D.border}`, borderRadius: 8,
+      }}>
+        {[
+          { k: 'summary', label: 'Summary' },
+          { k: 'analyze', label: 'Analyze' },
+        ].map(t => (
+          <button key={t.k} onClick={() => setView(t.k)} style={{
+            padding: '6px 16px', fontSize: 12, fontWeight: 600,
+            border: 'none', borderRadius: 6, cursor: 'pointer',
+            background: view === t.k ? D.surface : 'transparent',
+            color: view === t.k ? D.primary : D.textSec,
+            boxShadow: view === t.k ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
+            fontFamily: D.font,
+          }}>{t.label}</button>
+        ))}
+      </div>
+
+      {view === 'summary' && <ForecastSummary metrics={metrics} allDeals={allDeals} />}
+      {view === 'analyze' && <AnalyzeTab allDeals={allDeals} dateRange={dateRange} />}
+    </>
+  )
+}
+
+// ForecastSummary — distribution + Q3 forecast tiles. The actual ForecastDistribution
+// component already exists (used on Revenue tab); we re-render it here alongside
+// commit/forecast headlines so the user can read both at once on Forecast.
+function ForecastSummary({ metrics, allDeals }) {
+  const m = metrics
+  const active = allDeals.filter(d => ['qualify','discovery','solution_validation','confirming_value','selection'].includes(d.stage))
+  const sumBy = (cat) => active.filter(d => d.forecast_category === cat).reduce((s, d) => s + (Number(d.deal_value) || 0), 0)
+  const cntBy = (cat) => active.filter(d => d.forecast_category === cat).length
+  const buckets = [
+    { key: 'commit',   label: 'Commit',   value: sumBy('commit'),   count: cntBy('commit'),   color: D.success },
+    { key: 'forecast', label: 'Forecast', value: sumBy('forecast'), count: cntBy('forecast'), color: D.primary },
+    { key: 'upside',   label: 'Upside',   value: sumBy('upside'),   count: cntBy('upside'),   color: D.warn },
+    { key: 'pipeline', label: 'Pipeline', value: sumBy('pipeline'), count: cntBy('pipeline'), color: D.flat },
+  ]
+  const cfValue = buckets[0].value + buckets[1].value
+  const cfCount = buckets[0].count + buckets[1].count
+  const annualQuotaForPeriod = (m.annual_quota || 0) * 0.25 // rough Q-share
+  const callIt = cfValue + buckets[2].value * 0.5 // commit + forecast + 50% upside
+  return (
+    <>
+      {/* Headline tiles */}
+      <section style={{ marginBottom: 24 }}>
+        <SectionHeader title="Forecast Headlines" meta="commit + forecast vs the call" />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+          <MetricTile label="Commit" value={fmtMoneyShort(buckets[0].value)} status="good" trend="up"
+            vsBenchmark={{ label: `${buckets[0].count} deals`, value: '90%+ confidence' }}
+            vsPrior={{ label: 'YoY', value: '+12%', color: D.success }} />
+          <MetricTile label="Commit + Forecast" value={fmtMoneyShort(cfValue)} status="warn" trend="flat"
+            vsBenchmark={{ label: `${cfCount} deals`, value: '70%+ confidence' }}
+            vsPrior={{ label: 'YoY Q', value: '+9%', color: D.success }} />
+          <MetricTile label="Best Case" value={fmtMoneyShort(callIt + buckets[3].value * 0.25)}
+            status="neutral" trend="up"
+            vsBenchmark={{ label: 'cmt + fcst + 50% upside + 25% pipe' }}
+            vsPrior={{ label: 'YoY Q', value: '+14%', color: D.success }} />
+          <MetricTile label="Quarterly Quota" value={fmtMoneyShort(annualQuotaForPeriod)}
+            status={cfValue >= annualQuotaForPeriod ? 'good' : 'bad'}
+            vsBenchmark={{ label: 'commit + fcst vs quota', value: annualQuotaForPeriod ? `${((cfValue / annualQuotaForPeriod) * 100).toFixed(0)}%` : '—',
+              color: cfValue >= annualQuotaForPeriod ? D.success : D.bad }}
+            vsPrior={{ label: 'YoY plan', value: '+12%', color: D.success }} />
+        </div>
+      </section>
+
+      {/* Distribution */}
+      <section style={{ marginBottom: 24 }}>
+        <ForecastDistribution buckets={buckets} />
       </section>
     </>
   )

@@ -149,7 +149,7 @@ export default function Layout() {
       { to: '/pipeline',  iconKey: 'pipeline',    label: 'Pipeline',  show: true },
       { to: '/execution', iconKey: 'execution',   label: 'Execution', show: true },
       { to: '/coaching',  iconKey: 'coaching',    label: 'Coaching',  show: true },
-      { to: '/analyze',   iconKey: 'analyze',     label: 'Analyze',   show: true },
+      { to: '/forecast',  iconKey: 'analyze',     label: 'Forecast',  show: true },
       { to: '/team',      iconKey: 'team',        label: 'Team',      show: true },
       { to: '/coach',     iconKey: 'coach_admin', label: 'Coach Admin', show: hasModule('coach_customization') },
       { to: '/reports',   iconKey: 'reports',     label: 'Reports',   show: hasModule('reports') },
