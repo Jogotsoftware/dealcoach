@@ -13,7 +13,7 @@ import DealChat from '../components/DealChat'
 import TranscriptUpload from '../components/TranscriptUpload'
 import CompanyLogo from '../components/CompanyLogo'
 import WidgetRenderer from '../components/WidgetRenderer'
-import DealsListWidget from '../components/DealsListWidget'
+import QdcViewWidget from '../components/QdcViewWidget'
 import { Responsive, WidthProvider } from 'react-grid-layout'
 import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
@@ -23,19 +23,19 @@ const PIPELINE_LAYOUT = [
   { i: 'forecast_summary', x: 0, y: 0, w: 12, h: 2, minW: 8, minH: 2 },
   { i: 'quota_tracker', x: 0, y: 2, w: 6, h: 3, minW: 4, minH: 2 },
   { i: 'coaching_feedback', x: 6, y: 2, w: 6, h: 3, minW: 4, minH: 2 },
-  { i: 'deals_qdc', x: 0, y: 5, w: 6, h: 6, minW: 3, minH: 4 },
-  { i: 'deals_pipeline', x: 6, y: 5, w: 6, h: 8, minW: 4, minH: 4 },
-  { i: 'pipeline_view', x: 0, y: 13, w: 12, h: 6, minW: 8, minH: 4 },
-  { i: 'scoreboard', x: 0, y: 19, w: 6, h: 4, minW: 4, minH: 3 },
-  { i: 'task_list', x: 6, y: 19, w: 6, h: 4, minW: 4, minH: 3 },
-  { i: 'recent_activity', x: 0, y: 23, w: 6, h: 3, minW: 4, minH: 2 },
+  // QDC widget — same kanban/table shape as Pipeline but qualify-stage-only,
+  // with disposition + sourced-by/revenue/FTE/industry/contact/website fields.
+  { i: 'qdc_view', x: 0, y: 5, w: 12, h: 6, minW: 8, minH: 4 },
+  { i: 'pipeline_view', x: 0, y: 11, w: 12, h: 6, minW: 8, minH: 4 },
+  { i: 'scoreboard', x: 0, y: 17, w: 6, h: 4, minW: 4, minH: 3 },
+  { i: 'task_list', x: 6, y: 17, w: 6, h: 4, minW: 4, minH: 3 },
+  { i: 'recent_activity', x: 0, y: 21, w: 6, h: 3, minW: 4, minH: 2 },
 ]
 
 const PIPELINE_WIDGETS = [
   { id: 'forecast_summary', title: 'Forecast Summary', visible: true },
-  { id: 'deals_qdc', title: 'QDC', visible: true },
-  { id: 'deals_pipeline', title: 'Pipeline', visible: true },
-  { id: 'pipeline_view', title: 'Pipeline (kanban)', visible: true },
+  { id: 'qdc_view', title: 'QDC', visible: true },
+  { id: 'pipeline_view', title: 'Pipeline', visible: true },
   { id: 'quota_tracker', title: 'Quota Tracker', visible: true },
   { id: 'coaching_feedback', title: 'Coaching Feedback', visible: true },
   { id: 'scoreboard', title: 'Scoreboard', visible: true },
@@ -486,10 +486,9 @@ export default function Pipeline() {
 
   function PipelineViewWidget() {
     const filteredDeals = selectedForecast ? active.filter(d => d.forecast_category === selectedForecast) : active
-    // M8: separate BDR-sourced qualify-stage deals into their own pinned "Awaiting QDC"
-    // section, and filter them out of the main kanban/table view so they're not double-rendered.
-    const bdrAwaitingQdc = filteredDeals.filter(d => d.stage === 'qualify' && d.bdr_lead_id)
-    const pipelineDeals = filteredDeals.filter(d => !(d.stage === 'qualify' && d.bdr_lead_id))
+    // Qualify-stage deals live in the QDC widget (qdc_view). Exclude them here so
+    // the kanban/table only shows Discovery -> Selection.
+    const pipelineDeals = filteredDeals.filter(d => d.stage !== 'qualify')
     return (
       <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', gap: 4, marginBottom: 8, alignItems: 'center' }}>
@@ -505,7 +504,6 @@ export default function Pipeline() {
           <button onClick={() => setDir(d => d === 'desc' ? 'asc' : 'desc')} style={{ background: T.surfaceAlt, border: `1px solid ${T.border}`, borderRadius: 4, padding: '3px 6px', fontSize: 11, cursor: 'pointer', color: T.textMuted }}>{dir === 'desc' ? '\u2193' : '\u2191'}</button>
           {selectedForecast && <span style={{ fontSize: 11, color: T.primary, marginLeft: 8 }}>Filtered: {selectedForecast} <span style={{ cursor: 'pointer', textDecoration: 'underline' }} onClick={() => setSelectedForecast(null)}>clear</span></span>}
         </div>
-        {bdrAwaitingQdc.length > 0 && <BdrAwaitingQdcSection deals={bdrAwaitingQdc} />}
         <div style={{ flex: 1, overflow: 'auto' }}>
           {pipelineView === 'kanban' ? <KanbanView deals={pipelineDeals} /> : <TableView deals={pipelineDeals} />}
         </div>
@@ -513,80 +511,13 @@ export default function Pipeline() {
     )
   }
 
-  // BDR-sourced deals at `stage='qualify'`. Pinned above the pipeline so the AE
-  // sees freshly-routed leads before they get folded into the broader Qualify column.
-  // Subtle Carolina-blue accent on the card border, "From BDR" tag, click \u2192 /deal/:id.
-  function BdrAwaitingQdcSection({ deals: bDeals }) {
-    return (
-      <div style={{
-        marginBottom: 12,
-        background: T.surface,
-        border: `1px solid ${T.primaryBorder}`,
-        borderLeft: `4px solid ${T.primary}`,
-        borderRadius: T.radius,
-        padding: '12px 14px',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-          <span style={{
-            fontSize: 11, fontWeight: 800, color: T.primary,
-            textTransform: 'uppercase', letterSpacing: '0.06em',
-          }}>New Leads \u2014 Awaiting QDC</span>
-          <span style={{
-            fontSize: 10, fontWeight: 700, color: T.primary,
-            background: T.primaryLight, border: `1px solid ${T.primaryBorder}`,
-            padding: '2px 7px', borderRadius: 10,
-          }}>{bDeals.length}</span>
-          <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 'auto' }}>
-            Routed by AI first-glance \u2014 take the QDC and decide.
-          </span>
-        </div>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          {bDeals.map(deal => {
-            const created = deal.created_at ? new Date(deal.created_at) : null
-            const ageHrs = created ? Math.max(0, Math.round((Date.now() - created.getTime()) / 3_600_000)) : null
-            const ageLabel = ageHrs == null ? null : ageHrs < 24 ? `${ageHrs}h ago` : `${Math.round(ageHrs / 24)}d ago`
-            return (
-              <div
-                key={deal.id}
-                onClick={() => navigate(`/deal/${deal.id}`)}
-                style={{
-                  flex: '1 1 240px', minWidth: 240, maxWidth: 320,
-                  background: T.surface,
-                  border: `1px solid ${T.border}`,
-                  borderLeft: `3px solid ${T.primary}`,
-                  borderRadius: 6, padding: '10px 12px', cursor: 'pointer',
-                  boxShadow: T.shadow, transition: 'box-shadow 0.15s',
-                }}
-                onMouseEnter={e => e.currentTarget.style.boxShadow = T.shadowMd}
-                onMouseLeave={e => e.currentTarget.style.boxShadow = T.shadow}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                  <CompanyLogo logoUrl={deal.company_profile?.logo_url} customerLogoUrl={deal.customer_logo_url} companyName={deal.company_name} size="sm" />
-                  <span style={{ fontSize: 13, fontWeight: 600, color: T.text, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{deal.company_name}</span>
-                  <span style={{
-                    fontSize: 9, fontWeight: 700, color: T.primary,
-                    background: T.primaryLight, border: `1px solid ${T.primaryBorder}`,
-                    padding: '2px 6px', borderRadius: 4, letterSpacing: '0.04em',
-                    textTransform: 'uppercase', whiteSpace: 'nowrap',
-                  }}>From BDR</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: T.textSecondary }}>
-                  <span>{deal.rep?.full_name ? `Assigned to ${deal.rep.full_name}` : 'Assigned to you'}</span>
-                  {ageLabel && <span style={{ color: T.textMuted, fontFeatureSettings: '"tnum"' }}>{ageLabel}</span>}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      </div>
-    )
-  }
-
   function KanbanView({ deals: kDeals }) {
     const kSorted = [...kDeals].sort((a, b) => { const d = dir === 'desc' ? -1 : 1; return d * ((a[sort] || 0) - (b[sort] || 0)) })
+    // The QDC widget owns the qualify column; render Discovery onward here.
+    const kanbanStages = STAGES.filter(s => s.key !== 'qualify')
     return (
       <div style={{ display: 'flex', gap: 14, overflowX: 'auto', height: '100%' }}>
-        {STAGES.map(stage => {
+        {kanbanStages.map(stage => {
           const stageDeals = kSorted.filter(d => d.stage === stage.key)
           const stageValue = stageDeals.reduce((s, d) => s + getARR(d), 0)
           return (
@@ -1007,13 +938,8 @@ export default function Pipeline() {
   function renderWidget(id) {
     switch (id) {
       case 'forecast_summary': return <ForecastSummaryWidget />
-      case 'deals_qdc':
-        return <DealsListWidget stageFilter={['qualify']} title="QDC" sortBy="created_asc" />
-      case 'deals_pipeline':
-        return <DealsListWidget
-          stageFilter={['discovery', 'solution_validation', 'confirming_value', 'selection']}
-          title="Pipeline"
-          sortBy="target_close_date_asc" />
+      case 'qdc_view':
+        return <QdcViewWidget />
       case 'pipeline_view':
       case 'pipeline_kanban':
       case 'kanban':

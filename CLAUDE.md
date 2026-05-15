@@ -226,7 +226,14 @@ Also write parallel rows to `deal_sources` for the universal evidence layer.
 ### Widgets & Reports
 `custom_widget_definitions`, `org_widget_layouts`, `user_widget_overrides`, `widget_registry`, `saved_reports`, `dashboard_snapshots`
 
-**AE pipeline dashboard — deals widgets.** The `QDC` (`deals_qdc`) and `Pipeline` (`deals_pipeline`) widgets on the AE pipeline dashboard are filtered instances of the shared `DealsListWidget` (`src/components/DealsListWidget.jsx`). QDC filters to stage = `qualify` and sorts by `created_at` ascending — this will move to a scheduled QDC date once the BDR/intake overhaul adds that field. The per-card QDC quality score badge is reserved for the same overhaul (renders as `—` until then). Both are registered in the in-page registry (`PIPELINE_WIDGETS` / `PIPELINE_LAYOUT` in `src/pages/Pipeline.jsx`) and default-on for all orgs; `mergeMissingDefaults` injects them into existing stored layouts on load so users don't have to reset.
+**AE pipeline dashboard — QDC + Pipeline widgets.** The pipeline page now splits qualify-stage deals into a dedicated **QDC widget** (`qdc_view`, `src/components/QdcViewWidget.jsx`) and leaves the existing **Pipeline widget** (`pipeline_view`) for Discovery → Selection. The two share the same kanban/table visual language; the QDC widget surfaces QDC-specific fields (Sourced By, Revenue, FTE, Industry, Primary Contact, Website) and exposes a per-deal **Disposition** panel:
+- `qdc_status` ∈ `pending_approval | approved | not_approved | cancelled` (column on `deals`)
+- Approved → `stage='discovery'`; Not approved + Cancelled → `disqualify_deal_with_feedback` RPC (stage=`disqualified`); Pending approval → no stage change
+- Not approved / Cancelled require a reason from `im_rejection_reasons` filtered to `applies_to IN ('pre_qdc','both')`. The 5 canonical QDC reasons (`no_budget`, `no_authority`, `no_timeframe`, `project_delayed`, `no_pain`) are seeded per org; the first two reuse existing `both`-scoped rows, the last three are `pre_qdc` rows added in `20260514*_add_qdc_disposition_to_deals_and_seed_qdc_reasons`. A QDC feedback textbox is always available regardless of disposition; when not_approved/cancelled and the deal was BDR-sourced, the existing BDR-notification flow fires the feedback back through `disqualify_deal_with_feedback`.
+
+The two widgets are registered in `PIPELINE_WIDGETS` / `PIPELINE_LAYOUT` and default-on for all orgs; `mergeMissingDefaults` injects `qdc_view` into existing stored layouts on load so users don't have to reset. `PipelineViewWidget` filters `stage !== 'qualify'` and its `KanbanView` drops the Qualify column since `qdc_view` owns it.
+
+QDC quality score and scheduled-QDC date are still pending the BDR/intake overhaul — neither field exists yet.
 
 ### Multi-tenant / Auth
 `platform_admins`, `invitations`, `email_log`, `modules`, `user_module_access`, `org_credits`, `credit_costs`, `credit_ledger`, `plans`
