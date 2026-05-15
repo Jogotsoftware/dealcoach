@@ -871,7 +871,7 @@ export function ProposalTabContent({ data, archived, onComment, themeColor, them
 
       {/* Year 1 Total */}
       <div style={{ marginTop: 28, padding: '18px 22px', background: accentPos + '1f', border: `2px solid ${accentPos}`, borderRadius: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ fontSize: 18, fontWeight: 800, color: T.text, letterSpacing: '0.02em' }}>Year 1 Total</span>
+        <span style={{ fontSize: 18, fontWeight: 800, color: T.text, letterSpacing: '0.02em' }}>Total One Time Costs</span>
         <span style={{ fontSize: 26, fontWeight: 900, color: accentPos, fontFeatureSettings: '"tnum"' }}>{money(year1Total)}</span>
       </div>
     </div>
