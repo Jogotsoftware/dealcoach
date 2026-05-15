@@ -801,7 +801,7 @@ function InvestmentSummaryTab({ snapshot, columnVisibility, aePreview, onColumnV
                 bonus is no longer indented under here; it moves into its own
                 "One time concessions" red row below when present. */}
             {showOneTime && (
-              <SumRow label="Implementation" value={money(implTotal)} bold labelColor={C.blueDark} valueColor={C.blueDark} />
+              <SumRow label="Total One Time Costs" value={money(implTotal)} bold labelColor={C.blueDark} valueColor={C.blueDark} />
             )}
             {/* Block 2b: One time concessions — single red row that aggregates
                 the signing bonus credit. Only renders when there's a concession
@@ -830,7 +830,7 @@ function InvestmentSummaryTab({ snapshot, columnVisibility, aePreview, onColumnV
                 background: C.greenBg, borderTop: `2px solid ${C.greenDark}`,
                 padding: '18px 22px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16,
               }}>
-                <div className="ri-prop-year1-label" style={{ fontSize: 15, fontWeight: 600, color: C.greenDark, letterSpacing: '0.01em' }}>Total One Time Costs</div>
+                <div className="ri-prop-year1-label" style={{ fontSize: 15, fontWeight: 600, color: C.greenDark, letterSpacing: '0.01em' }}>Year 1 Total</div>
                 <div className="ri-prop-year1-value" style={{ fontSize: 30, fontWeight: 500, color: C.greenDark, fontFeatureSettings: '"tnum"' }}>{money(year1Total)}</div>
               </div>
             )}
