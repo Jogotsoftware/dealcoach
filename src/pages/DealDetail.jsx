@@ -2607,18 +2607,10 @@ export default function DealDetail() {
         )}
       </div>
 
-      {/* Floating "Ask Lumen" trigger — DealChat panel slides in on click. */}
-      <button
-        onClick={() => setShowChat(true)}
-        title="Ask Lumen about this deal"
-        style={{
-          position: 'fixed', bottom: 24, right: 24, zIndex: 1090,
-          width: 56, height: 56, borderRadius: '50%', background: T.primary, color: '#fff',
-          border: 'none', cursor: 'pointer', boxShadow: '0 6px 20px rgba(93,173,226,0.45)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontFamily: T.font, fontSize: 13, fontWeight: 700,
-        }}
-      >Ask</button>
+      {/* Page-level chat FAB removed — GlobalChatbot in Layout handles it. The
+          deal-scoped DealChat panel (kept below) is no longer rendered here
+          since GlobalChatbot serves the global chat surface; deal-context
+          inference happens server-side from the route. */}
       <DealChat dealId={id} userId={profile?.id} orgId={profile?.org_id} isOpen={showChat} onClose={() => setShowChat(false)} onAction={() => loadDeal()} />
       {showSlideGenerator && <SlideGenerator dealId={id} companyName={deal.company_name} onClose={() => setShowSlideGenerator(false)} />}
 

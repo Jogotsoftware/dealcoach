@@ -1282,31 +1282,9 @@ function DashboardTabView({ dashboard, customWidgetDefs, profile, onManage }) {
         </div>
       )}
 
-      {/* Floating "Ask Lumen" pipeline-scope chat trigger */}
-      <button
-        onClick={() => setPipelineChatOpen(true)}
-        title="Ask Lumen about your pipeline"
-        style={{
-          position: 'fixed', bottom: 24, right: 24, zIndex: 1090,
-          width: 56, height: 56, borderRadius: '50%',
-          background: T.primary, color: '#fff', border: 'none',
-          cursor: 'pointer', boxShadow: '0 6px 20px rgba(93,173,226,0.45)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontFamily: T.font, fontSize: 13, fontWeight: 700,
-        }}
-      >
-        Ask
-      </button>
-      {profile?.id && (
-        <DealChat
-          scope="pipeline"
-          dealId={null}
-          userId={drillRepId || profile.id}
-          orgId={profile.org_id}
-          isOpen={pipelineChatOpen}
-          onClose={() => setPipelineChatOpen(false)}
-        />
-      )}
+      {/* Pipeline-scope chat FAB removed — GlobalChatbot (in Layout) handles
+          all chat globally. Two FABs at the same corner stacked the blue
+          circle behind the lightbulb. */}
     </div>
   )
 }
