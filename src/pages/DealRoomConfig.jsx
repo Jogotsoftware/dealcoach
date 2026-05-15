@@ -586,18 +586,8 @@ export default function DealRoomConfig({ embedded = false, dealId: dealIdProp } 
               </svg>
             </button>
 
-            {/* Refresh — regenerate the share token, invalidating prior URLs */}
-            <button onClick={regenerateShareToken} disabled={regenerating}
-              title="Generate a new share link (invalidates the current one)"
-              aria-label="Refresh share link"
-              style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 32, height: 32, padding: 0, border: `1px solid ${T.border}`, borderRadius: 6, background: T.surface, color: regenerating ? T.textMuted : T.text, cursor: regenerating ? 'default' : 'pointer', fontFamily: T.font }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
-                style={regenerating ? { animation: 'ri-spin 1s linear infinite' } : undefined}>
-                <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-              </svg>
-            </button>
-
-            {/* Share settings popover trigger */}
+            {/* Share settings popover trigger — also hosts the "generate new
+                share link" action since it's a rare, destructive operation. */}
             <div style={{ position: 'relative' }}>
               <button onClick={() => setShareSettingsOpen(o => !o)} title="Share settings"
                 aria-label="Share settings"
@@ -672,6 +662,23 @@ export default function DealRoomConfig({ embedded = false, dealId: dealIdProp } 
                         <span style={{ color: T.text, fontWeight: 600 }}>{room.enabled ? 'Active' : 'Disabled'}</span>
                         <span style={{ color: T.textMuted, fontSize: 11 }}>— {room.enabled ? 'Visitors can open this link.' : 'Link is dark; nobody can load the room.'}</span>
                       </label>
+                    </div>
+
+                    {/* Generate new share link — lives here because it's
+                        destructive (invalidates the current URL) and rarely used. */}
+                    <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${T.borderLight}` }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Share link</div>
+                      <button onClick={regenerateShareToken} disabled={regenerating}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', border: `1px solid ${T.border}`, borderRadius: 6, background: T.surface, color: regenerating ? T.textMuted : T.text, cursor: regenerating ? 'default' : 'pointer', fontFamily: T.font, fontSize: 12, fontWeight: 600 }}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+                          style={regenerating ? { animation: 'ri-spin 1s linear infinite' } : undefined}>
+                          <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                        </svg>
+                        {regenerating ? 'Generating…' : 'Generate new share link'}
+                      </button>
+                      <div style={{ fontSize: 11, color: T.textMuted, marginTop: 6 }}>
+                        Invalidates the current link. Anyone holding the old URL will be locked out.
+                      </div>
                     </div>
                   </div>
                 </>

@@ -1070,39 +1070,69 @@ function ImportResultModal({ result, quoteId, orgId, onClose, onUnmatchedHandled
   const [unmatched, setUnmatched] = useState(result.unmatched || [])
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  // Heuristic: detect Professional Services / implementation / training / setup
+  // lines from name + SKU so the "Create & add" path routes them to one-time
+  // costs instead of subscription. SKU prefix "PS-" or keywords in the name.
+  function looksLikeImplementation(u) {
+    const name = String(u.name || '').toLowerCase()
+    const sku = String(u.sku || '').toUpperCase()
+    if (sku.startsWith('PS-') || sku.startsWith('PS ')) return true
+    return /\b(professional service|implementation|consulting|onboarding|training|setup fee|activation fee|migration|fixed bid)\b/.test(name)
+  }
+
   async function createAndAdd(idx) {
     const u = unmatched[idx]
     if (!u) return
     setBusy(true); setErr('')
     try {
+      const asImplementation = looksLikeImplementation(u)
       // Generate a placeholder SKU from the name if the PDF didn't carry one.
       let sku = (u.sku || '').trim()
       if (!sku) {
-        sku = 'AUTO-' + String(u.name || 'PRODUCT')
+        const prefix = asImplementation ? 'AUTO-PS-' : 'AUTO-'
+        sku = prefix + String(u.name || 'PRODUCT')
           .toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 32)
       }
-      const { data: product, error: pErr } = await supabase.from('products').insert({
-        org_id: orgId,
-        sku,
-        name: u.name || 'Imported product',
-        list_price: Number(u.list_price) || 0,
-        pricing_method: 'flat',
-        is_bundle: false,
-        active: true,
-      }).select('id').single()
-      if (pErr) throw new Error(pErr.message)
-      // Append the new product as the next quote_line.
-      const { data: maxRow } = await supabase.from('quote_lines').select('line_order').eq('quote_id', quoteId).order('line_order', { ascending: false }).limit(1)
-      const nextOrder = (maxRow?.[0]?.line_order || 0) + 1
       const qty = Number(u.quantity) || 1
       const list = Number(u.list_price) || 0
       const disc = Number(u.discount_pct) || 0
       const extended = Number(u.extended) || (qty * list * (1 - disc))
-      const { error: lErr } = await supabase.from('quote_lines').insert({
-        quote_id: quoteId, product_id: product.id, line_order: nextOrder,
-        quantity: qty, unit_price: list, discount_pct: disc, extended,
-      })
-      if (lErr) throw new Error(lErr.message)
+
+      const { data: product, error: pErr } = await supabase.from('products').insert({
+        org_id: orgId,
+        sku,
+        name: u.name || 'Imported product',
+        list_price: list,
+        pricing_method: 'flat',
+        is_bundle: false,
+        is_implementation: asImplementation,
+        active: true,
+      }).select('id').single()
+      if (pErr) throw new Error(pErr.message)
+
+      if (asImplementation) {
+        // Route to one-time costs.
+        const { data: maxRow } = await supabase.from('quote_implementation_items')
+          .select('sort_order').eq('quote_id', quoteId).order('sort_order', { ascending: false }).limit(1)
+        const nextOrder = (maxRow?.[0]?.sort_order || 0) + 1
+        const { error: iErr } = await supabase.from('quote_implementation_items').insert({
+          quote_id: quoteId, source: 'sage', implementor_name: 'Sage',
+          name: qty > 1 ? `${u.name} (×${qty})` : u.name,
+          total_amount: extended, billing_type: 'fixed_bid_50_50', sort_order: nextOrder,
+        })
+        if (iErr) throw new Error(iErr.message)
+      } else {
+        // Subscription line.
+        const { data: maxRow } = await supabase.from('quote_lines')
+          .select('line_order').eq('quote_id', quoteId).order('line_order', { ascending: false }).limit(1)
+        const nextOrder = (maxRow?.[0]?.line_order || 0) + 1
+        const { error: lErr } = await supabase.from('quote_lines').insert({
+          quote_id: quoteId, product_id: product.id, line_order: nextOrder,
+          quantity: qty, unit_price: list, discount_pct: disc, extended,
+        })
+        if (lErr) throw new Error(lErr.message)
+      }
+
       setUnmatched(prev => prev.filter((_, i) => i !== idx))
       if (onUnmatchedHandled) await onUnmatchedHandled()
     } catch (e) {

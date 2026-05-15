@@ -193,16 +193,23 @@ Deno.serve(async (req: Request) => {
     const linesIn: any[] = Array.isArray(extraction.lines) ? extraction.lines : []
     const implIn: any[] = Array.isArray(extraction.implementation) ? extraction.implementation : []
 
-    // 4. Load the org's product catalog once.
+    // 4. Load the org's product catalog once. is_implementation is the
+    //    authoritative classifier — products flagged true (professional
+    //    services, training, activation fees, etc.) get routed to one-time
+    //    costs even if the PDF listed them in the subscription section.
     const { data: products } = await sb
       .from('products')
-      .select('id, sku, name, list_price, is_bundle')
+      .select('id, sku, name, list_price, is_bundle, is_implementation')
       .eq('org_id', quote.org_id)
       .eq('active', true)
 
-    // 5. Map lines → quote_lines rows (matched only).
+    // 5. Map lines → either quote_lines (subscription) or
+    //    quote_implementation_items (one-time) based on the matched product's
+    //    is_implementation flag. Unmatched stays in the unmatched bucket for
+    //    the AE to triage in the result modal.
     const unmatched: any[] = []
     const linesToInsert: any[] = []
+    const implFromLines: any[] = []
     let lineOrder = 1
     for (const l of linesIn) {
       const qty = Number(l.quantity) || 0
@@ -220,29 +227,41 @@ Deno.serve(async (req: Request) => {
       const unitPrice = Number(l.list_price) || Number(product.list_price) || 0
       const discountPct = Number(l.discount_pct) || 0
       const extended = Number(l.extended) || (qty * unitPrice * (1 - discountPct))
-      linesToInsert.push({
-        quote_id: quoteId,
-        product_id: product.id,
-        line_order: lineOrder++,
-        quantity: qty,
-        unit_price: unitPrice,
-        discount_pct: discountPct,
-        extended,
-      })
+      if (product.is_implementation === true) {
+        // Route to one-time costs. We keep the extended amount; qty + discount
+        // are baked into it. Name carries the product name (+ qty hint if >1).
+        implFromLines.push({
+          name: qty > 1 ? `${product.name} (×${qty})` : product.name,
+          amount: extended,
+        })
+      } else {
+        linesToInsert.push({
+          quote_id: quoteId,
+          product_id: product.id,
+          line_order: lineOrder++,
+          quantity: qty,
+          unit_price: unitPrice,
+          discount_pct: discountPct,
+          extended,
+        })
+      }
     }
 
-    // 6. Map implementation rows.
-    const implToInsert = implIn
-      .filter((i: any) => Number(i.amount) > 0)
-      .map((i: any, idx: number) => ({
-        quote_id: quoteId,
-        source: 'sage',
-        implementor_name: 'Sage',
-        name: String(i.name || `Implementation ${idx + 1}`),
-        total_amount: Number(i.amount) || 0,
-        billing_type: 'fixed_bid_50_50',
-        sort_order: idx + 1,
-      }))
+    // 6. Map implementation rows extracted by Claude AND any subscription
+    //    lines that were re-routed because their product is_implementation=true.
+    const allImpl = [
+      ...implIn.filter((i: any) => Number(i.amount) > 0).map((i: any) => ({ name: i.name, amount: Number(i.amount) })),
+      ...implFromLines,
+    ]
+    const implToInsert = allImpl.map((i: any, idx: number) => ({
+      quote_id: quoteId,
+      source: 'sage',
+      implementor_name: 'Sage',
+      name: String(i.name || `Implementation ${idx + 1}`),
+      total_amount: Number(i.amount) || 0,
+      billing_type: 'fixed_bid_50_50',
+      sort_order: idx + 1,
+    }))
 
     // 7. Match a contract term by yoy_caps (if extracted).
     let contractTermId: string | null = quote.contract_term_id
