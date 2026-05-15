@@ -70,7 +70,7 @@ const DEALROOM_ONLY_ALLOWED_PATTERNS = [
 export default function Layout() {
   const { profile, signOut } = useAuth()
   const { hasModule } = useModules()
-  const { org, credits, isTrialing, isDemoOrg } = useOrg()
+  const { org, credits, isTrialing, isSageDemo } = useOrg()
   const navigate = useNavigate()
   const location = useLocation()
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false)
@@ -154,12 +154,12 @@ export default function Layout() {
       // Coach Admin / Reports / Settings hidden in demo orgs — Melanie's
       // walkthrough is dashboard-only; the back-office surfaces would derail
       // the narrative and aren't part of the demo script.
-      { to: '/coach',     iconKey: 'coach_admin', label: 'Coach Admin', show: !isDemoOrg && hasModule('coach_customization') },
-      { to: '/reports',   iconKey: 'reports',     label: 'Reports',   show: !isDemoOrg && hasModule('reports') },
+      { to: '/coach',     iconKey: 'coach_admin', label: 'Coach Admin', show: !isSageDemo && hasModule('coach_customization') },
+      { to: '/reports',   iconKey: 'reports',     label: 'Reports',   show: !isSageDemo && hasModule('reports') },
       // "Benchmarks & Goals" — manager-only page where the head of sales
       // sets the targets every dashboard tile measures against.
       { to: '/my-goals',  iconKey: 'goals',       label: 'Benchmarks',  show: true },
-      { to: '/settings',  iconKey: 'settings',    label: 'Settings',  show: !isDemoOrg },
+      { to: '/settings',  iconKey: 'settings',    label: 'Settings',  show: !isSageDemo },
     ] : [
       { to: '/',          iconKey: 'home',        label: 'Home',      show: hasModule('pipeline') },
       { to: '/coach',     iconKey: 'coach',       label: 'Coach',     show: hasModule('coach_customization') },
@@ -186,7 +186,7 @@ export default function Layout() {
     // platform admins for cross-org support/QA. BdrGuard only fires for role === 'bdr',
     // so these users could always reach the routes directly \u2014 making the entries
     // visible just removes the "where do I click" friction.
-    { label: 'XDR', show: isAEOpsManager && !isDemoOrg, items: [
+    { label: 'XDR', show: isAEOpsManager && !isSageDemo, items: [
       { to: '/bdr/submit',   iconKey: 'bdr_submit', label: 'Submit a Lead', show: true },
       { to: '/bdr/my-leads', iconKey: 'bdr_leads',  label: 'BDR Leads',     show: true },
     ]},

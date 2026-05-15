@@ -79,6 +79,11 @@ export function OrgProvider({ children }) {
     'c8a7ea52-42b8-4b66-9d38-91c9b1dda883',
   ])
   const isDemoOrg = !!org?.id && DEMO_ORG_IDS.has(org.id)
+  // Sage Intacct demo specifically (Melanie's environment). Used for sidebar
+  // simplifications that should NOT apply to Intacct - Direct - NA. The
+  // generic isDemoOrg flag stays inclusive of both for chat-feature gates.
+  const SAGE_DEMO_ORG_ID = 'c8a7ea52-42b8-4b66-9d38-91c9b1dda883'
+  const isSageDemo = org?.id === SAGE_DEMO_ORG_ID
   // Per-org performance benchmarks (head of sales sets these on /my-goals).
   // Always returns an object; empty {} if not yet configured. Dashboard tiles
   // call benchmarks.win_rate ?? FALLBACK_DEFAULT to avoid undefined math.
@@ -92,6 +97,7 @@ export function OrgProvider({ children }) {
       allowChatWebSearch,
       enableChatReports,
       isDemoOrg,
+      isSageDemo,
       benchmarks,
       refreshOrg: loadOrg, loading,
     }}>
