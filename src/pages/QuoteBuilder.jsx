@@ -9,6 +9,7 @@ import LogoUploader from '../components/LogoUploader'
 import VisibilityToggleIcon from '../components/VisibilityToggleIcon'
 import PlusButton from '../components/PlusButton'
 import TcoModelsView from '../components/TcoModelsView'
+import { callImportOrderSchedule } from '../lib/webhooks'
 
 // Round UP to whole dollar; backend keeps decimals.
 function dollars(n) {
@@ -604,6 +605,33 @@ function QuoteTab({ quote, deal, quoteId, lines, products, productMap, bundleChi
 // ──────────────────────────────────────────────────────────
 function SubscriptionSection({ quote, lines, products, productMap, bundleChildrenMap, favorites, profileId, saveQuoteHeader, registerFlusher, onChanged, refreshFavorites, columnVisibility = null, onColumnVisibilityChange = null }) {
   const [pickerOpen, setPickerOpen] = useState(false)
+  // Order-schedule PDF import — uploads the file to storage, sends it to the
+  // import-order-schedule edge function (Claude PDF extraction), refreshes the
+  // quote, and surfaces any unmatched SKUs in a follow-up modal so the AE can
+  // create them as products inline.
+  const importFileRef = useRef(null)
+  const [importing, setImporting] = useState(false)
+  const [importError, setImportError] = useState('')
+  const [importResult, setImportResult] = useState(null)
+  async function handleImportPdf(file) {
+    if (!file) return
+    setImportError('')
+    setImportResult(null)
+    setImporting(true)
+    try {
+      const res = await callImportOrderSchedule({
+        orgId: quote.org_id, dealId: quote.deal_id, quoteId: quote.id, file,
+      })
+      if (res?.error) { setImportError(res.error); return }
+      setImportResult(res)
+      // Surface to the parent so totals + line rows refresh.
+      if (onChanged) await onChanged()
+    } catch (e) {
+      setImportError(e?.message || 'Import failed')
+    } finally {
+      setImporting(false)
+    }
+  }
   const [showFavManager, setShowFavManager] = useState(false)
   const [draggingId, setDraggingId] = useState(null)
   const [dragOverId, setDragOverId] = useState(null)
@@ -865,6 +893,28 @@ function SubscriptionSection({ quote, lines, products, productMap, bundleChildre
         {favorites.length > 0 && (
           <Button onClick={() => setShowFavManager(true)} style={{ padding: '4px 10px', fontSize: 11 }}>Manage</Button>
         )}
+        {/* Import-from-PDF: drops the whole order schedule onto the quote via
+            Claude. Hidden input + visible label-styled button so we don't have
+            to manage two click handlers. */}
+        <input ref={importFileRef} type="file" accept="application/pdf" style={{ display: 'none' }}
+          onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; handleImportPdf(f) }} />
+        <Button onClick={() => importFileRef.current?.click()} disabled={importing}
+          title="Upload a Sage order-schedule PDF and have Lumen auto-build the quote"
+          style={{ padding: '4px 10px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          {importing ? (
+            <>
+              <span style={{ width: 10, height: 10, border: `2px solid ${T.border}`, borderTopColor: T.primary, borderRadius: '50%', display: 'inline-block', animation: 'spin 0.8s linear infinite' }} />
+              Importing…
+            </>
+          ) : (
+            <>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+              </svg>
+              Import PDF
+            </>
+          )}
+        </Button>
         <PlusButton onClick={() => setPickerOpen(true)} title="Add a product line" />
       </div>
 
@@ -988,7 +1038,155 @@ function SubscriptionSection({ quote, lines, products, productMap, bundleChildre
           onRemove={removeFavorite}
         />
       )}
+
+      {/* Import error toast — sits above the bottom of the card. */}
+      {importError && (
+        <div style={{ marginTop: 12, padding: '10px 14px', background: T.errorLight, color: T.error, fontSize: 12, borderRadius: 6, border: `1px solid ${T.error}30`, display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+          <strong style={{ flexShrink: 0 }}>Import failed:</strong>
+          <span style={{ flex: 1 }}>{importError}</span>
+          <button onClick={() => setImportError('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.error, fontFamily: T.font, fontSize: 14, padding: 0, lineHeight: 1 }}>×</button>
+        </div>
+      )}
+
+      {/* Import result modal — shows lines/impl added and unmatched SKUs. */}
+      {importResult && (
+        <ImportResultModal
+          result={importResult}
+          quoteId={quote.id}
+          orgId={quote.org_id}
+          onClose={() => setImportResult(null)}
+          onUnmatchedHandled={async () => { if (onChanged) await onChanged() }}
+        />
+      )}
     </Card>
+  )
+}
+
+// Result modal shown after import-order-schedule succeeds. Lists what landed
+// and lets the AE convert each unmatched line into a new product + quote line
+// inline. "Skip" leaves the line out of the quote; the catalog gap is the AE's
+// to fix later via the products admin.
+function ImportResultModal({ result, quoteId, orgId, onClose, onUnmatchedHandled }) {
+  const [unmatched, setUnmatched] = useState(result.unmatched || [])
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  async function createAndAdd(idx) {
+    const u = unmatched[idx]
+    if (!u) return
+    setBusy(true); setErr('')
+    try {
+      // Generate a placeholder SKU from the name if the PDF didn't carry one.
+      let sku = (u.sku || '').trim()
+      if (!sku) {
+        sku = 'AUTO-' + String(u.name || 'PRODUCT')
+          .toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 32)
+      }
+      const { data: product, error: pErr } = await supabase.from('products').insert({
+        org_id: orgId,
+        sku,
+        name: u.name || 'Imported product',
+        list_price: Number(u.list_price) || 0,
+        pricing_method: 'flat',
+        is_bundle: false,
+        active: true,
+      }).select('id').single()
+      if (pErr) throw new Error(pErr.message)
+      // Append the new product as the next quote_line.
+      const { data: maxRow } = await supabase.from('quote_lines').select('line_order').eq('quote_id', quoteId).order('line_order', { ascending: false }).limit(1)
+      const nextOrder = (maxRow?.[0]?.line_order || 0) + 1
+      const qty = Number(u.quantity) || 1
+      const list = Number(u.list_price) || 0
+      const disc = Number(u.discount_pct) || 0
+      const extended = Number(u.extended) || (qty * list * (1 - disc))
+      const { error: lErr } = await supabase.from('quote_lines').insert({
+        quote_id: quoteId, product_id: product.id, line_order: nextOrder,
+        quantity: qty, unit_price: list, discount_pct: disc, extended,
+      })
+      if (lErr) throw new Error(lErr.message)
+      setUnmatched(prev => prev.filter((_, i) => i !== idx))
+      if (onUnmatchedHandled) await onUnmatchedHandled()
+    } catch (e) {
+      setErr(e?.message || 'Create failed')
+    } finally { setBusy(false) }
+  }
+  function skip(idx) {
+    setUnmatched(prev => prev.filter((_, i) => i !== idx))
+  }
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9000 }}
+      onClick={onClose}>
+      <div onClick={e => e.stopPropagation()}
+        style={{ background: T.surface, borderRadius: 10, padding: 22, width: '92%', maxWidth: 720, maxHeight: '85vh', overflow: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: T.text }}>Order schedule imported</h3>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 22, color: T.textMuted, padding: 0, lineHeight: 1 }}>×</button>
+        </div>
+
+        <div style={{ display: 'flex', gap: 18, marginBottom: 14, fontSize: 13 }}>
+          <div><strong style={{ color: T.success }}>{result.lines_added}</strong> <span style={{ color: T.textSecondary }}>line{result.lines_added === 1 ? '' : 's'} added</span></div>
+          <div><strong style={{ color: T.success }}>{result.impl_added}</strong> <span style={{ color: T.textSecondary }}>implementation item{result.impl_added === 1 ? '' : 's'}</span></div>
+          {result.header_updates?.term_label && (
+            <div><strong style={{ color: T.primary }}>{result.header_updates.term_label}</strong> <span style={{ color: T.textSecondary }}>term applied</span></div>
+          )}
+        </div>
+
+        {result.header_updates && (result.header_updates.signing_bonus_amount || result.header_updates.free_months) && (
+          <div style={{ fontSize: 12, color: T.textSecondary, marginBottom: 12 }}>
+            Concessions:&nbsp;
+            {result.header_updates.signing_bonus_amount ? <span style={{ marginRight: 12 }}>Signing bonus ${Number(result.header_updates.signing_bonus_amount).toLocaleString()}</span> : null}
+            {result.header_updates.free_months ? <span>{result.header_updates.free_months} free month{result.header_updates.free_months === 1 ? '' : 's'}</span> : null}
+          </div>
+        )}
+
+        {unmatched.length === 0 ? (
+          <div style={{ padding: '14px 0', fontSize: 13, color: T.textSecondary, borderTop: `1px solid ${T.borderLight}` }}>
+            Every line in the PDF matched a product in your catalog. Quote is ready.
+          </div>
+        ) : (
+          <>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', borderTop: `1px solid ${T.borderLight}`, paddingTop: 12, marginBottom: 8 }}>
+              {unmatched.length} unmatched line{unmatched.length === 1 ? '' : 's'} — not yet on the quote
+            </div>
+            <div style={{ fontSize: 11, color: T.textSecondary, marginBottom: 10 }}>
+              These products aren't in your catalog. Create each as a new product and add it to the quote, or skip.
+            </div>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead>
+                <tr style={{ borderBottom: `1px solid ${T.border}` }}>
+                  {['Name', 'Qty', 'List', 'Disc %', 'Total', ''].map(h => (
+                    <th key={h} style={{ textAlign: h === 'Name' ? 'left' : 'right', padding: '6px 8px', fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {unmatched.map((u, i) => (
+                  <tr key={i} style={{ borderBottom: `1px solid ${T.borderLight}` }}>
+                    <td style={{ padding: '8px', color: T.text }}>{u.name}{u.sku ? <span style={{ color: T.textMuted, fontFamily: T.mono, fontSize: 10, marginLeft: 6 }}>{u.sku}</span> : null}</td>
+                    <td style={{ padding: '8px', textAlign: 'right', fontFeatureSettings: '"tnum"' }}>{u.quantity}</td>
+                    <td style={{ padding: '8px', textAlign: 'right', color: T.textMuted, fontFeatureSettings: '"tnum"' }}>${(u.list_price || 0).toLocaleString()}</td>
+                    <td style={{ padding: '8px', textAlign: 'right', color: T.textMuted }}>{Math.round((u.discount_pct || 0) * 100)}%</td>
+                    <td style={{ padding: '8px', textAlign: 'right', fontWeight: 700, fontFeatureSettings: '"tnum"' }}>${(u.extended || 0).toLocaleString()}</td>
+                    <td style={{ padding: '8px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <button onClick={() => createAndAdd(i)} disabled={busy} style={{ background: T.primary, color: '#fff', border: 'none', borderRadius: 4, padding: '4px 10px', fontSize: 10, fontWeight: 600, cursor: busy ? 'default' : 'pointer', marginRight: 4, fontFamily: T.font }}>
+                        Create & add
+                      </button>
+                      <button onClick={() => skip(i)} disabled={busy} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 4, padding: '4px 10px', fontSize: 10, color: T.textMuted, cursor: busy ? 'default' : 'pointer', fontFamily: T.font }}>
+                        Skip
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {err && <div style={{ marginTop: 10, padding: 8, background: T.errorLight, color: T.error, borderRadius: 4, fontSize: 11 }}>{err}</div>}
+          </>
+        )}
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 18, gap: 8 }}>
+          <Button primary onClick={onClose}>Done</Button>
+        </div>
+      </div>
+    </div>
   )
 }
 

@@ -227,6 +227,46 @@ export async function callChatActions({ scope, userId = null, dealId = null, mes
 }
 
 /**
+ * Upload a PDF order schedule + call the import-order-schedule edge function.
+ * Caller already has the File. We upload it to the order-schedule-uploads
+ * bucket at `{org_id}/{deal_id}/{quote_id}/{timestamp}-{name}`, then pass the
+ * path to the edge function. Returns the function's JSON envelope:
+ *   { ok, lines_added, impl_added, unmatched: [...], header_updates, warnings }
+ * On any failure returns { error: string }.
+ */
+export async function callImportOrderSchedule({ orgId, dealId, quoteId, file }) {
+  if (!file || !quoteId || !orgId || !dealId) return { error: 'orgId, dealId, quoteId, file required' }
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) return { error: 'Not authenticated' }
+  try {
+    const safeName = String(file.name || 'order-schedule.pdf').replace(/[^a-zA-Z0-9._-]/g, '_')
+    const path = `${orgId}/${dealId}/${quoteId}/${Date.now()}-${safeName}`
+    const { error: upErr } = await supabase.storage
+      .from('order-schedule-uploads')
+      .upload(path, file, { contentType: 'application/pdf', upsert: true })
+    if (upErr) return { error: `Upload failed: ${upErr.message}` }
+
+    const response = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/import-order-schedule`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ quote_id: quoteId, storage_path: path }),
+      }
+    )
+    const json = await response.json()
+    if (!response.ok || json?.error) return { error: json?.error || `HTTP ${response.status}` }
+    return json
+  } catch (err) {
+    return { error: err.message }
+  }
+}
+
+/**
  * Call the Supabase Edge Function to update coaching summary for a user.
  */
 export async function callUpdateCoachingSummary(userId) {
