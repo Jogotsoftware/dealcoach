@@ -206,6 +206,33 @@ export function InlineEmpty({ text }) {
   return <div style={{ color: T.textMuted, fontSize: 12, fontStyle: 'italic', padding: 10, textAlign: 'center' }}>{text}</div>
 }
 
+// === MINI SUN ===
+// Drop-in replacement for the small inline donut-spinners scattered in
+// buttons / row meta. Same SVG as Spinner but without the centered wrapper
+// and tuned for ~10–18px contexts. Yellow on light backgrounds, white on
+// solid-colored buttons (pass color="#fff").
+export function MiniSun({ size = 14, color = '#FFC000' }) {
+  const RAY_COUNT = 8
+  const RAY_INNER = 22
+  const RAY_OUTER = 36
+  return (
+    <svg width={size} height={size} viewBox="0 0 100 100"
+      style={{ animation: 'spin 2s linear infinite', transformOrigin: '50% 50%', display: 'inline-block', verticalAlign: 'middle', flexShrink: 0 }}
+      aria-label="Loading">
+      <circle cx="50" cy="50" r="14" fill={color} />
+      {Array.from({ length: RAY_COUNT }).map((_, i) => {
+        const a = (i * 2 * Math.PI) / RAY_COUNT
+        const x1 = 50 + RAY_INNER * Math.cos(a)
+        const y1 = 50 + RAY_INNER * Math.sin(a)
+        const x2 = 50 + RAY_OUTER * Math.cos(a)
+        const y2 = 50 + RAY_OUTER * Math.sin(a)
+        return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2}
+          stroke={color} strokeWidth="6" strokeLinecap="round" />
+      })}
+    </svg>
+  )
+}
+
 // === LOADING SPINNER ===
 // Lumen-branded — rotating sun (yellow disc + 8 rays) replaces the generic
 // donut spinner so loading states match the app load screen + chat indicator.

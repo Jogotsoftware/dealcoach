@@ -5,7 +5,7 @@ import { useAuth } from '../hooks/useAuth'
 import { callResearchFunction } from '../lib/webhooks'
 import { track } from '../lib/analytics'
 import { theme as T, STAGES, FORECAST_CATEGORIES } from '../lib/theme'
-import { Button, Card, inputStyle, labelStyle } from '../components/Shared'
+import { Button, Card, MiniSun, inputStyle, labelStyle } from '../components/Shared'
 
 export default function NewDeal() {
   const { profile } = useAuth()
@@ -219,7 +219,7 @@ export default function NewDeal() {
               background: T.primaryLight, color: T.primary, border: `1px solid ${T.primaryBorder}`,
               display: 'flex', alignItems: 'center', gap: 10, fontWeight: 600,
             }}>
-              <span style={{ display: 'inline-block', width: 14, height: 14, border: `2px solid ${T.primary}`, borderTop: '2px solid transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+              <MiniSun size={16} />
               {createdMsg}
               <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
             </div>

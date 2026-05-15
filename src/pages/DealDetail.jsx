@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { theme as T, formatCurrency, formatDate, formatDateLong, daysUntil, STAGES, FORECAST_CATEGORIES, CALL_TYPES, TASK_CATEGORIES } from '../lib/theme'
-import { Card, Badge, ForecastBadge, StageBadge, ScoreBar, Field, StatusDot, TabBar, Button, EmptyState, Spinner, Skeleton, inputStyle, labelStyle } from '../components/Shared'
+import { Card, Badge, ForecastBadge, StageBadge, ScoreBar, Field, StatusDot, TabBar, Button, EmptyState, Spinner, MiniSun, Skeleton, inputStyle, labelStyle } from '../components/Shared'
 import PlusButton from '../components/PlusButton'
 import CopyButton from '../components/CopyButton'
 import TranscriptUpload from '../components/TranscriptUpload'
@@ -1023,7 +1023,7 @@ export default function DealDetail() {
       return (
         <div>
           <div style={{ fontSize: 11, color: T.primary, fontWeight: 600, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ display: 'inline-block', width: 10, height: 10, border: `2px solid ${T.primary}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+            <MiniSun size={12} />
             Researching {deal.company_name}... (usually 20-30s)
           </div>
           <Skeleton h={14} w="40%" style={{ marginBottom: 10 }} />
@@ -1957,7 +1957,7 @@ export default function DealDetail() {
         {/* Research status banner */}
         {researchStatus === 'in_progress' && (
           <div style={{ padding: '12px 18px', borderRadius: 8, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10, background: T.primaryLight, border: `1px solid ${T.primaryBorder}`, animation: 'pulse 2s ease-in-out infinite' }}>
-            <span style={{ display: 'inline-block', width: 14, height: 14, border: `2px solid ${T.primary}`, borderTop: '2px solid transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
+            <MiniSun size={16} />
             <span style={{ fontSize: 13, color: T.primary, fontWeight: 600 }}>AI Research in Progress -- analyzing company data...</span>
           </div>
         )}
@@ -2031,7 +2031,7 @@ export default function DealDetail() {
           <div>
             {conversations.some(c => !c.processed) && (
               <div style={{ padding: '10px 16px', borderRadius: 8, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10, background: T.primaryLight, border: `1px solid ${T.primaryBorder}` }}>
-                <span style={{ display: 'inline-block', width: 12, height: 12, border: `2px solid ${T.primary}`, borderTop: '2px solid transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
+                <MiniSun size={14} />
                 <span style={{ fontSize: 12, color: T.primary, flex: 1 }}>AI is analyzing a transcript. Refresh to see results.</span>
                 <Button onClick={loadDeal} style={{ padding: '4px 12px', fontSize: 11 }}>Refresh</Button>
               </div>
@@ -2537,7 +2537,7 @@ export default function DealDetail() {
                     <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                       <Button onClick={() => { setShowEmailGenerator(false); setEmailResult(null) }}>Cancel</Button>
                       <Button primary onClick={generateEmail} disabled={!selectedEmailTpl || generatingEmail}>
-                        {generatingEmail ? <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ display: 'inline-block', width: 12, height: 12, border: '2px solid #fff', borderTop: '2px solid transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />Generating...</span> : 'Generate'}
+                        {generatingEmail ? <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><MiniSun size={14} color="#fff" />Generating...</span> : 'Generate'}
                       </Button>
                     </div>
                   </>
