@@ -1,5 +1,22 @@
 /* Lumen — Global Styles */
 
+/* Print: zero @page margin removes the browser's reserved header/footer band
+   in Chrome/Edge/Safari, so even if a user has the "Headers and footers"
+   checkbox toggled on in the print dialog, the URL/date/page-number won't
+   appear on saved PDFs. Components that want internal whitespace add their
+   own padding to their print root (see ProposalView's .ri-proposal-print-root). */
+@page {
+  margin: 0;
+  size: letter;
+}
+@media print {
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+}
+
+
 /* Lux thinking indicator — three-dot pulse used during chat generation. */
 @keyframes lux-thinking-pulse {
   0%, 80%, 100% { opacity: 0.3; transform: scale(0.85); }

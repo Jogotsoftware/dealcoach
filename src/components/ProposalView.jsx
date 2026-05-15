@@ -171,11 +171,14 @@ export default function ProposalView({
                 of every section so every PDF page reads as a coherent doc. */}
       <style>{`
         @media print {
-          @page { margin: 0.4in; size: letter; }
+          /* @page margin: 0 (set globally in index.css) suppresses the
+             browser's header/footer band. We carry the 0.4in margin as
+             padding on the print root instead so content still has air. */
+          @page { margin: 0; size: letter; }
           html, body { background: #fff !important; }
           body * { visibility: hidden !important; }
           .ri-proposal-print-root, .ri-proposal-print-root * { visibility: visible !important; }
-          .ri-proposal-print-root { position: absolute !important; left: 0; top: 0; width: 100%; max-width: 100%; padding: 0; margin: 0; font-family: ${T.font}; background: #fff !important; }
+          .ri-proposal-print-root { position: absolute !important; left: 0; top: 0; width: 100%; max-width: 100%; padding: 0.4in !important; margin: 0; font-family: ${T.font}; background: #fff !important; }
           .ri-no-print { display: none !important; }
           .ri-print-page { page-break-before: always; padding-top: 0; }
           .ri-print-page:first-of-type { page-break-before: auto; }

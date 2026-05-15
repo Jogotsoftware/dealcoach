@@ -129,8 +129,11 @@ export default function ProposalRenderer() {
       {/* Print-only styles */}
       <style>{`
         @media print {
+          /* @page { margin: 0 } is set globally in index.css to suppress the
+             browser's header/footer band. Carry the print margin as padding
+             on the proposal shell so content still has whitespace. */
           .no-print { display: none !important; }
-          .proposal-shell { background: #fff !important; padding: 0 !important; box-shadow: none !important; border: none !important; }
+          .proposal-shell { background: #fff !important; padding: 0.4in !important; box-shadow: none !important; border: none !important; }
           .proposal-section { page-break-inside: avoid; }
           .proposal-section.page-break { page-break-before: always; }
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; color-adjust: exact; }
