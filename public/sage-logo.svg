@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none">
+  <defs>
+    <linearGradient id="sage" x1="60%" y1="0%" x2="20%" y2="100%">
+      <stop offset="0%" stop-color="#A78BFA"/>
+      <stop offset="35%" stop-color="#3DB5E8"/>
+      <stop offset="65%" stop-color="#1FC58E"/>
+      <stop offset="100%" stop-color="#22C55E"/>
+    </linearGradient>
+  </defs>
+  <!-- Stylized "S" — two cubic curves traced by a thick gradient stroke with
+       round caps so the silhouette feels like a fluid ribbon, not a font glyph. -->
+  <path d="M68 22 C68 12, 28 12, 28 30 C28 44, 60 46, 60 56 C60 68, 28 68, 28 80"
+        stroke="url(#sage)" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- 4-point sparkle (star) to the right of the S, same gradient. -->
+  <path d="M84 38 L 88 52 L 102 56 L 88 60 L 84 74 L 80 60 L 66 56 L 80 52 Z"
+        fill="url(#sage)" transform="translate(-12 -8)"/>
+</svg>

@@ -954,21 +954,26 @@ export default function ManagerDashboard() {
           const metricsForRanged = (id) => metricsFor(id, dateRange)
           return (
             <>
-              {activeTab === 'revenue'   && <RevenueTab metrics={currentMetrics} allDeals={dealsInScope} predByDeal={predByDeal} />}
-              {activeTab === 'pipeline'  && <PipelineTab metrics={currentMetrics} allDeals={dealsForPipeline} />}
-              {activeTab === 'execution' && <ExecutionTab metrics={currentMetrics} allDeals={dealsInScope} />}
-              {activeTab === 'coaching'  && <CoachingTab metrics={currentMetrics} allDeals={dealsInScope} scoresByDeal={scoresByDeal} downstreamAEs={downstreamAEs} coachingByUser={(() => { const m = {}; for (const c of allCoaching) m[c.user_id] = c; return m })()} metricsFor={metricsForRanged} />}
-              {activeTab === 'forecast'  && <ForecastTab allDeals={dealsInScope} dateRange={dateRange} metrics={currentMetrics} predByDeal={predByDeal} />}
+              {activeTab === 'revenue'   && <RevenueTab metrics={currentMetrics} allDeals={dealsInScope} predByDeal={predByDeal} compareKey={compareKey} compareTarget={compareTarget} priorMetrics={priorMetrics} />}
+              {activeTab === 'pipeline'  && <PipelineTab metrics={currentMetrics} allDeals={dealsForPipeline} compareKey={compareKey} compareTarget={compareTarget} priorMetrics={priorMetrics} />}
+              {activeTab === 'execution' && <ExecutionTab metrics={currentMetrics} allDeals={dealsInScope} compareKey={compareKey} compareTarget={compareTarget} priorMetrics={priorMetrics} />}
+              {activeTab === 'coaching'  && <CoachingTab metrics={currentMetrics} allDeals={dealsInScope} scoresByDeal={scoresByDeal} downstreamAEs={downstreamAEs} coachingByUser={(() => { const m = {}; for (const c of allCoaching) m[c.user_id] = c; return m })()} metricsFor={metricsForRanged} compareKey={compareKey} compareTarget={compareTarget} priorMetrics={priorMetrics} />}
+              {activeTab === 'forecast'  && <ForecastTab allDeals={dealsInScope} dateRange={dateRange} metrics={currentMetrics} predByDeal={predByDeal} compareKey={compareKey} compareTarget={compareTarget} priorMetrics={priorMetrics} />}
               {activeTab === 'teams'     && (
                 <TeamsTab
                   currentParent={currentParent}
-                  /* Team tab honors the active date range (per-person attainment
-                     for the chosen window) but bypasses the segment filter so
+                  /* Team tab honors the active date range and compare-against
+                     (per-person attainment for the chosen window vs Budget /
+                     Goal / Prior period) but bypasses the segment filter so
                      RVPs/AVPs aren't silently dropped from the direct-reports
                      list. metricsFor's third arg `null` explicitly disables the
                      closure segmentFilter for these rollups. */
                   directReports={directReports}
                   metricsFor={(id) => metricsFor(id, dateRange, null)}
+                  priorMetricsFor={(id) => priorRange ? metricsFor(id, priorRange, null) : null}
+                  goalSumFor={goalSumFor}
+                  compareKey={compareKey}
+                  granularity={granularity}
                   showDealsLevel={showDealsLevel}
                   allDeals={allDeals.filter(d => d.rep_id === currentParent.id)}
                   predByDeal={predByDeal}
@@ -1046,8 +1051,41 @@ function deltaDown(value) { return { value, color: D.bad } }
 function deltaFlat(value) { return { value, color: D.flat } }
 
 // ----- REVENUE TAB -----
-function RevenueTab({ metrics, allDeals, predByDeal }) {
+function RevenueTab({ metrics, allDeals, predByDeal, compareKey, compareTarget, priorMetrics }) {
   const m = metrics
+  // Helper: build a vsCompare line for a tile based on the active compareKey.
+  // For numeric metrics, compares current vs target/prior and returns a label
+  // + signed delta + color. Falls back to null when there's no comparison data.
+  const vsCompareFor = (currentValue, opts = {}) => {
+    const { kind = 'money', priorKey, priorIsBetterIfHigher = true } = opts
+    if (compareKey === 'budget' || compareKey === 'goal') {
+      const target = compareTarget?.value
+      if (!target || currentValue == null) return null
+      const delta = currentValue - target
+      const better = priorIsBetterIfHigher ? delta >= 0 : delta <= 0
+      const fmt = (n) => kind === 'pct' ? `${(n * 100).toFixed(0)}pp` : fmtMoneyShort(Math.abs(n))
+      return {
+        label: `vs ${compareTarget.label}`,
+        value: `${delta >= 0 ? '+' : '−'}${fmt(delta)}`,
+        color: better ? D.success : D.bad,
+      }
+    }
+    // Date comparison (prior_year, last_quarter, last_month)
+    if (priorMetrics && priorKey) {
+      const priorVal = priorMetrics[priorKey]
+      if (priorVal == null || currentValue == null) return null
+      const delta = currentValue - priorVal
+      const pct = priorVal !== 0 ? delta / Math.abs(priorVal) : null
+      const better = priorIsBetterIfHigher ? delta >= 0 : delta <= 0
+      const periodLabel = compareKey === 'prior_year' ? 'YoY' : compareKey === 'last_quarter' ? 'QoQ' : compareKey === 'last_month' ? 'MoM' : 'vs prior'
+      return {
+        label: periodLabel,
+        value: pct != null ? `${pct >= 0 ? '+' : '−'}${(Math.abs(pct) * 100).toFixed(0)}%` : `${delta >= 0 ? '+' : '−'}${fmtMoneyShort(Math.abs(delta))}`,
+        color: better ? D.success : D.bad,
+      }
+    }
+    return null
+  }
   // Forecast distribution buckets
   const active = allDeals.filter(d => ['qualify','discovery','solution_validation','confirming_value','selection'].includes(d.stage))
   const sumBy = (cat) => active.filter(d => d.forecast_category === cat).reduce((s, d) => s + (Number(d.deal_value) || 0), 0)
