@@ -43,6 +43,7 @@ import WidgetRenderer from '../components/WidgetRenderer'
 import ContactsOrgTree from '../components/ContactsOrgTree'
 import CallAnalysisBody from '../components/CallAnalysisBody'
 import DisqualifyDealModal from '../components/DisqualifyDealModal'
+import QdcPrepView from '../components/QdcPrepView'
 import { useAuth } from '../hooks/useAuth'
 import { useModules } from '../hooks/useModules'
 import { Responsive, WidthProvider } from 'react-grid-layout'
@@ -495,6 +496,10 @@ export default function DealDetail() {
   const [dealFlags, setDealFlags] = useState([])
   const [sizing, setSizing] = useState(null)
   const [customWidgetDefs, setCustomWidgetDefs] = useState([])
+  const [companyNews, setCompanyNews] = useState([])
+  const [bdrLead, setBdrLead] = useState(null)
+  // undefined = still loading; null = RPC ran with no result; object = scored
+  const [prepScore, setPrepScore] = useState(undefined)
 
   // Widget layout
   const [layout, setLayout] = useState(DEFAULT_LAYOUT)
@@ -676,6 +681,33 @@ export default function DealDetail() {
       setSystems(sysRes.data || [])
       setDealFlags(flagsRes.data || [])
       setSizing(sizingRes.data || null)
+
+      // QDC Prep view: company_news, optional bdr_lead, and prep score RPC
+      const { data: newsData } = await supabase
+        .from('company_news')
+        .select('*')
+        .eq('deal_id', id)
+        .order('created_at', { ascending: false })
+      setCompanyNews(newsData || [])
+
+      let bdrLeadData = null
+      if (dealRes.data?.bdr_lead_id) {
+        const { data } = await supabase
+          .from('bdr_leads')
+          .select('id, notes, created_at')
+          .eq('id', dealRes.data.bdr_lead_id)
+          .maybeSingle()
+        bdrLeadData = data
+      }
+      setBdrLead(bdrLeadData)
+
+      try {
+        const { data: scoreRows } = await supabase.rpc('compute_qdc_prep_score', { p_deal_id: id })
+        setPrepScore(scoreRows?.[0] || null)
+      } catch (e) {
+        console.error('compute_qdc_prep_score failed:', e?.message || e)
+        setPrepScore(null)
+      }
 
       // Load custom widget definitions for this org
       if (profile?.org_id) {
@@ -2022,7 +2054,18 @@ export default function DealDetail() {
             onSelectCall={setSelectedCallId}
             onUploadTranscript={() => setShowTranscriptUpload(true)}
             onCallUpdate={(callId, patch) => setConversations(prev => prev.map(c => c.id === callId ? { ...c, ...patch } : c))}
-            preQdcContent={<CompanyProfileWidget />}
+            preQdcContent={
+              <QdcPrepView
+                dealId={id}
+                deal={deal}
+                companyProfile={companyProfile}
+                contacts={contacts}
+                systems={systems}
+                companyNews={companyNews}
+                bdrLead={bdrLead}
+                prepScore={prepScore}
+              />
+            }
           />
         )}
 
@@ -3427,7 +3470,7 @@ function AnalysisTab({ conversations, dealId, selectedCallId, onSelectCall, onUp
         {/* Pre-QDC pinned first */}
         <button
           onClick={() => onSelectCall('pre-qdc')}
-          title="Pre-QDC analysis and research"
+          title="QDC Prep — verified research, contacts, news, score"
           style={{
             display: 'inline-flex', alignItems: 'center', gap: 8,
             padding: '10px 14px', fontSize: 12, fontWeight: 600, fontFamily: T.font,
@@ -3438,8 +3481,7 @@ function AnalysisTab({ conversations, dealId, selectedCallId, onSelectCall, onUp
             whiteSpace: 'nowrap',
             transition: 'all 0.15s',
           }}>
-          <Badge color={preQdcActive ? T.primary : T.textMuted}>Research</Badge>
-          <span>Pre-QDC</span>
+          <span>QDC Prep</span>
         </button>
 
         {sorted.map(call => {
