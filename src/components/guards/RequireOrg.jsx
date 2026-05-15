@@ -1,14 +1,15 @@
 import { Navigate, Outlet } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { useOrg } from '../../contexts/OrgContext'
-import { Spinner } from '../Shared'
 import { theme as T } from '../../lib/theme'
 
 export default function RequireOrg() {
   const { profile, loading: authLoading } = useAuth()
   const { org, loading: orgLoading } = useOrg()
 
-  if (authLoading || orgLoading) return <Spinner />
+  // Auth + org hydration is sub-second. Returning null here avoids the
+  // half-second loading-screen flash that looked worse than nothing.
+  if (authLoading || orgLoading) return null
 
   if (!profile?.org_id) return <Navigate to="/onboarding" replace />
 

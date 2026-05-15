@@ -570,46 +570,50 @@ export default function GlobalChatbot() {
 
   return (
     <>
-      {/* Floating button — Lumen sun nested inside a speech bubble. The sun
-          (yellow disc + 8 rays) sits in the lower-left of the bubble's white
-          fill so the bubble's tail still reads as "chat" while the sun marks
-          it as Lumen. White bubble on white-page would be invisible, so we
-          give the bubble a 1px Carolina-Blue border + a soft shadow. */}
+      {/* Floating button — yellow lightbulb (illumination = Lumen) on a white
+          circular surface. On-brand without being a chat-bubble cliche. */}
       {!open && (
         <button onClick={openBot} title="Ask Lumen"
           style={{
             position: 'fixed', bottom: 20, right: 20, zIndex: 9000,
-            width: 56, height: 56, borderRadius: 0,
-            background: 'transparent', border: 'none', cursor: 'pointer',
+            width: 56, height: 56, borderRadius: '50%',
+            background: '#FFFFFF', border: '1.5px solid #5DADE2', cursor: 'pointer',
             padding: 0,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            filter: 'drop-shadow(0 6px 14px rgba(93, 173, 226, 0.35))',
-            transition: 'transform 0.12s ease, filter 0.12s ease',
+            boxShadow: '0 6px 16px rgba(44, 62, 80, 0.15)',
+            transition: 'transform 0.15s ease, box-shadow 0.15s ease',
           }}
-          onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.filter = 'drop-shadow(0 8px 18px rgba(93, 173, 226, 0.5))' }}
-          onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.filter = 'drop-shadow(0 6px 14px rgba(93, 173, 226, 0.35))' }}
+          onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px) scale(1.04)'; e.currentTarget.style.boxShadow = '0 10px 22px rgba(255, 192, 0, 0.35)' }}
+          onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 6px 16px rgba(44, 62, 80, 0.15)' }}
           aria-label="Ask Lumen">
-          <svg width="56" height="56" viewBox="0 0 56 56" aria-hidden="true">
-            {/* Speech bubble — Carolina Blue fill with the chat tail */}
+          <svg width="32" height="32" viewBox="0 0 24 24" aria-hidden="true">
+            {/* Lightbulb body — solid yellow fill */}
             <path
-              d="M10 8 H46 a4 4 0 0 1 4 4 v26 a4 4 0 0 1 -4 4 H22 l-8 8 v-8 a4 4 0 0 1 -4 -4 V12 a4 4 0 0 1 4 -4 z"
-              fill="#5DADE2"
-              stroke="#3D8FBE"
-              strokeWidth="1"
+              d="M9 21h6v-1.5a1 1 0 0 0-.5-.87 6 6 0 1 1 -5 0a1 1 0 0 0 -.5.87V21z"
+              fill="#FFC000"
+              stroke="#E0A800"
+              strokeWidth="0.5"
+              strokeLinejoin="round"
             />
-            {/* Lumen sun — centered in the bubble's body */}
-            <g transform="translate(28 24)">
-              <circle r="5.5" fill="#FFC000" />
-              {/* 8 rays around the disc */}
-              {Array.from({ length: 8 }).map((_, i) => {
-                const a = (i * Math.PI * 2) / 8
-                const x1 = Math.cos(a) * 8
-                const y1 = Math.sin(a) * 8
-                const x2 = Math.cos(a) * 12
-                const y2 = Math.sin(a) * 12
-                return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2}
-                  stroke="#FFC000" strokeWidth="2.2" strokeLinecap="round" />
-              })}
+            {/* Filament — small inner mark for character */}
+            <path
+              d="M10.5 14 L12 11 L13.5 14"
+              fill="none"
+              stroke="#E0A800"
+              strokeWidth="1"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            {/* Base bands */}
+            <line x1="9.5" y1="20.2" x2="14.5" y2="20.2" stroke="#B8860B" strokeWidth="0.9" strokeLinecap="round" />
+            <line x1="10" y1="22" x2="14" y2="22" stroke="#B8860B" strokeWidth="0.9" strokeLinecap="round" />
+            {/* Tiny radiating glow lines above the bulb */}
+            <g stroke="#FFC000" strokeWidth="1.2" strokeLinecap="round" opacity="0.85">
+              <line x1="12" y1="2.5" x2="12" y2="4" />
+              <line x1="5.5" y1="5.5" x2="6.7" y2="6.7" />
+              <line x1="18.5" y1="5.5" x2="17.3" y2="6.7" />
+              <line x1="3" y1="11" x2="4.5" y2="11" />
+              <line x1="21" y1="11" x2="19.5" y2="11" />
             </g>
           </svg>
         </button>

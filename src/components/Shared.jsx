@@ -207,16 +207,33 @@ export function InlineEmpty({ text }) {
 }
 
 // === LOADING SPINNER ===
-export function Spinner() {
+// Lumen-branded — rotating sun (yellow disc + 8 rays) replaces the generic
+// donut spinner so loading states match the app load screen + chat indicator.
+// Optional `size` lets callers shrink/grow inline; `inline` skips the centered
+// padding wrapper for tight contexts (sidebar header, table cells).
+export function Spinner({ size = 36, inline = false }) {
+  const RAY_COUNT = 8
+  const RAY_INNER = 22
+  const RAY_OUTER = 36
+  const sun = (
+    <svg width={size} height={size} viewBox="0 0 100 100"
+      style={{ animation: 'spin 3s linear infinite', transformOrigin: '50% 50%' }}
+      aria-label="Loading">
+      <circle cx="50" cy="50" r="14" fill="#FFC000" />
+      {Array.from({ length: RAY_COUNT }).map((_, i) => {
+        const a = (i * 2 * Math.PI) / RAY_COUNT
+        const x1 = 50 + RAY_INNER * Math.cos(a)
+        const y1 = 50 + RAY_INNER * Math.sin(a)
+        const x2 = 50 + RAY_OUTER * Math.cos(a)
+        const y2 = 50 + RAY_OUTER * Math.sin(a)
+        return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2}
+          stroke="#FFC000" strokeWidth="6" strokeLinecap="round" />
+      })}
+    </svg>
+  )
+  if (inline) return sun
   return (
-    <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
-      <div style={{
-        width: 32, height: 32, border: `3px solid ${T.borderLight}`,
-        borderTop: `3px solid ${T.primary}`, borderRadius: '50%',
-        animation: 'spin 0.8s linear infinite',
-      }} />
-      <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
-    </div>
+    <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>{sun}</div>
   )
 }
 
