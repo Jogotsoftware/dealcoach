@@ -751,25 +751,24 @@ export default function MSPEditor({ dealId, mode = 'standalone', readonlyAdapter
                                 </div>
                               )}
 
-                              {/* Read-only row */}
+                              {/* Read-only row — compact single-line layout:
+                                  title · date · duration · status · request-change.
+                                  Notes (if any) drop to a second line below. */}
                               {isReadonly && (
-                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
-                                  <div style={{ flex: 1, minWidth: 220 }}>
-                                    <div style={{
-                                      fontSize: 14, fontWeight: 700,
-                                      color: step.color || T.text,
-                                      textDecoration: step.is_completed ? 'line-through' : 'none',
-                                      opacity: step.is_completed ? 0.6 : 1,
-                                    }}>{step.stage_name}</div>
-                                    <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 4, fontSize: 12, color: T.textSecondary, flexWrap: 'wrap' }}>
-                                      <span><strong>Date:</strong> {displayMspDate(step)}</span>
-                                      {step.duration && <span><strong>Duration:</strong> {step.duration}</span>}
-                                      <ReadonlyStatusPill status={step.status} />
-                                    </div>
-                                    {step.notes && (
-                                      <div style={{ marginTop: 8, fontSize: 12, color: T.textSecondary, whiteSpace: 'pre-wrap' }}>{step.notes}</div>
-                                    )}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                                  <div style={{
+                                    fontSize: 14, fontWeight: 700,
+                                    color: step.color || T.text,
+                                    textDecoration: step.is_completed ? 'line-through' : 'none',
+                                    opacity: step.is_completed ? 0.6 : 1,
+                                    flexShrink: 0,
+                                  }}>{step.stage_name}</div>
+                                  <div style={{ display: 'flex', gap: 10, alignItems: 'center', fontSize: 12, color: T.textSecondary, flexWrap: 'wrap' }}>
+                                    <span><strong>Date:</strong> {displayMspDate(step)}</span>
+                                    {step.duration && <span><strong>Duration:</strong> {step.duration}</span>}
+                                    <ReadonlyStatusPill status={step.status} />
                                   </div>
+                                  <div style={{ flex: 1 }} />
                                   <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                                     {stageReq ? (
                                       <span style={{ padding: '4px 10px', background: T.warningLight, color: T.warning, fontSize: 10, fontWeight: 600, borderRadius: 999, border: `1px solid ${T.warning}30` }}>Change requested · pending review</span>
@@ -780,6 +779,9 @@ export default function MSPEditor({ dealId, mode = 'standalone', readonlyAdapter
                                       </button>
                                     )}
                                   </div>
+                                  {step.notes && (
+                                    <div style={{ flexBasis: '100%', marginTop: 6, fontSize: 12, color: T.textSecondary, whiteSpace: 'pre-wrap' }}>{step.notes}</div>
+                                  )}
                                 </div>
                               )}
 
@@ -827,16 +829,10 @@ export default function MSPEditor({ dealId, mode = 'standalone', readonlyAdapter
                                 />
                               )}
 
-                              {/* Per-stage comment composer (readonly + non-archived) */}
-                              {isReadonly && !archived && (
-                                <ReadonlyCommentComposer
-                                  refKind="msp_stage"
-                                  refId={step.id}
-                                  count={commentCounts.get(`msp_stage:${step.id}`) || 0}
-                                  placeholder="Comment on this stage…"
-                                  onSubmit={submitComment}
-                                />
-                              )}
+                              {/* Per-stage comment composer removed from the
+                                  customer view — kept stages clean and compact.
+                                  Customers can still raise questions via the
+                                  room-level chat / Request change flow. */}
                             </div>
                           </div>
 
