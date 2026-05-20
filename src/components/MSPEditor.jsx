@@ -342,13 +342,52 @@ export default function MSPEditor({ dealId, mode = 'standalone', readonlyAdapter
   }
   async function addTweener(aboveStep, belowStep) {
     if (!isWritable) return
-    const order = (aboveStep.stage_order + belowStep.stage_order) / 2
-    await supabase.from('msp_stages').insert({
-      deal_id: dealId, stage_name: 'New Step', stage_order: order,
+    // stage_order is an INTEGER column — the old `(above + below) / 2` rounded
+    // to a colliding value and the new step ended up at the wrong position.
+    // Instead, slot in at aboveStep.stage_order + 1 and shift everything at or
+    // below that position up by 1. Optimistic local update so the row appears
+    // immediately without a loadData() flash that loses scroll position.
+    const newOrder = (Number(aboveStep.stage_order) || 0) + 1
+    const tempId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `temp-${Date.now()}`
+    const tempRow = {
+      id: tempId, deal_id: dealId, stage_name: 'New Step', stage_order: newOrder,
       status: 'pending', is_completed: false, is_tweener: true, is_custom: true,
-      date_mode: 'free_text',
+      date_mode: 'free_text', assigned_client_contacts: [], assigned_team_contacts: [],
+      color: null, notes: null, duration: null, due_date: null, end_date: null,
+      date_label: null, start_date: null, completion_date: null,
+    }
+    // Stages to shift = anything currently at >= newOrder.
+    const toShift = steps.filter(s => (Number(s.stage_order) || 0) >= newOrder)
+    setSteps(prev => {
+      const shifted = prev.map(s =>
+        (Number(s.stage_order) || 0) >= newOrder
+          ? { ...s, stage_order: (Number(s.stage_order) || 0) + 1 }
+          : s
+      )
+      return [...shifted, tempRow].sort((a, b) => (a.stage_order || 0) - (b.stage_order || 0))
     })
-    loadData()
+    try {
+      // Shift conflicting rows first so the new INSERT doesn't visually
+      // overlap. Done in parallel — order doesn't matter (no unique
+      // constraint on stage_order).
+      if (toShift.length) {
+        await Promise.all(toShift.map(s =>
+          supabase.from('msp_stages').update({ stage_order: (Number(s.stage_order) || 0) + 1 }).eq('id', s.id)
+        ))
+      }
+      const { data: inserted, error } = await supabase.from('msp_stages').insert({
+        deal_id: dealId, stage_name: 'New Step', stage_order: newOrder,
+        status: 'pending', is_completed: false, is_tweener: true, is_custom: true,
+        date_mode: 'free_text',
+      }).select('*').single()
+      if (error) throw error
+      // Swap the optimistic row with the real one (same position, real id).
+      setSteps(prev => prev.map(s => s.id === tempId ? inserted : s))
+    } catch (e) {
+      console.error('[addTweener] failed:', e?.message || e)
+      // Hard reset so the timeline reflects the actual DB state again.
+      loadData()
+    }
   }
   async function cycleStatus(step) {
     if (!isWritable) return
