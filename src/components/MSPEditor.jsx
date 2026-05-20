@@ -438,11 +438,30 @@ export default function MSPEditor({ dealId, mode = 'standalone', readonlyAdapter
     const newIdx = idx + dir
     if (newIdx < 0 || newIdx >= steps.length) return
     const a = steps[idx], b = steps[newIdx]
-    await Promise.all([
+    // Optimistic swap — update the local array + each item's stage_order
+    // immediately so the UI reflects the new order without a reload. Without
+    // this the previous moveStep awaited two PATCH round-trips then called
+    // loadData() which scrolled the whole tab back to the top — frustrating
+    // on a 19-stage plan. The DB writes still fire (in the background); on a
+    // failure we log but don't revert because rapid successive clicks would
+    // otherwise feel jumpy. Each write sets an absolute order value so even
+    // if the two PATCHes land out of order, the final pair of values is
+    // correct.
+    setSteps(prev => {
+      const next = [...prev]
+      next[idx] = { ...a, stage_order: b.stage_order }
+      next[newIdx] = { ...b, stage_order: a.stage_order }
+      // Re-sort by stage_order so the rendered list matches the new order.
+      next.sort((x, y) => (x.stage_order || 0) - (y.stage_order || 0))
+      return next
+    })
+    Promise.all([
       supabase.from('msp_stages').update({ stage_order: b.stage_order }).eq('id', a.id),
       supabase.from('msp_stages').update({ stage_order: a.stage_order }).eq('id', b.id),
-    ])
-    loadData()
+    ]).then(([r1, r2]) => {
+      if (r1.error) console.error('[moveStep] swap A→B failed:', r1.error.message)
+      if (r2.error) console.error('[moveStep] swap B→A failed:', r2.error.message)
+    })
   }
 
   // ── Resources / Sharing (standalone only) ──
