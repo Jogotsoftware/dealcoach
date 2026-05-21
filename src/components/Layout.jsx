@@ -40,6 +40,8 @@ function NavIcon({ k }) {
     goals: <><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></>,
     // Analyze — staggered bars (waterfall feel)
     analyze: <><path d="M3 3v18h18"/><rect x="6" y="11" width="3" height="7" rx="0.5"/><rect x="11" y="7" width="3" height="11" rx="0.5"/><rect x="16" y="13" width="3" height="5" rx="0.5"/></>,
+    // Library — open book / film reel hybrid. Square stack to read as a catalog.
+    library: <><path d="M4 4h7a2 2 0 0 1 2 2v14a2 2 0 0 0-2-2H4z"/><path d="M20 4h-7a2 2 0 0 0-2 2v14a2 2 0 0 1 2-2h7z"/></>,
   }
   const child = paths[k]
   if (!child) return <span style={{ display: 'inline-block', width: 18, height: 18 }} />
@@ -156,6 +158,7 @@ export default function Layout() {
       // the narrative and aren't part of the demo script.
       { to: '/coach',     iconKey: 'coach_admin', label: 'Coach Admin', show: !isSageDemo && hasModule('coach_customization') },
       { to: '/reports',   iconKey: 'reports',     label: 'Reports',   show: !isSageDemo && hasModule('reports') },
+      { to: '/library',   iconKey: 'library',     label: 'Library',   show: isAdmin },
       // "Benchmarks & Goals" — manager-only page where the head of sales
       // sets the targets every dashboard tile measures against.
       { to: '/my-goals',  iconKey: 'goals',       label: 'Benchmarks',  show: true },
@@ -164,6 +167,7 @@ export default function Layout() {
       { to: '/',          iconKey: 'home',        label: 'Home',      show: hasModule('pipeline') },
       { to: '/coach',     iconKey: 'coach',       label: 'Coach',     show: hasModule('coach_customization') },
       { to: '/reports',   iconKey: 'reports',     label: 'Reports',   show: hasModule('reports') },
+      { to: '/library',   iconKey: 'library',     label: 'Library',   show: isAdmin },
       // Benchmarks page is leadership-only; AEs don't see it. Their personal
       // stretch lives on Settings → My Goals (separate concept).
       { to: '/settings',  iconKey: 'settings',    label: 'Settings',  show: true },

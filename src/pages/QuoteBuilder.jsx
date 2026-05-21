@@ -2325,7 +2325,9 @@ export function ResourcesTab({ deal, onDealUpdated, headerExtra = null }) {
         sort_order: resources.length,
       })
       if (insErr) throw insErr
-      try { await supabase.from('org_resource_library').update({ usage_count: (libItem.usage_count || 0) + 1 }).eq('id', libItem.id) } catch { /* non-fatal */ }
+      // Bump usage_count + last_used_at so the LibraryAdmin sort surfaces
+      // recently-used items at the top alongside high-use ones.
+      try { await supabase.from('org_resource_library').update({ usage_count: (libItem.usage_count || 0) + 1, last_used_at: new Date().toISOString() }).eq('id', libItem.id) } catch { /* non-fatal */ }
       setShowLibrary(false)
       await load()
     } catch (e) {

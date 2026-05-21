@@ -51,6 +51,7 @@ import BarriersListPage from './pages/path/BarriersListPage'
 import BarrierDetailPage from './pages/path/BarrierDetailPage'
 import GateCriteriaPage from './pages/path/GateCriteriaPage'
 import GateDimensionPage from './pages/path/GateDimensionPage'
+import LibraryAdmin from './pages/LibraryAdmin'
 import { theme as T } from './lib/theme'
 
 function ProtectedRoute({ children }) {
@@ -165,6 +166,7 @@ export default function App() {
                   <Route path="/admin/invitations" element={<ErrorBoundary label="invitations"><InvitationsAdmin /></ErrorBoundary>} />
                   <Route path="/admin/orgs/:orgId" element={<ErrorBoundary label="this org"><OrgDetail /></ErrorBoundary>} />
                   <Route path="/admin/extraction-definitions" element={<ErrorBoundary label="AI rules"><ExtractionDefinitions /></ErrorBoundary>} />
+                  <Route path="/library" element={<ErrorBoundary label="team library"><LibraryAdmin /></ErrorBoundary>} />
                 </Route>
               </Route>
             </Route>
