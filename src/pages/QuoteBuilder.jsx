@@ -2851,6 +2851,18 @@ function Metric({ label, value, positive }) {
 // row labels in view as the user scrolls across 36+ month-columns.
 // ──────────────────────────────────────────────────────────
 function TcoMonthlyTab({ quote, contractTerms, schedule }) {
+  // Implementation items don't appear in quote_payment_schedule, so we
+  // pull them directly and project onto months based on billing_type.
+  const [implItems, setImplItems] = useState([])
+  useEffect(() => {
+    if (!quote?.id) { setImplItems([]); return }
+    let cancelled = false
+    ;(async () => {
+      const { data } = await supabase.from('quote_implementation_items').select('*').eq('quote_id', quote.id).order('sort_order')
+      if (!cancelled) setImplItems(data || [])
+    })()
+    return () => { cancelled = true }
+  }, [quote?.id])
   const term = contractTerms.find(ct => ct.id === quote.contract_term_id)
   const termYears = Number(term?.term_years) || 1
   const freeMonths = Number(quote.free_months) || 0
@@ -2872,19 +2884,23 @@ function TcoMonthlyTab({ quote, contractTerms, schedule }) {
     for (let i = 13; i <= 12 + freeMonths; i++) freeMonthSet.add(i)
   }
 
-  if (!schedule || schedule.length === 0) {
-    return <EmptyState title="No payment schedule yet" message="The monthly TCO view projects the Payment Schedule rows onto a calendar. Generate the schedule first (or add subscription / implementation rows) and this view will populate automatically." />
+  if ((!schedule || schedule.length === 0) && implItems.length === 0) {
+    return <EmptyState title="No payment schedule yet" message="The monthly TCO view projects the Payment Schedule rows + implementation items onto a calendar. Add subscription / implementation rows and this view will populate automatically." />
   }
 
-  // Categorize each schedule row into one of five canonical rows. Anything
-  // we can't slot cleanly (custom payments, unknown types) falls into a
-  // catch-all "Other" row so it's still visible.
+  // Categorize each schedule row into one of the canonical rows. Recognizes
+  // the real payment_type values from generate_payment_schedule:
+  // subscription_year, partner_subscription_year, signing_bonus, free_month
+  // (skipped — the freeMonthSet handles those visually), percent_surcharge.
   function categoryOf(s) {
     const src = s.source === 'partner' ? 'partner' : 'sage'
     const pt = s.payment_type || ''
     if (pt === 'signing_bonus') return 'signing_bonus'
-    if (pt === 'subscription') return src === 'partner' ? 'partner_sub' : 'sage_sub'
-    if (pt === 'implementation') return src === 'partner' ? 'partner_impl' : 'sage_impl'
+    if (pt === 'subscription' || pt === 'subscription_year') return src === 'partner' ? 'partner_sub' : 'sage_sub'
+    if (pt === 'partner_subscription_year') return 'partner_sub'
+    if (pt === 'implementation' || pt === 'implementation_milestone') return src === 'partner' ? 'partner_impl' : 'sage_impl'
+    if (pt === 'percent_surcharge') return 'surcharge'
+    if (pt === 'free_month') return null  // handled by freeMonthSet highlighting
     return 'other'
   }
 
@@ -2901,13 +2917,14 @@ function TcoMonthlyTab({ quote, contractTerms, schedule }) {
   }
 
   // Build a matrix: category → array of monthly amounts (length totalMonths)
-  const categories = ['sage_sub', 'sage_impl', 'signing_bonus', 'partner_sub', 'partner_impl', 'other']
+  const categories = ['sage_sub', 'sage_impl', 'signing_bonus', 'partner_sub', 'partner_impl', 'surcharge', 'other']
   const labelFor = {
     sage_sub:       'Sage Subscription',
     sage_impl:      'Sage Implementation',
     signing_bonus:  'Signing Bonus',
     partner_sub:    'Partner Subscription',
     partner_impl:   'Partner Implementation',
+    surcharge:      'Surcharge / Fee',
     other:          'Other',
   }
   const colorFor = {
@@ -2916,6 +2933,7 @@ function TcoMonthlyTab({ quote, contractTerms, schedule }) {
     signing_bonus:  T.error,
     partner_sub:    '#5A3FBC',
     partner_impl:   '#7c3aed',
+    surcharge:      '#dc6b2f',
     other:          T.textMuted,
   }
   const matrix = {}
@@ -2924,14 +2942,80 @@ function TcoMonthlyTab({ quote, contractTerms, schedule }) {
     const m = monthFor(s)
     if (m == null) return
     const cat = categoryOf(s)
+    if (!cat) return  // free_month / unrecognized → skip
     // Signing-bonus credits should always render as a negative deduction.
     const amount = cat === 'signing_bonus' ? -Math.abs(Number(s.amount) || 0) : (Number(s.amount) || 0)
     matrix[cat][m - 1] += amount
   })
 
-  // Drop empty category rows so the table doesn't render five blank lines
-  // when only Sage subscription is on the quote.
+  // Implementation items live in quote_implementation_items, not schedule.
+  // Project them onto months based on billing_type:
+  //  - one_time / milestone          → full amount in start month (M1 by default)
+  //  - fixed_bid_50_50              → 50% start, 50% completion (or +duration_to_live_weeks)
+  //  - tm_monthly                   → spread evenly across tm_weeks (or 6mo fallback)
+  // Start/end months derive from estimated_start_date / estimated_completion_date
+  // when set, otherwise fall back to M1 + a sensible default duration.
+  function monthFromDate(dateStr) {
+    if (!dateStr) return null
+    const d = new Date(dateStr + (String(dateStr).length === 10 ? 'T00:00:00' : ''))
+    const diff = (d.getFullYear() - startDate.getFullYear()) * 12 + (d.getMonth() - startDate.getMonth()) + 1
+    if (diff < 1) return 1
+    if (diff > totalMonths) return totalMonths
+    return diff
+  }
+  implItems.forEach(item => {
+    const total = Number(item.total_amount) || 0
+    if (total === 0) return
+    const startM = monthFromDate(item.estimated_start_date) || 1
+    const weeksTL = Number(item.duration_to_live_weeks) || 0
+    const completionM = monthFromDate(item.estimated_completion_date)
+      || (weeksTL > 0 ? Math.min(totalMonths, startM + Math.max(1, Math.round(weeksTL / 4))) : null)
+    const cat = item.source === 'partner' ? 'partner_impl' : 'sage_impl'
+    const bt = item.billing_type || 'one_time'
+
+    if (bt === 'fixed_bid_50_50') {
+      const endM = completionM || Math.min(totalMonths, startM + 3)
+      matrix[cat][startM - 1] += total * 0.5
+      matrix[cat][endM - 1] += total * 0.5
+    } else if (bt === 'tm_monthly') {
+      // tm_weeks is the canonical duration; fallback to 6 months when not set.
+      const months = item.tm_weeks ? Math.max(1, Math.round(Number(item.tm_weeks) / 4)) : 6
+      const per = total / months
+      for (let i = 0; i < months; i++) {
+        const idx = startM - 1 + i
+        if (idx >= 0 && idx < totalMonths) matrix[cat][idx] += per
+      }
+    } else {
+      // one_time / milestone / unknown → lump sum at start month
+      matrix[cat][startM - 1] += total
+    }
+  })
+
+  // Drop empty category rows so the table doesn't render blank lines.
   const activeCategories = categories.filter(c => matrix[c].some(v => v !== 0))
+
+  // Amortized monthly cost — projects each annual subscription invoice's
+  // amount evenly across the 12 months it covers (paid period only). Free
+  // months render as $0 amortized, so it's obvious that free months drop
+  // the effective monthly burn rate.
+  const amortized = new Array(totalMonths).fill(0)
+  ;(schedule || []).forEach(s => {
+    if (s.payment_type !== 'subscription_year' && s.payment_type !== 'partner_subscription_year' && s.payment_type !== 'subscription') return
+    const m = monthFor(s)
+    if (m == null) return
+    const annual = Number(s.amount) || 0
+    // Spread across the next 12 paid months, skipping any free-month
+    // positions so the amortization reflects only billable months.
+    let spread = 0
+    let cursor = m
+    while (spread < 12 && cursor <= totalMonths) {
+      if (!freeMonthSet.has(cursor)) {
+        amortized[cursor - 1] += annual / 12
+        spread += 1
+      }
+      cursor += 1
+    }
+  })
 
   const monthTotals = new Array(totalMonths).fill(0)
   const cumulative = new Array(totalMonths).fill(0)
@@ -3059,10 +3143,10 @@ function TcoMonthlyTab({ quote, contractTerms, schedule }) {
                   </tr>
                 )
               })}
-              {/* Monthly Total row */}
+              {/* Payment Made row — actual cash invoiced in each month. */}
               <tr style={{ borderTop: `2px solid ${T.border}`, background: T.surfaceAlt }}>
                 <td style={labelCell({ fontWeight: 800, fontSize: 12, background: T.surfaceAlt })}>
-                  Monthly Total
+                  Payment Made
                 </td>
                 {monthTotals.map((v, i) => (
                   <td key={i} style={cellNum({
@@ -3080,6 +3164,32 @@ function TcoMonthlyTab({ quote, contractTerms, schedule }) {
                   {dollars(grandTotal)}
                 </td>
               </tr>
+              {/* Amortized Monthly Cost — annual subscriptions spread evenly
+                  across the 12 paid months they cover. Free months render
+                  as $0 so the effective burn-rate drop from free months is
+                  visible at a glance. */}
+              {amortized.some(v => v !== 0) && (
+                <tr style={{ background: T.surface }}>
+                  <td style={labelCell({ fontWeight: 700, fontSize: 12, color: T.textSecondary, fontStyle: 'italic' })}>
+                    Amortized Monthly Cost
+                  </td>
+                  {amortized.map((v, i) => (
+                    <td key={i} style={cellNum({
+                      fontStyle: 'italic',
+                      color: v === 0 ? T.textMuted : T.textSecondary,
+                      background: monthHeaders[i].isFreeMonth ? (T.successLight || '#dcfce7') : 'transparent',
+                    })}>
+                      {v === 0 ? '—' : dollars(v)}
+                    </td>
+                  ))}
+                  <td style={{
+                    ...cellNum({ fontWeight: 700, fontStyle: 'italic', color: T.textSecondary, background: T.surfaceAlt }),
+                    position: 'sticky', right: 0,
+                  }}>
+                    {dollars(amortized.reduce((s, v) => s + v, 0))}
+                  </td>
+                </tr>
+              )}
               {/* Cumulative row */}
               <tr style={{ background: T.primaryLight }}>
                 <td style={labelCell({ fontWeight: 800, fontSize: 12, color: T.primary, background: T.primaryLight })}>
