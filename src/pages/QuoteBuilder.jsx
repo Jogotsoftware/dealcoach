@@ -3036,6 +3036,13 @@ function TcoMonthlyTab({ quote, contractTerms, schedule }) {
   //   - opaque background (so scrolled cells don't bleed through)
   //   - higher z-index than data cells (corner needs even higher)
   //   - a hard right border + drop shadow so the freeze line is obvious
+  // IMPORTANT: theme's primaryLight + successLight are rgba with 0.08 alpha
+  // (92% transparent). Using them as cell backgrounds lets scrolled content
+  // show through the sticky cells and produces the "jumbled" text overlap
+  // the rep screenshotted. Use solid hex equivalents instead — the visual
+  // tint is the same on top of the white surface, but cells are now opaque.
+  const TINT_PRIMARY = '#eaf4fc'   // ~ T.primaryLight flattened over white
+  const TINT_SUCCESS = '#dcfce7'   // ~ T.successLight flattened over white
   const LABEL_W = 210
   const labelCell = (extra = {}) => ({
     padding: '8px 12px', textAlign: 'left', whiteSpace: 'nowrap',
@@ -3081,7 +3088,7 @@ function TcoMonthlyTab({ quote, contractTerms, schedule }) {
                     padding: '6px 10px', textAlign: 'right',
                     fontSize: 10, fontWeight: 700, color: h.isFreeMonth ? T.success : T.textMuted,
                     textTransform: 'uppercase', letterSpacing: '0.04em',
-                    background: h.isFreeMonth ? (T.successLight || '#dcfce7') : T.surfaceAlt,
+                    background: h.isFreeMonth ? TINT_SUCCESS : T.surfaceAlt,
                     borderBottom: `1px solid ${T.border}`,
                     borderRight: `1px solid ${T.borderLight}`,
                   }}>
@@ -3105,7 +3112,7 @@ function TcoMonthlyTab({ quote, contractTerms, schedule }) {
                     padding: '4px 8px', textAlign: 'right',
                     fontSize: 9, fontWeight: 600,
                     color: h.isFreeMonth ? T.success : T.textSecondary,
-                    background: h.isFreeMonth ? (T.successLight || '#dcfce7') : T.surface,
+                    background: h.isFreeMonth ? TINT_SUCCESS : T.surface,
                     borderBottom: `2px solid ${T.primary}`,
                     borderRight: `1px solid ${T.borderLight}`,
                   }}>
@@ -3131,9 +3138,9 @@ function TcoMonthlyTab({ quote, contractTerms, schedule }) {
                 labelCellFn={labelCell}
                 cellNumFn={cellNum}
                 rowBg={T.surface}
+                freeBg={TINT_SUCCESS}
                 color={T.text}
                 fontWeight={700}
-                totalLabel="Total"
               />
               {/* Row 2: Implementation Payment — actual cash invoiced for
                   implementation each month (sage + partner combined). */}
@@ -3144,6 +3151,7 @@ function TcoMonthlyTab({ quote, contractTerms, schedule }) {
                 labelCellFn={labelCell}
                 cellNumFn={cellNum}
                 rowBg={T.surface}
+                freeBg={TINT_SUCCESS}
                 color="#2563eb"
                 fontWeight={700}
               />
@@ -3157,6 +3165,7 @@ function TcoMonthlyTab({ quote, contractTerms, schedule }) {
                 labelCellFn={labelCell}
                 cellNumFn={cellNum}
                 rowBg={T.surfaceAlt}
+                freeBg={TINT_SUCCESS}
                 color={T.textSecondary}
                 fontStyle="italic"
                 fontWeight={600}
@@ -3171,26 +3180,29 @@ function TcoMonthlyTab({ quote, contractTerms, schedule }) {
                 labelCellFn={labelCell}
                 cellNumFn={cellNum}
                 rowBg={T.surfaceAlt}
+                freeBg={TINT_SUCCESS}
                 color={T.textSecondary}
                 fontStyle="italic"
                 fontWeight={700}
               />
               {/* Row 5: Cumulative — running total of subscription + impl
-                  cash actually paid by the end of each month. */}
-              <tr style={{ background: T.primaryLight }}>
-                <td style={labelCell({ fontWeight: 800, fontSize: 12, color: T.primary, background: T.primaryLight })}>
+                  cash actually paid by the end of each month. Uses opaque
+                  TINT_PRIMARY (not T.primaryLight, which is 8% alpha) so
+                  the sticky label cell fully blocks scrolled content. */}
+              <tr style={{ background: TINT_PRIMARY }}>
+                <td style={labelCell({ fontWeight: 800, fontSize: 12, color: T.primary, background: TINT_PRIMARY })}>
                   Cumulative
                 </td>
                 {cumulative.map((v, i) => (
                   <td key={i} style={cellNum({
                     fontWeight: 700, color: T.primary,
-                    background: monthHeaders[i].isFreeMonth ? '#bef0c8' : T.primaryLight,
+                    background: monthHeaders[i].isFreeMonth ? '#bef0c8' : TINT_PRIMARY,
                   })}>
                     {dollars(v)}
                   </td>
                 ))}
                 <td style={{
-                  ...cellNum({ fontWeight: 800, color: T.primary, background: T.primaryLight }),
+                  ...cellNum({ fontWeight: 800, color: T.primary, background: TINT_PRIMARY }),
                   position: 'sticky', right: 0, boxShadow: '-2px 0 4px -2px rgba(0,0,0,0.08)',
                 }}>
                   {dollars(grandTotal)}
@@ -3363,8 +3375,9 @@ function TcoTab({ quote, contractTerms, partnerBlocks, partnerLines, saveQuoteHe
 // Single TCO Monthly row — repeats the same sticky-left + per-month-cell
 // pattern across all four data rows so the row-label column never drifts
 // out from under the scrolled cells. Row total renders in a sticky-right
-// cell so it stays visible too.
-function DataRow({ label, values, monthHeaders, labelCellFn, cellNumFn, rowBg, color, fontWeight = 600, fontStyle = 'normal' }) {
+// cell so it stays visible too. All backgrounds must be opaque (no alpha)
+// so sticky cells fully block scrolled content underneath them.
+function DataRow({ label, values, monthHeaders, labelCellFn, cellNumFn, rowBg, freeBg = '#dcfce7', color, fontWeight = 600, fontStyle = 'normal' }) {
   const total = values.reduce((s, v) => s + v, 0)
   return (
     <tr style={{ borderBottom: `1px solid ${T.borderLight}`, background: rowBg }}>
@@ -3375,7 +3388,7 @@ function DataRow({ label, values, monthHeaders, labelCellFn, cellNumFn, rowBg, c
         <td key={i} style={cellNumFn({
           fontWeight, fontStyle,
           color: v === 0 ? T.textMuted : color,
-          background: monthHeaders[i].isFreeMonth ? (T.successLight || '#dcfce7') : rowBg,
+          background: monthHeaders[i].isFreeMonth ? freeBg : rowBg,
         })}>
           {v === 0 ? '—' : dollars(v)}
         </td>
