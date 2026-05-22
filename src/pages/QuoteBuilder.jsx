@@ -2868,9 +2868,12 @@ function TcoMonthlyTab({ quote, contractTerms, schedule }) {
   const freeMonths = Number(quote.free_months) || 0
   const placement = quote.free_months_placement || 'back'
 
-  // Anchor the calendar to the contract start date. Falls back to today if
-  // not set, so the AE can still preview cadence on a draft quote.
-  const startDate = quote.contract_start_date ? new Date(quote.contract_start_date + 'T00:00:00') : new Date()
+  // Anchor the calendar to 30 days after the contract start date — Net-30
+  // billing means a May 29 contract is paid in June, so M1 should be June
+  // not May. Falls back to today if no contract_start_date is set.
+  const contractStart = quote.contract_start_date ? new Date(quote.contract_start_date + 'T00:00:00') : new Date()
+  const startDate = new Date(contractStart)
+  startDate.setDate(startDate.getDate() + 30)
 
   // Free-month placement semantics match the rest of the app:
   // - 'front'  → first N months are deferred (subscription starts at M(N+1))
@@ -2999,12 +3002,15 @@ function TcoMonthlyTab({ quote, contractTerms, schedule }) {
     }
   })
 
-  // Amortized Total — amortized subscription + impl spread evenly across
-  // the whole contract. Treating impl as smoothed across the term gives
-  // procurement the "effective monthly TCO" number they ask for.
+  // Amortized Implementation — impl is a one-time cost, but the customer
+  // gets to spread the value across the entire contract term (every month
+  // they're using the system, including free months). Per the rep: total
+  // impl / total months in the contract term, applied uniformly. For
+  // Chaberton's 3-year + 5 free contract = 41 months, that's $40K / 41 ≈
+  // $976/month across every month.
   const totalImpl = implPayment.reduce((s, v) => s + v, 0)
   const implPerMonth = totalMonths > 0 ? totalImpl / totalMonths : 0
-  const amortizedTotal = amortizedSub.map(v => v + implPerMonth)
+  const amortizedImpl = new Array(totalMonths).fill(implPerMonth)
 
   // Cumulative = running sum of (subscription + implementation cash) — what
   // the customer has actually paid by each month.
@@ -3102,7 +3108,7 @@ function TcoMonthlyTab({ quote, contractTerms, schedule }) {
                   borderBottom: `1px solid ${T.border}`,
                   position: 'sticky', right: 0, background: T.surfaceAlt, zIndex: 3,
                   boxShadow: '-2px 0 4px -2px rgba(0,0,0,0.08)',
-                }}>Total</th>
+                }}>{totalMonths}m Total</th>
               </tr>
               {/* Header row 2: calendar labels (Jul 2026, Aug 2026, ...) + FREE flag */}
               <tr style={{ background: T.surface }}>
@@ -3170,12 +3176,13 @@ function TcoMonthlyTab({ quote, contractTerms, schedule }) {
                 fontStyle="italic"
                 fontWeight={600}
               />
-              {/* Row 4: Amortized Total — amortized subscription + impl
-                  smoothed across the whole contract (total impl / months).
-                  Procurement's preferred "effective monthly TCO" view. */}
+              {/* Row 4: Amortized Implementation — total impl spread evenly
+                  across the contract term (every month including free
+                  months). Customer sees what implementation effectively
+                  costs them per month of use. */}
               <DataRow
-                label="Amortized Total"
-                values={amortizedTotal}
+                label="Amortized Implementation"
+                values={amortizedImpl}
                 monthHeaders={monthHeaders}
                 labelCellFn={labelCell}
                 cellNumFn={cellNum}
@@ -3221,17 +3228,66 @@ function TcoMonthlyTab({ quote, contractTerms, schedule }) {
 // ══════════════════════════════════════════════════════════
 function ModelsTab({ quote, deal, dealId, pains, schedule, contractTerms, partnerBlocks, partnerLines, saveQuoteHeader, onChanged, profileId }) {
   const [sub, setSub] = useState('roi')
+
+  // Each of the four data sub-tabs (everything but ROI) is independently
+  // hideable from the customer. State lives on quote.deal_room_display_config
+  // .sections.<key>, default true, matching the top-level Project Plan /
+  // Library / Quotes eye toggles. ROI has no eye because it's AE-only and
+  // not surfaced to customers regardless.
+  const schedVisible        = drGet(quote, 'sections.tab_payment_schedule', true)
+  const tcoModelsVisible    = drGet(quote, 'sections.tab_tco_models', true)
+  const tcoDetailVisible    = drGet(quote, 'sections.tab_tco_detail', true)
+  const tcoMonthlyVisible   = drGet(quote, 'sections.tab_tco_monthly', true)
+  async function toggleSubTab(key, current) {
+    await saveQuoteHeader(drSetPatch(quote, `sections.${key}`, !current))
+  }
+
   const subTabs = [
     { key: 'roi', label: 'ROI' },
-    { key: 'schedule', label: `Payment Schedule${schedule.length ? ` (${schedule.length})` : ''}` },
-    { key: 'tco_models', label: 'TCO Models' },
-    { key: 'tco', label: 'TCO Detail' },
-    { key: 'tco_monthly', label: 'TCO Monthly' },
+    { key: 'schedule',    label: `Payment Schedule${schedule.length ? ` (${schedule.length})` : ''}`, eyeKey: 'tab_payment_schedule', visible: schedVisible,      hideLabel: 'the Payment Schedule from the customer' },
+    { key: 'tco_models',  label: 'TCO Models',  eyeKey: 'tab_tco_models',  visible: tcoModelsVisible,  hideLabel: 'TCO Models from the customer' },
+    { key: 'tco',         label: 'TCO Detail',  eyeKey: 'tab_tco_detail',  visible: tcoDetailVisible,  hideLabel: 'TCO Detail from the customer' },
+    { key: 'tco_monthly', label: 'TCO Monthly', eyeKey: 'tab_tco_monthly', visible: tcoMonthlyVisible, hideLabel: 'the Monthly TCO from the customer' },
   ]
+
   return (
     <div>
-      <div style={{ marginBottom: 14 }}>
-        <TabBar tabs={subTabs} active={sub} onChange={setSub} />
+      {/* Custom sub-tab bar with inline eye icons. We don't use the shared
+          TabBar here because eye clicks need to NOT switch tabs — toggling
+          visibility shouldn't yank the AE into a different sub-tab. */}
+      <div style={{ display: 'flex', gap: 0, borderBottom: `1px solid ${T.border}`, marginBottom: 14 }}>
+        {subTabs.map(t => {
+          const isActive = sub === t.key
+          return (
+            <div key={t.key} style={{ display: 'inline-flex', alignItems: 'center' }}>
+              <button onClick={() => setSub(t.key)}
+                style={{
+                  padding: '10px 14px 10px 18px', fontSize: 12, fontWeight: 600,
+                  border: 'none', cursor: 'pointer', fontFamily: T.font,
+                  background: 'transparent',
+                  color: isActive ? T.primary : T.textMuted,
+                  borderBottom: isActive ? `2px solid ${T.primary}` : '2px solid transparent',
+                  transition: 'all 0.15s',
+                }}>
+                {t.label}
+              </button>
+              {t.eyeKey && (
+                <span style={{
+                  paddingRight: 14, paddingBottom: isActive ? 8 : 10,
+                  borderBottom: isActive ? `2px solid ${T.primary}` : '2px solid transparent',
+                }}>
+                  <VisibilityToggleIcon
+                    visible={t.visible}
+                    onChange={() => toggleSubTab(t.eyeKey, t.visible)}
+                    label={t.hideLabel}
+                    size={13}
+                    inline
+                  />
+                </span>
+              )}
+            </div>
+          )
+        })}
       </div>
       {sub === 'roi' && <RoiTab quote={quote} pains={pains} />}
       {sub === 'schedule' && <ScheduleTab quote={quote} schedule={schedule} saveQuoteHeader={saveQuoteHeader} onChanged={onChanged} profileId={profileId} />}
