@@ -2844,11 +2844,11 @@ function Metric({ label, value, positive }) {
 }
 
 // ──────────────────────────────────────────────────────────
-// TCO MONTHLY — cash-flow view of the same payment_schedule that drives
-// "Payment Schedule", but projected onto a month-by-month calendar so the
-// customer can see WHEN invoices hit, WHAT they cover, and WHERE the free
-// months sit. Empty months render explicitly ("no invoice this month") so
-// the cadence is obvious — one big annual payment then a quiet stretch.
+// TCO MONTHLY — months across the top, categories down the side. Same
+// shape as TCO Detail (years across) but at month granularity, so the
+// customer sees the actual cash cadence: which months invoice, what
+// they cover, where the free months sit. Sticky left column keeps the
+// row labels in view as the user scrolls across 36+ month-columns.
 // ──────────────────────────────────────────────────────────
 function TcoMonthlyTab({ quote, contractTerms, schedule }) {
   const term = contractTerms.find(ct => ct.id === quote.contract_term_id)
@@ -2872,64 +2872,111 @@ function TcoMonthlyTab({ quote, contractTerms, schedule }) {
     for (let i = 13; i <= 12 + freeMonths; i++) freeMonthSet.add(i)
   }
 
-  // Group every schedule row into its calendar month relative to startDate.
-  // monthsDiff is 1-based so M1 is the first month of the contract.
-  const byMonth = new Map()
-  ;(schedule || []).forEach(s => {
-    if (!s.invoice_date) return
-    const d = new Date(s.invoice_date + (s.invoice_date.length === 10 ? 'T00:00:00' : ''))
-    const monthsDiff = (d.getFullYear() - startDate.getFullYear()) * 12 + (d.getMonth() - startDate.getMonth()) + 1
-    if (monthsDiff < 1) return  // pre-start payments don't fit a month grid; rare but possible
-    if (!byMonth.has(monthsDiff)) byMonth.set(monthsDiff, [])
-    byMonth.get(monthsDiff).push(s)
-  })
-
-  // Build rows for every month in the contract window, even empty ones —
-  // the empty months are the whole point of this view (cadence visibility).
-  const rows = []
-  let cumulative = 0
-  for (let m = 1; m <= totalMonths; m++) {
-    const d = new Date(startDate)
-    d.setMonth(d.getMonth() + m - 1)
-    const items = byMonth.get(m) || []
-    const monthTotal = items.reduce((s, i) => s + (Number(i.amount) || 0), 0)
-    cumulative += monthTotal
-    rows.push({ m, date: d, items, monthTotal, cumulative, isFreeMonth: freeMonthSet.has(m) })
-  }
-
-  // Stash any post-window payments at the end (defensive — schedule rows
-  // beyond the contract window shouldn't exist but if they do we don't want
-  // to silently drop them from the cumulative math).
-  ;(schedule || []).forEach(s => {
-    if (!s.invoice_date) return
-    const d = new Date(s.invoice_date + (s.invoice_date.length === 10 ? 'T00:00:00' : ''))
-    const monthsDiff = (d.getFullYear() - startDate.getFullYear()) * 12 + (d.getMonth() - startDate.getMonth()) + 1
-    if (monthsDiff > totalMonths) {
-      const last = rows[rows.length - 1]
-      if (last) {
-        last.items.push({ ...s, _afterTerm: true })
-        last.monthTotal += Number(s.amount) || 0
-        cumulative += Number(s.amount) || 0
-        last.cumulative = cumulative
-      }
-    }
-  })
-
-  const grandTotal = rows.reduce((s, r) => s + r.monthTotal, 0)
-  const monthsWithPayment = rows.filter(r => r.monthTotal !== 0).length
-
   if (!schedule || schedule.length === 0) {
     return <EmptyState title="No payment schedule yet" message="The monthly TCO view projects the Payment Schedule rows onto a calendar. Generate the schedule first (or add subscription / implementation rows) and this view will populate automatically." />
   }
+
+  // Categorize each schedule row into one of five canonical rows. Anything
+  // we can't slot cleanly (custom payments, unknown types) falls into a
+  // catch-all "Other" row so it's still visible.
+  function categoryOf(s) {
+    const src = s.source === 'partner' ? 'partner' : 'sage'
+    const pt = s.payment_type || ''
+    if (pt === 'signing_bonus') return 'signing_bonus'
+    if (pt === 'subscription') return src === 'partner' ? 'partner_sub' : 'sage_sub'
+    if (pt === 'implementation') return src === 'partner' ? 'partner_impl' : 'sage_impl'
+    return 'other'
+  }
+
+  // monthFor returns 1-based month index relative to startDate. Out-of-window
+  // payments (pre-start or post-term) collapse into the last column so they
+  // don't disappear silently from the math.
+  function monthFor(s) {
+    if (!s.invoice_date) return null
+    const d = new Date(s.invoice_date + (s.invoice_date.length === 10 ? 'T00:00:00' : ''))
+    const diff = (d.getFullYear() - startDate.getFullYear()) * 12 + (d.getMonth() - startDate.getMonth()) + 1
+    if (diff < 1) return 1
+    if (diff > totalMonths) return totalMonths
+    return diff
+  }
+
+  // Build a matrix: category → array of monthly amounts (length totalMonths)
+  const categories = ['sage_sub', 'sage_impl', 'signing_bonus', 'partner_sub', 'partner_impl', 'other']
+  const labelFor = {
+    sage_sub:       'Sage Subscription',
+    sage_impl:      'Sage Implementation',
+    signing_bonus:  'Signing Bonus',
+    partner_sub:    'Partner Subscription',
+    partner_impl:   'Partner Implementation',
+    other:          'Other',
+  }
+  const colorFor = {
+    sage_sub:       T.text,
+    sage_impl:      '#2563eb',
+    signing_bonus:  T.error,
+    partner_sub:    '#5A3FBC',
+    partner_impl:   '#7c3aed',
+    other:          T.textMuted,
+  }
+  const matrix = {}
+  categories.forEach(c => { matrix[c] = new Array(totalMonths).fill(0) })
+  ;(schedule || []).forEach(s => {
+    const m = monthFor(s)
+    if (m == null) return
+    const cat = categoryOf(s)
+    // Signing-bonus credits should always render as a negative deduction.
+    const amount = cat === 'signing_bonus' ? -Math.abs(Number(s.amount) || 0) : (Number(s.amount) || 0)
+    matrix[cat][m - 1] += amount
+  })
+
+  // Drop empty category rows so the table doesn't render five blank lines
+  // when only Sage subscription is on the quote.
+  const activeCategories = categories.filter(c => matrix[c].some(v => v !== 0))
+
+  const monthTotals = new Array(totalMonths).fill(0)
+  const cumulative = new Array(totalMonths).fill(0)
+  for (let m = 0; m < totalMonths; m++) {
+    let s = 0
+    activeCategories.forEach(c => { s += matrix[c][m] })
+    monthTotals[m] = s
+    cumulative[m] = (cumulative[m - 1] || 0) + s
+  }
+  const grandTotal = cumulative[totalMonths - 1] || 0
+  const monthsWithPayment = monthTotals.filter(v => v !== 0).length
+
+  // Column metadata — calendar label + free-month flag — drives the header row.
+  const monthHeaders = []
+  for (let m = 1; m <= totalMonths; m++) {
+    const d = new Date(startDate)
+    d.setMonth(d.getMonth() + m - 1)
+    monthHeaders.push({
+      m,
+      short: d.toLocaleDateString('en-US', { month: 'short' }),
+      year: d.getFullYear(),
+      isFreeMonth: freeMonthSet.has(m),
+    })
+  }
+
+  // Sticky-left column treatment — keeps row labels visible while the rest
+  // of the matrix scrolls horizontally.
+  const labelCell = (extra = {}) => ({
+    padding: '8px 12px', textAlign: 'left', whiteSpace: 'nowrap',
+    position: 'sticky', left: 0, zIndex: 2, background: T.surface,
+    borderRight: `1px solid ${T.border}`, ...extra,
+  })
+  const cellNum = (extra = {}) => ({
+    padding: '8px 10px', textAlign: 'right', fontFeatureSettings: '"tnum"',
+    whiteSpace: 'nowrap', borderRight: `1px solid ${T.borderLight}`, ...extra,
+  })
 
   return (
     <div>
       <Card title={`Monthly TCO — ${totalMonths}-month payment cadence`}>
         <div style={{ fontSize: 11, color: T.textSecondary, marginBottom: 10, lineHeight: 1.5 }}>
-          Calendar view of the same Payment Schedule rows you see on the previous tab. Shows the exact month each invoice fires, what it covers, and where the {freeMonths > 0 ? `${freeMonths} free month${freeMonths === 1 ? '' : 's'} sit${freeMonths === 1 ? 's' : ''}` : 'free months would sit'}. Empty rows are months with no invoice — useful for showing the customer how quiet the cadence really is between annual prepayments.
+          Same shape as the yearly TCO Detail, but at month granularity. Columns are months — labelled <strong>M1, M2, …</strong> with the calendar month under each. {freeMonths > 0 ? <>The {freeMonths} free month{freeMonths === 1 ? '' : 's'} (placed {placement}) {freeMonths === 1 ? 'is' : 'are'} highlighted in green.</> : 'Free months would highlight in green if the quote had any.'} Scroll right to walk through the contract.
         </div>
 
-        {/* Mini-summary cards on top */}
+        {/* Mini-summary cards */}
         <div style={{ marginBottom: 14, display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
           <Metric label="Contract length" value={`${totalMonths} months`} />
           <Metric label="Months with payment" value={`${monthsWithPayment}`} />
@@ -2937,91 +2984,126 @@ function TcoMonthlyTab({ quote, contractTerms, schedule }) {
           <Metric label="Total cash" value={dollars(grandTotal)} positive />
         </div>
 
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-          <thead>
-            <tr style={{ borderBottom: `2px solid ${T.primary}` }}>
-              <th style={{ ...thStyle, width: 60 }}>Month</th>
-              <th style={{ ...thStyle, width: 110 }}>Calendar</th>
-              <th style={thStyle}>What's invoiced</th>
-              <th style={{ ...thStyle, textAlign: 'right', width: 120 }}>Amount</th>
-              <th style={{ ...thStyle, textAlign: 'right', width: 130 }}>Cumulative</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(r => {
-              const calendar = r.date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
-              const empty = r.items.length === 0 && !r.isFreeMonth
-              const free = r.isFreeMonth
-              return (
-                <tr key={r.m} style={{
-                  borderBottom: `1px solid ${T.borderLight}`,
-                  background: free ? T.successLight || '#e7f7ed' : empty ? T.surface : 'transparent',
+        <div style={{ overflowX: 'auto', border: `1px solid ${T.border}`, borderRadius: 6 }}>
+          <table style={{ borderCollapse: 'collapse', fontSize: 12, minWidth: '100%' }}>
+            <thead>
+              {/* Header row 1: M1, M2, ... (+ Total) */}
+              <tr style={{ background: T.surfaceAlt }}>
+                <th style={{ ...labelCell({ borderBottom: `1px solid ${T.border}`, fontSize: 10, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em' }) }}>
+                  Month
+                </th>
+                {monthHeaders.map(h => (
+                  <th key={h.m} style={{
+                    padding: '6px 10px', textAlign: 'right',
+                    fontSize: 10, fontWeight: 700, color: h.isFreeMonth ? T.success : T.textMuted,
+                    textTransform: 'uppercase', letterSpacing: '0.04em',
+                    background: h.isFreeMonth ? (T.successLight || '#dcfce7') : 'transparent',
+                    borderBottom: `1px solid ${T.border}`,
+                    borderRight: `1px solid ${T.borderLight}`,
+                  }}>
+                    M{h.m}
+                  </th>
+                ))}
+                <th style={{
+                  padding: '6px 12px', textAlign: 'right',
+                  fontSize: 10, fontWeight: 700, color: T.text,
+                  textTransform: 'uppercase', letterSpacing: '0.04em',
+                  borderBottom: `1px solid ${T.border}`,
+                  position: 'sticky', right: 0, background: T.surfaceAlt,
+                }}>Total</th>
+              </tr>
+              {/* Header row 2: calendar labels (Jul 2026, Aug 2026, ...) + FREE flag */}
+              <tr style={{ background: T.surface }}>
+                <th style={labelCell({ borderBottom: `2px solid ${T.primary}`, fontSize: 10, color: T.textMuted })} />
+                {monthHeaders.map(h => (
+                  <th key={h.m} style={{
+                    padding: '4px 8px', textAlign: 'right',
+                    fontSize: 9, fontWeight: 600,
+                    color: h.isFreeMonth ? T.success : T.textSecondary,
+                    background: h.isFreeMonth ? (T.successLight || '#dcfce7') : 'transparent',
+                    borderBottom: `2px solid ${T.primary}`,
+                    borderRight: `1px solid ${T.borderLight}`,
+                  }}>
+                    {h.short}{(h.m === 1 || h.short === 'Jan') && <><br/><span style={{ fontSize: 8 }}>{h.year}</span></>}
+                    {h.isFreeMonth && <div style={{ fontSize: 8, fontWeight: 800, color: T.success }}>FREE</div>}
+                  </th>
+                ))}
+                <th style={{
+                  padding: '4px 12px', borderBottom: `2px solid ${T.primary}`,
+                  position: 'sticky', right: 0, background: T.surface,
+                }} />
+              </tr>
+            </thead>
+            <tbody>
+              {activeCategories.map(cat => {
+                const rowTotal = matrix[cat].reduce((s, v) => s + v, 0)
+                return (
+                  <tr key={cat} style={{ borderBottom: `1px solid ${T.borderLight}` }}>
+                    <td style={labelCell({ fontSize: 12, fontWeight: 700, color: colorFor[cat] })}>
+                      {labelFor[cat]}
+                    </td>
+                    {matrix[cat].map((v, i) => (
+                      <td key={i} style={cellNum({
+                        color: v === 0 ? T.textMuted : colorFor[cat],
+                        background: monthHeaders[i].isFreeMonth ? (T.successLight || '#dcfce7') : 'transparent',
+                      })}>
+                        {v === 0 ? '—' : dollars(v)}
+                      </td>
+                    ))}
+                    <td style={{
+                      ...cellNum({ fontWeight: 700, color: colorFor[cat], background: T.surfaceAlt }),
+                      position: 'sticky', right: 0,
+                    }}>
+                      {dollars(rowTotal)}
+                    </td>
+                  </tr>
+                )
+              })}
+              {/* Monthly Total row */}
+              <tr style={{ borderTop: `2px solid ${T.border}`, background: T.surfaceAlt }}>
+                <td style={labelCell({ fontWeight: 800, fontSize: 12, background: T.surfaceAlt })}>
+                  Monthly Total
+                </td>
+                {monthTotals.map((v, i) => (
+                  <td key={i} style={cellNum({
+                    fontWeight: 700,
+                    background: monthHeaders[i].isFreeMonth ? (T.successLight || '#dcfce7') : T.surfaceAlt,
+                    color: v === 0 ? T.textMuted : T.text,
+                  })}>
+                    {v === 0 ? '—' : dollars(v)}
+                  </td>
+                ))}
+                <td style={{
+                  ...cellNum({ fontWeight: 800, background: T.surfaceAlt }),
+                  position: 'sticky', right: 0,
                 }}>
-                  <td style={{ padding: '6px 10px', fontWeight: 700, color: free ? T.success : empty ? T.textMuted : T.text }}>
-                    M{r.m}
+                  {dollars(grandTotal)}
+                </td>
+              </tr>
+              {/* Cumulative row */}
+              <tr style={{ background: T.primaryLight }}>
+                <td style={labelCell({ fontWeight: 800, fontSize: 12, color: T.primary, background: T.primaryLight })}>
+                  Cumulative
+                </td>
+                {cumulative.map((v, i) => (
+                  <td key={i} style={cellNum({
+                    fontWeight: 700, color: T.primary,
+                    background: monthHeaders[i].isFreeMonth ? '#bef0c8' : T.primaryLight,
+                  })}>
+                    {dollars(v)}
                   </td>
-                  <td style={{ padding: '6px 10px', color: free ? T.success : empty ? T.textMuted : T.text, fontWeight: free ? 700 : 500 }}>
-                    {calendar}
-                  </td>
-                  <td style={{ padding: '6px 10px', color: T.text }}>
-                    {free && r.items.length === 0 ? (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                        <Badge color={T.success}>FREE MONTH</Badge>
-                        <span style={{ color: T.textSecondary, fontSize: 11 }}>No subscription charge</span>
-                      </span>
-                    ) : free && r.items.length > 0 ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                        <Badge color={T.success}>FREE MONTH</Badge>
-                        {r.items.map((it, i) => <ScheduleItemLine key={i} item={it} />)}
-                      </div>
-                    ) : r.items.length === 0 ? (
-                      <span style={{ color: T.textMuted, fontStyle: 'italic', fontSize: 11 }}>No invoice this month</span>
-                    ) : (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                        {r.items.map((it, i) => <ScheduleItemLine key={i} item={it} />)}
-                      </div>
-                    )}
-                  </td>
-                  <td style={{ padding: '6px 10px', textAlign: 'right', fontFeatureSettings: '"tnum"', color: r.monthTotal === 0 ? T.textMuted : T.text, fontWeight: r.monthTotal > 0 ? 700 : 400 }}>
-                    {r.monthTotal === 0 ? '—' : dollars(r.monthTotal)}
-                  </td>
-                  <td style={{ padding: '6px 10px', textAlign: 'right', fontFeatureSettings: '"tnum"', fontWeight: 600, color: T.primary }}>
-                    {dollars(r.cumulative)}
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-          <tfoot>
-            <tr style={{ borderTop: `2px solid ${T.primary}`, background: T.primaryLight }}>
-              <td colSpan={3} style={{ padding: '10px', fontWeight: 800, fontSize: 13 }}>Total Cost of Ownership ({totalMonths} months)</td>
-              <td style={{ padding: '10px', textAlign: 'right', fontWeight: 800, fontSize: 14, color: T.primary, fontFeatureSettings: '"tnum"' }}>{dollars(grandTotal)}</td>
-              <td style={{ padding: '10px', textAlign: 'right', fontWeight: 800, fontSize: 14, color: T.primary, fontFeatureSettings: '"tnum"' }}>{dollars(grandTotal)}</td>
-            </tr>
-          </tfoot>
-        </table>
+                ))}
+                <td style={{
+                  ...cellNum({ fontWeight: 800, color: T.primary, background: T.primaryLight }),
+                  position: 'sticky', right: 0,
+                }}>
+                  {dollars(grandTotal)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </Card>
-    </div>
-  )
-}
-
-// Single payment-schedule row formatted for the monthly TCO. Shows the
-// description (or a fallback derived from payment_type) plus a small
-// colored chip identifying the source (Sage vs partner) and the type
-// (annual subscription, implementation milestone, signing bonus, etc.).
-function ScheduleItemLine({ item }) {
-  const sourceColor = item.source === 'partner' ? '#5A3FBC' : T.primary
-  const sourceLabel = item.source === 'partner' ? (item.implementor_name || 'Partner') : 'Sage'
-  const desc = item.description
-    || (item.payment_type === 'subscription' ? 'Subscription'
-      : item.payment_type === 'implementation' ? 'Implementation milestone'
-      : item.payment_type === 'signing_bonus' ? 'Signing bonus credit'
-      : item.payment_type === 'custom' ? 'Custom payment'
-      : 'Invoice')
-  return (
-    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-      <Badge color={sourceColor}>{sourceLabel}</Badge>
-      <span style={{ fontSize: 12, color: T.text }}>{desc}</span>
     </div>
   )
 }
