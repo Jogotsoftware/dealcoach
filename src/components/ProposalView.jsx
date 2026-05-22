@@ -1075,6 +1075,15 @@ function PaymentScheduleSubTab({ snapshot }) {
   // an estimate, not a fixed invoice date. Surface that to the customer.
   const isEstimated = (pt) => pt === 'implementation_arrears' || pt === 'implementation_milestone'
 
+  // Net-30 due date helper — every invoice is due 30 days after it fires.
+  // Free-month rows have no invoice, so no due date.
+  function dueDate(invoiceDate) {
+    if (!invoiceDate) return ''
+    const d = new Date(invoiceDate + 'T00:00:00')
+    d.setDate(d.getDate() + 30)
+    return fmtDateShort(d.toISOString().slice(0, 10))
+  }
+
   // Color scheme by payment_type
   const styleFor = (pt) => {
     if (pt === 'subscription_year' || pt === 'subscription_quarter') {
@@ -1101,7 +1110,8 @@ function PaymentScheduleSubTab({ snapshot }) {
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
         <thead>
           <tr>
-            <th style={{ padding: '10px 14px', fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', textAlign: 'left', borderBottom: `1px solid ${T.border}`, width: 160 }}>Date</th>
+            <th style={{ padding: '10px 14px', fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', textAlign: 'left', borderBottom: `1px solid ${T.border}`, width: 140 }}>Invoice Date</th>
+            <th style={{ padding: '10px 14px', fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', textAlign: 'left', borderBottom: `1px solid ${T.border}`, width: 140 }}>Due Date (Net 30)</th>
             <th style={{ padding: '10px 14px', fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', textAlign: 'left', borderBottom: `1px solid ${T.border}` }}>Description</th>
             <th style={{ padding: '10px 14px', fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', textAlign: 'right', borderBottom: `1px solid ${T.border}`, width: 140 }}>Amount</th>
           </tr>
@@ -1122,6 +1132,9 @@ function PaymentScheduleSubTab({ snapshot }) {
                       </span>
                     )}
                   </div>
+                </td>
+                <td style={{ padding: '12px 14px', color: isFree ? T.textMuted : T.text }}>
+                  {isFree ? <span style={{ fontStyle: 'italic', fontSize: 11 }}>—</span> : <span style={{ fontWeight: 600 }}>{dueDate(r.invoice_date)}</span>}
                 </td>
                 <td style={{ padding: '12px 14px', color: T.text }}>{cleanDesc(r.description)}</td>
                 <td style={{ padding: '12px 14px', textAlign: 'right', fontFeatureSettings: '"tnum"', fontWeight: 700, color: s.amountColor }}>

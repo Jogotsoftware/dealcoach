@@ -297,11 +297,28 @@ export default function QuoteBuilder({
   async function recomputeTotals() { try { await supabase.rpc('recompute_quote_totals', { p_quote_id: quoteId }) } catch (e) { console.error('recompute_quote_totals:', e) } }
   async function regenSchedule() { try { await supabase.rpc('generate_payment_schedule', { p_quote_id: quoteId }) } catch (e) { console.error('generate_payment_schedule:', e) } }
 
+  // Header fields that influence the payment schedule. When any of these
+  // change we re-run generate_payment_schedule + reload so the Payment
+  // Schedule and TCO Monthly tabs reflect the new cadence immediately.
+  // Other header fields (name, notes, signer_contact_id, display_config
+  // toggles, etc.) are scheduling no-ops and skip the regen.
+  const SCHEDULE_FIELDS = new Set([
+    'contract_start_date', 'free_months', 'free_months_placement',
+    'signing_bonus_amount', 'signing_bonus_months',
+    'billing_cadence', 'contract_term_id',
+    'global_discount_pct',
+  ])
   async function saveQuoteHeader(patch) {
     try {
       const { error: e } = await supabase.from('quotes').update(patch).eq('id', quoteId)
       if (e) throw e
       setQuote(prev => ({ ...prev, ...patch }))
+      const touchesSchedule = Object.keys(patch || {}).some(k => SCHEDULE_FIELDS.has(k))
+      if (touchesSchedule) {
+        await recomputeTotals()
+        await regenSchedule()
+        await reload()
+      }
     } catch (e) {
       console.error('saveQuoteHeader failed:', e, patch)
       setError(e?.message || 'Save failed')
@@ -3515,6 +3532,7 @@ function ScheduleTab({ quote, schedule, saveQuoteHeader, onChanged, profileId })
             <thead>
               <tr style={{ borderBottom: `1px solid ${T.border}` }}>
                 <th style={thStyle}>Invoice Date</th>
+                <th style={thStyle} title="Net-30: 30 days after the invoice date">Due Date</th>
                 <th style={thStyle}>Source</th>
                 <th style={thStyle}>Implementor</th>
                 <th style={thStyle}>Type</th>
@@ -3529,12 +3547,24 @@ function ScheduleTab({ quote, schedule, saveQuoteHeader, onChanged, profileId })
             <tbody>
               {sortedSchedule.map(r => {
                 const typeColor = PAYMENT_TYPE_COLORS[r.payment_type] || T.textMuted
+                // Net-30 due date — read-only display derived from invoice_date.
+                // Free-month rows show "—" since they don't generate an invoice.
+                const isFree = r.payment_type === 'free_month'
+                let dueDateStr = ''
+                if (r.invoice_date && !isFree) {
+                  const d = new Date(r.invoice_date + 'T00:00:00')
+                  d.setDate(d.getDate() + 30)
+                  dueDateStr = d.toISOString().slice(0, 10)
+                }
                 return (
                   <tr key={r.id} style={{ borderBottom: `1px solid ${T.borderLight}`, background: r.manually_edited ? T.warningLight : 'transparent', borderLeft: `4px solid ${typeColor}` }}>
                     <td style={{ padding: '4px 6px' }}>
                       <input type="date" defaultValue={r.invoice_date}
                         onBlur={e => { if (e.target.value !== r.invoice_date) updateRow(r.id, { invoice_date: e.target.value, manually_edited: true }) }}
                         style={{ ...inputStyle, fontSize: 12, padding: '4px 6px' }} />
+                    </td>
+                    <td style={{ padding: '6px 8px', fontSize: 11, color: isFree ? T.textMuted : T.textSecondary, fontFeatureSettings: '"tnum"' }}>
+                      {isFree ? '—' : dueDateStr}
                     </td>
                     <td style={{ padding: '6px 10px' }}>
                       <Badge color={r.source === 'sage' ? T.primary : T.sageGreen}>{r.source}</Badge>
