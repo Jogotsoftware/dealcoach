@@ -2916,36 +2916,24 @@ function TcoMonthlyTab({ quote, contractTerms, schedule }) {
     return diff
   }
 
-  // Build a matrix: category → array of monthly amounts (length totalMonths)
-  const categories = ['sage_sub', 'sage_impl', 'signing_bonus', 'partner_sub', 'partner_impl', 'surcharge', 'other']
-  const labelFor = {
-    sage_sub:       'Sage Subscription',
-    sage_impl:      'Sage Implementation',
-    signing_bonus:  'Signing Bonus',
-    partner_sub:    'Partner Subscription',
-    partner_impl:   'Partner Implementation',
-    surcharge:      'Surcharge / Fee',
-    other:          'Other',
-  }
-  const colorFor = {
-    sage_sub:       T.text,
-    sage_impl:      '#2563eb',
-    signing_bonus:  T.error,
-    partner_sub:    '#5A3FBC',
-    partner_impl:   '#7c3aed',
-    surcharge:      '#dc6b2f',
-    other:          T.textMuted,
-  }
-  const matrix = {}
-  categories.forEach(c => { matrix[c] = new Array(totalMonths).fill(0) })
+  // Two combined rows per the rep spec: "Subscription Payment" rolls up
+  // sage + partner subscription + signing bonus + surcharge + other.
+  // "Implementation Payment" rolls up sage + partner impl. Granular
+  // categories are still computed under the hood so the amortized rows
+  // can use subscription-only totals.
+  const subPayment = new Array(totalMonths).fill(0)
+  const implPayment = new Array(totalMonths).fill(0)
   ;(schedule || []).forEach(s => {
     const m = monthFor(s)
     if (m == null) return
     const cat = categoryOf(s)
     if (!cat) return  // free_month / unrecognized → skip
-    // Signing-bonus credits should always render as a negative deduction.
     const amount = cat === 'signing_bonus' ? -Math.abs(Number(s.amount) || 0) : (Number(s.amount) || 0)
-    matrix[cat][m - 1] += amount
+    if (cat === 'sage_impl' || cat === 'partner_impl') {
+      implPayment[m - 1] += amount
+    } else {
+      subPayment[m - 1] += amount
+    }
   })
 
   // Implementation items live in quote_implementation_items, not schedule.
@@ -2970,63 +2958,63 @@ function TcoMonthlyTab({ quote, contractTerms, schedule }) {
     const weeksTL = Number(item.duration_to_live_weeks) || 0
     const completionM = monthFromDate(item.estimated_completion_date)
       || (weeksTL > 0 ? Math.min(totalMonths, startM + Math.max(1, Math.round(weeksTL / 4))) : null)
-    const cat = item.source === 'partner' ? 'partner_impl' : 'sage_impl'
     const bt = item.billing_type || 'one_time'
 
     if (bt === 'fixed_bid_50_50') {
       const endM = completionM || Math.min(totalMonths, startM + 3)
-      matrix[cat][startM - 1] += total * 0.5
-      matrix[cat][endM - 1] += total * 0.5
+      implPayment[startM - 1] += total * 0.5
+      implPayment[endM - 1] += total * 0.5
     } else if (bt === 'tm_monthly') {
-      // tm_weeks is the canonical duration; fallback to 6 months when not set.
       const months = item.tm_weeks ? Math.max(1, Math.round(Number(item.tm_weeks) / 4)) : 6
       const per = total / months
       for (let i = 0; i < months; i++) {
         const idx = startM - 1 + i
-        if (idx >= 0 && idx < totalMonths) matrix[cat][idx] += per
+        if (idx >= 0 && idx < totalMonths) implPayment[idx] += per
       }
     } else {
-      // one_time / milestone / unknown → lump sum at start month
-      matrix[cat][startM - 1] += total
+      implPayment[startM - 1] += total
     }
   })
 
-  // Drop empty category rows so the table doesn't render blank lines.
-  const activeCategories = categories.filter(c => matrix[c].some(v => v !== 0))
-
-  // Amortized monthly cost — projects each annual subscription invoice's
-  // amount evenly across the 12 months it covers (paid period only). Free
-  // months render as $0 amortized, so it's obvious that free months drop
-  // the effective monthly burn rate.
-  const amortized = new Array(totalMonths).fill(0)
-  ;(schedule || []).forEach(s => {
-    if (s.payment_type !== 'subscription_year' && s.payment_type !== 'partner_subscription_year' && s.payment_type !== 'subscription') return
-    const m = monthFor(s)
-    if (m == null) return
-    const annual = Number(s.amount) || 0
-    // Spread across the next 12 paid months, skipping any free-month
-    // positions so the amortization reflects only billable months.
-    let spread = 0
-    let cursor = m
-    while (spread < 12 && cursor <= totalMonths) {
-      if (!freeMonthSet.has(cursor)) {
-        amortized[cursor - 1] += annual / 12
-        spread += 1
-      }
-      cursor += 1
+  // Amortized Subscription — each subscription invoice spread across the
+  // months it covers, INCLUDING free months. So a $20,846 Y1 invoice that
+  // covers 12 paid + 5 free months amortizes to $20,846/17 = $1,226 across
+  // M1–M17 (free months get the same amortized rate as paid months — that's
+  // what the rep wants to show: customer still consumes service in the free
+  // months, just at no extra cash cost). Coverage window = this invoice's
+  // month → just before the next subscription invoice (or end of term).
+  const amortizedSub = new Array(totalMonths).fill(0)
+  const subscriptionMonths = (schedule || [])
+    .filter(s => s.payment_type === 'subscription_year' || s.payment_type === 'partner_subscription_year' || s.payment_type === 'subscription')
+    .map(s => ({ month: monthFor(s), amount: Number(s.amount) || 0 }))
+    .filter(s => s.month != null)
+    .sort((a, b) => a.month - b.month)
+  subscriptionMonths.forEach((sub, idx) => {
+    const next = subscriptionMonths[idx + 1]
+    const endExclusive = next ? next.month : totalMonths + 1
+    const span = Math.max(1, endExclusive - sub.month)
+    const per = sub.amount / span
+    for (let m = sub.month; m < endExclusive && m <= totalMonths; m++) {
+      amortizedSub[m - 1] += per
     }
   })
 
-  const monthTotals = new Array(totalMonths).fill(0)
+  // Amortized Total — amortized subscription + impl spread evenly across
+  // the whole contract. Treating impl as smoothed across the term gives
+  // procurement the "effective monthly TCO" number they ask for.
+  const totalImpl = implPayment.reduce((s, v) => s + v, 0)
+  const implPerMonth = totalMonths > 0 ? totalImpl / totalMonths : 0
+  const amortizedTotal = amortizedSub.map(v => v + implPerMonth)
+
+  // Cumulative = running sum of (subscription + implementation cash) — what
+  // the customer has actually paid by each month.
   const cumulative = new Array(totalMonths).fill(0)
   for (let m = 0; m < totalMonths; m++) {
-    let s = 0
-    activeCategories.forEach(c => { s += matrix[c][m] })
-    monthTotals[m] = s
-    cumulative[m] = (cumulative[m - 1] || 0) + s
+    const monthCash = subPayment[m] + implPayment[m]
+    cumulative[m] = (cumulative[m - 1] || 0) + monthCash
   }
   const grandTotal = cumulative[totalMonths - 1] || 0
-  const monthsWithPayment = monthTotals.filter(v => v !== 0).length
+  const monthsWithPayment = subPayment.map((v, i) => v + implPayment[i]).filter(v => v !== 0).length
 
   // Column metadata — calendar label + free-month flag — drives the header row.
   const monthHeaders = []
@@ -3041,12 +3029,22 @@ function TcoMonthlyTab({ quote, contractTerms, schedule }) {
     })
   }
 
-  // Sticky-left column treatment — keeps row labels visible while the rest
-  // of the matrix scrolls horizontally.
+  // Sticky-left column treatment — row labels stay locked to the left edge
+  // as the customer scrolls horizontally across the 41-month grid. Each
+  // label cell needs:
+  //   - explicit width so the column doesn't shrink/jitter
+  //   - opaque background (so scrolled cells don't bleed through)
+  //   - higher z-index than data cells (corner needs even higher)
+  //   - a hard right border + drop shadow so the freeze line is obvious
+  const LABEL_W = 210
   const labelCell = (extra = {}) => ({
     padding: '8px 12px', textAlign: 'left', whiteSpace: 'nowrap',
-    position: 'sticky', left: 0, zIndex: 2, background: T.surface,
-    borderRight: `1px solid ${T.border}`, ...extra,
+    position: 'sticky', left: 0, zIndex: 2,
+    background: T.surface,
+    minWidth: LABEL_W, maxWidth: LABEL_W, width: LABEL_W,
+    borderRight: `1px solid ${T.border}`,
+    boxShadow: '2px 0 4px -2px rgba(0,0,0,0.08)',
+    ...extra,
   })
   const cellNum = (extra = {}) => ({
     padding: '8px 10px', textAlign: 'right', fontFeatureSettings: '"tnum"',
@@ -3071,9 +3069,11 @@ function TcoMonthlyTab({ quote, contractTerms, schedule }) {
         <div style={{ overflowX: 'auto', border: `1px solid ${T.border}`, borderRadius: 6 }}>
           <table style={{ borderCollapse: 'collapse', fontSize: 12, minWidth: '100%' }}>
             <thead>
-              {/* Header row 1: M1, M2, ... (+ Total) */}
+              {/* Header row 1: M1, M2, ... (+ Total). The top-left corner
+                  ("Month") needs z-index 3 — higher than data-row labels (2)
+                  and column headers (sticky top) — to win at the corner. */}
               <tr style={{ background: T.surfaceAlt }}>
-                <th style={{ ...labelCell({ borderBottom: `1px solid ${T.border}`, fontSize: 10, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em' }) }}>
+                <th style={{ ...labelCell({ borderBottom: `1px solid ${T.border}`, fontSize: 10, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', background: T.surfaceAlt, zIndex: 3 }) }}>
                   Month
                 </th>
                 {monthHeaders.map(h => (
@@ -3081,7 +3081,7 @@ function TcoMonthlyTab({ quote, contractTerms, schedule }) {
                     padding: '6px 10px', textAlign: 'right',
                     fontSize: 10, fontWeight: 700, color: h.isFreeMonth ? T.success : T.textMuted,
                     textTransform: 'uppercase', letterSpacing: '0.04em',
-                    background: h.isFreeMonth ? (T.successLight || '#dcfce7') : 'transparent',
+                    background: h.isFreeMonth ? (T.successLight || '#dcfce7') : T.surfaceAlt,
                     borderBottom: `1px solid ${T.border}`,
                     borderRight: `1px solid ${T.borderLight}`,
                   }}>
@@ -3093,18 +3093,19 @@ function TcoMonthlyTab({ quote, contractTerms, schedule }) {
                   fontSize: 10, fontWeight: 700, color: T.text,
                   textTransform: 'uppercase', letterSpacing: '0.04em',
                   borderBottom: `1px solid ${T.border}`,
-                  position: 'sticky', right: 0, background: T.surfaceAlt,
+                  position: 'sticky', right: 0, background: T.surfaceAlt, zIndex: 3,
+                  boxShadow: '-2px 0 4px -2px rgba(0,0,0,0.08)',
                 }}>Total</th>
               </tr>
               {/* Header row 2: calendar labels (Jul 2026, Aug 2026, ...) + FREE flag */}
               <tr style={{ background: T.surface }}>
-                <th style={labelCell({ borderBottom: `2px solid ${T.primary}`, fontSize: 10, color: T.textMuted })} />
+                <th style={labelCell({ borderBottom: `2px solid ${T.primary}`, fontSize: 10, color: T.textMuted, zIndex: 3 })} />
                 {monthHeaders.map(h => (
                   <th key={h.m} style={{
                     padding: '4px 8px', textAlign: 'right',
                     fontSize: 9, fontWeight: 600,
                     color: h.isFreeMonth ? T.success : T.textSecondary,
-                    background: h.isFreeMonth ? (T.successLight || '#dcfce7') : 'transparent',
+                    background: h.isFreeMonth ? (T.successLight || '#dcfce7') : T.surface,
                     borderBottom: `2px solid ${T.primary}`,
                     borderRight: `1px solid ${T.borderLight}`,
                   }}>
@@ -3114,83 +3115,68 @@ function TcoMonthlyTab({ quote, contractTerms, schedule }) {
                 ))}
                 <th style={{
                   padding: '4px 12px', borderBottom: `2px solid ${T.primary}`,
-                  position: 'sticky', right: 0, background: T.surface,
+                  position: 'sticky', right: 0, background: T.surface, zIndex: 3,
+                  boxShadow: '-2px 0 4px -2px rgba(0,0,0,0.08)',
                 }} />
               </tr>
             </thead>
             <tbody>
-              {activeCategories.map(cat => {
-                const rowTotal = matrix[cat].reduce((s, v) => s + v, 0)
-                return (
-                  <tr key={cat} style={{ borderBottom: `1px solid ${T.borderLight}` }}>
-                    <td style={labelCell({ fontSize: 12, fontWeight: 700, color: colorFor[cat] })}>
-                      {labelFor[cat]}
-                    </td>
-                    {matrix[cat].map((v, i) => (
-                      <td key={i} style={cellNum({
-                        color: v === 0 ? T.textMuted : colorFor[cat],
-                        background: monthHeaders[i].isFreeMonth ? (T.successLight || '#dcfce7') : 'transparent',
-                      })}>
-                        {v === 0 ? '—' : dollars(v)}
-                      </td>
-                    ))}
-                    <td style={{
-                      ...cellNum({ fontWeight: 700, color: colorFor[cat], background: T.surfaceAlt }),
-                      position: 'sticky', right: 0,
-                    }}>
-                      {dollars(rowTotal)}
-                    </td>
-                  </tr>
-                )
-              })}
-              {/* Payment Made row — actual cash invoiced in each month. */}
-              <tr style={{ borderTop: `2px solid ${T.border}`, background: T.surfaceAlt }}>
-                <td style={labelCell({ fontWeight: 800, fontSize: 12, background: T.surfaceAlt })}>
-                  Payment Made
-                </td>
-                {monthTotals.map((v, i) => (
-                  <td key={i} style={cellNum({
-                    fontWeight: 700,
-                    background: monthHeaders[i].isFreeMonth ? (T.successLight || '#dcfce7') : T.surfaceAlt,
-                    color: v === 0 ? T.textMuted : T.text,
-                  })}>
-                    {v === 0 ? '—' : dollars(v)}
-                  </td>
-                ))}
-                <td style={{
-                  ...cellNum({ fontWeight: 800, background: T.surfaceAlt }),
-                  position: 'sticky', right: 0,
-                }}>
-                  {dollars(grandTotal)}
-                </td>
-              </tr>
-              {/* Amortized Monthly Cost — annual subscriptions spread evenly
-                  across the 12 paid months they cover. Free months render
-                  as $0 so the effective burn-rate drop from free months is
-                  visible at a glance. */}
-              {amortized.some(v => v !== 0) && (
-                <tr style={{ background: T.surface }}>
-                  <td style={labelCell({ fontWeight: 700, fontSize: 12, color: T.textSecondary, fontStyle: 'italic' })}>
-                    Amortized Monthly Cost
-                  </td>
-                  {amortized.map((v, i) => (
-                    <td key={i} style={cellNum({
-                      fontStyle: 'italic',
-                      color: v === 0 ? T.textMuted : T.textSecondary,
-                      background: monthHeaders[i].isFreeMonth ? (T.successLight || '#dcfce7') : 'transparent',
-                    })}>
-                      {v === 0 ? '—' : dollars(v)}
-                    </td>
-                  ))}
-                  <td style={{
-                    ...cellNum({ fontWeight: 700, fontStyle: 'italic', color: T.textSecondary, background: T.surfaceAlt }),
-                    position: 'sticky', right: 0,
-                  }}>
-                    {dollars(amortized.reduce((s, v) => s + v, 0))}
-                  </td>
-                </tr>
-              )}
-              {/* Cumulative row */}
+              {/* Row 1: Subscription Payment — actual cash invoiced for
+                  subscription each month (sage + partner + signing-bonus
+                  deduction + surcharge + other rolled in). */}
+              <DataRow
+                label="Subscription Payment"
+                values={subPayment}
+                monthHeaders={monthHeaders}
+                labelCellFn={labelCell}
+                cellNumFn={cellNum}
+                rowBg={T.surface}
+                color={T.text}
+                fontWeight={700}
+                totalLabel="Total"
+              />
+              {/* Row 2: Implementation Payment — actual cash invoiced for
+                  implementation each month (sage + partner combined). */}
+              <DataRow
+                label="Implementation Payment"
+                values={implPayment}
+                monthHeaders={monthHeaders}
+                labelCellFn={labelCell}
+                cellNumFn={cellNum}
+                rowBg={T.surface}
+                color="#2563eb"
+                fontWeight={700}
+              />
+              {/* Row 3: Amortized Subscription — each annual invoice spread
+                  evenly across the months it covers, including free months.
+                  Free months get the same amortized rate as paid months. */}
+              <DataRow
+                label="Amortized Subscription"
+                values={amortizedSub}
+                monthHeaders={monthHeaders}
+                labelCellFn={labelCell}
+                cellNumFn={cellNum}
+                rowBg={T.surfaceAlt}
+                color={T.textSecondary}
+                fontStyle="italic"
+                fontWeight={600}
+              />
+              {/* Row 4: Amortized Total — amortized subscription + impl
+                  smoothed across the whole contract (total impl / months).
+                  Procurement's preferred "effective monthly TCO" view. */}
+              <DataRow
+                label="Amortized Total"
+                values={amortizedTotal}
+                monthHeaders={monthHeaders}
+                labelCellFn={labelCell}
+                cellNumFn={cellNum}
+                rowBg={T.surfaceAlt}
+                color={T.textSecondary}
+                fontStyle="italic"
+                fontWeight={700}
+              />
+              {/* Row 5: Cumulative — running total of subscription + impl
+                  cash actually paid by the end of each month. */}
               <tr style={{ background: T.primaryLight }}>
                 <td style={labelCell({ fontWeight: 800, fontSize: 12, color: T.primary, background: T.primaryLight })}>
                   Cumulative
@@ -3205,7 +3191,7 @@ function TcoMonthlyTab({ quote, contractTerms, schedule }) {
                 ))}
                 <td style={{
                   ...cellNum({ fontWeight: 800, color: T.primary, background: T.primaryLight }),
-                  position: 'sticky', right: 0,
+                  position: 'sticky', right: 0, boxShadow: '-2px 0 4px -2px rgba(0,0,0,0.08)',
                 }}>
                   {dollars(grandTotal)}
                 </td>
@@ -3371,6 +3357,37 @@ function TcoTab({ quote, contractTerms, partnerBlocks, partnerLines, saveQuoteHe
         </div>
       </Card>
     </div>
+  )
+}
+
+// Single TCO Monthly row — repeats the same sticky-left + per-month-cell
+// pattern across all four data rows so the row-label column never drifts
+// out from under the scrolled cells. Row total renders in a sticky-right
+// cell so it stays visible too.
+function DataRow({ label, values, monthHeaders, labelCellFn, cellNumFn, rowBg, color, fontWeight = 600, fontStyle = 'normal' }) {
+  const total = values.reduce((s, v) => s + v, 0)
+  return (
+    <tr style={{ borderBottom: `1px solid ${T.borderLight}`, background: rowBg }}>
+      <td style={labelCellFn({ fontSize: 12, fontWeight, fontStyle, color, background: rowBg })}>
+        {label}
+      </td>
+      {values.map((v, i) => (
+        <td key={i} style={cellNumFn({
+          fontWeight, fontStyle,
+          color: v === 0 ? T.textMuted : color,
+          background: monthHeaders[i].isFreeMonth ? (T.successLight || '#dcfce7') : rowBg,
+        })}>
+          {v === 0 ? '—' : dollars(v)}
+        </td>
+      ))}
+      <td style={{
+        ...cellNumFn({ fontWeight: 800, fontStyle, color, background: rowBg }),
+        position: 'sticky', right: 0,
+        boxShadow: '-2px 0 4px -2px rgba(0,0,0,0.08)',
+      }}>
+        {dollars(total)}
+      </td>
+    </tr>
   )
 }
 
