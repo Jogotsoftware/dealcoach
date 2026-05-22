@@ -3204,25 +3204,29 @@ function TcoMonthlyTab({ quote, contractTerms, schedule }) {
 function ModelsTab({ quote, deal, dealId, pains, schedule, contractTerms, partnerBlocks, partnerLines, saveQuoteHeader, onChanged, profileId }) {
   const [sub, setSub] = useState('roi')
 
-  // Each of the four data sub-tabs (everything but ROI) is independently
-  // hideable from the customer. State lives on quote.deal_room_display_config
-  // .sections.<key>, default true, matching the top-level Project Plan /
-  // Library / Quotes eye toggles. ROI has no eye because it's AE-only and
-  // not surfaced to customers regardless.
-  const schedVisible        = drGet(quote, 'sections.tab_payment_schedule', true)
-  const tcoModelsVisible    = drGet(quote, 'sections.tab_tco_models', true)
-  const tcoDetailVisible    = drGet(quote, 'sections.tab_tco_detail', true)
-  const tcoMonthlyVisible   = drGet(quote, 'sections.tab_tco_monthly', true)
-  async function toggleSubTab(key, current) {
-    await saveQuoteHeader(drSetPatch(quote, `sections.${key}`, !current))
+  // Each data sub-tab (everything but ROI) is independently hideable from
+  // the customer. Writes go to quote.deal_room_display_config.tabs.<key>
+  // — the SAME path the customer-facing ProposalView reads in readTabVis().
+  // Mapping AE sub-tab → customer tab:
+  //   Payment Schedule → tabs.schedules
+  //   TCO Models       → tabs.tco_comparison
+  //   TCO Detail       → tabs.tco
+  //   TCO Monthly      → tabs.tco_monthly (customer surface added below)
+  // ROI has no eye — it's an AE planning tool, never shown to customers.
+  const schedVisible        = drGet(quote, 'tabs.schedules',      true)
+  const tcoModelsVisible    = drGet(quote, 'tabs.tco_comparison', true)
+  const tcoDetailVisible    = drGet(quote, 'tabs.tco',            true)
+  const tcoMonthlyVisible   = drGet(quote, 'tabs.tco_monthly',    true)
+  async function toggleTab(path, current) {
+    await saveQuoteHeader(drSetPatch(quote, path, !current))
   }
 
   const subTabs = [
     { key: 'roi', label: 'ROI' },
-    { key: 'schedule',    label: `Payment Schedule${schedule.length ? ` (${schedule.length})` : ''}`, eyeKey: 'tab_payment_schedule', visible: schedVisible,      hideLabel: 'the Payment Schedule from the customer' },
-    { key: 'tco_models',  label: 'TCO Models',  eyeKey: 'tab_tco_models',  visible: tcoModelsVisible,  hideLabel: 'TCO Models from the customer' },
-    { key: 'tco',         label: 'TCO Detail',  eyeKey: 'tab_tco_detail',  visible: tcoDetailVisible,  hideLabel: 'TCO Detail from the customer' },
-    { key: 'tco_monthly', label: 'TCO Monthly', eyeKey: 'tab_tco_monthly', visible: tcoMonthlyVisible, hideLabel: 'the Monthly TCO from the customer' },
+    { key: 'schedule',    label: `Payment Schedule${schedule.length ? ` (${schedule.length})` : ''}`, path: 'tabs.schedules',      visible: schedVisible,      hideLabel: 'the Payment Schedule from the customer' },
+    { key: 'tco_models',  label: 'TCO Models',  path: 'tabs.tco_comparison', visible: tcoModelsVisible,  hideLabel: 'TCO Models from the customer' },
+    { key: 'tco',         label: 'TCO Detail',  path: 'tabs.tco',            visible: tcoDetailVisible,  hideLabel: 'TCO Detail from the customer' },
+    { key: 'tco_monthly', label: 'TCO Monthly', path: 'tabs.tco_monthly',    visible: tcoMonthlyVisible, hideLabel: 'the Monthly TCO from the customer' },
   ]
 
   return (
@@ -3246,14 +3250,14 @@ function ModelsTab({ quote, deal, dealId, pains, schedule, contractTerms, partne
                 }}>
                 {t.label}
               </button>
-              {t.eyeKey && (
+              {t.path && (
                 <span style={{
                   paddingRight: 14, paddingBottom: isActive ? 8 : 10,
                   borderBottom: isActive ? `2px solid ${T.primary}` : '2px solid transparent',
                 }}>
                   <VisibilityToggleIcon
                     visible={t.visible}
-                    onChange={() => toggleSubTab(t.eyeKey, t.visible)}
+                    onChange={() => toggleTab(t.path, t.visible)}
                     label={t.hideLabel}
                     size={13}
                     inline
