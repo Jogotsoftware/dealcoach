@@ -2843,6 +2843,189 @@ function Metric({ label, value, positive }) {
   )
 }
 
+// ──────────────────────────────────────────────────────────
+// TCO MONTHLY — cash-flow view of the same payment_schedule that drives
+// "Payment Schedule", but projected onto a month-by-month calendar so the
+// customer can see WHEN invoices hit, WHAT they cover, and WHERE the free
+// months sit. Empty months render explicitly ("no invoice this month") so
+// the cadence is obvious — one big annual payment then a quiet stretch.
+// ──────────────────────────────────────────────────────────
+function TcoMonthlyTab({ quote, contractTerms, schedule }) {
+  const term = contractTerms.find(ct => ct.id === quote.contract_term_id)
+  const termYears = Number(term?.term_years) || 1
+  const freeMonths = Number(quote.free_months) || 0
+  const placement = quote.free_months_placement || 'back'
+
+  // Anchor the calendar to the contract start date. Falls back to today if
+  // not set, so the AE can still preview cadence on a draft quote.
+  const startDate = quote.contract_start_date ? new Date(quote.contract_start_date + 'T00:00:00') : new Date()
+
+  // Free-month placement semantics match the rest of the app:
+  // - 'front'  → first N months are deferred (subscription starts at M(N+1))
+  // - 'back'   → contract runs an extra N months at the end of Y1 with $0 due
+  // The customer-facing window is termYears*12 + freeMonths months long either way.
+  const totalMonths = termYears * 12 + freeMonths
+  const freeMonthSet = new Set()
+  if (placement === 'front') {
+    for (let i = 1; i <= freeMonths; i++) freeMonthSet.add(i)
+  } else {
+    for (let i = 13; i <= 12 + freeMonths; i++) freeMonthSet.add(i)
+  }
+
+  // Group every schedule row into its calendar month relative to startDate.
+  // monthsDiff is 1-based so M1 is the first month of the contract.
+  const byMonth = new Map()
+  ;(schedule || []).forEach(s => {
+    if (!s.invoice_date) return
+    const d = new Date(s.invoice_date + (s.invoice_date.length === 10 ? 'T00:00:00' : ''))
+    const monthsDiff = (d.getFullYear() - startDate.getFullYear()) * 12 + (d.getMonth() - startDate.getMonth()) + 1
+    if (monthsDiff < 1) return  // pre-start payments don't fit a month grid; rare but possible
+    if (!byMonth.has(monthsDiff)) byMonth.set(monthsDiff, [])
+    byMonth.get(monthsDiff).push(s)
+  })
+
+  // Build rows for every month in the contract window, even empty ones —
+  // the empty months are the whole point of this view (cadence visibility).
+  const rows = []
+  let cumulative = 0
+  for (let m = 1; m <= totalMonths; m++) {
+    const d = new Date(startDate)
+    d.setMonth(d.getMonth() + m - 1)
+    const items = byMonth.get(m) || []
+    const monthTotal = items.reduce((s, i) => s + (Number(i.amount) || 0), 0)
+    cumulative += monthTotal
+    rows.push({ m, date: d, items, monthTotal, cumulative, isFreeMonth: freeMonthSet.has(m) })
+  }
+
+  // Stash any post-window payments at the end (defensive — schedule rows
+  // beyond the contract window shouldn't exist but if they do we don't want
+  // to silently drop them from the cumulative math).
+  ;(schedule || []).forEach(s => {
+    if (!s.invoice_date) return
+    const d = new Date(s.invoice_date + (s.invoice_date.length === 10 ? 'T00:00:00' : ''))
+    const monthsDiff = (d.getFullYear() - startDate.getFullYear()) * 12 + (d.getMonth() - startDate.getMonth()) + 1
+    if (monthsDiff > totalMonths) {
+      const last = rows[rows.length - 1]
+      if (last) {
+        last.items.push({ ...s, _afterTerm: true })
+        last.monthTotal += Number(s.amount) || 0
+        cumulative += Number(s.amount) || 0
+        last.cumulative = cumulative
+      }
+    }
+  })
+
+  const grandTotal = rows.reduce((s, r) => s + r.monthTotal, 0)
+  const monthsWithPayment = rows.filter(r => r.monthTotal !== 0).length
+
+  if (!schedule || schedule.length === 0) {
+    return <EmptyState title="No payment schedule yet" message="The monthly TCO view projects the Payment Schedule rows onto a calendar. Generate the schedule first (or add subscription / implementation rows) and this view will populate automatically." />
+  }
+
+  return (
+    <div>
+      <Card title={`Monthly TCO — ${totalMonths}-month payment cadence`}>
+        <div style={{ fontSize: 11, color: T.textSecondary, marginBottom: 10, lineHeight: 1.5 }}>
+          Calendar view of the same Payment Schedule rows you see on the previous tab. Shows the exact month each invoice fires, what it covers, and where the {freeMonths > 0 ? `${freeMonths} free month${freeMonths === 1 ? '' : 's'} sit${freeMonths === 1 ? 's' : ''}` : 'free months would sit'}. Empty rows are months with no invoice — useful for showing the customer how quiet the cadence really is between annual prepayments.
+        </div>
+
+        {/* Mini-summary cards on top */}
+        <div style={{ marginBottom: 14, display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+          <Metric label="Contract length" value={`${totalMonths} months`} />
+          <Metric label="Months with payment" value={`${monthsWithPayment}`} />
+          <Metric label="Free months" value={freeMonths > 0 ? `${freeMonths} (${placement})` : '—'} />
+          <Metric label="Total cash" value={dollars(grandTotal)} positive />
+        </div>
+
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+          <thead>
+            <tr style={{ borderBottom: `2px solid ${T.primary}` }}>
+              <th style={{ ...thStyle, width: 60 }}>Month</th>
+              <th style={{ ...thStyle, width: 110 }}>Calendar</th>
+              <th style={thStyle}>What's invoiced</th>
+              <th style={{ ...thStyle, textAlign: 'right', width: 120 }}>Amount</th>
+              <th style={{ ...thStyle, textAlign: 'right', width: 130 }}>Cumulative</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(r => {
+              const calendar = r.date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+              const empty = r.items.length === 0 && !r.isFreeMonth
+              const free = r.isFreeMonth
+              return (
+                <tr key={r.m} style={{
+                  borderBottom: `1px solid ${T.borderLight}`,
+                  background: free ? T.successLight || '#e7f7ed' : empty ? T.surface : 'transparent',
+                }}>
+                  <td style={{ padding: '6px 10px', fontWeight: 700, color: free ? T.success : empty ? T.textMuted : T.text }}>
+                    M{r.m}
+                  </td>
+                  <td style={{ padding: '6px 10px', color: free ? T.success : empty ? T.textMuted : T.text, fontWeight: free ? 700 : 500 }}>
+                    {calendar}
+                  </td>
+                  <td style={{ padding: '6px 10px', color: T.text }}>
+                    {free && r.items.length === 0 ? (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        <Badge color={T.success}>FREE MONTH</Badge>
+                        <span style={{ color: T.textSecondary, fontSize: 11 }}>No subscription charge</span>
+                      </span>
+                    ) : free && r.items.length > 0 ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                        <Badge color={T.success}>FREE MONTH</Badge>
+                        {r.items.map((it, i) => <ScheduleItemLine key={i} item={it} />)}
+                      </div>
+                    ) : r.items.length === 0 ? (
+                      <span style={{ color: T.textMuted, fontStyle: 'italic', fontSize: 11 }}>No invoice this month</span>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                        {r.items.map((it, i) => <ScheduleItemLine key={i} item={it} />)}
+                      </div>
+                    )}
+                  </td>
+                  <td style={{ padding: '6px 10px', textAlign: 'right', fontFeatureSettings: '"tnum"', color: r.monthTotal === 0 ? T.textMuted : T.text, fontWeight: r.monthTotal > 0 ? 700 : 400 }}>
+                    {r.monthTotal === 0 ? '—' : dollars(r.monthTotal)}
+                  </td>
+                  <td style={{ padding: '6px 10px', textAlign: 'right', fontFeatureSettings: '"tnum"', fontWeight: 600, color: T.primary }}>
+                    {dollars(r.cumulative)}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+          <tfoot>
+            <tr style={{ borderTop: `2px solid ${T.primary}`, background: T.primaryLight }}>
+              <td colSpan={3} style={{ padding: '10px', fontWeight: 800, fontSize: 13 }}>Total Cost of Ownership ({totalMonths} months)</td>
+              <td style={{ padding: '10px', textAlign: 'right', fontWeight: 800, fontSize: 14, color: T.primary, fontFeatureSettings: '"tnum"' }}>{dollars(grandTotal)}</td>
+              <td style={{ padding: '10px', textAlign: 'right', fontWeight: 800, fontSize: 14, color: T.primary, fontFeatureSettings: '"tnum"' }}>{dollars(grandTotal)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </Card>
+    </div>
+  )
+}
+
+// Single payment-schedule row formatted for the monthly TCO. Shows the
+// description (or a fallback derived from payment_type) plus a small
+// colored chip identifying the source (Sage vs partner) and the type
+// (annual subscription, implementation milestone, signing bonus, etc.).
+function ScheduleItemLine({ item }) {
+  const sourceColor = item.source === 'partner' ? '#5A3FBC' : T.primary
+  const sourceLabel = item.source === 'partner' ? (item.implementor_name || 'Partner') : 'Sage'
+  const desc = item.description
+    || (item.payment_type === 'subscription' ? 'Subscription'
+      : item.payment_type === 'implementation' ? 'Implementation milestone'
+      : item.payment_type === 'signing_bonus' ? 'Signing bonus credit'
+      : item.payment_type === 'custom' ? 'Custom payment'
+      : 'Invoice')
+  return (
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+      <Badge color={sourceColor}>{sourceLabel}</Badge>
+      <span style={{ fontSize: 12, color: T.text }}>{desc}</span>
+    </div>
+  )
+}
+
 // ══════════════════════════════════════════════════════════
 // MODELS TAB — wraps ROI, Payment Schedule, and TCO under a sub-tab bar
 // ══════════════════════════════════════════════════════════
@@ -2853,6 +3036,7 @@ function ModelsTab({ quote, deal, dealId, pains, schedule, contractTerms, partne
     { key: 'schedule', label: `Payment Schedule${schedule.length ? ` (${schedule.length})` : ''}` },
     { key: 'tco_models', label: 'TCO Models' },
     { key: 'tco', label: 'TCO Detail' },
+    { key: 'tco_monthly', label: 'TCO Monthly' },
   ]
   return (
     <div>
@@ -2871,6 +3055,7 @@ function ModelsTab({ quote, deal, dealId, pains, schedule, contractTerms, partne
         />
       )}
       {sub === 'tco' && <TcoTab quote={quote} contractTerms={contractTerms} partnerBlocks={partnerBlocks} partnerLines={partnerLines} saveQuoteHeader={saveQuoteHeader} />}
+      {sub === 'tco_monthly' && <TcoMonthlyTab quote={quote} contractTerms={contractTerms} schedule={schedule} />}
     </div>
   )
 }
