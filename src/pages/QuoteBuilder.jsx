@@ -3002,15 +3002,6 @@ function TcoMonthlyTab({ quote, contractTerms, schedule }) {
     }
   })
 
-  // Amortized Implementation — impl is a one-time cost, but the customer
-  // gets to spread the value across the entire contract term (every month
-  // they're using the system, including free months). Per the rep: total
-  // impl / total months in the contract term, applied uniformly. For
-  // Chaberton's 3-year + 5 free contract = 41 months, that's $40K / 41 ≈
-  // $976/month across every month.
-  const totalImpl = implPayment.reduce((s, v) => s + v, 0)
-  const implPerMonth = totalMonths > 0 ? totalImpl / totalMonths : 0
-  const amortizedImpl = new Array(totalMonths).fill(implPerMonth)
 
   // Cumulative = running sum of (subscription + implementation cash) — what
   // the customer has actually paid by each month.
@@ -3175,22 +3166,6 @@ function TcoMonthlyTab({ quote, contractTerms, schedule }) {
                 color={T.textSecondary}
                 fontStyle="italic"
                 fontWeight={600}
-              />
-              {/* Row 4: Amortized Implementation — total impl spread evenly
-                  across the contract term (every month including free
-                  months). Customer sees what implementation effectively
-                  costs them per month of use. */}
-              <DataRow
-                label="Amortized Implementation"
-                values={amortizedImpl}
-                monthHeaders={monthHeaders}
-                labelCellFn={labelCell}
-                cellNumFn={cellNum}
-                rowBg={T.surfaceAlt}
-                freeBg={TINT_SUCCESS}
-                color={T.textSecondary}
-                fontStyle="italic"
-                fontWeight={700}
               />
               {/* Row 5: Cumulative — running total of subscription + impl
                   cash actually paid by the end of each month. Uses opaque
