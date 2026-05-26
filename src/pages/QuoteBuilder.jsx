@@ -911,13 +911,38 @@ function SubscriptionSection({ quote, lines, products, productMap, bundleChildre
           <Button onClick={() => setShowFavManager(true)} style={{ padding: '4px 10px', fontSize: 11 }}>Manage</Button>
         )}
         {/* Import-from-PDF: drops the whole order schedule onto the quote via
-            Claude. Hidden input + visible label-styled button so we don't have
-            to manage two click handlers. */}
-        <input ref={importFileRef} type="file" accept="application/pdf" style={{ display: 'none' }}
-          onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; handleImportPdf(f) }} />
-        <Button onClick={() => importFileRef.current?.click()} disabled={importing}
+            Claude.
+            Why label + input instead of `display:none` + `ref.click()`:
+            display:none file inputs hit a known Chromium edge case where the
+            programmatic click can hang the file-picker dialog for several
+            seconds (the rep saw the folder pop up and freeze). The
+            label-for-input pattern is a single browser-native gesture, no
+            JS routing the click — works reliably across Chrome / Edge /
+            Firefox / Safari. The input stays in the layout (opacity 0,
+            zero size, pointer-events none) instead of display:none so
+            screen readers and the browser still see it as a form element. */}
+        <input
+          id={`import-pdf-input-${quote.id}`}
+          ref={importFileRef}
+          type="file"
+          accept="application/pdf"
+          disabled={importing}
+          style={{ position: 'absolute', opacity: 0, width: 0, height: 0, pointerEvents: 'none' }}
+          onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; handleImportPdf(f) }}
+        />
+        <label
+          htmlFor={`import-pdf-input-${quote.id}`}
           title="Upload a Sage order-schedule PDF and have Lumen auto-build the quote"
-          style={{ padding: '4px 10px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          aria-disabled={importing}
+          style={{
+            padding: '4px 10px', fontSize: 11, display: 'inline-flex',
+            alignItems: 'center', gap: 6,
+            background: T.surface, border: `1px solid ${T.border}`,
+            borderRadius: 6, color: T.text, fontFamily: T.font, fontWeight: 600,
+            cursor: importing ? 'wait' : 'pointer',
+            opacity: importing ? 0.55 : 1,
+            userSelect: 'none',
+          }}>
           {importing ? (
             <>
               <span style={{ width: 10, height: 10, border: `2px solid ${T.border}`, borderTopColor: T.primary, borderRadius: '50%', display: 'inline-block', animation: 'spin 0.8s linear infinite' }} />
@@ -931,7 +956,7 @@ function SubscriptionSection({ quote, lines, products, productMap, bundleChildre
               Import PDF
             </>
           )}
-        </Button>
+        </label>
         <PlusButton onClick={() => setPickerOpen(true)} title="Add a product line" />
       </div>
 
