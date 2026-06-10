@@ -4,6 +4,7 @@ import { useAuth } from '../hooks/useAuth'
 import { theme as T, formatCurrency, getFiscalPeriods } from '../lib/theme'
 import { useOrg } from '../contexts/OrgContext'
 import { Card, Badge, Button, Spinner, inputStyle, labelStyle } from '../components/Shared'
+import GranolaSettings from '../components/GranolaSettings'
 
 // Collapsible card wrapper — persists open/closed state per-section to localStorage.
 // Usage: <SectionCard id="my_coach" title="My Coach">...</SectionCard>
@@ -534,6 +535,9 @@ export default function Settings() {
         </SectionCard>
 
         {/* Quota — moved to after Preferences per layout request */}
+        {/* Granola integration - per-user connection + default folder */}
+        <GranolaSettings />
+
         <SectionCard id="quota" title={`Quota -- FY${fp.fy} (Oct ${fp.fy - 1} - Sep ${fp.fy})`}>
           {/* CSV upload */}
           <div style={{ marginBottom: 16, padding: 12, background: T.surfaceAlt, borderRadius: 6, border: `1px solid ${T.borderLight}` }}>

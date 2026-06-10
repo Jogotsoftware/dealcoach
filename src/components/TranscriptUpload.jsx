@@ -20,11 +20,12 @@ async function callGranolaFn(name, body) {
   return await r.json()
 }
 
-// "From Granola" import section. Per-user connection: not-connected shows a
-// Connect button (OAuth popup against Granola's MCP auth server); connected
-// shows a time-range picker + meeting list. Import inserts a conversations
-// row server-side (granola-import) and fires process-transcript, identical
-// to the paste / URL paths.
+// "From Granola" import section. The connection itself is managed in
+// Settings (GranolaSettings) — this section only consumes it: connected
+// shows a time-range picker + meeting list scoped to the user's default
+// folder (applied server-side); not connected points at Settings. Import
+// inserts a conversations row server-side (granola-import) and fires
+// process-transcript, identical to the paste / URL paths.
 function GranolaSection({ form, onUploaded, setError, setResult }) {
   const [status, setStatus] = useState(null)        // null = loading
   const [meetings, setMeetings] = useState(null)
@@ -32,61 +33,12 @@ function GranolaSection({ form, onUploaded, setError, setResult }) {
   const [selectedId, setSelectedId] = useState(null)
   const [loadingMeetings, setLoadingMeetings] = useState(false)
   const [importing, setImporting] = useState(false)
-  const [connecting, setConnecting] = useState(false)
 
   async function refreshStatus() {
     try { setStatus(await callGranolaFn('granola-auth', { action: 'status' })) }
     catch { setStatus({ connected: false }) }
   }
   useEffect(() => { refreshStatus() }, [])
-
-  // The OAuth popup posts back when the callback page lands. Only trust
-  // messages from the Supabase functions origin (where the callback page
-  // is served) — anything else could be a spoofed frame.
-  useEffect(() => {
-    const trustedOrigin = new URL(import.meta.env.VITE_SUPABASE_URL).origin
-    function onMsg(e) {
-      if (e.origin !== trustedOrigin) return
-      if (e.data?.type === 'granola-connected') { setConnecting(false); refreshStatus() }
-      if (e.data?.type === 'granola-connect-error') { setConnecting(false); setError(`Granola: ${e.data.message}`) }
-    }
-    window.addEventListener('message', onMsg)
-    return () => window.removeEventListener('message', onMsg)
-  }, [])
-
-  async function connect() {
-    setConnecting(true); setError(null)
-    try {
-      const res = await callGranolaFn('granola-auth', { action: 'start' })
-      if (res.error) throw new Error(res.error)
-      const popup = window.open(res.authorize_url, 'granola-connect', 'width=480,height=720,noopener=no')
-      if (!popup) {
-        setConnecting(false)
-        setError('Granola connect failed: popup blocked. Allow popups for this site and try again.')
-        return
-      }
-      // If the user closes the popup without finishing, un-wedge the button.
-      // The postMessage path clears this poll implicitly via setConnecting(false).
-      const poll = setInterval(() => {
-        if (popup.closed) {
-          clearInterval(poll)
-          setConnecting(false)
-          refreshStatus()
-        }
-      }, 800)
-    } catch (e) {
-      setConnecting(false)
-      setError(`Granola connect failed: ${e.message}`)
-    }
-  }
-
-  async function disconnect() {
-    try {
-      await callGranolaFn('granola-auth', { action: 'disconnect' })
-      setMeetings(null); setSelectedId(null)
-      refreshStatus()
-    } catch (e) { console.error('granola disconnect failed:', e) }
-  }
 
   // Sequence guard: switching the time range fires overlapping requests;
   // only the latest response may write state, or a slow older response
@@ -152,13 +104,10 @@ function GranolaSection({ form, onUploaded, setError, setResult }) {
         {status === null ? (
           <div style={{ fontSize: 12, color: T.textMuted }}>Checking Granola connection...</div>
         ) : !status.connected ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-            <div style={{ flex: 1, minWidth: 220, fontSize: 12, color: T.textSecondary, lineHeight: 1.5 }}>
-              Connect your Granola account to import call transcripts directly — no copy-paste.
-            </div>
-            <Button primary onClick={connect} disabled={connecting} style={{ padding: '8px 14px', fontSize: 12 }}>
-              {connecting ? 'Waiting for Granola...' : 'Connect Granola'}
-            </Button>
+          <div style={{ fontSize: 12, color: T.textSecondary, lineHeight: 1.5 }}>
+            Granola is not connected. Connect it in{' '}
+            <a href="/settings#granola" style={{ color: T.primary, fontWeight: 600 }}>Settings</a>
+            {' '}to import call transcripts directly — no copy-paste.
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -171,10 +120,6 @@ function GranolaSection({ form, onUploaded, setError, setResult }) {
                 <option value="last_week">Last week</option>
                 <option value="last_30_days">Last 30 days</option>
               </select>
-              <button onClick={disconnect}
-                style={{ background: 'none', border: 'none', color: T.textMuted, fontSize: 11, cursor: 'pointer', fontFamily: T.font, textDecoration: 'underline' }}>
-                Disconnect
-              </button>
             </div>
 
             {loadingMeetings ? (
