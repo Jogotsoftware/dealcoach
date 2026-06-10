@@ -2,7 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { McpClient, mcpResultJson, mcpResultText, ensureFreshToken } from "../_shared/granola-mcp.ts";
 
-// granola-meetings v2
+// granola-meetings v3
 // POST { time_range, custom_start?, custom_end?, folder_id? } (Authorization: user JWT)
 //   -> { meetings: [{ id, title, date, participants }] }
 //   time_range in [this_week, last_week, last_30_days, custom].
@@ -117,14 +117,14 @@ function normalizeFolders(result: any): Array<{ id: string; title: string; descr
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors() });
-  if (req.method !== "POST") return jr({ error: "granola-meetings v2: POST required" }, 405);
+  if (req.method !== "POST") return jr({ error: "granola-meetings v3: POST required" }, 405);
   const sb = createClient(SUPABASE_URL, SERVICE_KEY);
 
   try {
     const jwt = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
-    if (!jwt) return jr({ error: "granola-meetings v2: not authenticated" }, 401);
+    if (!jwt) return jr({ error: "granola-meetings v3: not authenticated" }, 401);
     const { data: userData, error: userErr } = await sb.auth.getUser(jwt);
-    if (userErr || !userData?.user) return jr({ error: "granola-meetings v2: not authenticated" }, 401);
+    if (userErr || !userData?.user) return jr({ error: "granola-meetings v3: not authenticated" }, 401);
     const userId = userData.user.id;
 
     const { data: conn, error: connErr } = await sb
@@ -132,9 +132,9 @@ Deno.serve(async (req: Request) => {
       .select("*")
       .eq("user_id", userId)
       .maybeSingle();
-    if (connErr) return jr({ error: `granola-meetings v2: connection lookup failed: ${connErr.message}` }, 500);
+    if (connErr) return jr({ error: `granola-meetings v3: connection lookup failed: ${connErr.message}` }, 500);
     if (!conn || conn.status !== "connected") {
-      return jr({ error: "granola-meetings v2: not connected", reconnect: true }, 401);
+      return jr({ error: "granola-meetings v3: not connected", reconnect: true }, 401);
     }
 
     const body = await req.json().catch(() => ({}));
@@ -156,9 +156,9 @@ Deno.serve(async (req: Request) => {
 
     let accessToken: string;
     try {
-      accessToken = await ensureFreshToken(sb, conn, "granola-meetings v2");
+      accessToken = await ensureFreshToken(sb, conn, "granola-meetings v3");
     } catch (e: any) {
-      return jr({ error: e?.message || "granola-meetings v2: reconnect required", reconnect: true }, 401);
+      return jr({ error: e?.message || "granola-meetings v3: reconnect required", reconnect: true }, 401);
     }
 
     const mcp = new McpClient(accessToken);
@@ -170,15 +170,15 @@ Deno.serve(async (req: Request) => {
       // One retry after a forced refresh on auth failures.
       if (String(e?.message || "").includes("401")) {
         try {
-          accessToken = await ensureFreshToken(sb, conn, "granola-meetings v2", true);
+          accessToken = await ensureFreshToken(sb, conn, "granola-meetings v3", true);
           const mcp2 = new McpClient(accessToken);
           await mcp2.initialize();
           result = await mcp2.toolsCall(toolName, args);
         } catch (e2: any) {
-          return jr({ error: `granola-meetings v2: ${e2?.message || e2}`, reconnect: true }, 401);
+          return jr({ error: `granola-meetings v3: ${e2?.message || e2}`, reconnect: true }, 401);
         }
       } else {
-        return jr({ error: `granola-meetings v2: ${e?.message || e}` }, 502);
+        return jr({ error: `granola-meetings v3: ${e?.message || e}` }, 502);
       }
     }
 
@@ -187,17 +187,40 @@ Deno.serve(async (req: Request) => {
     } catch (_) { /* non-fatal */ }
 
     if (wantFolders) {
-      return jr({ success: true, version: "granola-meetings v2", folders: normalizeFolders(result), granola_email: conn.granola_email });
+      return jr({ success: true, version: "granola-meetings v3", folders: normalizeFolders(result), granola_email: conn.granola_email });
     }
+
+    // Hide meetings already imported into any deal in the caller's org —
+    // an imported call is done; relisting it only invites duplicates.
+    // Non-fatal on failure: better to show an importable list than error.
+    let meetings = normalizeMeetings(result);
+    if (meetings.length) {
+      try {
+        const { data: profile } = await sb.from("profiles").select("org_id").eq("id", userId).single();
+        if (profile?.org_id) {
+          const ids = meetings.map((m) => m.id);
+          const { data: imported } = await sb
+            .from("conversations")
+            .select("granola_meeting_id, deals!inner(org_id)")
+            .in("granola_meeting_id", ids)
+            .eq("deals.org_id", profile.org_id);
+          const importedSet = new Set((imported || []).map((r: any) => r.granola_meeting_id));
+          meetings = meetings.filter((m) => !importedSet.has(m.id));
+        }
+      } catch (e: any) {
+        console.error("granola-meetings v3: imported-filter failed (non-fatal):", e?.message);
+      }
+    }
+
     return jr({
       success: true,
-      version: "granola-meetings v2",
-      meetings: normalizeMeetings(result),
+      version: "granola-meetings v3",
+      meetings,
       granola_email: conn.granola_email,
       active_folder: args.folder_id ? { id: args.folder_id, name: args.folder_id === conn.default_folder_id ? conn.default_folder_name : null } : null,
     });
   } catch (e: any) {
-    console.error("granola-meetings v2 error:", e);
-    return jr({ error: `granola-meetings v2: ${e?.message || e}` }, 500);
+    console.error("granola-meetings v3 error:", e);
+    return jr({ error: `granola-meetings v3: ${e?.message || e}` }, 500);
   }
 });
