@@ -1,0 +1,4 @@
+# Anchors the Supabase CLI to this repo. Without this file the CLI walks up
+# the directory tree and can anchor to a stray supabase/ folder outside the
+# repo (C:\Users\Work\supabase), breaking `functions deploy` path resolution.
+project_id = "npfnsyufqqhhjmtvmold"

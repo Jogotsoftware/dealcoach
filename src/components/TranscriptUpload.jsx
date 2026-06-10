@@ -1,9 +1,202 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { callProcessTranscript } from '../lib/webhooks'
 import { track } from '../lib/analytics'
 import { theme as T, CALL_TYPES } from '../lib/theme'
 import { Button, Badge, MiniSun, inputStyle, labelStyle } from './Shared'
+
+// Shared caller for the granola-* edge functions (user JWT auth).
+async function callGranolaFn(name, body) {
+  const { data: { session } } = await supabase.auth.getSession()
+  const r = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${name}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+      'Authorization': `Bearer ${session?.access_token || import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+    },
+    body: JSON.stringify(body || {}),
+  })
+  return await r.json()
+}
+
+// "From Granola" import section. Per-user connection: not-connected shows a
+// Connect button (OAuth popup against Granola's MCP auth server); connected
+// shows a time-range picker + meeting list. Import inserts a conversations
+// row server-side (granola-import) and fires process-transcript, identical
+// to the paste / URL paths.
+function GranolaSection({ form, onUploaded, setError, setResult }) {
+  const [status, setStatus] = useState(null)        // null = loading
+  const [meetings, setMeetings] = useState(null)
+  const [timeRange, setTimeRange] = useState('last_30_days')
+  const [selectedId, setSelectedId] = useState(null)
+  const [loadingMeetings, setLoadingMeetings] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [connecting, setConnecting] = useState(false)
+
+  async function refreshStatus() {
+    try { setStatus(await callGranolaFn('granola-auth', { action: 'status' })) }
+    catch { setStatus({ connected: false }) }
+  }
+  useEffect(() => { refreshStatus() }, [])
+
+  // The OAuth popup posts back when the callback page lands.
+  useEffect(() => {
+    function onMsg(e) {
+      if (e.data?.type === 'granola-connected') { setConnecting(false); refreshStatus() }
+      if (e.data?.type === 'granola-connect-error') { setConnecting(false); setError(`Granola: ${e.data.message}`) }
+    }
+    window.addEventListener('message', onMsg)
+    return () => window.removeEventListener('message', onMsg)
+  }, [])
+
+  async function connect() {
+    setConnecting(true); setError(null)
+    try {
+      const res = await callGranolaFn('granola-auth', { action: 'start' })
+      if (res.error) throw new Error(res.error)
+      window.open(res.authorize_url, 'granola-connect', 'width=480,height=720,noopener=no')
+    } catch (e) {
+      setConnecting(false)
+      setError(`Granola connect failed: ${e.message}`)
+    }
+  }
+
+  async function disconnect() {
+    try {
+      await callGranolaFn('granola-auth', { action: 'disconnect' })
+      setMeetings(null); setSelectedId(null)
+      refreshStatus()
+    } catch (e) { console.error('granola disconnect failed:', e) }
+  }
+
+  async function loadMeetings(range) {
+    setLoadingMeetings(true); setError(null)
+    try {
+      const res = await callGranolaFn('granola-meetings', { time_range: range })
+      if (res.error) {
+        if (res.reconnect) setStatus({ connected: false })
+        throw new Error(res.error)
+      }
+      setMeetings(res.meetings || [])
+    } catch (e) {
+      setError(`Granola: ${e.message}`)
+    } finally { setLoadingMeetings(false) }
+  }
+  useEffect(() => { if (status?.connected) loadMeetings(timeRange) }, [status?.connected, timeRange])
+
+  const selected = (meetings || []).find(m => m.id === selectedId) || null
+
+  async function importMeeting() {
+    if (!form.deal_id) { setError('Pick a deal first'); return }
+    if (!selected) return
+    setImporting(true); setError(null)
+    try {
+      const res = await callGranolaFn('granola-import', {
+        deal_id: form.deal_id,
+        meeting_id: selected.id,
+        call_type: form.call_type,
+        call_date: selected.date ? String(selected.date).substring(0, 10) : form.call_date,
+        title: form.title || selected.title,
+      })
+      if (res.error) throw new Error(res.error)
+      track('transcript_uploaded', { call_type: form.call_type, source: 'granola', size_chars: res.transcript_length || 0 })
+      setResult({
+        saved: true, processing: !res.already_imported,
+        message: res.already_imported
+          ? 'This meeting was already imported into this deal.'
+          : `Imported ${res.transcript_length?.toLocaleString() || ''} chars from Granola. Processing with AI...`,
+      })
+      if (onUploaded) onUploaded({ id: res.conversation_id })
+    } catch (e) {
+      setError(`Granola import failed: ${e.message}`)
+    } finally { setImporting(false) }
+  }
+
+  function fmtDate(d) {
+    if (!d) return ''
+    try { return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) }
+    catch { return String(d).substring(0, 10) }
+  }
+
+  return (
+    <div>
+      <label style={labelStyle}>From Granola</label>
+      <div style={{ border: `1px solid ${T.border}`, borderRadius: 8, padding: 12, background: T.surfaceAlt }}>
+        {status === null ? (
+          <div style={{ fontSize: 12, color: T.textMuted }}>Checking Granola connection...</div>
+        ) : !status.connected ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <div style={{ flex: 1, minWidth: 220, fontSize: 12, color: T.textSecondary, lineHeight: 1.5 }}>
+              Connect your Granola account to import call transcripts directly — no copy-paste.
+            </div>
+            <Button primary onClick={connect} disabled={connecting} style={{ padding: '8px 14px', fontSize: 12 }}>
+              {connecting ? 'Waiting for Granola...' : 'Connect Granola'}
+            </Button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <Badge color={T.success}>Connected{status.granola_email ? ` as ${status.granola_email}` : ''}</Badge>
+              <div style={{ flex: 1 }} />
+              <select value={timeRange} onChange={e => setTimeRange(e.target.value)}
+                style={{ ...inputStyle, width: 'auto', padding: '5px 8px', fontSize: 12, cursor: 'pointer' }}>
+                <option value="this_week">This week</option>
+                <option value="last_week">Last week</option>
+                <option value="last_30_days">Last 30 days</option>
+              </select>
+              <button onClick={disconnect}
+                style={{ background: 'none', border: 'none', color: T.textMuted, fontSize: 11, cursor: 'pointer', fontFamily: T.font, textDecoration: 'underline' }}>
+                Disconnect
+              </button>
+            </div>
+
+            {loadingMeetings ? (
+              <div style={{ fontSize: 12, color: T.textMuted, padding: '8px 0' }}>Loading meetings...</div>
+            ) : !meetings || meetings.length === 0 ? (
+              <div style={{ fontSize: 12, color: T.textMuted, padding: '8px 0' }}>No Granola calls in this range.</div>
+            ) : (
+              <div style={{ maxHeight: 180, overflowY: 'auto', border: `1px solid ${T.border}`, borderRadius: 6, background: T.surface }}>
+                {meetings.map(m => {
+                  const isSel = m.id === selectedId
+                  return (
+                    <div key={m.id} onClick={() => setSelectedId(isSel ? null : m.id)}
+                      style={{
+                        padding: '8px 12px', cursor: 'pointer',
+                        borderBottom: `1px solid ${T.borderLight}`,
+                        background: isSel ? T.primaryLight : 'transparent',
+                        borderLeft: isSel ? `3px solid ${T.primary}` : '3px solid transparent',
+                      }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{m.title}</div>
+                      <div style={{ fontSize: 11, color: T.textSecondary, marginTop: 2 }}>
+                        {fmtDate(m.date)}
+                        {m.participants?.length ? ` - ${m.participants.slice(0, 4).join(', ')}${m.participants.length > 4 ? ` +${m.participants.length - 4}` : ''}` : ''}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            {selected && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ flex: 1, fontSize: 11, color: T.textSecondary }}>
+                  Importing with call type <strong>{form.call_type}</strong>
+                  {!form.title ? <> and title "<strong>{selected.title}</strong>"</> : null}.
+                  Set the deal, call type, and title above before importing.
+                </div>
+                <Button primary onClick={importMeeting} disabled={importing || !form.deal_id}
+                  style={{ padding: '8px 14px', fontSize: 12 }}>
+                  {importing ? 'Importing...' : 'Import'}
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
 
 export default function TranscriptUpload({ deals, onClose, onUploaded }) {
   const [form, setForm] = useState({
@@ -210,6 +403,9 @@ export default function TranscriptUpload({ deals, onClose, onUploaded }) {
             </div>
             <div style={{ fontSize: 10, color: T.textMuted, marginTop: 4 }}>Works with any publicly accessible transcript page. Server-side fetch + HTML scrape.</div>
           </div>
+
+          {/* From Granola — per-user MCP connection + meeting picker */}
+          <GranolaSection form={form} onUploaded={onUploaded} setError={setError} setResult={setResult} />
 
           {/* File Upload */}
           <div>
