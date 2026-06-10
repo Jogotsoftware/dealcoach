@@ -97,8 +97,7 @@ Deno.serve(async (req: Request) => {
       // One retry after a forced refresh on auth failures.
       if (String(e?.message || "").includes("401")) {
         try {
-          conn.token_expires_at = new Date(0).toISOString(); // force refresh
-          accessToken = await ensureFreshToken(sb, conn, "granola-meetings v1");
+          accessToken = await ensureFreshToken(sb, conn, "granola-meetings v1", true);
           const mcp2 = new McpClient(accessToken);
           await mcp2.initialize();
           result = await mcp2.toolsCall("list_meetings", args);

@@ -40,9 +40,13 @@ function GranolaSection({ form, onUploaded, setError, setResult }) {
   }
   useEffect(() => { refreshStatus() }, [])
 
-  // The OAuth popup posts back when the callback page lands.
+  // The OAuth popup posts back when the callback page lands. Only trust
+  // messages from the Supabase functions origin (where the callback page
+  // is served) — anything else could be a spoofed frame.
   useEffect(() => {
+    const trustedOrigin = new URL(import.meta.env.VITE_SUPABASE_URL).origin
     function onMsg(e) {
+      if (e.origin !== trustedOrigin) return
       if (e.data?.type === 'granola-connected') { setConnecting(false); refreshStatus() }
       if (e.data?.type === 'granola-connect-error') { setConnecting(false); setError(`Granola: ${e.data.message}`) }
     }
@@ -55,7 +59,21 @@ function GranolaSection({ form, onUploaded, setError, setResult }) {
     try {
       const res = await callGranolaFn('granola-auth', { action: 'start' })
       if (res.error) throw new Error(res.error)
-      window.open(res.authorize_url, 'granola-connect', 'width=480,height=720,noopener=no')
+      const popup = window.open(res.authorize_url, 'granola-connect', 'width=480,height=720,noopener=no')
+      if (!popup) {
+        setConnecting(false)
+        setError('Granola connect failed: popup blocked. Allow popups for this site and try again.')
+        return
+      }
+      // If the user closes the popup without finishing, un-wedge the button.
+      // The postMessage path clears this poll implicitly via setConnecting(false).
+      const poll = setInterval(() => {
+        if (popup.closed) {
+          clearInterval(poll)
+          setConnecting(false)
+          refreshStatus()
+        }
+      }, 800)
     } catch (e) {
       setConnecting(false)
       setError(`Granola connect failed: ${e.message}`)
@@ -70,18 +88,26 @@ function GranolaSection({ form, onUploaded, setError, setResult }) {
     } catch (e) { console.error('granola disconnect failed:', e) }
   }
 
+  // Sequence guard: switching the time range fires overlapping requests;
+  // only the latest response may write state, or a slow older response
+  // would clobber the newer list.
+  const [loadSeq] = useState({ current: 0 })
   async function loadMeetings(range) {
+    const seq = ++loadSeq.current
     setLoadingMeetings(true); setError(null)
     try {
       const res = await callGranolaFn('granola-meetings', { time_range: range })
+      if (seq !== loadSeq.current) return
       if (res.error) {
         if (res.reconnect) setStatus({ connected: false })
         throw new Error(res.error)
       }
       setMeetings(res.meetings || [])
     } catch (e) {
-      setError(`Granola: ${e.message}`)
-    } finally { setLoadingMeetings(false) }
+      if (seq === loadSeq.current) setError(`Granola: ${e.message}`)
+    } finally {
+      if (seq === loadSeq.current) setLoadingMeetings(false)
+    }
   }
   useEffect(() => { if (status?.connected) loadMeetings(timeRange) }, [status?.connected, timeRange])
 

@@ -277,9 +277,11 @@ export function mcpResultJson(result: any): any {
 // Ensures the connection has a usable access token, refreshing when expired.
 // Mutates + persists the row via the provided service-role client. Returns the
 // access token, or throws with a reconnect-worthy message.
-export async function ensureFreshToken(sb: any, conn: any, fnTag: string): Promise<string> {
+// force=true skips the expiry heuristic entirely — used by callers retrying
+// after a 401 (the server said the token is dead regardless of expires_at).
+export async function ensureFreshToken(sb: any, conn: any, fnTag: string, force = false): Promise<string> {
   const expiresAt = conn.token_expires_at ? new Date(conn.token_expires_at).getTime() : 0;
-  const needsRefresh = !conn.access_token || (expiresAt > 0 && expiresAt - Date.now() < 60_000);
+  const needsRefresh = force || !conn.access_token || (expiresAt > 0 && expiresAt - Date.now() < 60_000);
   if (!needsRefresh) return conn.access_token;
 
   if (!conn.refresh_token) throw new Error(`${fnTag}: token expired and no refresh token; reconnect required`);
@@ -303,10 +305,23 @@ export async function ensureFreshToken(sb: any, conn: any, fnTag: string): Promi
   };
   if (tokens.refresh_token) update.refresh_token = tokens.refresh_token;
   if (tokens.expires_in) update.token_expires_at = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
-  try {
-    await sb.from("user_granola_connections").update(update).eq("id", conn.id);
-  } catch (e: any) {
-    console.error(`${fnTag}: failed to persist refreshed tokens:`, e?.message);
+  // Persist the rotated tokens. If the write fails, the new refresh token is
+  // lost while the old one may already be invalidated by rotation — retry once
+  // before giving up, and log loudly so a dead connection is diagnosable.
+  let persisted = false;
+  for (let attempt = 0; attempt < 2 && !persisted; attempt++) {
+    try {
+      const { error } = await sb.from("user_granola_connections").update(update).eq("id", conn.id);
+      if (!error) persisted = true;
+      else console.error(`${fnTag}: persist refreshed tokens failed (attempt ${attempt + 1}):`, error.message);
+    } catch (e: any) {
+      console.error(`${fnTag}: persist refreshed tokens threw (attempt ${attempt + 1}):`, e?.message);
+    }
   }
+  if (!persisted) console.error(`${fnTag}: ROTATED REFRESH TOKEN NOT PERSISTED — connection ${conn.id} will need reconnect after this access token expires`);
+  // Keep the in-memory row coherent for same-invocation callers.
+  conn.access_token = tokens.access_token;
+  if (tokens.refresh_token) conn.refresh_token = tokens.refresh_token;
+  if (update.token_expires_at) conn.token_expires_at = update.token_expires_at;
   return tokens.access_token;
 }

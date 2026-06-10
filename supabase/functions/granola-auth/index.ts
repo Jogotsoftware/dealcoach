@@ -42,6 +42,16 @@ function htmlPage(body: string) {
   return new Response(body, { status: 200, headers: { ...cors(), "Content-Type": "text/html" } });
 }
 
+// Escapes text for interpolation into HTML element content.
+function esc(s: string): string {
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+// JSON.stringify safe for inlining inside a <script> block: a literal
+// "</script>" inside the string would otherwise terminate the block early.
+function jsStr(v: unknown): string {
+  return JSON.stringify(v ?? null).replace(/</g, "\\u003c");
+}
+
 async function resolveUser(req: Request, sb: ReturnType<typeof createClient>) {
   const authHeader = req.headers.get("Authorization") || "";
   const jwt = authHeader.replace(/^Bearer\s+/i, "");
@@ -64,8 +74,8 @@ Deno.serve(async (req: Request) => {
       const oauthError = url.searchParams.get("error");
       const fail = (msg: string) =>
         htmlPage(`<!doctype html><html><body style="font-family:sans-serif;padding:24px">
-          <p>Granola connection failed: ${msg.replace(/</g, "&lt;")}</p>
-          <script>try{window.opener&&window.opener.postMessage({type:'granola-connect-error',message:${JSON.stringify(msg)}},'*')}catch(e){};setTimeout(function(){window.close()},4000)</script>
+          <p>Granola connection failed: ${esc(msg)}</p>
+          <script>try{window.opener&&window.opener.postMessage({type:'granola-connect-error',message:${jsStr(msg)}},'*')}catch(e){};setTimeout(function(){window.close()},4000)</script>
           </body></html>`);
 
       if (oauthError) return fail(`granola-auth v1: provider returned ${oauthError}`);
@@ -79,6 +89,13 @@ Deno.serve(async (req: Request) => {
         .maybeSingle();
       if (connErr || !conn) return fail("granola-auth v1: unknown or expired state");
 
+      // State TTL: a pending OAuth dance older than 10 minutes is dead.
+      const stateAge = Date.now() - new Date(conn.auth_state?.created_at || 0).getTime();
+      if (!conn.auth_state?.created_at || stateAge > 10 * 60_000) {
+        try { await sb.from("user_granola_connections").update({ auth_state: null }).eq("id", conn.id); } catch (_) { /* best effort */ }
+        return fail("granola-auth v1: authorization expired — start the connect flow again");
+      }
+
       const verifier = conn.auth_state?.verifier;
       const clientId = conn.client_registration?.client_id;
       if (!verifier || !clientId) return fail("granola-auth v1: missing PKCE verifier or client registration");
@@ -88,8 +105,27 @@ Deno.serve(async (req: Request) => {
       try {
         tokens = await exchangeCode(meta, clientId, code, verifier, REDIRECT_URI);
       } catch (e: any) {
+        // Clear the spent state either way: the auth code is single-use, so
+        // the pending verifier can never succeed again.
+        try { await sb.from("user_granola_connections").update({ auth_state: null }).eq("id", conn.id); } catch (_) { /* best effort */ }
         return fail(e?.message || "token exchange failed");
       }
+
+      // Persist tokens FIRST — the authorization code is single-use, so a
+      // hang or failure in the (optional) account-info round-trip below must
+      // not burn the only chance to store the session.
+      const { error: upErr } = await sb
+        .from("user_granola_connections")
+        .update({
+          status: "connected",
+          access_token: tokens.access_token,
+          refresh_token: tokens.refresh_token || null,
+          token_expires_at: tokens.expires_in ? new Date(Date.now() + tokens.expires_in * 1000).toISOString() : null,
+          auth_state: null,
+          last_used_at: new Date().toISOString(),
+        })
+        .eq("id", conn.id);
+      if (upErr) return fail(`granola-auth v1: failed to persist connection: ${upErr.message}`);
 
       // Best-effort: capture the connected account email for display.
       let granolaEmail: string | null = null;
@@ -98,33 +134,26 @@ Deno.serve(async (req: Request) => {
         await mcp.initialize();
         const acct = await mcp.toolsCall("get_account_info", {});
         const j = mcpResultJson(acct);
-        granolaEmail = j?.email || j?.user?.email || null;
-        if (!granolaEmail) {
+        const candidate = j?.email || j?.user?.email || null;
+        // Only accept values that actually look like an email — this string
+        // is rendered in HTML and shown in the UI.
+        if (candidate && /^[\w.+-]+@[\w-]+\.[\w.-]+$/.test(String(candidate))) {
+          granolaEmail = String(candidate);
+        } else {
           const t = mcpResultText(acct);
-          const m = t.match(/[\w.+-]+@[\w-]+\.[\w.]+/);
+          const m = t.match(/[\w.+-]+@[\w-]+\.[\w.-]+/);
           granolaEmail = m ? m[0] : null;
+        }
+        if (granolaEmail) {
+          await sb.from("user_granola_connections").update({ granola_email: granolaEmail }).eq("id", conn.id);
         }
       } catch (e) {
         console.error("granola-auth v1: get_account_info failed (non-fatal):", (e as any)?.message);
       }
 
-      const { error: upErr } = await sb
-        .from("user_granola_connections")
-        .update({
-          status: "connected",
-          access_token: tokens.access_token,
-          refresh_token: tokens.refresh_token || null,
-          token_expires_at: tokens.expires_in ? new Date(Date.now() + tokens.expires_in * 1000).toISOString() : null,
-          granola_email: granolaEmail,
-          auth_state: null,
-          last_used_at: new Date().toISOString(),
-        })
-        .eq("id", conn.id);
-      if (upErr) return fail(`granola-auth v1: failed to persist connection: ${upErr.message}`);
-
       return htmlPage(`<!doctype html><html><body style="font-family:sans-serif;padding:24px">
-        <p>Granola connected${granolaEmail ? ` as ${granolaEmail}` : ""}. You can close this window.</p>
-        <script>try{window.opener&&window.opener.postMessage({type:'granola-connected',email:${JSON.stringify(granolaEmail)}},'*')}catch(e){};setTimeout(function(){window.close()},1500)</script>
+        <p>Granola connected${granolaEmail ? ` as ${esc(granolaEmail)}` : ""}. You can close this window.</p>
+        <script>try{window.opener&&window.opener.postMessage({type:'granola-connected',email:${jsStr(granolaEmail)}},'*')}catch(e){};setTimeout(function(){window.close()},1500)</script>
         </body></html>`);
     }
 
@@ -175,7 +204,8 @@ Deno.serve(async (req: Request) => {
 
       let registration = existing?.client_registration || null;
       const registeredRedirects: string[] = registration?.redirect_uris || [];
-      if (!registration?.client_id || !registeredRedirects.includes(REDIRECT_URI)) {
+      const reRegistered = !registration?.client_id || !registeredRedirects.includes(REDIRECT_URI);
+      if (reRegistered) {
         registration = await registerClient(meta, REDIRECT_URI);
       }
 
@@ -185,9 +215,18 @@ Deno.serve(async (req: Request) => {
 
       const authState = { state, verifier, created_at: new Date().toISOString() };
       if (existing) {
+        const update: any = { client_registration: registration, auth_state: authState };
+        // A fresh DCR registration means any existing refresh token is bound
+        // to the old client_id and can never refresh again — clear it so the
+        // row can't sit in a half-alive state.
+        if (reRegistered && existing.access_token) {
+          update.access_token = null;
+          update.refresh_token = null;
+          update.token_expires_at = null;
+        }
         const { error: e } = await sb
           .from("user_granola_connections")
-          .update({ client_registration: registration, auth_state: authState })
+          .update(update)
           .eq("id", existing.id);
         if (e) return jr({ error: `granola-auth v1: state persist failed: ${e.message}` }, 500);
       } else {

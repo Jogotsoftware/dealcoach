@@ -83,15 +83,26 @@ Deno.serve(async (req: Request) => {
       return jr({ error: e?.message || "granola-import v1: reconnect required", reconnect: true }, 401);
     }
 
-    const mcp = new McpClient(accessToken);
-    await mcp.initialize();
-
-    // Verbatim transcript (the only provenance-grade artifact).
+    // Verbatim transcript (the only provenance-grade artifact). One retry
+    // after a forced token refresh when the server rejects the token.
+    let mcp = new McpClient(accessToken);
     let transcriptResult: any;
     try {
+      await mcp.initialize();
       transcriptResult = await mcp.toolsCall("get_meeting_transcript", { meeting_id: meetingId });
     } catch (e: any) {
-      return jr({ error: `granola-import v1: transcript fetch failed: ${e?.message || e}` }, 502);
+      if (String(e?.message || "").includes("401")) {
+        try {
+          accessToken = await ensureFreshToken(sb, conn, "granola-import v1", true);
+          mcp = new McpClient(accessToken);
+          await mcp.initialize();
+          transcriptResult = await mcp.toolsCall("get_meeting_transcript", { meeting_id: meetingId });
+        } catch (e2: any) {
+          return jr({ error: `granola-import v1: ${e2?.message || e2}`, reconnect: true }, 401);
+        }
+      } else {
+        return jr({ error: `granola-import v1: transcript fetch failed: ${e?.message || e}` }, 502);
+      }
     }
     const transcript = mcpResultText(transcriptResult).trim();
     if (!transcript || transcript.length < 200) {
@@ -150,18 +161,28 @@ Deno.serve(async (req: Request) => {
     {
       const { data, error } = await sb.from("conversations").insert(insertRow).select("id").single();
       if (error) {
-        // metadata column may not exist on this schema; retry without it.
-        if (insertRow.metadata && /metadata/.test(error.message)) {
-          delete insertRow.metadata;
-          const retry = await sb.from("conversations").insert(insertRow).select("id").single();
-          if (retry.error) return jr({ error: `granola-import v1: insert conversations failed: ${retry.error.message}` }, 500);
-          conv = retry.data;
-        } else {
-          return jr({ error: `granola-import v1: insert conversations failed: ${error.message}` }, 500);
+        // Unique-index race: a concurrent import of the same meeting landed
+        // first. Return the winner — same contract as the pre-insert check.
+        if (error.code === "23505" || /duplicate key/.test(error.message)) {
+          const { data: winner } = await sb
+            .from("conversations")
+            .select("id, transcript")
+            .eq("deal_id", dealId)
+            .eq("granola_meeting_id", meetingId)
+            .maybeSingle();
+          if (winner) {
+            return jr({
+              success: true,
+              version: "granola-import v1",
+              conversation_id: winner.id,
+              transcript_length: winner.transcript?.length || 0,
+              already_imported: true,
+            });
+          }
         }
-      } else {
-        conv = data;
+        return jr({ error: `granola-import v1: insert conversations failed: ${error.message}` }, 500);
       }
+      conv = data;
     }
 
     try {
