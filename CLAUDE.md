@@ -292,7 +292,9 @@ QDC quality score and scheduled-QDC date are still pending the BDR/intake overha
 | `cleanup-old-dashboard-snapshots` | Sunday 2:00 AM | Deletes dashboard_snapshots > 90 days |
 | `cleanup-idempotency` | 4:00 AM daily | Deletes expired edge_function_idempotency rows |
 | `process-retrospective-queue` | Every 5 min | Polls retrospective_queue — **pending deployment** |
-| `nightly-risk-sweep` | 4:30 AM daily | compute-deal-risks org sweep via net.http_post — **demo tenant only** until real-org sign-off |
+| `nightly-risk-sweep` | 4:30 AM daily | compute-deal-risks `{all_orgs:true}` sweep — platform-wide (real org included) |
+
+**Cron → edge function pattern (2026-06-11):** the `current_setting('app.supabase_url')` / `app.service_role_key` GUC pattern NEVER worked on this project (GUCs unset; `ALTER DATABASE` blocked on managed Supabase) — every job using it failed silently. Correct pattern: hardcoded project URL + `'x-cron-secret', (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'cron_secret')` header. The matching `CRON_SECRET` lives in edge function secrets; extract-pass / execution-pass / compute-deal-risks already accept it. All three repaired jobs (risk-sweep, workflow-engine-tick, coaching-nudges) use this now.
 
 ---
 
