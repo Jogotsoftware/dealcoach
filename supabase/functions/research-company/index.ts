@@ -1,21 +1,40 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-// research-company v34
-// CHANGES FROM v33:
-// - Replaces direct coach.system_prompt read with assemble_coach_prompt RPC (p_action='research')
-//   so platform core + methodology + coach context + ICP are all injected.
-// - Upserts assembled_prompt_versions (dedup on SHA-256 hash, increments use_count).
-// - coach.research_prompt is still used as the research-specific user-prompt template (unchanged).
+// research-company v35
+// CHANGES FROM v34 (extraction overhaul Phase 3 — facts-only research):
+// - Claims-with-citations contract ENFORCED IN CODE: row facts (pains, CEs,
+//   systems, news, hiring, criteria) without a source_url are dropped, not
+//   written. Profile scalar fields require a per-field citation in
+//   profile_citations; uncited fields stay Unknown.
+// - Suspected red/green flags + speculative risks no longer touch fact
+//   tables (deal_flags / deal_risks / deal_analysis.red_flags/green_flags).
+//   They land in deal_hypotheses (generated_by='research') with
+//   basis_source_ids pointing at the deal_sources rows for their citations.
+// - Every accepted fact writes a deal_sources row (source_origin='research',
+//   URL + title + accessed_at).
+// - sizing.entity_count routes through the shared provenance writer to the
+//   canonical home (deal_sizing.entity_count, source='research'),
+//   change-aware.
+// - Pre-call ICP fit computes over verified facts only and labels itself
+//   "fit based on N verified facts".
+// - Canonical-home deprecation: stops writing deal_analysis.pain_points
+//   text blob (relational deal_pain_points is canonical).
+// - Logo: cosmetic favicon fallback writes company_profile.logo_url when
+//   empty (Google s2 favicon endpoint; failures silent).
+// - Source-quality ordering in the prompt: primary sources first, forums
+//   excluded as fact sources.
+
+import { writeFact } from "../_shared/provenance-writer.ts";
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
 const PERPLEXITY_API_KEY = Deno.env.get("PERPLEXITY_API_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-const SCHEMA = `{"company_profile":{"overview":"string","industry":"string","revenue":"string","employee_count":"string","headquarters":"string","founded":"string","revenue_streams":["stream"],"tech_stack":["system"],"international_operations":"string","business_goals":["goal"],"business_priorities":["priority"],"growth_plans":["plan"],"recent_news":[{"date":"YYYY-MM","headline":"string","source_url":"URL or null"}],"other_initiatives":["initiative"],"tax_ids_locations":"string","ownership":"string"},"contacts":[{"name":"full name","title":"title","department":"dept","email":"email","linkedin":"REAL LinkedIn URL from Apollo/search ONLY","role_in_deal":"Economic Buyer|Champion|Technical Evaluator|Decision Maker|Influencer","influence_level":"high|medium|low","is_economic_buyer":false,"is_champion":false,"is_signer":false,"alignment_status":"aligned|neutral|resistant|unknown","background":"2-3 previous roles","previous_erp_experience":"ERP systems or null","source":"Apollo|LinkedIn|website","source_url":"URL"}],"company_systems":[{"system_category":"accounting|billing_invoicing|crm|project_management|inventory|payroll|expenses|fpa|front_end_operational|banks_credit_cards|other","system_name":"name","confidence":"high|medium|low","is_current":true,"is_needed":false,"integration_purpose":"null or string","source_url":"URL","notes":"evidence"}],"competitors":[{"name":"name","website":"URL","relevance":"why"}],"pain_points":[{"pain_description":"pain","category":"financial|operational|compliance|growth|competitive|technology|personnel","annual_cost":null,"annual_hours":null,"impact_text":"business impact","solution_component":"module or null","reasoning":"evidence","source_url":"URL or null"}],"compelling_events":[{"event_description":"consequence of inaction","event_date":"YYYY-MM-DD or null","strength":"strong|medium|weak","impact":"urgency","source_url":"URL or null"}],"risks":[{"risk_description":"risk","category":"timing|competition|champion|budget|technical|political|legal|resource|deal|custom","severity":"critical|high|medium|low","source_url":"URL or null"}],"flags":[{"flag_type":"red|green","description":"flag","category":"timing|competition|champion|budget|technical|political|fit|engagement|process|custom","severity":"critical|high|medium|low|null","source_url":"URL or null"}],"decision_criteria":[{"criterion":"what they evaluate on","importance":"high|medium|low","our_position":"strong|neutral|weak","notes":"context"}],"analysis":{"quantified_pain":"summary","driving_factors":"summary","decision_process":"string","decision_method":"string","business_impact":[{"impact":"string","category":"string","cost":null}],"ideal_solution":[{"component":"string","description":"string"}],"timeline_drivers":[{"driver":"string","date":"null","urgency":"high|medium|low"}]},"hiring_signals":[{"job_title":"title","key_requirements":"software","implications":"meaning","source_url":"URL"}],"fit_score":"0-10","deal_health_score":"0-10","icp_fit":{"score":"0-100","summary":"string"}}`;
+const SCHEMA = `{"company_profile":{"overview":"string","industry":"string","revenue":"string","employee_count":"string","headquarters":"string","founded":"string","revenue_streams":["stream"],"tech_stack":["system"],"international_operations":"string","business_goals":["goal"],"business_priorities":["priority"],"growth_plans":["plan"],"recent_news":[{"date":"YYYY-MM","headline":"string","source_url":"URL REQUIRED"}],"other_initiatives":["initiative"],"tax_ids_locations":"string","ownership":"string"},"profile_citations":{"overview":"URL","industry":"URL","revenue":"URL","employee_count":"URL","headquarters":"URL","founded":"URL","international_operations":"URL","ownership":"URL"},"sizing":{"entity_count":{"value":0,"source_url":"URL REQUIRED"}},"contacts":[{"name":"full name","title":"title","department":"dept","email":"email","linkedin":"REAL LinkedIn URL from Apollo/search ONLY","role_in_deal":"Economic Buyer|Champion|Technical Evaluator|Decision Maker|Influencer","influence_level":"high|medium|low","is_economic_buyer":false,"is_champion":false,"is_signer":false,"alignment_status":"aligned|neutral|resistant|unknown","background":"2-3 previous roles","previous_erp_experience":"ERP systems or null","source":"Apollo|LinkedIn|website","source_url":"URL REQUIRED"}],"company_systems":[{"system_category":"accounting|billing_invoicing|crm|project_management|inventory|payroll|expenses|fpa|front_end_operational|banks_credit_cards|other","system_name":"name","confidence":"high|medium|low","is_current":true,"is_needed":false,"integration_purpose":"null or string","source_url":"URL REQUIRED","notes":"evidence"}],"competitors":[{"name":"name","website":"URL","relevance":"why"}],"pain_points":[{"pain_description":"pain stated in a cited source, NOT inferred","category":"financial|operational|compliance|growth|competitive|technology|personnel","annual_cost":null,"annual_hours":null,"impact_text":"business impact","solution_component":"module or null","reasoning":"evidence","source_url":"URL REQUIRED"}],"compelling_events":[{"event_description":"consequence of inaction, from a cited source","event_date":"YYYY-MM-DD or null","strength":"strong|medium|weak","impact":"urgency","source_url":"URL REQUIRED"}],"hypotheses":[{"hypothesis_type":"red_flag|green_flag","hypothesis":"suspected pattern about this deal","reasoning":"why you believe this","confidence":"high|medium|low","basis_urls":["URLs the reasoning drew on"]}],"decision_criteria":[{"criterion":"what they evaluate on","importance":"high|medium|low","our_position":"strong|neutral|weak","notes":"context","source_url":"URL REQUIRED"}],"analysis":{"quantified_pain":"summary of CITED pains only","driving_factors":"summary","decision_process":"string","decision_method":"string","business_impact":[{"impact":"string","category":"string","cost":null}],"ideal_solution":[{"component":"string","description":"string"}],"timeline_drivers":[{"driver":"string","date":"null","urgency":"high|medium|low"}]},"hiring_signals":[{"job_title":"title","key_requirements":"software","implications":"meaning","source_url":"URL REQUIRED"}],"icp_fit":{"score":"0-100","summary":"string","verified_fact_count":0}}`;
 
-const RULES = 'RULES: 1)ONLY JSON. 2)null=unknown. 3)LinkedIn from Apollo/search only. 4)source_url on everything. 5)Events=consequences of INACTION. 6)Competitors=INDUSTRY peers. 7)ARRAYS not semicolons. 8)pain_points need impact_text and solution_component.';
+const RULES = 'RULES: 1)ONLY JSON. 2)null=unknown — NEVER guess. 3)LinkedIn from Apollo/search only. 4)FACTS REQUIRE CITATIONS: any pain/event/system/news/hiring/criteria/profile claim without a real source_url WILL BE DROPPED by the server. Do not fabricate URLs. 5)Suspicions and pattern-reasoning go ONLY in hypotheses[], never as facts. 6)Events=consequences of INACTION. 7)Competitors=INDUSTRY peers. 8)ARRAYS not semicolons. 9)icp_fit scores ONLY verified cited facts; set verified_fact_count. 10)SOURCE QUALITY ORDER: company website > press releases > SEC EDGAR > state business registries > official marketplaces/case studies > reputable trade press > aggregators. Forums and low-quality aggregators are NOT fact sources (leads to verify only).';
 
 function clamp(v: unknown, lo: number, hi: number): number | null { if (v == null) return null; const n = Number(v); return isNaN(n) ? null : Math.max(lo, Math.min(hi, Math.round(n))); }
 function validDate(d: string): boolean { return /^\d{4}-\d{2}-\d{2}$/.test(d) && !isNaN(Date.parse(d)); }
@@ -106,9 +125,9 @@ Deno.serve(async (req: Request) => {
   let logId: string | null = null;
 
   try {
-    if (!ANTHROPIC_API_KEY) return resp({ error: 'v34: No API key' }, 500);
-    const { deal_id } = await req.json(); if (!deal_id) return resp({ error: 'v34: deal_id required' }, 400);
-    const { data: deal } = await sb.from('deals').select('*').eq('id', deal_id).single(); if (!deal) return resp({ error: 'v34: Deal not found' }, 404);
+    if (!ANTHROPIC_API_KEY) return resp({ error: 'v35: No API key' }, 500);
+    const { deal_id } = await req.json(); if (!deal_id) return resp({ error: 'v35: deal_id required' }, 400);
+    const { data: deal } = await sb.from('deals').select('*').eq('id', deal_id).single(); if (!deal) return resp({ error: 'v35: Deal not found' }, 404);
     const { data: rep } = await sb.from('profiles').select('active_coach_id, org_id').eq('id', deal.rep_id).single();
     const cid = rep?.active_coach_id;
 
@@ -149,7 +168,7 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    console.log(`Research v34: ${deal.company_name}, model=${model}, px=${usePx}, ap=${useAp}`);
+    console.log(`Research v35: ${deal.company_name}, model=${model}, px=${usePx}, ap=${useAp}`);
 
     // Run data sources in parallel
     const [pxR, apP, apC] = await Promise.all([
@@ -175,7 +194,7 @@ Deno.serve(async (req: Request) => {
 
     console.log('Calling Claude...');
     const cr = await claude(body);
-    if (!cr.ok) { const e = await cr.text(); console.error('Claude error:', cr.status, e); await ulog(sb, logId, 'failed', `v34: Claude ${cr.status}: ${e.substring(0, 200)}`, t0); return resp({ error: `v34: Claude ${cr.status}` }, 500); }
+    if (!cr.ok) { const e = await cr.text(); console.error('Claude error:', cr.status, e); await ulog(sb, logId, 'failed', `v35: Claude ${cr.status}: ${e.substring(0, 200)}`, t0); return resp({ error: `v35: Claude ${cr.status}` }, 500); }
     const cd = await cr.json(); const usage = cd.usage || {};
     console.log(`Claude done: ${usage.input_tokens}in ${usage.output_tokens}out`);
 
@@ -187,38 +206,89 @@ Deno.serve(async (req: Request) => {
       p = JSON.parse(m[0]);
     } catch (e: any) {
       console.error('Parse error:', e.message);
-      await ulog(sb, logId, 'partial', `v34: ${e.message}`, t0, usage);
+      await ulog(sb, logId, 'partial', `v35: ${e.message}`, t0, usage);
       return resp({ success: true, status: 'partial' });
     }
 
-    const sum: any = { perplexity: !!pxR, apollo: !!(apP || apC), model: pxM, version: 'v34' };
+    const sum: any = { perplexity: !!pxR, apollo: !!(apP || apC), model: pxM, version: 'v35', dropped_uncited: 0 };
+    const researchOrgId = rep?.org_id || deal.org_id;
+    const observedAt = new Date().toISOString();
+
+    // Citation gate + deal_sources ledger. Returns the source row id, or null
+    // when the claim has no URL (claim is then dropped by the caller).
+    const hasUrl = (u: unknown) => typeof u === 'string' && /^https?:\/\//i.test(u.trim());
+    async function citedSource(fieldCategory: string, fieldName: string, summary: string, url: unknown, title?: string): Promise<string | null> {
+      if (!hasUrl(url)) { sum.dropped_uncited++; return null; }
+      try {
+        const { data } = await sb.from('deal_sources').insert({
+          deal_id, source_origin: 'research', field_category: fieldCategory, field_name: fieldName,
+          summary: String(summary || '').slice(0, 500), source_url: String(url).trim(),
+          source_title: title || null, accessed_at: observedAt,
+        }).select('id').single();
+        return data?.id || null;
+      } catch (e: any) { console.error('v35 deal_sources insert:', e?.message); return null; }
+    }
 
     // ========== CLEAR OLD RESEARCH DATA ==========
     console.log('Clearing old data...');
     await sb.from('deal_pain_points').delete().eq('deal_id', deal_id).eq('source', 'ai_research');
-    await sb.from('deal_risks').delete().eq('deal_id', deal_id).eq('source', 'ai_research');
-    await sb.from('deal_flags').delete().eq('deal_id', deal_id).eq('source', 'ai_research');
     await sb.from('compelling_events').delete().eq('deal_id', deal_id).eq('source', 'ai_research');
     await sb.from('company_systems').delete().eq('deal_id', deal_id).like('notes', '%AI research%');
     await sb.from('deal_decision_criteria').delete().eq('deal_id', deal_id).eq('source', 'ai_research');
     await sb.from('company_news').delete().eq('deal_id', deal_id);
+    // Open research hypotheses refresh on re-run; resolved ones are history.
+    await sb.from('deal_hypotheses').delete().eq('deal_id', deal_id).eq('generated_by', 'research').eq('status', 'open');
+    // NOTE v35: deal_risks / deal_flags from research are no longer written
+    // (hypothesis layer owns research reasoning), so no clearing either —
+    // except one-time cleanup of pre-v35 research rows:
+    await sb.from('deal_risks').delete().eq('deal_id', deal_id).eq('source', 'ai_research');
+    await sb.from('deal_flags').delete().eq('deal_id', deal_id).eq('source', 'ai_research');
 
-    // ========== COMPANY PROFILE ==========
+    // ========== COMPANY PROFILE (per-field citations required) ==========
     try {
       if (p.company_profile) {
         const cp = p.company_profile;
-        const u: any = { researched_at: new Date().toISOString(), raw_research: p };
-        for (const f of ['overview', 'industry', 'revenue', 'employee_count', 'headquarters', 'founded', 'international_operations', 'tax_ids_locations']) { if (cp[f] != null) u[f] = String(cp[f]); }
+        const cites = (p.profile_citations && typeof p.profile_citations === 'object') ? p.profile_citations : {};
+        const u: any = { researched_at: observedAt, raw_research: p };
+        for (const f of ['overview', 'industry', 'revenue', 'employee_count', 'headquarters', 'founded', 'international_operations', 'ownership']) {
+          if (cp[f] == null) continue;
+          const sid = await citedSource('company_profile', f, String(cp[f]), cites[f]);
+          if (sid) u[f] = String(cp[f]);
+          // uncited scalar claims stay Unknown (dropped by the citation gate)
+        }
+        if (cp.tax_ids_locations != null) u.tax_ids_locations = String(cp.tax_ids_locations);
+        // List fields are synthesis (goals/priorities/plans) rather than
+        // checkable single facts — kept, but recorded without fact status.
         const ra = arr(cp.revenue_streams); u.revenue_streams = join(ra); u.revenue_streams_list = ra;
         const ga = arr(cp.business_goals); u.business_goals = join(ga); u.business_goals_list = ga;
         const pa = arr(cp.business_priorities); u.business_priorities = join(pa); u.business_priorities_list = pa;
         const gr = arr(cp.growth_plans); u.growth_plans = join(gr); u.growth_plans_list = gr;
         const ia = arr(cp.other_initiatives); u.other_initiatives = join(ia); u.other_initiatives_list = ia;
         const ta = arr(cp.tech_stack); u.tech_stack = join(ta);
-        if (Array.isArray(cp.recent_news)) { u.recent_news = cp.recent_news.map((n: any) => typeof n === 'string' ? n : `[${n.date || ''}] ${n.headline}`).join('; '); }
+        // News requires a URL per item (dropped otherwise).
+        if (Array.isArray(cp.recent_news)) {
+          const cited = cp.recent_news.filter((n: any) => typeof n === 'object' && n.headline && hasUrl(n.source_url));
+          u.recent_news = cited.map((n: any) => `[${n.date || ''}] ${n.headline}`).join('; ');
+          for (const n of cited) {
+            try { await sb.from('company_news').insert({ deal_id, headline: n.headline, date_text: n.date || null, source_url: n.source_url, source: 'ai_research' }); } catch {}
+            await citedSource('company_news', 'recent_news', n.headline, n.source_url);
+          }
+          sum.dropped_uncited += (cp.recent_news.length - cited.length);
+        }
         await sb.from('company_profile').update(u).eq('deal_id', deal_id);
-        if (Array.isArray(cp.recent_news)) { for (const n of cp.recent_news) { if (typeof n === 'object' && n.headline) { try { await sb.from('company_news').insert({ deal_id, headline: n.headline, date_text: n.date || null, source_url: n.source_url || null, source: 'ai_research' }); } catch {} } } }
         sum.profile = Object.keys(u).length;
+      }
+      // sizing.entity_count routes through the shared provenance writer to the
+      // canonical home with research provenance (change-aware vs prior value).
+      if (p.sizing?.entity_count && typeof p.sizing.entity_count.value === 'number' && hasUrl(p.sizing.entity_count.source_url)) {
+        const wr = await writeFact(sb, {
+          org_id: researchOrgId, deal_id,
+          field_key: 'entity_count', field_type: 'number',
+          storage_target: 'deal_sizing.entity_count',
+          value: p.sizing.entity_count.value,
+          prov: { source: 'research', source_url: p.sizing.entity_count.source_url, observed_at: observedAt },
+        });
+        sum.entity_count = wr.disposition;
       }
     } catch (e: any) { console.error('Profile error:', e.message); }
 
@@ -238,14 +308,18 @@ Deno.serve(async (req: Request) => {
       }
     } catch (e: any) { console.error('Contacts error:', e.message); }
 
-    // ========== SYSTEMS ==========
+    // ========== SYSTEMS (citation required) ==========
     try {
       if (p.company_systems?.length) {
+        let written = 0;
         for (const s of p.company_systems) {
           if (!s.system_name) continue;
-          await sb.from('company_systems').insert({ deal_id, system_category: SYS_CATS.has(s.system_category) ? s.system_category : 'other', system_name: s.system_name, confidence: s.confidence || 'medium', is_current: s.is_current !== false, is_needed: s.is_needed || false, integration_purpose: s.integration_purpose || null, source_url: s.source_url || null, notes: `AI research: ${s.notes || ''}` });
+          const sid = await citedSource('company_systems', s.system_name, `${s.system_category}: ${s.system_name}`, s.source_url);
+          if (!sid) continue;
+          await sb.from('company_systems').insert({ deal_id, system_category: SYS_CATS.has(s.system_category) ? s.system_category : 'other', system_name: s.system_name, confidence: s.confidence || 'medium', is_current: s.is_current !== false, is_needed: s.is_needed || false, integration_purpose: s.integration_purpose || null, source_url: s.source_url, observed_at: observedAt, notes: `AI research: ${s.notes || ''}` });
+          written++;
         }
-        sum.systems = p.company_systems.length;
+        sum.systems = written;
       }
     } catch (e: any) { console.error('Systems error:', e.message); }
 
@@ -262,53 +336,94 @@ Deno.serve(async (req: Request) => {
       }
     } catch (e: any) { console.error('Competitors error:', e.message); }
 
-    // ========== FLAGS ==========
+    // ========== HYPOTHESES (quarantined — never fact tables) ==========
     try {
-      if (p.flags?.length) {
-        for (const f of p.flags) { if (!f.description) continue; await sb.from('deal_flags').insert({ deal_id, flag_type: f.flag_type === 'green' ? 'green' : 'red', description: f.description, category: FLAG_CATS.has(f.category) ? f.category : 'custom', severity: SEVS.has(f.severity) ? f.severity : null, source: 'ai_research', source_url: f.source_url || null }); }
-        sum.flags = p.flags.length;
+      const hyps: any[] = Array.isArray(p.hypotheses) ? p.hypotheses : [];
+      // Back-compat: a model still emitting risks/flags routes them here too.
+      for (const r of (p.risks || [])) if (r?.risk_description) hyps.push({ hypothesis_type: 'red_flag', hypothesis: r.risk_description, reasoning: r.category ? `risk category: ${r.category}` : null, confidence: r.severity || null, basis_urls: hasUrl(r.source_url) ? [r.source_url] : [] });
+      for (const f of (p.flags || [])) if (f?.description) hyps.push({ hypothesis_type: f.flag_type === 'green' ? 'green_flag' : 'red_flag', hypothesis: f.description, reasoning: f.category ? `flag category: ${f.category}` : null, confidence: f.severity || null, basis_urls: hasUrl(f.source_url) ? [f.source_url] : [] });
+      let written = 0;
+      for (const h of hyps) {
+        if (!h?.hypothesis) continue;
+        const basisIds: string[] = [];
+        for (const u of (Array.isArray(h.basis_urls) ? h.basis_urls : [])) {
+          const sid = await citedSource('hypothesis', h.hypothesis_type || 'red_flag', h.hypothesis, u);
+          if (sid) basisIds.push(sid);
+        }
+        await sb.from('deal_hypotheses').insert({
+          org_id: researchOrgId, deal_id,
+          hypothesis_type: h.hypothesis_type === 'green_flag' ? 'green_flag' : 'red_flag',
+          hypothesis: h.hypothesis, reasoning: h.reasoning || null,
+          basis_source_ids: basisIds, confidence: h.confidence || null,
+          generated_by: 'research', status: 'open',
+        });
+        written++;
       }
-    } catch (e: any) { console.error('Flags error:', e.message); }
+      sum.hypotheses = written;
+    } catch (e: any) { console.error('Hypotheses error:', e.message); }
 
-    // ========== PAIN POINTS ==========
+    // ========== PAIN POINTS (citation required) ==========
     try {
       if (p.pain_points?.length) {
-        for (const x of p.pain_points) { if (!x.pain_description) continue; await sb.from('deal_pain_points').insert({ deal_id, pain_description: x.pain_description, category: PAIN_CATS.has(x.category) ? x.category : 'operational', annual_cost: typeof x.annual_cost === 'number' ? x.annual_cost : null, annual_hours: typeof x.annual_hours === 'number' ? x.annual_hours : null, impact_text: x.impact_text || null, solution_component: x.solution_component || null, source: 'ai_research', verified: false, notes: x.reasoning || null, source_url: x.source_url || null }); }
-        sum.pains = p.pain_points.length;
+        let written = 0;
+        for (const x of p.pain_points) {
+          if (!x.pain_description) continue;
+          const sid = await citedSource('deal_pain_points', 'pain', x.pain_description, x.source_url);
+          if (!sid) continue;
+          await sb.from('deal_pain_points').insert({ deal_id, pain_description: x.pain_description, category: PAIN_CATS.has(x.category) ? x.category : 'operational', annual_cost: typeof x.annual_cost === 'number' ? x.annual_cost : null, annual_hours: typeof x.annual_hours === 'number' ? x.annual_hours : null, impact_text: x.impact_text || null, solution_component: x.solution_component || null, source: 'ai_research', verified: false, observed_at: observedAt, notes: x.reasoning || null, source_url: x.source_url });
+          written++;
+        }
+        sum.pains = written;
       }
     } catch (e: any) { console.error('Pains error:', e.message); }
 
-    // ========== EVENTS ==========
+    // ========== EVENTS (citation required) ==========
     try {
       if (p.compelling_events?.length) {
-        for (const e of p.compelling_events) { if (!e.event_description) continue; await sb.from('compelling_events').insert({ deal_id, event_description: e.event_description, event_date: e.event_date && validDate(e.event_date) ? e.event_date : null, strength: STRS.has(e.strength) ? e.strength : 'medium', impact: e.impact || null, verified: false, source: 'ai_research', source_url: e.source_url || null }); }
-        sum.events = p.compelling_events.length;
+        let written = 0;
+        for (const e of p.compelling_events) {
+          if (!e.event_description) continue;
+          const sid = await citedSource('compelling_events', 'event', e.event_description, e.source_url);
+          if (!sid) continue;
+          await sb.from('compelling_events').insert({ deal_id, event_description: e.event_description, event_date: e.event_date && validDate(e.event_date) ? e.event_date : null, strength: STRS.has(e.strength) ? e.strength : 'medium', impact: e.impact || null, verified: false, source: 'ai_research', observed_at: observedAt, source_url: e.source_url });
+          written++;
+        }
+        sum.events = written;
       }
     } catch (e: any) { console.error('Events error:', e.message); }
 
-    // ========== RISKS ==========
-    try {
-      if (p.risks?.length) {
-        for (const r of p.risks) { if (!r.risk_description) continue; await sb.from('deal_risks').insert({ deal_id, risk_description: r.risk_description, category: RISK_CATS.has(r.category) ? r.category : 'deal', severity: SEVS.has(r.severity) ? r.severity : 'medium', source: 'ai_research', status: 'open', source_url: r.source_url || null }); }
-        sum.risks = p.risks.length;
-      }
-    } catch (e: any) { console.error('Risks error:', e.message); }
+    // v35: research writes NO deal_risks and NO deal_flags — that reasoning
+    // lives in deal_hypotheses until evidence confirms or refutes it.
 
-    // ========== DECISION CRITERIA ==========
+    // ========== DECISION CRITERIA (citation required) ==========
     try {
       if (p.decision_criteria?.length) {
-        for (const dc of p.decision_criteria) { if (!dc.criterion) continue; await sb.from('deal_decision_criteria').insert({ deal_id, criterion: dc.criterion, importance: ['high', 'medium', 'low'].includes(dc.importance) ? dc.importance : 'medium', our_position: ['strong', 'neutral', 'weak'].includes(dc.our_position) ? dc.our_position : 'neutral', notes: dc.notes || null, source: 'ai_research' }); }
-        sum.criteria = p.decision_criteria.length;
+        let written = 0;
+        for (const dc of p.decision_criteria) {
+          if (!dc.criterion) continue;
+          const sid = await citedSource('deal_decision_criteria', 'criterion', dc.criterion, dc.source_url);
+          if (!sid) continue;
+          await sb.from('deal_decision_criteria').insert({ deal_id, criterion: dc.criterion, importance: ['high', 'medium', 'low'].includes(dc.importance) ? dc.importance : 'medium', our_position: ['strong', 'neutral', 'weak'].includes(dc.our_position) ? dc.our_position : 'neutral', notes: dc.notes || null, source: 'ai_research', observed_at: observedAt });
+          written++;
+        }
+        sum.criteria = written;
       }
     } catch (e: any) { console.error('Criteria error:', e.message); }
 
-    // ========== DEAL ANALYSIS ==========
+    // ========== DEAL ANALYSIS (no flag seeding; no pain_points blob) ==========
     try {
       const au: any = {};
-      if (p.pain_points?.length) au.pain_points = p.pain_points.map((x: any) => x.pain_description).join('; ');
-      if (p.risks?.length) au.red_flags = p.risks.map((x: any) => x.risk_description).join('; ');
-      if (p.flags?.length) { const gf = p.flags.filter((f: any) => f.flag_type === 'green').map((f: any) => f.description); if (gf.length) au.green_flags = gf.join('; '); }
-      if (p.hiring_signals?.length) au.custom_fields = { hiring_signals: p.hiring_signals };
+      // v35 canonical-home deprecation: pain_points text blob no longer
+      // written (deal_pain_points is canonical). red_flags/green_flags are
+      // verified-fact territory — research never writes them.
+      if (p.hiring_signals?.length) {
+        const cited = p.hiring_signals.filter((h: any) => hasUrl(h.source_url));
+        if (cited.length) {
+          au.custom_fields = { hiring_signals: cited };
+          for (const h of cited) await citedSource('hiring_signals', h.job_title || 'posting', h.implications || h.job_title, h.source_url);
+        }
+        sum.dropped_uncited += (p.hiring_signals.length - cited.length);
+      }
       const an = p.analysis || {};
       if (an.quantified_pain) au.quantified_pain = an.quantified_pain;
       if (an.driving_factors) au.driving_factors = an.driving_factors;
@@ -317,31 +432,57 @@ Deno.serve(async (req: Request) => {
       if (an.business_impact?.length) au.business_impact_list = an.business_impact;
       if (an.ideal_solution?.length) au.ideal_solution_list = an.ideal_solution;
       if (an.timeline_drivers?.length) au.timeline_drivers_list = an.timeline_drivers;
-      if (p.pain_points?.length) {
-        const tc = p.pain_points.reduce((s: number, x: any) => s + (typeof x.annual_cost === 'number' ? x.annual_cost : 0), 0);
-        const th = p.pain_points.reduce((s: number, x: any) => s + (typeof x.annual_hours === 'number' ? x.annual_hours : 0), 0);
-        if (tc) au.running_problem_cost_dollars = tc;
-        if (th) au.running_problem_cost_hours = th;
-      }
       if (Object.keys(au).length) await sb.from('deal_analysis').update(au).eq('deal_id', deal_id);
     } catch (e: any) { console.error('Analysis error:', e.message); }
 
-    // ========== ICP + SCORES ==========
+    // ========== ICP (verified facts only, labeled) ==========
     try {
-      if (p.icp_fit) { await sb.from('deals').update({ icp_fit_score: clamp(p.icp_fit.score, 0, 100), icp_fit_breakdown: p.icp_fit }).eq('id', deal_id); sum.icp = p.icp_fit.score; }
-      const fs = clamp(p.fit_score, 0, 10), hs = clamp(p.deal_health_score, 0, 10);
-      if (fs != null || hs != null) { const u: any = {}; if (fs != null) u.fit_score = fs; if (hs != null) u.deal_health_score = hs; await sb.from('deals').update(u).eq('id', deal_id); }
+      if (p.icp_fit) {
+        const verifiedCount = Number(p.icp_fit.verified_fact_count) || (sum.pains || 0) + (sum.events || 0) + (sum.systems || 0) + (sum.profile || 0);
+        const breakdown = { ...p.icp_fit, basis: `fit based on ${verifiedCount} verified facts`, computed_over: 'verified_facts_only', version: 'v35' };
+        await sb.from('deals').update({ icp_fit_score: clamp(p.icp_fit.score, 0, 100), icp_fit_breakdown: breakdown }).eq('id', deal_id);
+        sum.icp = p.icp_fit.score;
+      }
       await sb.from('deals').update({ last_researched_at: new Date().toISOString() }).eq('id', deal_id);
     } catch (e: any) { console.error('Scores error:', e.message); }
 
+    // ========== LOGO (cosmetic fallback; failures silent) ==========
+    try {
+      const { data: cprof } = await sb.from('company_profile').select('id, logo_url').eq('deal_id', deal_id).maybeSingle();
+      if (cprof && !cprof.logo_url && deal.website) {
+        const dom = deal.website.replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/^www\./, '');
+        if (dom) {
+          const favUrl = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(dom)}&sz=128`;
+          let logoUrl: string | null = null;
+          try {
+            const fr = await fetch(favUrl);
+            if (fr.ok) {
+              const bytes = new Uint8Array(await fr.arrayBuffer());
+              if (bytes.length > 200) { // skip the 16px default globe
+                const path = `${deal_id}/favicon-128.png`;
+                const { error: upErr } = await sb.storage.from('company-logos').upload(path, bytes, { contentType: 'image/png', upsert: true });
+                if (!upErr) {
+                  const { data: pub } = sb.storage.from('company-logos').getPublicUrl(path);
+                  logoUrl = pub?.publicUrl || null;
+                }
+              }
+            }
+          } catch (_) { /* silent */ }
+          if (!logoUrl) logoUrl = favUrl; // direct hotlink fallback
+          await sb.from('company_profile').update({ logo_url: logoUrl }).eq('id', cprof.id);
+          sum.logo = true;
+        }
+      }
+    } catch (e: any) { console.error('Logo error (non-fatal):', e.message); }
+
     console.log('Research complete:', JSON.stringify(sum));
     await ulog(sb, logId, 'completed', null, t0, usage, sum);
-    return resp({ success: true, version: 'v34', status: 'completed', summary: sum });
+    return resp({ success: true, version: 'v35', status: 'completed', summary: sum });
 
   } catch (err: any) {
-    console.error('FATAL v34:', err.message, err.stack);
-    await ulog(sb, logId, 'failed', `v34: ${err.message}`, t0);
-    return resp({ error: `v34: ${err.message}` }, 500);
+    console.error('FATAL v35:', err.message, err.stack);
+    await ulog(sb, logId, 'failed', `v35: ${err.message}`, t0);
+    return resp({ error: `v35: ${err.message}` }, 500);
   }
 });
 

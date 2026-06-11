@@ -58,6 +58,16 @@ AE_ROUTING = {
     'success_definition': 'deal_analysis.ideal_solution',
     'ideal_solution': 'deal_analysis.ideal_solution',
 }
+# Canonical field map (architecture section 2): sizing facts bind to
+# deal_sizing regardless of the catalog's generic routing.
+SIZING_ROUTING = {
+    'entity_count': 'deal_sizing.entity_count',
+    'total_users': 'deal_sizing.full_users',
+    'reporting_readonly_users': 'deal_sizing.view_only_users',
+    'bills_per_period': 'deal_sizing.ap_invoices_monthly',
+    'fixed_asset_count': 'deal_sizing.fixed_assets',
+    'warehouse_count': 'deal_sizing.warehouse_count',
+}
 
 rows = []
 sort = 0
@@ -67,7 +77,9 @@ for r in sc_defs['Field Definitions']:
         continue  # merged into vendor_payment_methods (one definition)
     cat = catalog.get(key, {})
     stored_in = cat.get('Stored In', 'deal attribute (new)')
-    if stored_in == 'company_systems':
+    if key in SIZING_ROUTING:
+        storage_target = SIZING_ROUTING[key]
+    elif stored_in == 'company_systems':
         storage_target = 'company_systems'
     elif stored_in == 'existing AE extraction':
         storage_target = AE_ROUTING.get(key)
