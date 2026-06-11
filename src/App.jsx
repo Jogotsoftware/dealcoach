@@ -52,6 +52,7 @@ import BarrierDetailPage from './pages/path/BarrierDetailPage'
 import GateCriteriaPage from './pages/path/GateCriteriaPage'
 import GateDimensionPage from './pages/path/GateDimensionPage'
 import LibraryAdmin from './pages/LibraryAdmin'
+import DiscoveryPage from './pages/DiscoveryPage'
 import { theme as T } from './lib/theme'
 
 function ProtectedRoute({ children }) {
@@ -134,6 +135,7 @@ export default function App() {
                 <Route path="/admin/routing"         element={<ErrorBoundary label="lead routing"><RequireAEManagerOrAdmin><RoutingAdmin /></RequireAEManagerOrAdmin></ErrorBoundary>} />
                 <Route path="/deal/:dealId/call/:conversationId" element={<ErrorBoundary label="this call"><CallDetail /></ErrorBoundary>} />
                 <Route path="/deal/:dealId/msp" element={<ErrorBoundary label="the MSP"><MSPPage /></ErrorBoundary>} />
+                <Route path="/deal/:dealId/discovery" element={<ErrorBoundary label="discovery"><DiscoveryPage /></ErrorBoundary>} />
                 <Route path="/deal/:dealId/quotes" element={<ErrorBoundary label="quotes"><QuotesList /></ErrorBoundary>} />
                 <Route path="/deal/:dealId/quote/:quoteId" element={<ErrorBoundary label="quote builder"><QuoteBuilder /></ErrorBoundary>} />
                 <Route path="/deal/:dealId/quote/:quoteId/proposal" element={<ErrorBoundary label="proposal preview"><ProposalRenderer /></ErrorBoundary>} />
