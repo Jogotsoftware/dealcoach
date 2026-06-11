@@ -301,7 +301,8 @@ Deno.serve(async (req: Request) => {
       await sb.from("user_granola_connections").update({ last_used_at: new Date().toISOString() }).eq("id", conn.id);
     } catch (_) { /* non-fatal */ }
 
-    // Fire process-transcript in the background, mirroring import-transcript-url.
+    // Fire process-transcript in the background, mirroring import-transcript-url,
+    // then the catalog extraction pass (extract-pass) after it settles.
     try {
       const p = fetch(`${SUPABASE_URL}/functions/v1/process-transcript`, {
         method: "POST",
@@ -309,7 +310,15 @@ Deno.serve(async (req: Request) => {
         body: JSON.stringify({ conversation_id: conv.id, deal_id: dealId }),
       }).then(async (r) => {
         if (!r.ok) console.error("granola-import v2 process-transcript non-2xx:", r.status, await r.text());
-      }).catch((e) => console.error("granola-import v2 process-transcript error:", e));
+      }).catch((e) => console.error("granola-import v2 process-transcript error:", e)).then(() =>
+        fetch(`${SUPABASE_URL}/functions/v1/extract-pass`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${SERVICE_KEY}`, apikey: SERVICE_KEY },
+          body: JSON.stringify({ conversation_id: conv.id }),
+        }).then(async (r) => {
+          if (!r.ok) console.error("granola-import v2 extract-pass non-2xx:", r.status, await r.text());
+        }).catch((e) => console.error("granola-import v2 extract-pass error:", e))
+      );
       // @ts-ignore EdgeRuntime is provided by the platform
       if (typeof EdgeRuntime !== "undefined" && EdgeRuntime.waitUntil) EdgeRuntime.waitUntil(p);
     } catch (e) {

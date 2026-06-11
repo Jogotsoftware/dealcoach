@@ -119,6 +119,20 @@ export async function callProcessTranscript(conversationId) {
     )
     const res = await response.json()
     console.log('Edge function response:', res)
+    // Fire the catalog extraction pass (extraction overhaul Phase 4) in the
+    // background — fire-and-forget; its provenance-gated writes surface on
+    // the deal as they land.
+    try {
+      fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/extract-pass`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ conversation_id: conversationId }),
+      }).catch(e => console.error('extract-pass fire failed:', e))
+    } catch (e) { console.error('extract-pass setup failed:', e) }
     return res
   } catch (err) {
     return { error: err.message }

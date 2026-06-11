@@ -114,7 +114,8 @@ Deno.serve(async (req: Request) => {
     }).select().single();
     if (convErr || !conv) return jr({ error: `v1: insert conversations failed: ${convErr?.message}` }, 500);
 
-    // Kick off process-transcript in the background
+    // Kick off process-transcript in the background, then the catalog
+    // extraction pass once it settles.
     try {
       const p = fetch(`${SUPABASE_URL}/functions/v1/process-transcript`, {
         method: 'POST',
@@ -122,7 +123,15 @@ Deno.serve(async (req: Request) => {
         body: JSON.stringify({ conversation_id: conv.id, deal_id }),
       }).then(async r => {
         if (!r.ok) console.error('v1 process-transcript non-2xx:', r.status, await r.text());
-      }).catch(e => console.error('v1 process-transcript error:', e));
+      }).catch(e => console.error('v1 process-transcript error:', e)).then(() =>
+        fetch(`${SUPABASE_URL}/functions/v1/extract-pass`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, 'apikey': SUPABASE_SERVICE_ROLE_KEY },
+          body: JSON.stringify({ conversation_id: conv.id }),
+        }).then(async r => {
+          if (!r.ok) console.error('v1 extract-pass non-2xx:', r.status, await r.text());
+        }).catch(e => console.error('v1 extract-pass error:', e))
+      );
       // @ts-ignore
       if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime.waitUntil) EdgeRuntime.waitUntil(p);
     } catch (e) { console.error('v1 trigger setup error:', e); }

@@ -3,7 +3,7 @@
 // This is the LOCKED Platform Core layer of the extraction prompt —
 // not org-editable anywhere. Do not hand-edit; re-run the script.
 
-export const EXTRACTION_PROTOCOL = \`EXTRACTION PROTOCOL (Platform Core — locked)
+export const EXTRACTION_PROTOCOL = `EXTRACTION PROTOCOL (Platform Core — locked)
 
 Step 1: Attribute every speaker before extracting anything
 Build a speaker map first. Rep-side: the AE, SC, and any seller-side participant (identify from introductions, email domains in the invite context, and self-references like 'here at Sage'). Prospect-side: everyone else, mapped to name and title when stated. If a speaker cannot be confidently classified, treat them as rep-side for fact purposes: misclassifying a rep as a prospect creates false facts, misclassifying a prospect as a rep only loses a fact (recoverable). Record the speaker map in the output so attribution is auditable.

@@ -225,8 +225,10 @@ async function suggestValue(admin: any, w: FactWrite, currentValue: unknown, con
       },
       conflict_context: context,
       status: "open",
+      // Legacy NOT NULL columns from the new-field suggestion use of this table.
       suggested_field_label: w.field_key,
       suggested_field_type: w.field_type,
+      suggested_description: context,
       ai_reasoning: context,
     }).select("id").single();
     if (error) return { disposition: "rejected", reason: `suggestion insert failed: ${error.message}` };
