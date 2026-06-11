@@ -219,6 +219,15 @@ Deno.serve(async (req: Request) => {
       for (const d of (deals || [])) results.push(await computeForDeal(sb, d.id));
       return jr({ success: true, version: "compute-deal-risks v1", deals: results.length });
     }
+    if (body.all_orgs === true) {
+      // Platform-wide nightly sweep — cron / service callers only.
+      if (callerOrg) return jr({ error: "compute-deal-risks v1: all_orgs is cron/service only" }, 403);
+      const { data: deals } = await sb.from("deals").select("id")
+        .not("stage", "in", "(closed_won,closed_lost,disqualified)");
+      let done = 0;
+      for (const d of (deals || [])) { await computeForDeal(sb, d.id); done++; }
+      return jr({ success: true, version: "compute-deal-risks v1", deals: done });
+    }
     return jr({ error: "compute-deal-risks v1: deal_id or org_id required" }, 400);
   } catch (e: any) {
     console.error("compute-deal-risks v1 error:", e);
