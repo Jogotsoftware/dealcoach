@@ -562,14 +562,19 @@ Deno.serve(async (req: Request) => {
       });
     } catch (_) { /* non-fatal */ }
     try {
-      const p = fetch(`${SUPABASE_URL}/functions/v1/compute-deal-risks`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${SERVICE_KEY}`, apikey: SERVICE_KEY },
-        body: JSON.stringify({ deal_id: deal.id }),
-      }).catch((e) => console.error("extract-pass v1: compute-deal-risks fire failed:", e));
+      const headers = { "Content-Type": "application/json", Authorization: `Bearer ${SERVICE_KEY}`, apikey: SERVICE_KEY };
+      const p = Promise.allSettled([
+        fetch(`${SUPABASE_URL}/functions/v1/compute-deal-risks`, {
+          method: "POST", headers, body: JSON.stringify({ deal_id: deal.id }),
+        }),
+        // Coaching dimension — skip on reuse_raw (analytics already exist).
+        reuseRaw ? Promise.resolve(null) : fetch(`${SUPABASE_URL}/functions/v1/execution-pass`, {
+          method: "POST", headers, body: JSON.stringify({ conversation_id: conversationId }),
+        }),
+      ]).catch((e) => console.error("extract-pass v1: downstream fire failed:", e));
       // @ts-ignore platform global
       if (typeof EdgeRuntime !== "undefined" && EdgeRuntime.waitUntil) EdgeRuntime.waitUntil(p);
-    } catch (_) { /* compute-deal-risks may not be deployed yet */ }
+    } catch (_) { /* downstream functions may not be deployed yet */ }
 
     return jr({ success: true, ...sum, rejections: rejections.slice(0, 30), ms: Date.now() - t0 });
   } catch (e: any) {
