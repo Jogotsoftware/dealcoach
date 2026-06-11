@@ -1,0 +1,918 @@
+{
+ "Extraction Protocol": [
+  {
+   "Step": "1",
+   "Rule": "Attribute every speaker before extracting anything",
+   "Directions": "Build a speaker map first. Rep-side: the AE, SC, and any seller-side participant (identify from introductions, email domains in the invite context, and self-references like 'here at Sage'). Prospect-side: everyone else, mapped to name and title when stated. If a speaker cannot be confidently classified, treat them as rep-side for fact purposes: misclassifying a rep as a prospect creates false facts, misclassifying a prospect as a rep only loses a fact (recoverable). Record the speaker map in the output so attribution is auditable."
+  },
+  {
+   "Step": "2",
+   "Rule": "Read the full transcript once before extracting any field",
+   "Directions": "First pass is comprehension only: understand the company, who's who, what was discussed, and where corrections happened. Facts are frequently corrected or refined later in a call ('actually, it's twelve with the new one'). Extracting on first mention without the full-read pass produces stale values the call itself superseded."
+  },
+  {
+   "Step": "3",
+   "Rule": "Locate answers in all four shapes they take",
+   "Directions": "(a) Direct answer to a question. (b) Volunteered fact inside a story or aside; these are often the richest and easiest to miss ('...because all nine LLCs share one bookkeeper' answers entity_count and staffing in a subordinate clause). (c) Confirmed rep statement: rep states a fact, prospect explicitly confirms with content ('right, twelve', 'yes exactly'). (d) Correction: a later statement revising an earlier one. Scan for all four; do not extract only from Q&A pairs."
+  },
+  {
+   "Step": "4",
+   "Rule": "Apply the confirmation standard strictly",
+   "Directions": "A rep-stated fact becomes a prospect fact ONLY with explicit contentful confirmation: 'yes', 'right', 'exactly', 'that's correct', or restating the value. Filler acknowledgments ('mm-hm', 'sure', 'okay', 'I guess') while someone is talking are conversational lubricant, NOT confirmation; they produce partial status at most. When a confirmation creates the fact, the quote MUST include both the rep's statement and the prospect's confirmation so the evidence is honest about its shape."
+  },
+  {
+   "Step": "5",
+   "Rule": "Select the minimal complete quote",
+   "Directions": "The quote is the smallest contiguous span that contains the fact and makes it intelligible standalone. Include the preceding question when the answer is elliptical ('About twelve' means nothing without 'How many people would be in the system?'). Never stitch non-contiguous sentences into one quote; use multiple linked quotes instead. Never paraphrase inside quotation marks: the quote is verbatim or it is not a quote."
+  },
+  {
+   "Step": "6",
+   "Rule": "Handle numbers with the containment rule",
+   "Directions": "Every numeric value must appear in its quote, or be a flagged conversion from numbers in the quote (2 days/week -> ~800 hrs/yr, weekly -> monthly x4.33, 'parent plus nine' -> 10). Conversions are recorded as conversions with the arithmetic shown. Approximations keep their hedge ('call it 300, 350' -> 325, range noted). NEVER average two conflicting numbers, round a vague statement into a number ('a bunch of entities' is not a number), or import a number from another field's context."
+  },
+  {
+   "Step": "7",
+   "Rule": "Preserve hedges; route hard uncertainty to partial",
+   "Directions": "Soft hedges ('I think', 'probably', 'around') are extractable WITH the hedge preserved in the quote and noted: hedged facts are facts with stated confidence. Hard uncertainty ('I'd have to check', 'don't quote me', 'ask our controller') is partial status + a follow-up task with the named resolver. The line: did the speaker commit to a value, or defer? Deferral is never a value."
+  },
+  {
+   "Step": "8",
+   "Rule": "Within one call, last statement wins; across calls, change-aware recency",
+   "Directions": "Mid-call corrections supersede earlier statements; extract the corrected value and note the correction in the evidence. Across calls, classify against the prior value provided in context: new_fact (was Unknown), confirmation (same value restated; bump observed_at and reconfirmed counter), changed_fact (differs; new value wins, both values and sources recorded, qualifying-spine changes surface on the deal timeline)."
+  },
+  {
+   "Step": "9",
+   "Rule": "Multi-speaker conflict inside one call: capture both, decide nothing",
+   "Directions": "If the CFO says nine entities and the controller says ten in the same call, write neither as the value. Record the conflict with both quotes, set partial, and generate a clarification task. Choosing between prospect-side speakers is inference; flagging the discrepancy is the finding."
+  },
+  {
+   "Step": "10",
+   "Rule": "Negative findings are findings",
+   "Directions": "'We don't use POs', 'no budget set', 'we've never counted inventory', 'there's no approval process' are answers, not absences. Write them as the value (false / none / not done) with the quote. The difference between not_discussed and a stated 'no' is exactly the gap analysis the SC and AE need."
+  },
+  {
+   "Step": "11",
+   "Rule": "Route current vs desired before writing anything",
+   "Directions": "Every field is current state unless its definition says otherwise. Aspirational markers ('we want', 'we'd love', 'ideally', 'we should', 'the goal is') route to ideal_solution / desired_reporting / success_definition. Past state ('we used to') is history color in notes, not the current value. One sentence can contain both ('close takes 18 days and we want it at 5'): split it, two routings, same quote linked to both."
+  },
+  {
+   "Step": "12",
+   "Rule": "Disambiguate between adjacent fields using the anti-patterns",
+   "Directions": "Before writing, check the field's negative signals: is this fact actually the neighbor's? The recurring confusions: billing timing vs revenue recognition; locations vs entities; pain vs catalyst vs compelling event; purchase approval vs bill approval; ideal-solution color vs must-have decision criteria; employee count vs user count; cost rates vs billing rates. When a statement genuinely answers two fields, link the quote to both; when it merely resembles the second field, the anti-pattern decides."
+  },
+  {
+   "Step": "13",
+   "Rule": "Decide disposition: write, suggest, or skip",
+   "Directions": "For each candidate: if the field is manual-locked -> suggest (field_suggestions row with full provenance), never write. If prior value exists from automated source -> write per change classification. If no quote/speaker support survives the gates above -> skip entirely; the model proposes nothing it cannot evidence. Pattern-level inferences (title implies role, industry implies pain) are neither written nor suggested as facts: they go to deal_hypotheses with reasoning and basis sources, or nowhere."
+  },
+  {
+   "Step": "14",
+   "Rule": "Quantified problems link to pain",
+   "Directions": "When an extracted value evidences a problem with stated cost, hours, or frequency, attach pain_link: match against existing deal_pain_points first (same underlying problem -> enrich with the new quote), otherwise propose a new pain row through the same quote gate. The dollar/hours quantification follows rule 6."
+  },
+  {
+   "Step": "15",
+   "Rule": "Emit the structured contract and nothing else",
+   "Directions": "Per field: status (found / partial / not_found / not_applicable), value, normalized_value, verbatim quote(s), speaker(s), change_classification, disposition, pain_link (optional), notes (conversions, hedges, conflicts). Per entity candidate: the entity contract plus match_against (existing row id or none). No prose, no commentary, no recommendations inside the extraction output: coaching lives in a different pass."
+  },
+  {
+   "Step": "16",
+   "Rule": "Extract concepts, never question-answer pairs",
+   "Directions": "The field catalog's question text documents what information is wanted; it is NOT a script and the rep will not ask those exact questions. A field is found whenever its canonical definition and signals match a prospect statement, regardless of what question (if any) preceded it: volunteered facts, asides, stories, and answers to differently-phrased questions all count equally. Never condition extraction on a question having been asked, and never down-rank a fact because it arrived unprompted; unprompted facts are often the most reliable."
+  },
+  {
+   "Step": "17",
+   "Rule": "Run the metrics sweep on every transcript",
+   "Directions": "After field extraction, make one dedicated pass capturing EVERY quantified business statement by a prospect-side speaker as a metric observation: value, unit, period (per month/year/event), as-of context, quote, speaker. Map to the metric taxonomy when the mapping is unambiguous (days to close -> close_days; 'customers pay us in about 60 days' -> dso); otherwise store under the prospect's own label, flagged unmapped for taxonomy review. The sweep is a safety net: a stated number that fits no field must still be captured. Field values and pain quantifications LINK to their metric observations (one fact, one home; the observation is the quantitative record). Containment rule 6 and speaker rule 4 apply in full."
+  }
+ ],
+ "AE Field Definitions": [
+  {
+   "Group": "Flags",
+   "Field": "green_flags / red_flags",
+   "Canonical Home": "deal_analysis (verified facts only)",
+   "Canonical Definition": "Stated facts that strengthen (green) or threaten (red) the deal: prior Intacct experience, engaged power, confirmed budget (green); competitive bias, no access to power, stalled timeline (red). Post-hypothesis-split, this field holds ONLY quote-backed facts; suspected/pattern-derived flags live in deal_hypotheses.",
+   "Type & Normalization": "List per color; each flag one clause + its quote.",
+   "Positive Signals": "I used Intacct at my last company; the CFO is driving this personally; we got burned by NetSuite before; honestly there's no budget approved",
+   "Negative Signals / Anti-patterns": "AI pattern-inference ('no champion identified yet' without a quote) -> deal_hypotheses. Rep-asserted positives ('sounds like you're ready to move') -> nothing. Industry-typical risks never voiced -> nothing.",
+   "Good Example": "Quote: 'I ran Intacct for four years at my old firm, I know what it can do' -> green flag: champion has prior Intacct experience.",
+   "Bad Example": "No exec sponsor has appeared in any call (observation, no quote) -> hypothesis, not a red flag fact."
+  },
+  {
+   "Group": "Pain",
+   "Field": "quantified_pain",
+   "Canonical Home": "deal_analysis + deal_pain_points quantification",
+   "Canonical Definition": "Pain expressed in dollars, hours, headcount, or frequency, stated or derivable by shown arithmetic from stated numbers. The ROI raw material.",
+   "Type & Normalization": "Per pain: annual_cost and/or annual_hours with conversion shown. Protocol rule 6 governs.",
+   "Positive Signals": "costs us about $N; N hours a week; two full-timers just doing; we wrote off $N",
+   "Negative Signals / Anti-patterns": "Rep-computed ROI math recited to the prospect is not prospect quantification. Industry benchmarks are coach knowledge, never deal facts. Vague magnitude ('a ton of time') is the pain without quantification: capture pain, leave numbers empty, task the quantification question.",
+   "Good Example": "Quote: 'Maria spends two days a week on eliminations' -> ~800 hrs/yr (2d x 8h x 50wk, shown); linked to eliminations pain.",
+   "Bad Example": "Rep: 'That's probably $100k a year of waste' Prospect: 'wow' -> rep math; nothing."
+  },
+  {
+   "Group": "Pain",
+   "Field": "business_impact",
+   "Canonical Home": "deal_analysis",
+   "Canonical Definition": "The downstream consequence of the pains on the business: decisions delayed, growth constrained, covenant risk, customer impact. The 'so what' the prospect states.",
+   "Type & Normalization": "Text; keep causal chains verbatim ('because X, we can't Y').",
+   "Positive Signals": "because of that we can't; it means we; the board sees numbers three weeks late; we've held off hiring",
+   "Negative Signals / Anti-patterns": "Impact the REP narrates is nothing. The pain itself restated is not impact; impact is what the pain CAUSES. If no impact is stated, leave empty: impact-probing is a coaching note, not an extraction.",
+   "Good Example": "Quote: 'Because consolidation takes so long, we've twice missed the window on acquisition targets' -> impact: delayed M&A decisions (tied to consolidation pain).",
+   "Bad Example": "Quote: 'Close takes 18 days' -> the pain, not its impact."
+  },
+  {
+   "Group": "Decision",
+   "Field": "decision_process",
+   "Canonical Home": "deal_analysis",
+   "Canonical Definition": "The STEPS the prospect says their evaluation will follow: demos, references, board review, IT security review, legal. Sequence and gates.",
+   "Type & Normalization": "Text: ordered steps as stated; dates attach to timeline fields, not here.",
+   "Positive Signals": "next we'll; then it goes to the board; we want references; procurement gets involved after",
+   "Negative Signals / Anti-patterns": "How the decision gets MADE (consensus, owner decides) is decision_method. Vendor-proposed process (the rep's MSP) is not their process until the prospect adopts it verbally.",
+   "Good Example": "Quote: 'Demo for my team, then references, then I take it to the partners in March' -> steps: team demo -> references -> partner review (March -> decision_date candidate).",
+   "Bad Example": "Rep: 'Typically we'd do a scoping call next' -> rep's plan, not their process."
+  },
+  {
+   "Group": "Decision",
+   "Field": "decision_method",
+   "Canonical Home": "deal_analysis",
+   "Canonical Definition": "WHO decides and HOW: single owner, consensus, committee vote, board approval, CFO recommends/CEO ratifies.",
+   "Type & Normalization": "Text: decider + mechanism.",
+   "Positive Signals": "ultimately it's my call; we decide together; board has to approve; whatever she recommends we do",
+   "Negative Signals / Anti-patterns": "Titles in the room do not establish the method; only stated decision mechanics do. Signer identity is the contacts signer fact, related but distinct (the signer may rubber-stamp the real decider).",
+   "Good Example": "Quote: 'I'll make the recommendation but my two partners have to be comfortable' -> method: champion recommends, partner consensus required.",
+   "Bad Example": "CFO present on the call -> nothing about method without a statement."
+  },
+  {
+   "Group": "Stakeholders",
+   "Field": "champion (evidence standard)",
+   "Canonical Home": "deal_analysis.champion + contacts.is_champion",
+   "Canonical Definition": "A champion is evidenced, not assigned: someone selling internally (advocating to others), providing inside information, granting access to power, or with a stated personal win. is_champion requires at least one of these behaviors quote-backed.",
+   "Type & Normalization": "Name + the evidencing behavior(s). Enthusiasm alone = champion CANDIDATE -> deal_hypotheses.",
+   "Positive Signals": "I already told the CEO we need this; I'll set up time with our CFO; between us, the budget conversation is; this would make my life",
+   "Negative Signals / Anti-patterns": "Friendliness and engagement are not championship. The most responsive contact is not automatically the champion. Title (Controller, VP Finance) establishes nothing.",
+   "Good Example": "Quote: 'I walked our CEO through your demo deck already, she's interested' -> champion evidence: internal selling + access creation; is_champion=true.",
+   "Bad Example": "Keith answers emails fast and likes the product -> candidate; hypothesis, not fact."
+  },
+  {
+   "Group": "Stakeholders",
+   "Field": "economic_buyer (evidence standard)",
+   "Canonical Home": "deal_analysis.economic_buyer + contacts.is_economic_buyer",
+   "Canonical Definition": "The person with budget authority for THIS purchase, evidenced by statements about controlling/approving the spend. Title-based inference (CFO = EB) is the canonical forbidden move: it goes to deal_hypotheses until evidenced.",
+   "Type & Normalization": "Name + evidencing quote.",
+   "Positive Signals": "it comes out of my budget; I approve spend over; she controls that line; nothing gets bought without",
+   "Negative Signals / Anti-patterns": "Signer is a separate fact (who executes the contract). The person who FEELS the pain most is often not the EB. 'My boss has to approve' names a gate, not necessarily the EB; capture the structure stated.",
+   "Good Example": "Quote: 'Anything over $50k is Senake's call, full stop' -> EB: Senake (quote-backed).",
+   "Bad Example": "Senake is the CFO -> hypothesis only; do not set is_economic_buyer."
+  },
+  {
+   "Group": "Stakeholders",
+   "Field": "exec_alignment",
+   "Canonical Home": "deal_analysis",
+   "Canonical Definition": "Stated posture of executive leadership toward this initiative: sponsoring, aware, indifferent, resistant, unaware.",
+   "Type & Normalization": "Text: which exec + stated posture.",
+   "Positive Signals": "the CEO is behind this; leadership asked us to fix; my boss doesn't see the problem; haven't told the owners yet",
+   "Negative Signals / Anti-patterns": "Exec ATTENDANCE on a call is a fact worth noting but is not alignment; posture must be stated or demonstrated in their own words on the call.",
+   "Good Example": "Quote: 'The owners told me at the offsite: fix the reporting this year' -> exec alignment: owner-mandated initiative.",
+   "Bad Example": "CFO joined the demo silently -> attendance noted; alignment unknown."
+  },
+  {
+   "Group": "Budget",
+   "Field": "budget",
+   "Canonical Home": "deal_analysis",
+   "Canonical Definition": "What the prospect states about budget for this purchase: an amount, a range, 'no budget set', 'we'll find it if it's right'. The statement IS the value, including its softness.",
+   "Type & Normalization": "Text, verbatim-near. Amounts/ranges kept exactly. 'No budget' is a finding (and a red-flag candidate).",
+   "Positive Signals": "we've set aside; budgeted $N; somewhere in the N range; there's no formal budget; if the ROI is there we'll fund it",
+   "Negative Signals / Anti-patterns": "The rep's price quote is not their budget. Current spend on existing systems is current_spend, not budget. Willingness ('we can afford it') without a figure stays verbatim, no number invented.",
+   "Good Example": "Quote: 'The board approved up to $150k for this' -> budget: up to $150k, board-approved (also sets budget_allocated=true, same quote).",
+   "Bad Example": "Rep: 'You're looking at roughly $80k/yr' Prospect: 'okay' -> pricing discussion, not budget."
+  },
+  {
+   "Group": "Budget",
+   "Field": "budget_allocated",
+   "Canonical Home": "deal_analysis",
+   "Canonical Definition": "Whether budget is formally approved/reserved versus intended/hoped. The allocated/unallocated distinction is forecast-category fuel.",
+   "Type & Normalization": "Boolean + approving body in notes.",
+   "Positive Signals": "approved; earmarked; it's in this year's budget; board signed off on the spend",
+   "Negative Signals / Anti-patterns": "An amount mentioned is not an amount allocated; 'we're thinking around $100k' is budget text with allocated=false. Next-fiscal-year intent is false-now with timing note.",
+   "Good Example": "Quote: 'It's line-itemed in the FY26 budget' -> true.",
+   "Bad Example": "Quote: 'We figure it'll run about $100k' -> estimate; allocated=false."
+  },
+  {
+   "Group": "Budget",
+   "Field": "current_spend",
+   "Canonical Home": "deal_analysis",
+   "Canonical Definition": "What they pay today for the systems/processes being replaced: software licenses, outsourced accounting, headcount explicitly framed as replaceable cost.",
+   "Type & Normalization": "Text with amounts verbatim; per-system breakdown when stated.",
+   "Positive Signals": "we pay QuickBooks; our Bill.com bill is; the outsourced CFO costs; all-in we spend about N on",
+   "Negative Signals / Anti-patterns": "General payroll is not current spend unless the prospect frames it as cost the change addresses. Rep-estimated current spend is nothing.",
+   "Good Example": "Quote: 'QB Enterprise runs us about $7k, Fishbowl another $12k' -> current spend: ~$19k/yr software (QB $7k, Fishbowl $12k).",
+   "Bad Example": "Quote: 'We have three accountants' -> headcount fact; not current_spend unless framed as addressable."
+  },
+  {
+   "Group": "Timeline",
+   "Field": "decision_date / signature_date / kickoff_date / go_live_date",
+   "Canonical Home": "deal_analysis (four fields)",
+   "Canonical Definition": "Four DISTINCT dates: when they choose a vendor; when they expect to sign; when implementation starts; when they need to be live. The cardinal sin is smearing one stated date across all four. Each field is written ONLY from a statement about that specific milestone.",
+   "Type & Normalization": "Dates normalized to month/quarter precision as stated ('by June' -> June; 'Q3' -> Q3). A stated dependency chain ('live by Jan 1, so signed by October') fills exactly the named milestones (go_live + signature), and the derivation is the prospect's, not the model's.",
+   "Positive Signals": "decide by; pick a vendor; signed before; start the project after; live by; can't cut over during",
+   "Negative Signals / Anti-patterns": "'We want this done by January' is ambiguous between signature and go-live: partial + clarification task; do not pick one. Busy-season constraints route to busy_season AND may bound a date only when the prospect does the bounding aloud.",
+   "Good Example": "Quote: 'We need to be live January 1, which means signing by early October per your timeline' -> go_live: Jan 1; signature: early Oct (prospect-stated chain). decision/kickoff remain Unknown.",
+   "Bad Example": "Quote: 'By year-end for sure' -> which milestone? Partial; task to clarify; write none of the four."
+  },
+  {
+   "Group": "Timeline",
+   "Field": "timeline_drivers",
+   "Canonical Home": "deal_analysis",
+   "Canonical Definition": "WHY the dates are the dates: the stated reason behind the timing (fiscal year start, audit, lease expiry, contract renewal, busy season avoidance). Often the bridge to a compelling event.",
+   "Type & Normalization": "Text; when the driver includes a consequence of missing it, ALSO extract a compelling_events candidate (same quote, both homes).",
+   "Positive Signals": "because our fiscal year; before the audit; the QuickBooks renewal hits in; after busy season",
+   "Negative Signals / Anti-patterns": "A driver without a date doesn't create dates. The rep's implementation-duration math is not their driver.",
+   "Good Example": "Quote: 'Fiscal year starts October 1 and I refuse to run another year on this system' -> driver: FY start; CE candidate: another year on current system (consequence framing).",
+   "Bad Example": "Rep: 'Implementations take 90 days so we should start by...' -> rep math, not their driver."
+  },
+  {
+   "Group": "Timeline",
+   "Field": "busy_season",
+   "Canonical Home": "deal_analysis",
+   "Canonical Definition": "When the prospect's team is slammed and unavailable for evaluation/implementation, as stated.",
+   "Type & Normalization": "Text: period + what makes it busy.",
+   "Positive Signals": "our busy season; year-end is brutal; tax season; don't talk to us in",
+   "Negative Signals / Anti-patterns": "Industry-typical busy seasons (every accounting firm has tax season) are coach knowledge until this prospect states theirs.",
+   "Good Example": "Quote: 'July through September is our season, the whole company disappears' -> busy: Jul-Sep.",
+   "Bad Example": "(construction company, nothing stated) -> Unknown; do not assume summer."
+  },
+  {
+   "Group": "Process",
+   "Field": "has_rfp",
+   "Canonical Home": "deal_analysis",
+   "Canonical Definition": "Whether a formal RFP/RFI process governs this evaluation.",
+   "Type & Normalization": "Boolean + issuer/timing in notes.",
+   "Positive Signals": "RFP; RFI; formal process; procurement issued; you'll get the document",
+   "Negative Signals / Anti-patterns": "A criteria LIST the champion keeps is not an RFP. 'We might do an RFP' is false-with-note, and a risk candidate.",
+   "Good Example": "Quote: 'Procurement is issuing the RFP next month, you'll be on the list' -> true; issuing ~next month.",
+   "Bad Example": "Quote: 'I have a spreadsheet of requirements' -> internal criteria, not an RFP."
+  },
+  {
+   "Group": "Process",
+   "Field": "has_consultant / consultant_name",
+   "Canonical Home": "deal_analysis",
+   "Canonical Definition": "Whether a third-party advisor (selection consultant, fractional CFO, CPA firm) is steering or influencing the evaluation, and who.",
+   "Type & Normalization": "Boolean + name + stated role.",
+   "Positive Signals": "our consultant; the firm helping us pick; our fractional CFO suggested; our CPA recommended we look at",
+   "Negative Signals / Anti-patterns": "Their tax CPA existing is not consultant involvement in THIS decision; involvement in the selection must be stated. Consultant influence is also a power-map fact: consider a contacts row when named.",
+   "Good Example": "Quote: 'Sarah from Clark Advisory is running the selection for us' -> true; Clark Advisory (Sarah); add contact.",
+   "Bad Example": "Quote: 'Our CPA does our taxes' -> no selection role stated; false."
+  },
+  {
+   "Group": "Systems",
+   "Field": "integrations_needed",
+   "Canonical Home": "company_systems (is_needed) + deal_analysis legacy",
+   "Canonical Definition": "Systems the prospect states must connect to the new ERP, with direction/purpose when stated. Canonical home is company_systems rows with is_needed=true; the deal_analysis text field is legacy display.",
+   "Type & Normalization": "Per system: name + purpose + criticality as stated. Must-have framing also writes a decision criterion (same quote).",
+   "Positive Signals": "has to talk to; we need it connected to; can't lose the ServiceTitan link; data needs to flow from",
+   "Negative Signals / Anti-patterns": "Current integrations are a different fact (existing company_systems rows). Rep-proposed integrations unconfirmed are nothing.",
+   "Good Example": "Quote: 'If it doesn't integrate with ServiceTitan, this conversation is over' -> needed integration: ServiceTitan (critical) + decision criterion (must-have), same quote.",
+   "Bad Example": "Quote: 'Bill.com syncs today' -> current integration, not a need."
+  },
+  {
+   "Group": "Competition",
+   "Field": "deal_competitors",
+   "Canonical Home": "deal_competitors",
+   "Canonical Definition": "Vendors actively in this evaluation, as stated: who, where they are in the process, whether pricing was received, stated prior bias, and the PROSPECT'S stated view of their strengths/weaknesses.",
+   "Type & Normalization": "One row per competitor; match-before-insert on name. strengths/weaknesses ONLY from prospect statements; battle-card content is coach knowledge and never writes to deal rows. received_pricing/where_in_process from explicit statements.",
+   "Positive Signals": "we're also looking at; NetSuite quoted us; we saw their demo; I used Acumatica before; honestly their reporting looked better",
+   "Negative Signals / Anti-patterns": "Incumbents being replaced are company_systems, not competitors. Rep-named competitors the prospect didn't confirm are nothing. The coach's competitive intel never masquerades as the prospect's opinion.",
+   "Good Example": "Quote: 'NetSuite's already demoed and sent pricing; my controller liked their dashboards' -> NetSuite: demo done, received_pricing=true, stated strength: dashboards (controller).",
+   "Bad Example": "Coach doc says NetSuite struggles at this size -> coaching context; never a deal_competitors fact."
+  },
+  {
+   "Group": "Sizing",
+   "Field": "deal_sizing (13 fields)",
+   "Canonical Home": "deal_sizing",
+   "Canonical Definition": "Auto-populated quantities: full_users, view_only_users, entity_count, ap_invoices_monthly, ar_invoices_monthly, fixed_assets, employee_count_payroll, warehouse_count (new), warehouse/inventory/fulfillment/receiving_users, customer_count, order_volume_monthly. Each follows its SC-workbook definition where one exists (entity_count, users, AP volume, fixed assets, warehouses); the rest follow protocol rule 6 (containment) strictly.",
+   "Type & Normalization": "Numbers only, per protocol rule 6: in-quote or shown conversion; ranges -> midpoint + note; conflicts -> rule 9. employee_count_payroll is employees PAID, never conflated with users. customer_count: active customers as stated. ar_invoices_monthly: customer invoices sent per month.",
+   "Positive Signals": "(per field; see SC workbook for the five shared fields)",
+   "Negative Signals / Anti-patterns": "The universal sizing trap: adjacent numbers cross-contaminating (employees -> users, locations -> entities/warehouses, AR volume -> AP volume, customers -> orders). Every sizing write re-checks WHICH quantity the quote actually states.",
+   "Good Example": "Quote: 'We send maybe 200 invoices a month and pay about 300' -> ar_invoices_monthly: 200; ap_invoices_monthly: 300 (one quote, two fields, directions explicit).",
+   "Bad Example": "Quote: '250 employees' -> employee_count_payroll ONLY if payroll framing; NEVER full_users."
+  },
+  {
+   "Group": "Tasks",
+   "Field": "tasks (extraction standard)",
+   "Canonical Home": "tasks",
+   "Canonical Definition": "Commitments and action items created on the call: rep commitments ('I'll send the security doc'), prospect commitments ('I'll get you the org chart'), and mutually agreed next steps with owner and due context.",
+   "Type & Normalization": "One task per commitment: owner side (rep/prospect), action, due context as stated. Granola action items arrive as auxiliary context and inform this extraction; Lumen remains the single task author (no direct Granola task inserts).",
+   "Positive Signals": "I'll send; we'll get you; by Friday; let me pull together; can you share",
+   "Negative Signals / Anti-patterns": "Vague intentions ('we should probably look at that sometime') are not commitments. Rep coaching to-dos generated elsewhere are not call commitments. Duplicate phrasing of one commitment = one task (dedup).",
+   "Good Example": "Quote: 'I'll have the entity org chart to you by Thursday' (prospect) -> task: prospect to send org chart, due Thu.",
+   "Bad Example": "Quote: 'We should think about references at some point' -> no owner, no commitment; skip."
+  },
+  {
+   "Group": "Scores",
+   "Field": "fit / champion / power / deal_health / compelling_event / catalyst",
+   "Canonical Home": "deal_scores (computed)",
+   "Canonical Definition": "NOT extracted. Scores compute from verified facts and entity rows per scoring_configs. Listed here so no extraction pass ever writes a score: extraction produces the facts; scoring is a separate, deterministic-plus-AI layer with its own audit trail.",
+   "Type & Normalization": "n/a",
+   "Positive Signals": "n/a",
+   "Negative Signals / Anti-patterns": "Any extraction output attempting to write deal_scores is rejected by the edge function.",
+   "Good Example": "Extraction writes entity_count=10 and CE row -> scoring recomputes fit and CE scores from them.",
+   "Bad Example": "Model outputs 'deal_health: 72' inside extraction -> rejected; scores never come from the extraction pass."
+  }
+ ],
+ "Key Metrics": [
+  {
+   "metric_key": "close_days",
+   "Metric": "Days to close a month",
+   "Definition": "Business days from period end to close complete",
+   "Unit & Normalization": "days (weeks x5, 'by the Nth' ~= calendar, noted)",
+   "Signals": "takes N days to close; done by the Nth",
+   "Feeds / Links To": "close_duration_days field; close-process pains"
+  },
+  {
+   "metric_key": "close_effort_hours",
+   "Metric": "Close effort",
+   "Definition": "Person-hours consumed by the monthly close",
+   "Unit & Normalization": "hours/month (people x days shown)",
+   "Signals": "my team spends N days on close",
+   "Feeds / Links To": "close bottleneck pains; ROI finance-efficiency model"
+  },
+  {
+   "metric_key": "dso",
+   "Metric": "Days sales outstanding",
+   "Definition": "Average days to collect receivables, stated or directly implied ('customers pay in about 60 days')",
+   "Unit & Normalization": "days",
+   "Signals": "customers pay in N days; AR sits N days; collections run",
+   "Feeds / Links To": "ROIBuilder operational metric library (dso); AR pains"
+  },
+  {
+   "metric_key": "dpo",
+   "Metric": "Days payable outstanding",
+   "Definition": "Average days they take to pay vendors",
+   "Unit & Normalization": "days",
+   "Signals": "we pay in N days; stretch vendors to N",
+   "Feeds / Links To": "ROIBuilder (dpo)"
+  },
+  {
+   "metric_key": "ar_invoices_monthly",
+   "Metric": "Customer invoices per month",
+   "Definition": "Invoices sent to customers per month",
+   "Unit & Normalization": "count/month (weekly x4.33, annual /12, noted)",
+   "Signals": "we send N invoices",
+   "Feeds / Links To": "deal_sizing.ar_invoices_monthly"
+  },
+  {
+   "metric_key": "ap_invoices_monthly",
+   "Metric": "Vendor bills per month",
+   "Definition": "Vendor bills processed per month",
+   "Unit & Normalization": "count/month",
+   "Signals": "we pay N bills; process N invoices",
+   "Feeds / Links To": "deal_sizing.ap_invoices_monthly; bills_per_period field"
+  },
+  {
+   "metric_key": "revenue_annual",
+   "Metric": "Annual revenue",
+   "Definition": "Company (or entity) annual revenue as stated by prospect",
+   "Unit & Normalization": "$/year; entity scope noted",
+   "Signals": "we do about $N; revenue is around",
+   "Feeds / Links To": "company_profile.revenue (call value supersedes research)"
+  },
+  {
+   "metric_key": "revenue_growth_pct",
+   "Metric": "Revenue growth",
+   "Definition": "Stated growth rate",
+   "Unit & Normalization": "%/year",
+   "Signals": "growing N% a year; doubled in",
+   "Feeds / Links To": "growth catalysts; PipelineIQ context"
+  },
+  {
+   "metric_key": "gross_margin_pct",
+   "Metric": "Gross margin",
+   "Definition": "Stated gross margin",
+   "Unit & Normalization": "%",
+   "Signals": "margins run about N%",
+   "Feeds / Links To": "reporting pains; ROI value drivers"
+  },
+  {
+   "metric_key": "project_margin_pct",
+   "Metric": "Project/job margin",
+   "Definition": "Stated target or actual project margin",
+   "Unit & Normalization": "%; target vs actual labeled",
+   "Signals": "target margin is N%; jobs come in at",
+   "Feeds / Links To": "project_performance fields; project pains"
+  },
+  {
+   "metric_key": "headcount_total",
+   "Metric": "Total employees",
+   "Definition": "Total employee count",
+   "Unit & Normalization": "count",
+   "Signals": "we're N people; N employees",
+   "Feeds / Links To": "company_profile.employee_count; NEVER user counts"
+  },
+  {
+   "metric_key": "headcount_finance",
+   "Metric": "Finance team size",
+   "Definition": "Finance/accounting headcount",
+   "Unit & Normalization": "count",
+   "Signals": "accounting is N people; my team of N",
+   "Feeds / Links To": "ROI finance-efficiency model; close effort context"
+  },
+  {
+   "metric_key": "entity_count",
+   "Metric": "Legal entities",
+   "Definition": "Count of legal entities (see SC definition)",
+   "Unit & Normalization": "count (parent+N -> N+1)",
+   "Signals": "N entities; N LLCs; N sets of books",
+   "Feeds / Links To": "deal_sizing.entity_count"
+  },
+  {
+   "metric_key": "write_offs_annual",
+   "Metric": "Write-offs",
+   "Definition": "Stated annual write-offs (inventory, bad debt; type labeled)",
+   "Unit & Normalization": "$/year, type noted",
+   "Signals": "we wrote off $N; ate $N in",
+   "Feeds / Links To": "inventory/AR pains, quantified"
+  },
+  {
+   "metric_key": "inventory_value",
+   "Metric": "Inventory carrying value",
+   "Definition": "Stated value of inventory on hand",
+   "Unit & Normalization": "$",
+   "Signals": "$N on the shelf; carrying $N",
+   "Feeds / Links To": "inventory_type notes; inventory pains"
+  },
+  {
+   "metric_key": "inventory_turns",
+   "Metric": "Inventory turns",
+   "Definition": "Stated turns rate",
+   "Unit & Normalization": "turns/year",
+   "Signals": "we turn N times",
+   "Feeds / Links To": "inventory_key_metrics"
+  },
+  {
+   "metric_key": "rec_hours_monthly",
+   "Metric": "Reconciliation effort",
+   "Definition": "Person-time on bank + card recs",
+   "Unit & Normalization": "hours/month (days x8 shown)",
+   "Signals": "recs take N days; loses a week to",
+   "Feeds / Links To": "bank/cc rec sentiment pains, quantified"
+  },
+  {
+   "metric_key": "budget_cycle_weeks",
+   "Metric": "Budget cycle length",
+   "Definition": "Duration of the annual budget build",
+   "Unit & Normalization": "weeks (months x4.33 noted)",
+   "Signals": "budget takes N months; budget season runs",
+   "Feeds / Links To": "budgeting_process; budgeting pains"
+  },
+  {
+   "metric_key": "software_spend_annual",
+   "Metric": "Current software spend",
+   "Definition": "Stated annual cost of systems being replaced/considered",
+   "Unit & Normalization": "$/year, per-system breakdown kept",
+   "Signals": "QB costs us $N; all-in we pay $N for",
+   "Feeds / Links To": "deal_analysis.current_spend"
+  },
+  {
+   "metric_key": "pct_ar_over_60",
+   "Metric": "AR aging concentration",
+   "Definition": "Stated share of receivables past 60/90 days",
+   "Unit & Normalization": "% + bucket noted",
+   "Signals": "N% of AR is over 60",
+   "Feeds / Links To": "collections pains; dso context"
+  },
+  {
+   "metric_key": "error_rework_rate",
+   "Metric": "Error / rework rate",
+   "Definition": "Stated frequency of billing/data errors or rework",
+   "Unit & Normalization": "prospect's unit, verbatim",
+   "Signals": "we redo about N%; every Nth invoice has",
+   "Feeds / Links To": "data_confidence; billing pains"
+  },
+  {
+   "metric_key": "UNMAPPED",
+   "Metric": "Open capture",
+   "Definition": "Any quantified business statement matching no taxonomy key: store under the prospect's own label, flag unmapped",
+   "Unit & Normalization": "value + unit + period exactly as stated",
+   "Signals": "(any quantified statement)",
+   "Feeds / Links To": "weekly taxonomy review promotes recurring unmapped labels to keys"
+  }
+ ],
+ "Deal Risk Taxonomy": [
+  {
+   "risk_key": "budget_unidentified",
+   "Plain-Language Name (UI)": "No budget established",
+   "Methodology Anchor (internal only)": "MEDDPICC: Metrics/EB; BANT: Budget",
+   "Definition": "No statement exists about budget existence, amount, or funding intent for this purchase.",
+   "Evidence Type & Signals (STATED = quote-backed; GAP = computable absence)": "GAP: budget field Unknown after a call where budget was discussable (QDC+). STATED: 'there's no budget for this' (quote-backed, severity higher).",
+   "Severity Rubric": "High if past discovery with no budget statement; Critical if stated no-budget with no funding path; Medium pre-QDC.",
+   "Example": "Three calls in, budget=Unknown -> gap risk: 'Budget has not been discussed.'"
+  },
+  {
+   "risk_key": "budget_not_allocated",
+   "Plain-Language Name (UI)": "Budget not approved",
+   "Methodology Anchor (internal only)": "MEDDPICC: EB; BANT: Budget",
+   "Definition": "An amount or intent exists but no approval/allocation: 'we figure around $100k' without sign-off.",
+   "Evidence Type & Signals (STATED = quote-backed; GAP = computable absence)": "STATED: budget text present, budget_allocated=false from the prospect's own framing (estimate/hope language).",
+   "Severity Rubric": "Medium with strong CE (funding follows pain); High if decision_date inside 60 days with no allocation.",
+   "Example": "Quote: 'We'd have to go ask the board' -> allocated=false; risk: approval step unowned."
+  },
+  {
+   "risk_key": "eb_unidentified",
+   "Plain-Language Name (UI)": "Economic buyer unknown",
+   "Methodology Anchor (internal only)": "MEDDPICC: Economic Buyer; Po7 stakeholder map",
+   "Definition": "No quote-backed evidence identifies who controls the spend. Title guesses are hypotheses, not identification.",
+   "Evidence Type & Signals (STATED = quote-backed; GAP = computable absence)": "GAP: is_economic_buyer=false on all contacts after discovery-stage calls.",
+   "Severity Rubric": "Medium in discovery; High at solution_validation+; Critical at selection.",
+   "Example": "Five contacts, none evidenced as EB at confirming_value -> gap risk."
+  },
+  {
+   "risk_key": "eb_no_access",
+   "Plain-Language Name (UI)": "No access to power",
+   "Methodology Anchor (internal only)": "MEDDPICC: EB; Po7: access to power",
+   "Definition": "EB is identified but the rep has never spoken with them and no path is established.",
+   "Evidence Type & Signals (STATED = quote-backed; GAP = computable absence)": "GAP: EB named in deal_analysis but appears in no conversation participant list and no meeting is scheduled. STATED: 'you won't need to talk to Senake' (blocked access, higher severity).",
+   "Severity Rubric": "High by default; Critical if champion resists creating access (blocked-access quote).",
+   "Example": "EB named in QDC, absent from every call since, no scheduled touch -> gap risk: power untouched."
+  },
+  {
+   "risk_key": "authority_misread",
+   "Plain-Language Name (UI)": "Authority unclear or misread",
+   "Methodology Anchor (internal only)": "MEDDPICC: EB/DP; Sandler",
+   "Definition": "Decision authority claims conflict: contact claims the call is theirs while signer/approval evidence points elsewhere.",
+   "Evidence Type & Signals (STATED = quote-backed; GAP = computable absence)": "STATED: conflicting quotes across contacts/calls about who decides (rule 9 conflict capture feeds this).",
+   "Severity Rubric": "High; Critical when the believed decider is the only thread (compound with single_threaded).",
+   "Example": "Controller: 'it's my decision'; later CFO: 'I'll be making the final call' -> conflict risk with both quotes."
+  },
+  {
+   "risk_key": "champion_absent",
+   "Plain-Language Name (UI)": "No champion",
+   "Methodology Anchor (internal only)": "MEDDPICC: Champion; Po7",
+   "Definition": "No contact shows quote-backed champion behaviors (internal selling, access creation, inside information, personal win).",
+   "Evidence Type & Signals (STATED = quote-backed; GAP = computable absence)": "GAP: no is_champion=true after discovery. Candidate enthusiasm without behaviors stays a hypothesis, and the risk stands.",
+   "Severity Rubric": "Medium in discovery; High at solution_validation+.",
+   "Example": "Engaged controller, zero champion behaviors evidenced -> gap risk + hypothesis row for the candidate."
+  },
+  {
+   "risk_key": "champion_untested",
+   "Plain-Language Name (UI)": "Champion untested",
+   "Methodology Anchor (internal only)": "Po7: champion testing; Black Swan",
+   "Definition": "Champion behaviors exist but the champion has never been asked to DO something that proves influence (set the EB meeting, share the budget process).",
+   "Evidence Type & Signals (STATED = quote-backed; GAP = computable absence)": "GAP: is_champion=true but no completed champion-action task (EB meeting created, internal doc shared) in deal history.",
+   "Severity Rubric": "Medium; High entering selection (untested champions fail at the close).",
+   "Example": "Champion 'loves it' for 6 weeks; no EB meeting ever materialized -> untested."
+  },
+  {
+   "risk_key": "pain_unquantified",
+   "Plain-Language Name (UI)": "Pain not quantified",
+   "Methodology Anchor (internal only)": "MEDDPICC: Metrics; SPIN",
+   "Definition": "Pains exist but none carry dollars/hours: the ROI case has no prospect-stated numbers.",
+   "Evidence Type & Signals (STATED = quote-backed; GAP = computable absence)": "GAP: deal_pain_points rows with empty annual_cost AND annual_hours across all pains; deal_metrics has no pain-linked observations.",
+   "Severity Rubric": "Medium in discovery; High at confirming_value (ROIBuilder will cite benchmarks, not their numbers: weaker close).",
+   "Example": "Four pains captured, zero quantified after FDC -> gap risk + quantifying-question coaching note."
+  },
+  {
+   "risk_key": "pain_operations_rooted",
+   "Plain-Language Name (UI)": "Pain not finance-rooted",
+   "Methodology Anchor (internal only)": "Sage spine: Finance-Operations Orientation",
+   "Definition": "The driving pains are operations-rooted rather than finance-rooted: per Sage canon this is a fit/championing risk (finance must own the buy).",
+   "Evidence Type & Signals (STATED = quote-backed; GAP = computable absence)": "STATED: pain rows' affected_team/category skew operations with no finance-stated pains.",
+   "Severity Rubric": "High per the qualifying spine; compounds with eb/champion gaps in finance.",
+   "Example": "All pains from the ops director, finance silent across calls -> orientation risk."
+  },
+  {
+   "risk_key": "compelling_event_missing",
+   "Plain-Language Name (UI)": "No compelling event",
+   "Methodology Anchor (internal only)": "Sage spine; MEDDPICC: Identify Pain",
+   "Definition": "No consequence-of-inaction exists: nothing bad happens if they do nothing.",
+   "Evidence Type & Signals (STATED = quote-backed; GAP = computable absence)": "GAP: zero compelling_events rows (existing QDC HIGH RISK rule, now a standing risk). STATED: 'no real deadline' (quote, higher confidence in the risk).",
+   "Severity Rubric": "High always; Critical inside a committed forecast category (commit/forecast with no CE is a forecast integrity problem).",
+   "Example": "Deal in 'forecast' with zero CE rows -> critical risk, surfaces in PipelineIQ."
+  },
+  {
+   "risk_key": "catalyst_missing",
+   "Plain-Language Name (UI)": "No driving catalyst",
+   "Methodology Anchor (internal only)": "Sage spine",
+   "Definition": "Nothing is actively driving change: no acquisition, growth, leadership change, or system event pushing them.",
+   "Evidence Type & Signals (STATED = quote-backed; GAP = computable absence)": "GAP: zero business_catalysts rows after discovery.",
+   "Severity Rubric": "High; combined CE+catalyst+orientation all missing = 'deal isn't real yet' flag (computable spine rule).",
+   "Example": "No catalysts after QDC+FDC -> risk; spine flag if CE also missing."
+  },
+  {
+   "risk_key": "timing_slippage",
+   "Plain-Language Name (UI)": "Timeline slipping or vague",
+   "Methodology Anchor (internal only)": "BANT: Timing; JOLT (indecision)",
+   "Definition": "Stated dates moved later across calls, or milestone dates remain Unknown deep into the process. JOLT lens: slippage without cause is indecision, not delay.",
+   "Evidence Type & Signals (STATED = quote-backed; GAP = computable absence)": "STATED: changed_fact history on timeline fields moving outward (change-aware recency makes this computable). GAP: all four dates Unknown at solution_validation+.",
+   "Severity Rubric": "Medium on first slip with stated cause; High on second slip or causeless slip; High for date vacuum late-stage.",
+   "Example": "signature_date moved Oct -> Dec -> 'early next year' across three calls -> slippage risk with the change history as evidence."
+  },
+  {
+   "risk_key": "criteria_undefined",
+   "Plain-Language Name (UI)": "Decision criteria undefined",
+   "Methodology Anchor (internal only)": "MEDDPICC: Decision Criteria",
+   "Definition": "No stated standards for how vendors will be judged: the deal can be lost to criteria written by someone else.",
+   "Evidence Type & Signals (STATED = quote-backed; GAP = computable absence)": "GAP: zero deal_decision_criteria rows after discovery.",
+   "Severity Rubric": "Medium in discovery; High at selection.",
+   "Example": "Entering demos with no stated criteria -> risk + coaching note to co-author criteria."
+  },
+  {
+   "risk_key": "criteria_competitor_shaped",
+   "Plain-Language Name (UI)": "Criteria favor a competitor",
+   "Methodology Anchor (internal only)": "MEDDPICC: DC + Competition",
+   "Definition": "Stated criteria mirror a specific competitor's strengths (suite breadth, single-vendor preference), suggesting someone is shaping the eval.",
+   "Evidence Type & Signals (STATED = quote-backed; GAP = computable absence)": "STATED: criteria quotes that match a named competitor's known positioning, especially appearing after that competitor's demo.",
+   "Severity Rubric": "High; Critical if the criterion is a stated must-have we cannot meet.",
+   "Example": "Post-NetSuite demo: 'we've decided we want CRM and ERP from one vendor' -> competitor-shaped criterion risk."
+  },
+  {
+   "risk_key": "decision_process_unknown",
+   "Plain-Language Name (UI)": "Decision process unknown",
+   "Methodology Anchor (internal only)": "MEDDPICC: Decision Process",
+   "Definition": "No stated steps for how the evaluation proceeds: surprises (committees, IT review) appear late.",
+   "Evidence Type & Signals (STATED = quote-backed; GAP = computable absence)": "GAP: decision_process empty after discovery-stage calls.",
+   "Severity Rubric": "Medium mid-funnel; High at selection.",
+   "Example": "confirming_value with no process map -> risk."
+  },
+  {
+   "risk_key": "paper_process_unknown",
+   "Plain-Language Name (UI)": "Paper process unknown",
+   "Methodology Anchor (internal only)": "MEDDPICC: Paper Process",
+   "Definition": "Contracting reality undiscovered: legal review, procurement, security review, MSA redlines. The classic late-stage timeline killer.",
+   "Evidence Type & Signals (STATED = quote-backed; GAP = computable absence)": "GAP: no statements about legal/procurement/security captured by selection stage. STATED: 'legal takes a while here' uncaptured in plan (quote raises severity).",
+   "Severity Rubric": "Medium at solution_validation; High at selection; Critical when signature_date is inside 30 days with paper process unknown.",
+   "Example": "Verbal yes, signature in 3 weeks, nobody has mentioned legal -> critical paper risk."
+  },
+  {
+   "risk_key": "competition_incumbent_bias",
+   "Plain-Language Name (UI)": "Competitive bias at power",
+   "Methodology Anchor (internal only)": "MEDDPICC: Competition; Po7",
+   "Definition": "A power-position stakeholder has stated preference or history with a competitor.",
+   "Evidence Type & Signals (STATED = quote-backed; GAP = computable absence)": "STATED: bias quotes ('our CFO came from a NetSuite shop'), prior_bias on deal_competitors, competitor-praise from EB/signer.",
+   "Severity Rubric": "High when at EB/signer; Medium at influencer level.",
+   "Example": "Chaberton pattern: 'Campfire's number is hard to ignore' from the CFO -> stated bias + price-pressure compound."
+  },
+  {
+   "risk_key": "competition_price_pressure",
+   "Plain-Language Name (UI)": "Price-led competition",
+   "Methodology Anchor (internal only)": "Competition; JOLT (safe-cheap option)",
+   "Definition": "A competitor is winning the value frame on price; prospect statements anchor on cost difference rather than capability.",
+   "Evidence Type & Signals (STATED = quote-backed; GAP = computable absence)": "STATED: price-comparison quotes, 'they're half the cost', budget statements re-anchored to competitor pricing after their proposal.",
+   "Severity Rubric": "Medium with strong quantified pain (value case can win); High with pain_unquantified (nothing to weigh against price).",
+   "Example": "Quote: 'Hard to justify double for the same checkboxes' -> price-frame risk; severity High because pains are unquantified."
+  },
+  {
+   "risk_key": "single_threaded",
+   "Plain-Language Name (UI)": "Single-threaded deal",
+   "Methodology Anchor (internal only)": "Po7: stakeholder mapping",
+   "Definition": "All evidence flows through one contact: every conversation, every fact, one thread. Champion loss or vacation stalls the deal.",
+   "Evidence Type & Signals (STATED = quote-backed; GAP = computable absence)": "GAP: computable from participants across conversations + contacts with engagement (one unique prospect participant across N calls).",
+   "Severity Rubric": "Medium at 2+ calls single-threaded; High at solution_validation+; compounds with champion_untested and authority risks.",
+   "Example": "Four calls, Keith is the only prospect voice ever -> single-thread risk (Chaberton watch item)."
+  },
+  {
+   "risk_key": "consultant_gatekeeper",
+   "Plain-Language Name (UI)": "Consultant controls access",
+   "Methodology Anchor (internal only)": "Po7; Sandler (gatekeeper)",
+   "Definition": "A third-party advisor mediates all contact and information; rep has no direct line to the buying team's power.",
+   "Evidence Type & Signals (STATED = quote-backed; GAP = computable absence)": "STATED: has_consultant=true + statements routing contact through the advisor ('send everything through Sarah').",
+   "Severity Rubric": "Medium when consultant is engaged and neutral; High when direct contact is explicitly blocked.",
+   "Example": "Quote: 'Sarah will collect all vendor responses, please don't contact the team directly' -> gatekeeper risk."
+  },
+  {
+   "risk_key": "functional_gap",
+   "Plain-Language Name (UI)": "Stated requirement with uncertain fit",
+   "Methodology Anchor (internal only)": "SC: solution fit; MEDDPICC: DC",
+   "Definition": "A prospect-stated must-have or required capability where product fit is unknown or known-weak per the coach's capability knowledge. The SC's primary risk object.",
+   "Evidence Type & Signals (STATED = quote-backed; GAP = computable absence)": "STATED: a must-have decision criterion or required_capabilities item flagged against coach capability docs as uncertain/weak. The requirement is the fact; the fit assessment is coach knowledge (labeled as such, never presented as a prospect fact).",
+   "Severity Rubric": "High for must-haves with uncertain fit; Critical for must-haves with known gaps entering selection.",
+   "Example": "Quote: 'It has to handle 13-period calendars per entity' -> requirement captured; fit check flags uncertainty -> SC risk before demo."
+  },
+  {
+   "risk_key": "discovery_coverage_gap",
+   "Plain-Language Name (UI)": "Discovery gaps before demo/FDC",
+   "Methodology Anchor (internal only)": "Sage playbook: pre-FDC KT; pre-demo research",
+   "Definition": "Material catalog sections remain Unknown entering a demo or proposal: the solution story is being built on unknowns. The SC-side analog of BANT gaps.",
+   "Evidence Type & Signals (STATED = quote-backed; GAP = computable absence)": "GAP: computable from catalog coverage: gate fields unanswered, or a gated-ON section (inventory, projects) majority-Unknown at demo scheduling.",
+   "Severity Rubric": "Medium at FDC scheduling; High at demo scheduling; Critical at proposal with core sections Unknown.",
+   "Example": "Demo on the calendar, inventory_type answered but the whole inventory section Unknown -> coverage risk + FDC agenda feed."
+  },
+  {
+   "risk_key": "data_migration_complexity",
+   "Plain-Language Name (UI)": "Data migration complexity",
+   "Methodology Anchor (internal only)": "SC: implementation risk",
+   "Definition": "Stated legacy-data conditions that complicate conversion: years of history expected to migrate, dirty data admitted, multiple legacy systems, mid-year cutover expectations.",
+   "Evidence Type & Signals (STATED = quote-backed; GAP = computable absence)": "STATED: quotes about history expectations ('we need ten years in the new system'), data quality admissions, multi-system consolidation needs.",
+   "Severity Rubric": "Medium when stated and scoped; High when expectations are stated but unscoped at proposal.",
+   "Example": "Quote: 'All ten years of history has to come over' -> migration-expectation risk; scoping task."
+  },
+  {
+   "risk_key": "integration_feasibility",
+   "Plain-Language Name (UI)": "Critical integration unscoped",
+   "Methodology Anchor (internal only)": "SC: integration risk",
+   "Definition": "A deal-critical integration (per integrations_needed criticality) whose mechanism is unknown: no API discussion, unknown version, homegrown system on the other end.",
+   "Evidence Type & Signals (STATED = quote-backed; GAP = computable absence)": "STATED+GAP: integration marked critical (stated) with mechanism fields empty after FDC (gap).",
+   "Severity Rubric": "High when must-have; Critical when must-have + homegrown/legacy endpoint stated.",
+   "Example": "ServiceTitan integration is conversation-over critical; nobody has discussed how -> feasibility risk before proposal."
+  },
+  {
+   "risk_key": "revrec_compliance_complexity",
+   "Plain-Language Name (UI)": "Rev rec / compliance complexity",
+   "Methodology Anchor (internal only)": "SC: solution risk; 606",
+   "Definition": "Stated revenue recognition or compliance conditions of known implementation weight: POC, multi-element arrangements, audit requirements, grant compliance, retainage.",
+   "Evidence Type & Signals (STATED = quote-backed; GAP = computable absence)": "STATED: rev rec method, audit posture, or compliance statements matching the complexity list in coach knowledge.",
+   "Severity Rubric": "Medium (it is qualification-positive but delivery-relevant); High when paired with an aggressive go_live_date.",
+   "Example": "Quote: 'POC across 40 concurrent jobs, audited' + go-live in 90 days -> complexity-vs-timeline risk."
+  },
+  {
+   "risk_key": "scope_module_mismatch",
+   "Plain-Language Name (UI)": "Scope vs recommendation mismatch",
+   "Methodology Anchor (internal only)": "SC: scoping integrity",
+   "Definition": "required_capabilities the prospect stated are not covered by the recommended module set, or recommended modules have no stated requirement behind them (over/under-scoping).",
+   "Evidence Type & Signals (STATED = quote-backed; GAP = computable absence)": "GAP: computable diff between required_capabilities + gated-on sections and deal_modules recommendations.",
+   "Severity Rubric": "Medium either direction; High when under-scoped at proposal (quote will miss stated needs).",
+   "Example": "Inventory gated ON with stated requirements, no Inventory module recommended -> under-scope risk on the SC page."
+  },
+  {
+   "risk_key": "demo_unvalidated_assumptions",
+   "Plain-Language Name (UI)": "Demo built on unverified assumptions",
+   "Methodology Anchor (internal only)": "Sage playbook: demo etiquette; SC",
+   "Definition": "The demo plan depends on facts that are research-sourced but never call-confirmed, or partial-status fields: demoing to a guessed configuration.",
+   "Evidence Type & Signals (STATED = quote-backed; GAP = computable absence)": "GAP: demo-plan inputs (entity structure, dimensions, key processes) carrying source=research unconfirmed or status=partial at demo scheduling.",
+   "Severity Rubric": "Medium; High when the demo's hero scenario rests on an unconfirmed fact.",
+   "Example": "Demo storyline assumes 13-period calendar sourced from research, never confirmed -> validate-before-demo task + risk."
+  }
+ ],
+ "Call Execution Analytics": [
+  {
+   "signal_key": "question_inventory",
+   "Signal": "Question inventory",
+   "Definition": "Every question the rep asked, logged and classified. The raw material for all question-quality coaching.",
+   "How to Identify in the Transcript": "Identify every rep-side interrogative or imperative-elicitation ('walk me through...'). Classify each: open / closed / leading / quantifying / impact / layering / confirming / stacked (multiple questions fired at once, an anti-pattern: prospect answers only the last).",
+   "Output Contract": "One row per question: text, type(s), topic, what it elicited (field/entity/metric captured from the answer, if any), turn index.",
+   "Needs Turn Timestamps": "No",
+   "Example": "'Walk me through your close' -> open, topic: close; elicited close_duration_days + 2 bottleneck pains."
+  },
+  {
+   "signal_key": "quantifying_questions",
+   "Signal": "Quantifying questions",
+   "Definition": "Questions that ask for a number on a stated problem or process: the bridge from pain to Metrics (MEDDPICC) and to deal_metrics.",
+   "How to Identify in the Transcript": "Rep question seeking magnitude after a problem statement: how many, how long, how often, what does that cost. Count asked AND whether each elicited a number (deal_metrics observation created).",
+   "Output Contract": "Count asked; count that landed (number captured); list of pains that were NOT followed with a quantifying question (feeds nuggets_missed).",
+   "Needs Turn Timestamps": "No",
+   "Example": "Prospect: 'recs are brutal' Rep: 'how many hours a month is that?' -> quantifying, landed (rec_hours_monthly captured)."
+  },
+  {
+   "signal_key": "impact_questions",
+   "Signal": "Impact questions",
+   "Definition": "SPIN implication-style questions connecting a problem to its business consequence ('what does that delay mean for the board?').",
+   "How to Identify in the Transcript": "Rep question whose object is the CONSEQUENCE of an already-stated problem, not the problem itself. Distinguish from quantifying (magnitude) and solution questions (need-payoff).",
+   "Output Contract": "Count asked; which pains received an impact question; business_impact statements elicited.",
+   "Needs Turn Timestamps": "No",
+   "Example": "'When the numbers land three weeks late, what decisions stall?' -> impact question; elicited M&A-delay impact."
+  },
+  {
+   "signal_key": "layering_depth",
+   "Signal": "Discovery depth (layers)",
+   "Definition": "Selling Through Curiosity standard: going 2-3 layers deep on a topic via chained follow-ups instead of moving on after the first answer.",
+   "How to Identify in the Transcript": "Detect consecutive rep questions on the same topic thread (follow-up referencing the prior answer). Depth = chain length per topic. Topic switches reset the chain.",
+   "Output Contract": "Per major topic: depth reached (1/2/3+); list of depth-1 topics (asked once, moved on) as coaching targets.",
+   "Needs Turn Timestamps": "No",
+   "Example": "close -> 'how long' -> 'where does it stall' -> 'what's driving the entity lag' = depth 3. Inventory asked once, moved on = depth 1 (flag)."
+  },
+  {
+   "signal_key": "prospect_thinking_pause",
+   "Signal": "Prospect thinking pauses",
+   "Definition": "Moments where the prospect paused notably before answering: the question made them think (Curiosity/Black Swan signal of a meaningful question), or hesitated on a sensitive topic (budget, authority).",
+   "How to Identify in the Transcript": "PRIMARY: turn-gap timing where per-turn timestamps exist (gap > ~3s between rep question end and prospect answer start). FALLBACK (no timestamps): verbal markers: 'hm, good question', 'let me think', 'huh, nobody's asked that', restarts and filled pauses at answer start ('well... I mean...').",
+   "Output Contract": "List of pause moments: the question, the gap or marker, what the eventual answer yielded. Degrade gracefully: timestamp-based where available, marker-based otherwise, labeled which.",
+   "Needs Turn Timestamps": "Preferred (graceful fallback)",
+   "Example": "Rep: 'what happens if you run another year-end on this system?' [4.2s] -> pause moment; answer produced the CE."
+  },
+  {
+   "signal_key": "nuggets_missed",
+   "Signal": "Nuggets missed",
+   "Definition": "Prospect statements with extraction value (a metric, pain, CE/catalyst language, stakeholder fact, competitor mention) that the rep did NOT follow up on within the next few turns. The highest-value coaching signal in the system.",
+   "How to Identify in the Transcript": "For each extracted entity/metric/CE-candidate in the transcript, check the following ~5 turns for a rep follow-up on that topic. No follow-up = missed nugget. Severity-rank by what it was: a volunteered dollar figure or consequence statement outranks a passing system mention.",
+   "Output Contract": "Ranked list: the quote, what it contained, what the follow-up should have probed (phrased from the relevant definition's signals). Feeds the post-call coaching note and the follow-up task generator.",
+   "Needs Turn Timestamps": "No",
+   "Example": "Prospect: 'we wrote off eighty grand of dead stock last year' -> rep pivoted to demo scheduling -> missed nugget, rank 1: quantified pain unprobed."
+  },
+  {
+   "signal_key": "talk_ratio",
+   "Signal": "Talk ratio",
+   "Definition": "Share of the call the rep spoke versus the prospect. Discovery calls should skew prospect-heavy.",
+   "How to Identify in the Transcript": "Word-count ratio per side from the speaker map (time-based where turn timestamps exist). Report per call-type norm: QDC/FDC target prospect-majority; demo expectations differ.",
+   "Output Contract": "rep%, prospect%, basis (words/time), call-type benchmark delta.",
+   "Needs Turn Timestamps": "Preferred (word-count fallback)",
+   "Example": "QDC at 68% rep words -> flagged against discovery norm."
+  },
+  {
+   "signal_key": "longest_monologue",
+   "Signal": "Longest rep monologue",
+   "Definition": "The longest uninterrupted rep stretch: pitch-mode drift inside discovery.",
+   "How to Identify in the Transcript": "Max consecutive rep words (or seconds with timestamps) without a prospect turn beyond fillers.",
+   "Output Contract": "Duration/length + where it happened + what triggered it (often an unprompted feature tour).",
+   "Needs Turn Timestamps": "Preferred (word-count fallback)",
+   "Example": "11-minute architecture monologue mid-QDC -> flagged with turn reference."
+  },
+  {
+   "signal_key": "open_closed_ratio",
+   "Signal": "Open vs closed ratio",
+   "Definition": "Mix of open (tell me/walk me/how) versus closed (yes/no) rep questions. Early-stage calls should skew open.",
+   "How to Identify in the Transcript": "From question_inventory classifications.",
+   "Output Contract": "Ratio + trend across the call (closed-question stacking late in calls is normal; early closed runs are not).",
+   "Needs Turn Timestamps": "No",
+   "Example": "QDC at 80% closed questions -> coaching flag."
+  },
+  {
+   "signal_key": "agenda_upfront",
+   "Signal": "Agenda and upfront contract",
+   "Definition": "Sandler-style call open: agenda stated, time confirmed, outcomes and next-step expectations set at the top.",
+   "How to Identify in the Transcript": "Scan the first ~10% of the call for agenda-setting language, time confirmation, and a stated goal for the call.",
+   "Output Contract": "Boolean per element (agenda/time/outcome) + the open quote.",
+   "Needs Turn Timestamps": "No",
+   "Example": "'We have 45 minutes; I want to understand your close and entity structure, and if it makes sense, agree on a demo' -> all three present."
+  },
+  {
+   "signal_key": "bant_coverage",
+   "Signal": "BANT coverage this call",
+   "Definition": "Which of Budget, Authority, Need, Timing were addressed (asked about or volunteered) in THIS call, against what was already known.",
+   "How to Identify in the Transcript": "Map captured facts and asked questions to B/A/N/T. 'Addressed' includes a stated no ('no budget yet').",
+   "Output Contract": "Per element: addressed/not + new-vs-confirmed; the per-call view of methodology adherence (promotion metric feed).",
+   "Needs Turn Timestamps": "No",
+   "Example": "QDC covering N and T but never B or A -> coverage gap into next-call plan."
+  },
+  {
+   "signal_key": "next_step_quality",
+   "Signal": "Next-step quality",
+   "Definition": "Whether the call ended with a specific, mutually agreed next step: date + attendees + purpose, versus 'I'll follow up'.",
+   "How to Identify in the Transcript": "Scan the final ~15% for commitment language and specificity; cross-check a calendar-grade artifact (date, named attendees).",
+   "Output Contract": "Grade: specific (date+type+attendees) / soft (intent, no date) / none, + the closing quote. Feeds the Sage next-steps shorthand draft.",
+   "Needs Turn Timestamps": "No",
+   "Example": "'Thursday the 14th, demo with you and Senake, focused on consolidations' -> specific."
+  },
+  {
+   "signal_key": "objection_moments",
+   "Signal": "Objection handling",
+   "Definition": "Prospect objections/concerns raised, and how the rep responded: acknowledged-and-explored (label/mirror), answered directly, deflected, or missed.",
+   "How to Identify in the Transcript": "Detect concern statements (price, timing, capability doubt, change fatigue); classify the rep's next turns. Black Swan lens: was the concern labeled and explored before being answered?",
+   "Output Contract": "Per objection: quote, type, handling classification, resolution state at call end.",
+   "Needs Turn Timestamps": "No",
+   "Example": "'Honestly the price scares me' -> rep jumped to discount talk without exploring -> handled: answered-prematurely; coaching note."
+  },
+  {
+   "signal_key": "demo_etiquette",
+   "Signal": "Demo etiquette adherence (demo calls)",
+   "Definition": "Sage playbook standard for demos: tie every shown capability to a previously captured pain/criterion, check in regularly, avoid the untethered feature tour.",
+   "How to Identify in the Transcript": "For demo call_type only: map each demonstrated capability mention to existing deal_pain_points / decision criteria; count tie-backs vs untethered segments; count check-in questions during demo.",
+   "Output Contract": "Tieback ratio, untethered segments list, check-in count.",
+   "Needs Turn Timestamps": "No",
+   "Example": "40-minute demo, 9 capabilities shown, 2 tied to stated pains -> etiquette flag with the 7 untethered segments listed."
+  },
+  {
+   "signal_key": "confirmation_loops",
+   "Signal": "Summaries and confirmation loops",
+   "Definition": "Rep verifying understanding aloud (Black Swan summary/label: 'so what I'm hearing is...') and the prospect's confirmation: these moments also upgrade extraction confidence (explicit confirmations per protocol rule 4).",
+   "How to Identify in the Transcript": "Detect rep summary/restatement turns followed by prospect confirm/correct. Corrections here are gold: they refine captured facts in-call.",
+   "Output Contract": "Count + each loop's outcome (confirmed/corrected, with what changed); corrected loops feed changed-value evidence.",
+   "Needs Turn Timestamps": "No",
+   "Example": "'So: nine entities, October FYE, and the line renews in June?' 'Ten now, actually' -> loop with correction; entity_count updates with this quote."
+  },
+  {
+   "signal_key": "catalog_coverage",
+   "Signal": "Catalog coverage this call (FDC/scoping)",
+   "Definition": "Which SC catalog sections were addressed in THIS call against what was already known: the FDC analog of bant_coverage, and the FDC's effectiveness measure.",
+   "How to Identify in the Transcript": "Map captured fields and asked questions to catalog sections; 'addressed' includes stated negatives and not_applicable gating. Compare pre-call vs post-call coverage.",
+   "Output Contract": "Per section: fields resolved / newly partial / still Unknown; coverage delta for the call. Feeds discovery_coverage_gap risk and the next-FDC agenda.",
+   "Needs Turn Timestamps": "No",
+   "Example": "FDC resolved 9 of 11 billing fields, inventory untouched -> coverage delta logged; inventory tops the follow-up agenda."
+  },
+  {
+   "signal_key": "assumption_verification",
+   "Signal": "Assumption verification (FDC/demo prep)",
+   "Definition": "Whether research-sourced or partial facts the solution depends on were confirmed aloud on the call: the behavior that clears demo_unvalidated_assumptions.",
+   "How to Identify in the Transcript": "Detect confirmation loops or direct questions targeting fields with source=research (unconfirmed) or status=partial entering the call; record which got confirmed/corrected/still-open.",
+   "Output Contract": "List: assumption -> verified (with quote) / corrected / still open. Clears or sustains the unvalidated-assumptions risk.",
+   "Needs Turn Timestamps": "No",
+   "Example": "SC: 'You're on a 13-period calendar, right?' 'No, regular months' -> research value corrected in-call; assumption cleared with the new fact."
+  },
+  {
+   "signal_key": "gap_closure",
+   "Signal": "Gap closure rate",
+   "Definition": "Of the fields that were partial or conflict-flagged entering the call, how many got resolved: measures whether follow-up tasks actually convert.",
+   "How to Identify in the Transcript": "Diff partial/conflict fields pre-call vs post-call; attribute resolutions to this conversation.",
+   "Output Contract": "Resolved list + closure rate; persistent gaps (partial across 2+ calls) escalate in the follow-up agenda.",
+   "Needs Turn Timestamps": "No",
+   "Example": "Rev rec was partial from the QDC; FDC resolved it (ratable) -> closed. Costing method partial across three calls -> escalated."
+  },
+  {
+   "signal_key": "handoff_readiness",
+   "Signal": "FDC/demo readiness gate",
+   "Definition": "Composite pre-demo readiness per the Sage playbook: gates answered, gated-on sections covered, critical integrations scoped, demo-plan assumptions verified, modules mapped to stated requirements.",
+   "How to Identify in the Transcript": "Computed from catalog coverage + risk states (discovery_coverage_gap, demo_unvalidated_assumptions, scope_module_mismatch, integration_feasibility), not from the transcript alone.",
+   "Output Contract": "Readiness grade + the specific blocking items; surfaces on the SC page and the AE deal view before demo scheduling.",
+   "Needs Turn Timestamps": "No",
+   "Example": "Readiness: NOT READY: inventory section Unknown, ServiceTitan integration unscoped -> two named blockers, each with its owning task."
+  }
+ ]
+}

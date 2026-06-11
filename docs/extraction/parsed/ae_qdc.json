@@ -1,0 +1,467 @@
+{
+ "AE QDC Extraction": [
+  {
+   "Group": "Qualification flags",
+   "Field": "Red flags",
+   "What it captures": "Negative signals / risks to the deal",
+   "Stored In (table.column)": "deal_analysis.red_flags",
+   "Extracted at QDC": "Yes",
+   "Overlaps SC field": "AE-only",
+   "Notes": "Coaching signal"
+  },
+  {
+   "Group": "Qualification flags",
+   "Field": "Green flags",
+   "What it captures": "Positive signals / strengths",
+   "Stored In (table.column)": "deal_analysis.green_flags",
+   "Extracted at QDC": "Yes",
+   "Overlaps SC field": "AE-only",
+   "Notes": "Coaching signal"
+  },
+  {
+   "Group": "Pain",
+   "Field": "Pain points (summary)",
+   "What it captures": "Narrative summary of pains",
+   "Stored In (table.column)": "deal_analysis.pain_points",
+   "Extracted at QDC": "Yes",
+   "Overlaps SC field": "problems_to_solve",
+   "Notes": "Same fact as SC"
+  },
+  {
+   "Group": "Pain",
+   "Field": "Pain points (structured)",
+   "What it captures": "Per-pain: cost, hours, team, frequency, impact",
+   "Stored In (table.column)": "deal_pain_points.*",
+   "Extracted at QDC": "Yes",
+   "Overlaps SC field": "problems_to_solve",
+   "Notes": "SC should read this, not re-list"
+  },
+  {
+   "Group": "Pain",
+   "Field": "Quantified pain",
+   "What it captures": "Pain expressed in $ / hours",
+   "Stored In (table.column)": "deal_analysis.quantified_pain; deal_pain_points.annual_cost/annual_hours; deal_analysis.running_problem_cost_*",
+   "Extracted at QDC": "Yes",
+   "Overlaps SC field": "AE-only",
+   "Notes": "AE adds quantification SC catalog lacks"
+  },
+  {
+   "Group": "Pain",
+   "Field": "Business impact",
+   "What it captures": "Downstream impact of the pains",
+   "Stored In (table.column)": "deal_analysis.business_impact",
+   "Extracted at QDC": "Yes",
+   "Overlaps SC field": "partial",
+   "Notes": "Related to SC impact notes"
+  },
+  {
+   "Group": "Drivers / Motivation",
+   "Field": "Driving factors",
+   "What it captures": "What is pushing change",
+   "Stored In (table.column)": "deal_analysis.driving_factors",
+   "Extracted at QDC": "Yes",
+   "Overlaps SC field": "driver_for_new_erp",
+   "Notes": "Feeds SC drivers summary"
+  },
+  {
+   "Group": "Drivers / Motivation",
+   "Field": "Ideal solution",
+   "What it captures": "What success looks like",
+   "Stored In (table.column)": "deal_analysis.ideal_solution",
+   "Extracted at QDC": "Yes",
+   "Overlaps SC field": "success_definition / ideal_solution",
+   "Notes": "Same fact as SC"
+  },
+  {
+   "Group": "Drivers / Motivation",
+   "Field": "Compelling event",
+   "What it captures": "Consequence of inaction, date, strength",
+   "Stored In (table.column)": "compelling_events.*",
+   "Extracted at QDC": "Yes (flag if none)",
+   "Overlaps SC field": "feeds drivers summary",
+   "Notes": "SC drivers summary synthesizes this"
+  },
+  {
+   "Group": "Drivers / Motivation",
+   "Field": "Business catalyst",
+   "What it captures": "Forces driving change, urgency",
+   "Stored In (table.column)": "business_catalysts.*",
+   "Extracted at QDC": "Yes (flag if none)",
+   "Overlaps SC field": "driver_for_new_erp",
+   "Notes": "SC drivers summary synthesizes this"
+  },
+  {
+   "Group": "Decision",
+   "Field": "Decision criteria",
+   "What it captures": "How they will decide",
+   "Stored In (table.column)": "deal_analysis.decision_criteria; deal_decision_criteria.*",
+   "Extracted at QDC": "Yes",
+   "Overlaps SC field": "AE-only",
+   "Notes": "SC catalog has no decision criteria"
+  },
+  {
+   "Group": "Decision",
+   "Field": "Decision process",
+   "What it captures": "Steps in their decision",
+   "Stored In (table.column)": "deal_analysis.decision_process",
+   "Extracted at QDC": "Yes",
+   "Overlaps SC field": "AE-only",
+   "Notes": ""
+  },
+  {
+   "Group": "Decision",
+   "Field": "Decision method",
+   "What it captures": "How the decision gets made",
+   "Stored In (table.column)": "deal_analysis.decision_method",
+   "Extracted at QDC": "Yes",
+   "Overlaps SC field": "AE-only",
+   "Notes": ""
+  },
+  {
+   "Group": "Stakeholders",
+   "Field": "Champion",
+   "What it captures": "Champion identity",
+   "Stored In (table.column)": "deal_analysis.champion; contacts.is_champion",
+   "Extracted at QDC": "Yes (flag if none)",
+   "Overlaps SC field": "AE-only",
+   "Notes": ""
+  },
+  {
+   "Group": "Stakeholders",
+   "Field": "Economic buyer",
+   "What it captures": "Economic buyer identity",
+   "Stored In (table.column)": "deal_analysis.economic_buyer; contacts.is_economic_buyer",
+   "Extracted at QDC": "Yes (flag if none)",
+   "Overlaps SC field": "AE-only",
+   "Notes": ""
+  },
+  {
+   "Group": "Stakeholders",
+   "Field": "Exec alignment",
+   "What it captures": "Executive sponsor alignment",
+   "Stored In (table.column)": "deal_analysis.exec_alignment",
+   "Extracted at QDC": "Yes",
+   "Overlaps SC field": "AE-only",
+   "Notes": ""
+  },
+  {
+   "Group": "Stakeholders",
+   "Field": "Contacts and roles",
+   "What it captures": "Name, title, role, influence, signer/champion/EB, sentiment, alignment, ERP experience, champion/power scores",
+   "Stored In (table.column)": "contacts.*",
+   "Extracted at QDC": "Yes",
+   "Overlaps SC field": "AE-only",
+   "Notes": "SC org structure (entities/ownership) is different data"
+  },
+  {
+   "Group": "Budget",
+   "Field": "Budget",
+   "What it captures": "Budget amount / status",
+   "Stored In (table.column)": "deal_analysis.budget",
+   "Extracted at QDC": "Yes",
+   "Overlaps SC field": "AE-only",
+   "Notes": ""
+  },
+  {
+   "Group": "Budget",
+   "Field": "Budget allocated",
+   "What it captures": "Whether budget is allocated",
+   "Stored In (table.column)": "deal_analysis.budget_allocated",
+   "Extracted at QDC": "Yes",
+   "Overlaps SC field": "AE-only",
+   "Notes": ""
+  },
+  {
+   "Group": "Budget",
+   "Field": "Current spend",
+   "What it captures": "What they spend today",
+   "Stored In (table.column)": "deal_analysis.current_spend",
+   "Extracted at QDC": "Yes",
+   "Overlaps SC field": "AE-only",
+   "Notes": ""
+  },
+  {
+   "Group": "Timeline",
+   "Field": "Decision date",
+   "What it captures": "Target decision date",
+   "Stored In (table.column)": "deal_analysis.decision_date",
+   "Extracted at QDC": "Yes",
+   "Overlaps SC field": "AE-only",
+   "Notes": ""
+  },
+  {
+   "Group": "Timeline",
+   "Field": "Signature date",
+   "What it captures": "Target signature date",
+   "Stored In (table.column)": "deal_analysis.signature_date",
+   "Extracted at QDC": "Yes",
+   "Overlaps SC field": "AE-only",
+   "Notes": ""
+  },
+  {
+   "Group": "Timeline",
+   "Field": "Kickoff date",
+   "What it captures": "Target kickoff date",
+   "Stored In (table.column)": "deal_analysis.kickoff_date",
+   "Extracted at QDC": "Yes",
+   "Overlaps SC field": "AE-only",
+   "Notes": ""
+  },
+  {
+   "Group": "Timeline",
+   "Field": "Go-live date",
+   "What it captures": "Target go-live date",
+   "Stored In (table.column)": "deal_analysis.go_live_date",
+   "Extracted at QDC": "Yes",
+   "Overlaps SC field": "AE-only",
+   "Notes": ""
+  },
+  {
+   "Group": "Timeline",
+   "Field": "Timeline drivers",
+   "What it captures": "What drives the timing",
+   "Stored In (table.column)": "deal_analysis.timeline_drivers",
+   "Extracted at QDC": "Yes",
+   "Overlaps SC field": "AE-only",
+   "Notes": "Often tied to compelling event"
+  },
+  {
+   "Group": "Timeline",
+   "Field": "Busy season",
+   "What it captures": "When the prospect is slammed",
+   "Stored In (table.column)": "deal_analysis.busy_season",
+   "Extracted at QDC": "Yes",
+   "Overlaps SC field": "partial",
+   "Notes": "Timing context also useful to SC"
+  },
+  {
+   "Group": "Process",
+   "Field": "Has RFP",
+   "What it captures": "Is an RFP in play",
+   "Stored In (table.column)": "deal_analysis.has_rfp",
+   "Extracted at QDC": "Yes",
+   "Overlaps SC field": "AE-only",
+   "Notes": ""
+  },
+  {
+   "Group": "Process",
+   "Field": "Has consultant",
+   "What it captures": "Third-party consultant involved",
+   "Stored In (table.column)": "deal_analysis.has_consultant / consultant_name",
+   "Extracted at QDC": "Yes",
+   "Overlaps SC field": "AE-only",
+   "Notes": ""
+  },
+  {
+   "Group": "Systems",
+   "Field": "Integrations needed",
+   "What it captures": "Required integrations (text summary)",
+   "Stored In (table.column)": "deal_analysis.integrations_needed; integration_impact",
+   "Extracted at QDC": "Yes",
+   "Overlaps SC field": "system_integrations / billing_feed_systems",
+   "Notes": "Redundant with company_systems too"
+  },
+  {
+   "Group": "Systems",
+   "Field": "Company systems",
+   "What it captures": "Current/needed systems per category",
+   "Stored In (table.column)": "company_systems.*",
+   "Extracted at QDC": "Yes",
+   "Overlaps SC field": "Technology Stack section",
+   "Notes": "SC stack already routes here"
+  },
+  {
+   "Group": "Competition",
+   "Field": "Competitors",
+   "What it captures": "Name, strengths, weaknesses, where in process, received pricing, prior bias, strategy",
+   "Stored In (table.column)": "deal_competitors.*",
+   "Extracted at QDC": "Yes",
+   "Overlaps SC field": "AE-only",
+   "Notes": ""
+  },
+  {
+   "Group": "Sizing",
+   "Field": "Full users",
+   "What it captures": "Full license user count",
+   "Stored In (table.column)": "deal_sizing.full_users",
+   "Extracted at QDC": "Yes (auto)",
+   "Overlaps SC field": "total_users",
+   "Notes": "REDUNDANT - same fact"
+  },
+  {
+   "Group": "Sizing",
+   "Field": "View-only users",
+   "What it captures": "Read-only user count",
+   "Stored In (table.column)": "deal_sizing.view_only_users",
+   "Extracted at QDC": "Yes (auto)",
+   "Overlaps SC field": "reporting_readonly_users",
+   "Notes": "REDUNDANT - same fact"
+  },
+  {
+   "Group": "Sizing",
+   "Field": "Entity count",
+   "What it captures": "Number of entities",
+   "Stored In (table.column)": "deal_sizing.entity_count",
+   "Extracted at QDC": "Yes (auto)",
+   "Overlaps SC field": "entity_count",
+   "Notes": "REDUNDANT - same fact"
+  },
+  {
+   "Group": "Sizing",
+   "Field": "AP invoices / month",
+   "What it captures": "Vendor bill volume",
+   "Stored In (table.column)": "deal_sizing.ap_invoices_monthly",
+   "Extracted at QDC": "Yes (auto)",
+   "Overlaps SC field": "bills_per_period",
+   "Notes": "REDUNDANT - same fact"
+  },
+  {
+   "Group": "Sizing",
+   "Field": "AR invoices / month",
+   "What it captures": "Customer invoice volume",
+   "Stored In (table.column)": "deal_sizing.ar_invoices_monthly",
+   "Extracted at QDC": "Yes (auto)",
+   "Overlaps SC field": "partial",
+   "Notes": "SC invoicing volume; no exact field"
+  },
+  {
+   "Group": "Sizing",
+   "Field": "Fixed assets",
+   "What it captures": "Number of fixed assets",
+   "Stored In (table.column)": "deal_sizing.fixed_assets",
+   "Extracted at QDC": "Yes (auto)",
+   "Overlaps SC field": "fixed_asset_count",
+   "Notes": "REDUNDANT - same fact"
+  },
+  {
+   "Group": "Sizing",
+   "Field": "Payroll employees",
+   "What it captures": "Employee count for payroll",
+   "Stored In (table.column)": "deal_sizing.employee_count_payroll",
+   "Extracted at QDC": "Yes (auto)",
+   "Overlaps SC field": "related (payroll)",
+   "Notes": "Related to SC payroll"
+  },
+  {
+   "Group": "Sizing",
+   "Field": "Warehouse users",
+   "What it captures": "Warehouse staffing",
+   "Stored In (table.column)": "deal_sizing.warehouse_users",
+   "Extracted at QDC": "Yes (auto)",
+   "Overlaps SC field": "related (warehouse_count)",
+   "Notes": "SC asks warehouse COUNT, not users"
+  },
+  {
+   "Group": "Sizing",
+   "Field": "Inventory users",
+   "What it captures": "Inventory staffing",
+   "Stored In (table.column)": "deal_sizing.inventory_users",
+   "Extracted at QDC": "Yes (auto)",
+   "Overlaps SC field": "related (inventory)",
+   "Notes": ""
+  },
+  {
+   "Group": "Sizing",
+   "Field": "Fulfillment users",
+   "What it captures": "Fulfillment staffing",
+   "Stored In (table.column)": "deal_sizing.fulfillment_users",
+   "Extracted at QDC": "Yes (auto)",
+   "Overlaps SC field": "related",
+   "Notes": ""
+  },
+  {
+   "Group": "Sizing",
+   "Field": "Receiving users",
+   "What it captures": "Receiving staffing",
+   "Stored In (table.column)": "deal_sizing.receiving_users",
+   "Extracted at QDC": "Yes (auto)",
+   "Overlaps SC field": "related",
+   "Notes": ""
+  },
+  {
+   "Group": "Sizing",
+   "Field": "Customer count",
+   "What it captures": "Number of customers",
+   "Stored In (table.column)": "deal_sizing.customer_count",
+   "Extracted at QDC": "Yes (auto)",
+   "Overlaps SC field": "AE-only",
+   "Notes": ""
+  },
+  {
+   "Group": "Sizing",
+   "Field": "Order volume / month",
+   "What it captures": "Sales order volume",
+   "Stored In (table.column)": "deal_sizing.order_volume_monthly",
+   "Extracted at QDC": "Yes (auto)",
+   "Overlaps SC field": "related (order mgmt)",
+   "Notes": ""
+  },
+  {
+   "Group": "Risk",
+   "Field": "Deal risks",
+   "What it captures": "Risk, category, severity, status, mitigation",
+   "Stored In (table.column)": "deal_risks.*",
+   "Extracted at QDC": "Yes",
+   "Overlaps SC field": "AE-only",
+   "Notes": ""
+  },
+  {
+   "Group": "Scores",
+   "Field": "Fit score",
+   "What it captures": "Computed fit",
+   "Stored In (table.column)": "deal_scores (score_type=fit)",
+   "Extracted at QDC": "Post-QDC",
+   "Overlaps SC field": "AE-only",
+   "Notes": "Derived, not a discovery field"
+  },
+  {
+   "Group": "Scores",
+   "Field": "Champion score",
+   "What it captures": "Computed champion strength",
+   "Stored In (table.column)": "deal_scores (champion); contacts.champion_score",
+   "Extracted at QDC": "Post-QDC",
+   "Overlaps SC field": "AE-only",
+   "Notes": "Derived"
+  },
+  {
+   "Group": "Scores",
+   "Field": "Power score",
+   "What it captures": "Computed access to power",
+   "Stored In (table.column)": "deal_scores (power); contacts.power_score",
+   "Extracted at QDC": "Post-QDC",
+   "Overlaps SC field": "AE-only",
+   "Notes": "Derived"
+  },
+  {
+   "Group": "Scores",
+   "Field": "Deal health score",
+   "What it captures": "Computed overall health",
+   "Stored In (table.column)": "deal_scores (deal_health)",
+   "Extracted at QDC": "Post-QDC",
+   "Overlaps SC field": "AE-only",
+   "Notes": "Derived"
+  }
+ ],
+ "Overlap Summary": [
+  {
+   "AE QDC Extraction vs SC Catalog - Overlap": "AE fields total",
+   "": "49"
+  },
+  {
+   "AE QDC Extraction vs SC Catalog - Overlap": "Hard redundancies (same fact, amber)",
+   "": "6"
+  },
+  {
+   "AE QDC Extraction vs SC Catalog - Overlap": "Feed SC drivers summary",
+   "": "4"
+  },
+  {
+   "AE QDC Extraction vs SC Catalog - Overlap": "AE-only (no SC overlap)",
+   "": "27"
+  },
+  {
+   "AE QDC Extraction vs SC Catalog - Overlap": "Amber rows = SC catalog re-lists a fact the AE pipeline already captures. Bind SC to these, do not create new fields.",
+   "": ""
+  }
+ ]
+}

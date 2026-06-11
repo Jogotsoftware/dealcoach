@@ -1,0 +1,1178 @@
+{
+ "Field Definitions": [
+  {
+   "Section": "Business Drivers & ERP Motivation",
+   "field_key": "driver_for_new_erp",
+   "Question": "What is driving the need for a new ERP?",
+   "Canonical Definition": "The forces actively pushing the company to change systems now: growth, acquisition, system end-of-life, new leadership, audit or compliance pressure, investor requirements. This is CATALYST territory: things happening that drive change. Synthesized from business_catalysts rows; not captured as its own field.",
+   "Type & Normalization": "Summary (generated). Underlying catalysts extracted per the Catalyst entity definition on the Core Entities tab.",
+   "Positive Signals": "what's prompting this; why now; we just acquired; our PE firm wants; QuickBooks is breaking; new CFO came in; auditors flagged",
+   "Negative Signals / Anti-patterns": "Generic dissatisfaction without a driving force ('we hate our system') is a pain, not a catalyst. Consequences of NOT changing belong to compelling event, not here.",
+   "Good Example": "Quote: 'Our PE sponsor closed two add-ons this year and wants consolidated reporting by Q3' -> catalysts: PE acquisition activity; investor reporting mandate.",
+   "Bad Example": "Quote: 'Closing the books is painful' -> pain point, not a driver. Do not write a catalyst from pain alone."
+  },
+  {
+   "Section": "Business Drivers & ERP Motivation",
+   "field_key": "problems_to_solve",
+   "Question": "What problems are you trying to solve today?",
+   "Canonical Definition": "The specific operational and financial problems the prospect states they experience. RENDERS deal_pain_points; never captured as a parallel field. Each problem must be extracted as a pain point per the Pain Point entity definition.",
+   "Type & Normalization": "Rendered list from deal_pain_points (no direct storage).",
+   "Positive Signals": "the problem is; what kills us is; we waste; we can't see; takes us forever to; error-prone; manual",
+   "Negative Signals / Anti-patterns": "Solution wishes ('we want dashboards') are ideal_solution, not problems. Hypothetical risks the prospect has not experienced are not pains.",
+   "Good Example": "Quote: 'AP is all paper; my controller spends two days a week keying bills' -> pain: manual AP entry, quantified 2 days/week controller time.",
+   "Bad Example": "Quote: 'It would be nice to have better reporting' -> desire, route to desired_reporting, not a pain."
+  },
+  {
+   "Section": "Business Drivers & ERP Motivation",
+   "field_key": "success_definition",
+   "Question": "What does success look like with a new system?",
+   "Canonical Definition": "The prospect's stated picture of a successful outcome after implementation: measurable targets (close in 5 days, one consolidated P&L) or capability statements (every entity manager self-serves reports). Prospect-stated only.",
+   "Type & Normalization": "Text. Keep measurable targets verbatim with numbers intact.",
+   "Positive Signals": "success would be; in a perfect world after go-live; we'd know it worked if; our goal is to get close down to",
+   "Negative Signals / Anti-patterns": "The rep's pitch of outcomes is not the prospect's success definition. Vendor-agnostic future plans (hiring, expansion) are catalysts, not success criteria.",
+   "Good Example": "Quote: 'If we can close in five days and stop the Excel consolidation, that's a win' -> success: 5-day close; eliminate Excel consolidation.",
+   "Bad Example": "Rep: 'Most customers cut close time in half' Prospect: 'mm-hm' -> not the prospect's statement; do not write."
+  },
+  {
+   "Section": "Business Drivers & ERP Motivation",
+   "field_key": "ideal_solution",
+   "Question": "What would your ideal solution look like?",
+   "Canonical Definition": "The prospect's description of the system characteristics they want: capabilities, architecture, experience. Maps to deal_analysis.ideal_solution (existing AE field); this definition hardens that extraction.",
+   "Type & Normalization": "Text (existing home: deal_analysis.ideal_solution).",
+   "Positive Signals": "ideally; what we're looking for is; has to have; must be cloud; needs to talk to",
+   "Negative Signals / Anti-patterns": "Hard requirements with pass/fail weight are decision criteria, not ideal-solution color. Do not duplicate: if stated as 'must have or we won't buy', route to decision criteria.",
+   "Good Example": "Quote: 'Ideally everything lives in one cloud system the whole team can get into from anywhere' -> ideal: single cloud system, broad access.",
+   "Bad Example": "Quote: 'It must integrate with ADP or it's a non-starter' -> decision criterion (must-have), not ideal-solution color."
+  },
+  {
+   "Section": "Business Drivers & ERP Motivation",
+   "field_key": "required_capabilities",
+   "Question": "What do you need Sage Intacct to manage for you?",
+   "Canonical Definition": "The functional scope the prospect expects the new system to own: which processes move into it (GL, AP, AR, inventory, projects, budgeting). Drives module recommendation.",
+   "Type & Normalization": "List of functional areas, normalized to module vocabulary where the mapping is unambiguous; otherwise keep the prospect's words.",
+   "Positive Signals": "we need it to handle; it has to run our; we want to move X into it; everything except payroll",
+   "Negative Signals / Anti-patterns": "Capabilities they explicitly want to keep elsewhere ('payroll stays in ADP') are exclusions; record those in notes, not the list. Rep-suggested scope unconfirmed by the prospect is not scope.",
+   "Good Example": "Quote: 'We need GL, AP, and we want inventory in there too; payroll stays with Paychex' -> [GL, AP, Inventory]; note: payroll excluded (Paychex).",
+   "Bad Example": "Rep: 'You'd probably want our planning module too' Prospect: 'maybe' -> not confirmed scope."
+  },
+  {
+   "Section": "Company & Organizational Structure",
+   "field_key": "entity_count",
+   "Question": "How many entities do you have?",
+   "Canonical Definition": "Count of distinct legal entities (corps, LLCs, partnerships, holding companies) whose books are or will be maintained. Includes the parent when it keeps its own ledger. Canonical home: deal_sizing.entity_count.",
+   "Type & Normalization": "Number. 'Parent plus N subs' = N+1. Range given: store the stated/current number, note the range. Planned entities recorded in notes as planned, never added to the count.",
+   "Positive Signals": "we have N entities; N LLCs; N companies; N sets of books; the parent and N subsidiaries; we consolidate N",
+   "Negative Signals / Anti-patterns": "Locations, offices, branches, stores, and warehouses are NOT entities unless stated as separate legal entities. Customers' entities don't count. Future entities ('we'll spin up two more') are planned, not current.",
+   "Good Example": "Quote: 'There's the holding company and then nine operating LLCs under it' -> 10.",
+   "Bad Example": "Quote: 'We've got twelve locations across the Southeast' -> locations, not entities; do not write entity_count."
+  },
+  {
+   "Section": "Company & Organizational Structure",
+   "field_key": "revenue_streams",
+   "Question": "What revenue streams do you have?",
+   "Canonical Definition": "The distinct ways the company earns revenue (product lines, service lines, recurring vs one-time, grants for nonprofits), as described by the prospect.",
+   "Type & Normalization": "List. Keep the prospect's labels; note approximate mix percentages if stated.",
+   "Positive Signals": "we make money from; three lines of business; recurring revenue from; the rest is services; grants and donations",
+   "Negative Signals / Anti-patterns": "Research-derived offerings not confirmed on a call keep source=research. Customer segments (who buys) are not revenue streams (what is sold).",
+   "Good Example": "Quote: 'About 70% is SaaS subscriptions, the rest is implementation services' -> [SaaS subscriptions ~70%, implementation services ~30%].",
+   "Bad Example": "Quote: 'We sell to mid-market healthcare companies' -> customer segment, not a revenue stream."
+  },
+  {
+   "Section": "Company & Organizational Structure",
+   "field_key": "shared_ownership",
+   "Question": "Is there shared ownership across entities?",
+   "Canonical Definition": "Whether entities share common ownership (same parent, same owners, PE sponsor) versus independently owned entities that are merely managed together.",
+   "Type & Normalization": "Boolean + ownership description in notes (who owns what).",
+   "Positive Signals": "all owned by; same parent; our PE firm owns; family owns all of them; common ownership",
+   "Negative Signals / Anti-patterns": "Shared management or shared back office is not shared ownership. Minority stakes described vaguely: capture the quote, mark partial.",
+   "Good Example": "Quote: 'Same two partners own all nine companies' -> true; notes: two common individual owners.",
+   "Bad Example": "Quote: 'We do the books for all of them' -> management relationship, not ownership; do not infer true."
+  },
+  {
+   "Section": "Company & Organizational Structure",
+   "field_key": "entity_locations_currencies",
+   "Question": "Where are your entities located by country and currency?",
+   "Canonical Definition": "Country (and state if stated) of each entity plus the functional currencies in play. Multi-currency is a first-order fit signal.",
+   "Type & Normalization": "List of country/currency pairs. Normalize currency names to ISO codes (Canadian dollars -> CAD) but keep the quote verbatim.",
+   "Positive Signals": "entities in; our Canadian company; we bill in euros; functional currency; everything's USD except",
+   "Negative Signals / Anti-patterns": "Selling INTO a country is not an entity there. Travel or remote employees abroad are not entities. Currency of customers' payments is not necessarily a functional currency; capture the quote and mark partial if unclear.",
+   "Good Example": "Quote: 'Two US entities, one in Toronto that books in Canadian dollars' -> [US/USD x2, Canada/CAD x1].",
+   "Bad Example": "Quote: 'We have customers in Mexico' -> market, not an entity location."
+  },
+  {
+   "Section": "Company & Organizational Structure",
+   "field_key": "shared_chart_of_accounts",
+   "Question": "Do you use a shared chart of accounts?",
+   "Canonical Definition": "Whether entities run on one common chart of accounts versus separate charts per entity. Direct consolidation-effort signal.",
+   "Type & Normalization": "Boolean + notes (e.g., 'mostly shared, two legacy entities differ').",
+   "Positive Signals": "same chart across; one COA; each company has its own chart; we standardized the chart",
+   "Negative Signals / Anti-patterns": "Shared accounting STAFF is not a shared chart. 'Similar' charts is partial, not true; capture the hedge verbatim.",
+   "Good Example": "Quote: 'Everyone's on the same chart except the acquisition we haven't converted yet' -> partial; notes: shared except one un-migrated entity.",
+   "Bad Example": "Quote: 'One bookkeeper does all the entities' -> staffing, not chart structure."
+  },
+  {
+   "Section": "Company & Organizational Structure",
+   "field_key": "interentity_accounting_today",
+   "Question": "How are you handling inter-entity accounting today?",
+   "Canonical Definition": "The current mechanics of intercompany transactions: due-to/due-from tracking, eliminations, intercompany billing, and the tooling (manual journal entries, Excel, system-supported).",
+   "Type & Normalization": "Text. Capture mechanism + tooling + pain markers verbatim.",
+   "Positive Signals": "due to due from; eliminations; intercompany; we true up between companies; journal entries between entities; consolidate in Excel",
+   "Negative Signals / Anti-patterns": "Consolidated REPORTING alone is not the intercompany process. If they say 'we don't really do intercompany', record that as the answer (it is a finding), not as not_discussed.",
+   "Good Example": "Quote: 'Eliminations are a spreadsheet Maria maintains; intercompany loans are due-to/due-from JEs we true up quarterly' -> manual Excel eliminations; quarterly due-to/due-from JEs.",
+   "Bad Example": "Quote: 'We roll everything up for the board deck' -> reporting output, not the intercompany mechanics."
+  },
+  {
+   "Section": "Users & Access",
+   "field_key": "total_users",
+   "Question": "How many total users will be in the system?",
+   "Canonical Definition": "Headcount needing transactional access to the new system (entry, approval, processing). Canonical home: deal_sizing.full_users. License-driving number.",
+   "Type & Normalization": "Number. If split given (e.g., '10 in finance, 5 ops approvers'), sum for the field, keep split in notes. Ranges: store low end, note range.",
+   "Positive Signals": "N people in the system; N users; N seats; the team that would touch it is N",
+   "Negative Signals / Anti-patterns": "Total employee count is NOT user count; never substitute one for the other. Report-viewers stated separately route to reporting_readonly_users. Aspirational future users noted as planned.",
+   "Good Example": "Quote: 'Finance is eight, plus four project managers approving invoices, so twelve in the system' -> 12; notes: 8 finance + 4 PM approvers.",
+   "Bad Example": "Quote: 'We're a 250-person company' -> employee count, not users; do not write."
+  },
+  {
+   "Section": "Users & Access",
+   "field_key": "reporting_readonly_users",
+   "Question": "How many users need access to reporting or read-only views?",
+   "Canonical Definition": "Headcount needing only dashboards/reports without transactional access. Canonical home: deal_sizing.view_only_users.",
+   "Type & Normalization": "Number. Same range/split handling as total_users.",
+   "Positive Signals": "just need to see reports; read-only; dashboard access for; the entity managers just view; board members log in to look",
+   "Negative Signals / Anti-patterns": "People who RECEIVE emailed reports need no license; only those logging in count. If unclear whether viewers transact, mark partial with the quote.",
+   "Good Example": "Quote: 'Each of the nine GMs just needs to see their P&L, they won't enter anything' -> 9.",
+   "Bad Example": "Quote: 'We send the board a monthly packet' -> distribution, not system access."
+  },
+  {
+   "Section": "Current Technology Stack",
+   "field_key": "system_accounting_erp",
+   "Question": "What accounting or ERP system are you using today?",
+   "Canonical Definition": "The current general ledger / ERP of record, per entity if they differ. Routes to company_systems (category=accounting, is_current=true). The displacement target.",
+   "Type & Normalization": "System name(s), normalized to canonical product names (QB Enterprise vs QBO matters). Per-entity mapping in notes when entities differ. Version/edition captured when stated.",
+   "Positive Signals": "we're on; we run; everything's in QuickBooks; the Canadian entity uses; still on Dynamics GP",
+   "Negative Signals / Anti-patterns": "Systems they're EVALUATING are deal_competitors, not current systems. Systems used by their clients are not theirs. 'QuickBooks' alone is partial until edition is known; capture and note the edition gap.",
+   "Good Example": "Quote: 'Eight companies on QuickBooks Enterprise, the new acquisition is still on Sage 50' -> QuickBooks Enterprise (8 entities, current); Sage 50 (1 entity, current).",
+   "Bad Example": "Quote: 'We're also looking at NetSuite' -> competitor, route to deal_competitors."
+  },
+  {
+   "Section": "Current Technology Stack",
+   "field_key": "system_payroll",
+   "Question": "What payroll system are you using?",
+   "Canonical Definition": "Current payroll provider/system. Routes to company_systems (category=payroll). Usually an integration endpoint, not a displacement target.",
+   "Type & Normalization": "System name normalized (ADP: which product if stated, e.g., Workforce Now). Multiple providers across entities listed per entity.",
+   "Positive Signals": "payroll is through; we use ADP; Paychex handles; Gusto for the small companies",
+   "Negative Signals / Anti-patterns": "PEO relationships (TriNet, Insperity) are payroll+HR bundles; capture as stated and note PEO. A payroll system they're leaving is is_current=true with a note, not omitted.",
+   "Good Example": "Quote: 'ADP Workforce Now for everyone except the Toronto entity, that's Ceridian' -> ADP Workforce Now (US entities); Ceridian (Canada).",
+   "Bad Example": "Quote: 'Our clients mostly use ADP' -> their clients' systems, not theirs."
+  },
+  {
+   "Section": "Current Technology Stack",
+   "field_key": "system_order_management",
+   "Question": "What order management system do you use?",
+   "Canonical Definition": "The system where sales orders/fulfillment live today, if any. Routes to company_systems (category=order_management).",
+   "Type & Normalization": "System name; 'none/manual' is a valid answer worth recording when stated.",
+   "Positive Signals": "orders come through; we process orders in; Shopify; Salesforce orders; it's all email and spreadsheets",
+   "Negative Signals / Anti-patterns": "CRM used for pipeline only is not order management; only where ORDERS are processed counts. E-commerce frontend vs OMS distinction: capture both if both named.",
+   "Good Example": "Quote: 'Orders land in Shopify, then we rekey them into QuickBooks' -> Shopify (order capture); note: manual rekey to accounting.",
+   "Bad Example": "Quote: 'We track deals in HubSpot' -> CRM/pipeline, not order management."
+  },
+  {
+   "Section": "Current Technology Stack",
+   "field_key": "system_operational",
+   "Question": "What ticketing or operational systems are in place?",
+   "Canonical Definition": "Industry-specific operational systems running the business (field service, PM software, EHR, ticketing, POS). Routes to company_systems (category=operational). Prime integration candidates.",
+   "Type & Normalization": "List of system names with the prospect's description of role.",
+   "Positive Signals": "we run the business on; jobs are in; ServiceTitan; Procore; our POS is; tickets live in",
+   "Negative Signals / Anti-patterns": "Productivity tools (email, Office, Slack) are not operational systems unless they ARE the operational process (e.g., 'dispatch runs on a shared Outlook calendar' is a finding worth capturing as manual-process).",
+   "Good Example": "Quote: 'Field techs live in ServiceTitan; that's where every job and invoice starts' -> ServiceTitan (field service, invoice origin).",
+   "Bad Example": "Quote: 'We use Teams to communicate' -> communication tool, skip."
+  },
+  {
+   "Section": "Current Technology Stack",
+   "field_key": "system_integrations",
+   "Question": "What other systems integrate with accounting today?",
+   "Canonical Definition": "Which systems currently exchange data with accounting and HOW (native sync, middleware, CSV import, manual rekey). The 'how' is the finding. Routes to company_systems with integration_purpose.",
+   "Type & Normalization": "List: system + direction + mechanism. Mechanism normalized to: native / middleware / file import / manual.",
+   "Positive Signals": "syncs to; flows into QuickBooks; we export and import; Zapier moves; we rekey from",
+   "Negative Signals / Anti-patterns": "Systems that SHOULD integrate but don't are is_needed=true, not current integrations; capture the gap explicitly. 'Integrated' without mechanism is partial; the mechanism question is the follow-up task.",
+   "Good Example": "Quote: 'Bill.com syncs natively; Shopify is a weekly CSV; everything else we key by hand' -> Bill.com (native); Shopify (file import, weekly); rest manual.",
+   "Bad Example": "Quote: 'We'd want it to talk to ServiceTitan' -> needed integration (is_needed), not a current one."
+  },
+  {
+   "Section": "Financial & Accounting Foundations",
+   "field_key": "fiscal_year_structure",
+   "Question": "What is your fiscal year structure (12 months, 13 periods, etc.)?",
+   "Canonical Definition": "Fiscal year end and period structure (12 calendar months, 13 four-week periods, 4-4-5).",
+   "Type & Normalization": "Text, normalized: 'FYE <month>, <structure>'.",
+   "Positive Signals": "fiscal year ends; we're a June year-end; calendar year; 13 periods; 4-4-5",
+   "Negative Signals / Anti-patterns": "Tax year vs fiscal year can differ; if both mentioned, capture both labeled. Busy season is a separate field; don't conflate.",
+   "Good Example": "Quote: 'September 30 year-end, regular monthly periods' -> FYE September, 12 months.",
+   "Bad Example": "Quote: 'Taxes are due in April like everyone' -> tax filing, not fiscal structure."
+  },
+  {
+   "Section": "Financial & Accounting Foundations",
+   "field_key": "accounting_method",
+   "Question": "What accounting method do you use (cash, accrual, or both)?",
+   "Canonical Definition": "Basis of accounting: cash, accrual, or both (e.g., accrual books, cash tax reporting, or differing by entity).",
+   "Type & Normalization": "Enum: cash | accrual | both, + notes on the split.",
+   "Positive Signals": "accrual basis; cash basis; we book accrual but report cash for tax; the small entities are cash",
+   "Negative Signals / Anti-patterns": "Cash FLOW concerns are not cash-basis accounting. If they say 'modified accrual' or hedge, capture verbatim as both/partial with the quote.",
+   "Good Example": "Quote: 'Accrual for the operating companies, the two little holding entities are cash' -> both; notes: accrual operating, cash holding.",
+   "Bad Example": "Quote: 'Cash is tight this quarter' -> liquidity comment, not method."
+  },
+  {
+   "Section": "Financial & Accounting Foundations",
+   "field_key": "payroll_handling",
+   "Question": "How is payroll handled today?",
+   "Canonical Definition": "The payroll PROCESS: who runs it (in-house, provider, PEO), frequency, and how it lands in the GL (auto JE, manual JE, not at all). Complements system_payroll (the tool); this is the workflow.",
+   "Type & Normalization": "Text: operator + frequency + GL posting mechanism.",
+   "Positive Signals": "we run payroll in-house; ADP runs it; biweekly; the JE comes over automatically; we key the payroll entry",
+   "Negative Signals / Anti-patterns": "Don't duplicate the system name here without the process. HR functions (benefits, onboarding) are out of scope unless they affect the GL flow.",
+   "Good Example": "Quote: 'Biweekly through ADP; the GL entry is a manual JE our staff accountant builds from the register' -> ADP biweekly; manual JE posting (pain marker).",
+   "Bad Example": "Quote: 'We use ADP' -> tool only; that's system_payroll, mark this partial pending process."
+  },
+  {
+   "Section": "Financial & Accounting Foundations",
+   "field_key": "sales_tax_management",
+   "Question": "How do you manage sales tax?",
+   "Canonical Definition": "How sales tax is calculated, collected, filed, and in which jurisdictions: engine (Avalara), manual rate tables, accountant-handled, or not applicable (exempt/services).",
+   "Type & Normalization": "Text: mechanism + jurisdictions count if stated. 'Not applicable' is a valid recorded answer.",
+   "Positive Signals": "Avalara; we file in N states; rates are a spreadsheet; our CPA files; we're exempt; nexus",
+   "Negative Signals / Anti-patterns": "Income tax and property tax are not sales tax. Worry about FUTURE nexus is a risk/catalyst, not the current process; capture separately.",
+   "Good Example": "Quote: 'We collect in seven states, rates live in a spreadsheet and our controller files monthly' -> manual rate tables, 7 states, monthly self-filing.",
+   "Bad Example": "Quote: 'Our CPA does our taxes' -> ambiguous (likely income tax); mark partial, follow-up task."
+  },
+  {
+   "Section": "Financial & Accounting Foundations",
+   "field_key": "internal_controls",
+   "Question": "What does your internal control environment look like?",
+   "Canonical Definition": "Approval thresholds, segregation of duties, audit posture (audited/reviewed/none), and known control gaps the prospect states.",
+   "Type & Normalization": "Text. Capture thresholds with numbers verbatim; audit status normalized: audited | reviewed | compiled | none.",
+   "Positive Signals": "we get audited; approval over $N; one person does everything; segregation; our auditors flagged",
+   "Negative Signals / Anti-patterns": "The prospect's aspiration for better controls is desired state. An audit FINDING is also a catalyst candidate; extract both (control fact here, catalyst entity separately).",
+   "Good Example": "Quote: 'Annual audit; anything over $5k needs my sign-off, but honestly AP is one person end to end' -> audited; $5k approval threshold; SoD gap in AP (stated).",
+   "Bad Example": "Quote: 'We should really have better controls' -> aspiration; mark partial, do not record as current state."
+  },
+  {
+   "Section": "Month-End Close",
+   "field_key": "close_duration_days",
+   "Question": "How long does it take you to close a month?",
+   "Canonical Definition": "Business days from period end to close complete, current state, as stated by the prospect.",
+   "Type & Normalization": "Number (business days). Weeks x5. Calendar references ('we close by the 20th') ~= that many calendar days, store as days with conversion noted. Ranges: midpoint, range in notes.",
+   "Positive Signals": "takes us N days to close; we close by the Nth; close runs about N weeks; we're never done before the",
+   "Negative Signals / Anti-patterns": "TARGET close time ('we want 5 days') is success_definition, not current state. Year-end close duration is different; if both given, this field is the MONTHLY close, year-end in notes.",
+   "Good Example": "Quote: 'We're usually done around the 18th' -> ~18 calendar days (~12-13 business); note conversion.",
+   "Bad Example": "Quote: 'Goal is a five-day close' -> target, route to success_definition."
+  },
+  {
+   "Section": "Month-End Close",
+   "field_key": "close_bottlenecks",
+   "Question": "What are the biggest bottlenecks in the close process?",
+   "Canonical Definition": "The specific close steps the prospect names as slowest/most painful (intercompany eliminations, bank recs, waiting on entity submissions, manual accruals). Each is also a pain-point candidate.",
+   "Type & Normalization": "List of named bottlenecks, prospect's words. Each quantified bottleneck links to a deal_pain_points row (pain tie-in).",
+   "Positive Signals": "what slows us down is; we always wait on; the worst part is; recs take forever; chasing the entities",
+   "Negative Signals / Anti-patterns": "General 'close is slow' without a named step is close_duration_days color, not a bottleneck list entry. Rep-suggested bottlenecks ('I bet eliminations hurt') unconfirmed are nothing.",
+   "Good Example": "Quote: 'Honestly it's waiting on the nine entity P&Ls, then eliminations on top' -> [entity submission lag, manual eliminations]; both pain candidates.",
+   "Bad Example": "Rep: 'Recs are probably the issue, right?' Prospect: 'I guess' -> weak confirmation; mark partial at most."
+  },
+  {
+   "Section": "Month-End Close",
+   "field_key": "close_delay_points",
+   "Question": "Where do delays typically occur?",
+   "Canonical Definition": "WHERE in the timeline delays cluster (first week waiting on data, last week in review) and WHY, when distinct from the named bottleneck steps.",
+   "Type & Normalization": "Text. If the prospect answers bottlenecks and delays as one answer, fill close_bottlenecks and mark this answered with the same quote rather than splitting artificially.",
+   "Positive Signals": "the delay is always; we lose the first week to; review drags; waiting on the bank",
+   "Negative Signals / Anti-patterns": "Don't force a distinct answer if the prospect treated bottlenecks and delays as one; duplicate-quote linking is correct, fabricated distinction is not.",
+   "Good Example": "Quote: 'First ten days we're just waiting on statements and entity numbers' -> delays front-loaded: external data dependency.",
+   "Bad Example": "(no separate statement made) -> reuse bottleneck quote, do not invent a timeline."
+  },
+  {
+   "Section": "Reporting & Data Confidence",
+   "field_key": "key_reports",
+   "Question": "What reports do you review most often today?",
+   "Canonical Definition": "The reports actually consumed on a rhythm (weekly flash, monthly P&L by entity, AR aging, job cost), as stated.",
+   "Type & Normalization": "List: report + cadence if stated.",
+   "Positive Signals": "every week I look at; the board gets; we live off the; AR aging every Monday",
+   "Negative Signals / Anti-patterns": "Reports they WISH existed route to desired_reporting. Reports the REP suggests they need are nothing.",
+   "Good Example": "Quote: 'Monthly P&L by entity for the partners, AR aging weekly' -> [entity P&L (monthly), AR aging (weekly)].",
+   "Bad Example": "Quote: 'We'd love a real-time dashboard' -> desired_reporting."
+  },
+  {
+   "Section": "Reporting & Data Confidence",
+   "field_key": "report_decision_usage",
+   "Question": "What are you using those reports to analyze or decide?",
+   "Canonical Definition": "The decisions the reports drive (pricing, staffing, which entity gets capital, collections priorities). Connects reporting pain to business impact.",
+   "Type & Normalization": "Text, tied to the named reports where possible.",
+   "Positive Signals": "we use that to decide; that tells us whether; drives our pricing; we staff off of",
+   "Negative Signals / Anti-patterns": "Generic 'to run the business' is partial; probe-level specificity is the SC's FDC follow-up, not Lumen's guess.",
+   "Good Example": "Quote: 'The job cost report decides which service lines we keep' -> job cost -> service-line continuation decisions.",
+   "Bad Example": "Quote: 'We just need good reports' -> no decision stated; partial."
+  },
+  {
+   "Section": "Reporting & Data Confidence",
+   "field_key": "data_confidence",
+   "Question": "How confident are you in the data you are using?",
+   "Canonical Definition": "The prospect's stated trust level in their numbers, with reasons (rekeying, version confusion, stale data). Low confidence statements are pain candidates.",
+   "Type & Normalization": "Text; capture hedges and qualifiers verbatim, they carry the signal.",
+   "Positive Signals": "I don't fully trust; we second-guess; by the time we see it it's stale; pretty confident actually; two versions of the truth",
+   "Negative Signals / Anti-patterns": "The REP casting doubt on the prospect's data is not the prospect's confidence statement. Confidence about a single report generalized to all data: keep it scoped to what they said.",
+   "Good Example": "Quote: 'By the time the P&L is done it's three weeks old, so nobody really trusts it for decisions' -> low confidence: staleness; pain candidate.",
+   "Bad Example": "Rep: 'Spreadsheets always have errors' Prospect: (silence) -> nothing to extract."
+  },
+  {
+   "Section": "Reporting & Data Confidence",
+   "field_key": "data_segmentation",
+   "Question": "How is your data segmented (classes, departments, crews, or other dimensions)?",
+   "Canonical Definition": "The dimensions they slice data by today (or wish they could): class, department, location, project, crew, fund, program. Direct dimension-fit signal.",
+   "Type & Normalization": "List of dimension names, current vs desired flagged per item.",
+   "Positive Signals": "we track by class; department-level P&L; we can't see it by location; everything's by job; funds and programs",
+   "Negative Signals / Anti-patterns": "QuickBooks 'class' abuse stories often mix current and desired; tag each dimension as current or desired per the quote, do not blend.",
+   "Good Example": "Quote: 'Classes for location today, but we really need service line too and QB can't do both' -> current: location (via class); desired: service line.",
+   "Bad Example": "Quote: 'We have departments in the org chart' -> org structure, not data segmentation, unless they report by it."
+  },
+  {
+   "Section": "Reporting & Data Confidence",
+   "field_key": "desired_reporting",
+   "Question": "What reporting would you ideally want to see?",
+   "Canonical Definition": "Reports/visibility the prospect wants but lacks today. Demo-fuel and gap evidence.",
+   "Type & Normalization": "List, prospect's words, with the why when stated.",
+   "Positive Signals": "I wish I could see; what I really want is; if I could get; we can't produce",
+   "Negative Signals / Anti-patterns": "Current reports route to key_reports. The magic-wand answer routes to wishlist_insight if framed as instant-insight; overlap is fine, link the same quote rather than duplicating text.",
+   "Good Example": "Quote: 'Consolidated cash across all nine entities, daily, without anyone building it' -> desired: daily consolidated cash view.",
+   "Bad Example": "Quote: 'We get a weekly flash today' -> current report, key_reports."
+  },
+  {
+   "Section": "Reporting & Data Confidence",
+   "field_key": "excel_usage",
+   "Question": "What do you use Excel for today?",
+   "Canonical Definition": "The jobs Excel performs in their finance process (consolidation, eliminations, budgets, board packs, allocations). Each is a workload-displacement and pain candidate.",
+   "Type & Normalization": "List of Excel jobs. Heavy ones link to pain rows when quantified.",
+   "Positive Signals": "everything ends up in Excel; we consolidate in spreadsheets; the budget is a workbook; download to Excel and",
+   "Negative Signals / Anti-patterns": "Light personal use ('I keep a to-do list') is noise; capture process-level Excel only.",
+   "Good Example": "Quote: 'Consolidation, eliminations, and the whole budget live in one giant workbook only Maria understands' -> [consolidation, eliminations, budgeting]; key-person risk noted; pain candidates.",
+   "Bad Example": "Quote: 'I like Excel' -> sentiment, skip."
+  },
+  {
+   "Section": "Reporting & Data Confidence",
+   "field_key": "pivot_offline_analysis",
+   "Question": "Are you using pivot tables or offline analysis?",
+   "Canonical Definition": "Whether analysis happens offline after export (pivots, manual mashups), indicating the system can't answer questions directly.",
+   "Type & Normalization": "Text/boolean + what they pivot on.",
+   "Positive Signals": "export and pivot; download everything; mash it up offline; pivot tables on the GL dump",
+   "Negative Signals / Anti-patterns": "Excel usage generally is the prior field; this is specifically the export-then-analyze pattern. If they answered it within excel_usage, link the same quote.",
+   "Good Example": "Quote: 'Every analysis starts with a GL export and a pivot' -> true; GL-export-driven analysis.",
+   "Bad Example": "Quote: 'We use Excel for budgeting' -> excel_usage, not necessarily offline analysis."
+  },
+  {
+   "Section": "Reporting & Data Confidence",
+   "field_key": "charts_used",
+   "Question": "What types of charts and graphs do you rely on?",
+   "Canonical Definition": "Visualizations they actually use to consume data (trend lines, waterfalls, dashboards in a BI tool).",
+   "Type & Normalization": "List; include the tool if named (Power BI, Tableau).",
+   "Positive Signals": "we chart; trend lines on; our Power BI dashboard; the board likes the waterfall",
+   "Negative Signals / Anti-patterns": "A BI TOOL named here also writes a company_systems row (category=operational/BI); do both. Wishes route to desired_reporting.",
+   "Good Example": "Quote: 'Revenue trend and a cash waterfall in Power BI, refreshed manually' -> [trend, waterfall]; Power BI (company_systems); manual refresh noted.",
+   "Bad Example": "Quote: 'Charts would be nice' -> desired, not current."
+  },
+  {
+   "Section": "Reporting & Data Confidence",
+   "field_key": "wishlist_insight",
+   "Question": "If you had a magic wand, what insight would you want instantly that you do not have today?",
+   "Canonical Definition": "The single instant-answer the prospect most wants. Highest-value demo moment per prospect; keep verbatim flavor.",
+   "Type & Normalization": "Text, near-verbatim.",
+   "Positive Signals": "if I could snap my fingers; the one thing I'd want; instantly know; right now I can't tell you",
+   "Negative Signals / Anti-patterns": "Do not summarize away the specificity; the verbatim phrasing is the demo script. Multiple wishes: keep the one they flagged as THE one, others to desired_reporting.",
+   "Good Example": "Quote: 'I want to know today, not in three weeks, which entities are bleeding cash' -> instant entity-level cash burn visibility.",
+   "Bad Example": "Quote: 'Better reporting overall' -> too generic; partial, follow-up task to sharpen."
+  },
+  {
+   "Section": "Revenue, Billing & Invoicing",
+   "field_key": "revenue_model",
+   "Question": "Can you walk me through how you make money?",
+   "Canonical Definition": "Narrative of the commercial model: what is sold, to whom, on what terms (contracts, projects, transactions, subscriptions). The container for the billing deep-dive.",
+   "Type & Normalization": "Text narrative; keep structure (X% of revenue from Y) verbatim.",
+   "Positive Signals": "the way it works is; customers pay us; we bill; our model is; contracts run",
+   "Negative Signals / Anti-patterns": "Overlaps revenue_streams (the list); this is the HOW narrative. Fill both from the same passage if it covers both; link the shared quote.",
+   "Good Example": "Quote: 'Annual SaaS contracts billed quarterly up front, services billed monthly on completion' -> model: annual SaaS / quarterly advance billing + monthly services billing.",
+   "Bad Example": "Quote: 'Business is good this year' -> performance, not model."
+  },
+  {
+   "Section": "Revenue, Billing & Invoicing",
+   "field_key": "invoicing_ar_process",
+   "Question": "How does invoicing and accounts receivable work today?",
+   "Canonical Definition": "End-to-end current AR mechanics: invoice trigger, creation tool, delivery, terms, collections approach, cash application.",
+   "Type & Normalization": "Text: trigger -> creation -> delivery -> terms -> collections -> cash app, as much as stated.",
+   "Positive Signals": "we invoice when; out of QuickBooks; net 30; collections is; we apply cash by",
+   "Negative Signals / Anti-patterns": "Future-state desires are not the current process. Volume numbers stated here also fill deal_sizing.ar_invoices_monthly (same quote, both homes' provenance).",
+   "Good Example": "Quote: 'Invoices go out of QB when the PM marks the job done, net 30, and our office manager chases everything over 45 days from a spreadsheet' -> trigger: PM completion; tool: QB; terms: net 30; collections: manual spreadsheet.",
+   "Bad Example": "Quote: 'We want automated dunning' -> desired, route to ideal/desired."
+  },
+  {
+   "Section": "Revenue, Billing & Invoicing",
+   "field_key": "billable_items",
+   "Question": "What items are billable?",
+   "Canonical Definition": "What units appear on invoices: time, materials, milestones, subscriptions, expenses passed through, change orders.",
+   "Type & Normalization": "List of billable unit types.",
+   "Positive Signals": "we bill for; time and materials; milestones; pass through expenses; change orders get billed",
+   "Negative Signals / Anti-patterns": "Internal cost categories not billed to customers are out. If pass-through billing is mentioned with leakage ('we forget to bill expenses'), that is also a pain candidate.",
+   "Good Example": "Quote: 'T&M for service work, fixed milestones on projects, and we pass through travel' -> [time, materials, milestones, expense pass-through].",
+   "Bad Example": "Quote: 'Payroll is our biggest cost' -> cost, not billable item."
+  },
+  {
+   "Section": "Revenue, Billing & Invoicing",
+   "field_key": "billing_feed_systems",
+   "Question": "Are any external systems feeding billing data?",
+   "Canonical Definition": "Upstream systems where billable data originates (field service, PSA, e-commerce, time tracking) and how it reaches invoicing. Routes to company_systems with integration_purpose=billing-feed; this field holds the flow description.",
+   "Type & Normalization": "Text: system -> mechanism -> invoicing. Systems named also write company_systems rows.",
+   "Positive Signals": "billing comes out of; time flows from; ServiceTitan creates the invoice; we pull hours from",
+   "Negative Signals / Anti-patterns": "Don't re-list the whole tech stack; only billable-data feeders. Manual rekey between the feeder and invoicing is the pain marker; capture it.",
+   "Good Example": "Quote: 'Hours live in Harvest, we export weekly and rekey into QB invoices' -> Harvest -> manual weekly rekey -> QB invoicing; pain candidate.",
+   "Bad Example": "Quote: 'We use Slack' -> not a billing feed."
+  },
+  {
+   "Section": "Revenue, Billing & Invoicing",
+   "field_key": "billing_rate_method",
+   "Question": "How are billing rates calculated?",
+   "Canonical Definition": "How prices/rates are determined: rate cards, per-contract rates, cost-plus, role-based rates, annual escalators.",
+   "Type & Normalization": "Text; capture escalators and exceptions verbatim.",
+   "Positive Signals": "rate card; cost plus N%; by role; each contract has its own; rates bump N% annually",
+   "Negative Signals / Anti-patterns": "Discounting behavior is adjacent but distinct; capture if volunteered, don't probe-fill. Wage rates (what they pay) are not billing rates (what they charge) unless cost-plus links them.",
+   "Good Example": "Quote: 'Role-based rate card, but legacy clients are grandfathered all over the place' -> role-based card + grandfathered exceptions (complexity marker).",
+   "Bad Example": "Quote: 'We pay techs $40/hour' -> cost rate, not billing rate, unless cost-plus stated."
+  },
+  {
+   "Section": "Revenue, Billing & Invoicing",
+   "field_key": "invoice_tax_handling",
+   "Question": "How are taxes applied to invoices?",
+   "Canonical Definition": "How sales tax lands on invoices specifically: engine-calculated, manual rates, customer-exempt handling. The invoice-level companion to sales_tax_management.",
+   "Type & Normalization": "Text. If fully answered within sales_tax_management, link the same quote rather than re-asking.",
+   "Positive Signals": "tax gets added; Avalara calculates at invoice; we look up the rate; most customers are exempt",
+   "Negative Signals / Anti-patterns": "Don't force separation from sales_tax_management when the prospect answered once; shared quote is correct.",
+   "Good Example": "Quote: 'QB applies the rate we keyed per customer, and exemption certs live in a drawer' -> manual per-customer rates; physical cert management (pain candidate).",
+   "Bad Example": "(answered fully in sales tax field) -> link, don't duplicate."
+  },
+  {
+   "Section": "Revenue, Billing & Invoicing",
+   "field_key": "revenue_recognition_method",
+   "Question": "What revenue recognition method do you use?",
+   "Canonical Definition": "How revenue is recognized: point-in-time, over-time/ratable, percentage-of-completion, milestone, completed-contract, cash. 606 posture if stated.",
+   "Type & Normalization": "Text normalized to method names; multiple methods per stream listed per stream.",
+   "Positive Signals": "we recognize; ratably; percentage of completion; when the job's done; 606; deferred revenue",
+   "Negative Signals / Anti-patterns": "Billing timing is NOT recognition ('we bill quarterly up front' says nothing about rec). If they conflate billing and rec, capture the quote, mark partial, generate the follow-up task: this is a classic FDC clarification.",
+   "Good Example": "Quote: 'SaaS is ratable over the contract, services we take as delivered' -> ratable (SaaS); as-delivered (services).",
+   "Bad Example": "Quote: 'We bill annually in advance' -> billing terms; rec method still unknown; partial."
+  },
+  {
+   "Section": "Revenue, Billing & Invoicing",
+   "field_key": "intercompany_billing",
+   "Question": "Is billing structured across entities or intercompany?",
+   "Canonical Definition": "Whether entities bill each other or share customers (management fees, shared-service chargebacks, one entity invoicing on behalf of others).",
+   "Type & Normalization": "Text/boolean + structure description.",
+   "Positive Signals": "we bill between companies; management fee; entity A invoices for everyone; chargebacks",
+   "Negative Signals / Anti-patterns": "Intercompany ACCOUNTING (due-to/due-from) is interentity_accounting_today; this is customer-facing or fee billing BETWEEN entities. Related quotes can link to both when they genuinely cover both.",
+   "Good Example": "Quote: 'The management company bills each LLC a 3% fee monthly' -> true; monthly management-fee billing.",
+   "Bad Example": "Quote: 'We true up loans between entities' -> intercompany accounting, not billing."
+  },
+  {
+   "Section": "Revenue, Billing & Invoicing",
+   "field_key": "invoicing_process_end_to_end",
+   "Question": "What does your end-to-end invoicing process look like?",
+   "Canonical Definition": "The full walk from billable event to cash applied, including handoffs and people. The synthesis question; usually answered across several quotes.",
+   "Type & Normalization": "Text narrative assembled from quotes; every step must trace to a quote (multi-quote provenance allowed).",
+   "Positive Signals": "so the way an invoice happens is; from there it goes to; then accounting; finally we apply",
+   "Negative Signals / Anti-patterns": "This field accumulates; do not force completion in one call. Steps not yet described stay absent; never bridge gaps with assumed steps.",
+   "Good Example": "Quotes across the call -> 'Job completed (ServiceTitan) -> office manager exports -> rekey to QB -> email PDF -> net 30 -> manual cash app from lockbox report' (each step quote-traced).",
+   "Bad Example": "Filling 'then they presumably approve it' between two stated steps -> fabricated step; never write."
+  },
+  {
+   "Section": "Banking & Cash Management",
+   "field_key": "bank",
+   "Question": "What bank are you using today?",
+   "Canonical Definition": "Primary operating bank(s). Feeds bank-feed compatibility checks.",
+   "Type & Normalization": "Bank name(s); per-entity mapping if stated.",
+   "Positive Signals": "we bank with; accounts at; Chase for operating; the line is with",
+   "Negative Signals / Anti-patterns": "Lenders that are not the operating bank are credit relationships; note separately. Personal banking references are noise.",
+   "Good Example": "Quote: 'Operating accounts at Truist, the acquisition still has its Wells accounts' -> Truist (primary); Wells Fargo (legacy entity).",
+   "Bad Example": "Quote: 'Our line of credit is with a private lender' -> credit facility, note, not operating bank."
+  },
+  {
+   "Section": "Banking & Cash Management",
+   "field_key": "credit_cards",
+   "Question": "What credit cards are in use?",
+   "Canonical Definition": "Corporate card programs in use (Amex, bank cards, Ramp/Brex-style platforms) and roughly who carries them. Spend-management platforms named here also write company_systems rows.",
+   "Type & Normalization": "List of card programs; cardholder scope in notes.",
+   "Positive Signals": "corporate Amex; everyone has a card; we moved to Ramp; bank-issued cards",
+   "Negative Signals / Anti-patterns": "Personal cards used for business expenses is a finding (expense-process pain marker), capture it as stated. Card PROCESSING for customers (merchant services) is a different topic.",
+   "Good Example": "Quote: 'Fifteen managers carry Amex, plus the Ramp cards we just rolled out' -> [Amex (15 holders), Ramp]; Ramp -> company_systems.",
+   "Bad Example": "Quote: 'We take Visa from customers' -> merchant acceptance, not corporate cards."
+  },
+  {
+   "Section": "Banking & Cash Management",
+   "field_key": "bank_rec_sentiment",
+   "Question": "How do you feel about your current bank reconciliation process?",
+   "Canonical Definition": "The prospect's stated experience of bank recs: effort, frequency, lag, and feeling. Sentiment fields capture the verbatim emotional register; it sells the demo moment.",
+   "Type & Normalization": "Text, near-verbatim. Quantified effort links a pain row.",
+   "Positive Signals": "recs are a nightmare; takes N days; we're always behind on; honestly it's fine; my least favorite",
+   "Negative Signals / Anti-patterns": "The rep's characterization ('recs must be brutal') confirmed only by 'yeah' is weak; prefer the prospect's own words, mark rep-led confirmations partial.",
+   "Good Example": "Quote: 'Nine entities, nine recs, my senior loses a week every month to them' -> negative; ~1 week/month senior time; pain row linked.",
+   "Bad Example": "Rep: 'Recs are painful, right?' Prospect: 'Sure' -> partial at most; no quantification."
+  },
+  {
+   "Section": "Banking & Cash Management",
+   "field_key": "cc_rec_sentiment",
+   "Question": "How do you feel about your current credit card reconciliation process?",
+   "Canonical Definition": "Same as bank_rec_sentiment, scoped to corporate card recs: receipt chasing, coding, statement matching.",
+   "Type & Normalization": "Text, near-verbatim. Quantified effort links a pain row.",
+   "Positive Signals": "chasing receipts; coding the Amex bill takes; cardholders never submit; the statement rec is",
+   "Negative Signals / Anti-patterns": "Expense-report pain overlaps expense_report_process; if one quote covers both, link it to both rather than splitting the sentence.",
+   "Good Example": "Quote: 'The Amex bill is 400 lines and two days of asking people what they bought' -> negative; 2 days/month; pain row.",
+   "Bad Example": "Quote: 'We pay the card on time' -> payment behavior, not the rec experience."
+  },
+  {
+   "Section": "Payables, Purchasing & Expenses",
+   "field_key": "ap_recurring_process",
+   "Question": "How does your payables process work for rent, utilities, and other recurring expenses?",
+   "Canonical Definition": "How recurring/predictable payables are handled: auto-pay, memorized transactions, manual entry each cycle.",
+   "Type & Normalization": "Text: mechanism per recurring category as stated.",
+   "Positive Signals": "rent is on autopay; we key utilities every month; memorized transactions; recurring bills",
+   "Negative Signals / Anti-patterns": "One-off vendor bills are bill_intake/vendor_payment territory; this field is the recurring subset. If the prospect doesn't distinguish, answer the general fields and mark this covered-by reference.",
+   "Good Example": "Quote: 'Rent autodrafts, utilities get keyed monthly by the AP clerk' -> rent: autopay; utilities: manual monthly entry.",
+   "Bad Example": "Quote: 'We pay about 300 bills a month' -> volume, route to bills_per_period."
+  },
+  {
+   "Section": "Payables, Purchasing & Expenses",
+   "field_key": "ap_approval_process",
+   "Question": "What does the approval process look like?",
+   "Canonical Definition": "Bill approval workflow: who approves, thresholds, mechanism (email, system, verbal).",
+   "Type & Normalization": "Text: approver chain + thresholds + mechanism. Thresholds verbatim.",
+   "Positive Signals": "approvals go through; over $N needs; I sign every check; it's an email chain; no real approvals",
+   "Negative Signals / Anti-patterns": "'No approvals' stated is a finding (control gap), record it. Purchase approvals (pre-spend) are purchasing_process; this is bill/payment approval (post-invoice).",
+   "Good Example": "Quote: 'Anything over $2,500 comes to me by email, under that the controller just pays it' -> threshold $2,500; email-based; two-tier.",
+   "Bad Example": "Quote: 'POs need my sign-off' -> purchase approval, route to purchasing_process."
+  },
+  {
+   "Section": "Payables, Purchasing & Expenses",
+   "field_key": "vendor_payment_methods",
+   "Question": "How are vendor bills paid today?",
+   "Canonical Definition": "Payment rails in use: check, ACH, card, wire, bill-pay platform, and rough mix.",
+   "Type & Normalization": "List of methods + mix if stated. Platforms named (Bill.com, Melio) also write company_systems.",
+   "Positive Signals": "we cut checks; ACH through the bank; pay by card when we can; Bill.com pushes payment",
+   "Negative Signals / Anti-patterns": "How CUSTOMERS pay them is AR; this is outbound only. 'We should stop cutting checks' is desired state.",
+   "Good Example": "Quote: 'Probably 60% checks still, the rest ACH out of Bill.com' -> [check ~60%, ACH ~40% via Bill.com].",
+   "Bad Example": "Quote: 'Customers pay us by ACH mostly' -> AR side, skip here."
+  },
+  {
+   "Section": "Payables, Purchasing & Expenses",
+   "field_key": "bill_intake_method",
+   "Question": "How do vendor bills get into the system?",
+   "Canonical Definition": "How bills arrive and get entered: email inbox, paper, OCR capture, vendor portals, manual keying.",
+   "Type & Normalization": "Text: intake channel(s) + entry mechanism.",
+   "Positive Signals": "bills come in by email; we key them; scanned and; AP inbox; someone types every invoice",
+   "Negative Signals / Anti-patterns": "Capture TECHNOLOGY is the next field; if one quote answers both, link to both. Approval flow is separate.",
+   "Good Example": "Quote: 'Everything lands in an AP inbox and gets keyed by hand into QB' -> email intake; fully manual entry.",
+   "Bad Example": "Quote: 'I approve them in email' -> approval, not intake."
+  },
+  {
+   "Section": "Payables, Purchasing & Expenses",
+   "field_key": "bills_per_period",
+   "Question": "How many bills are you processing in a typical period?",
+   "Canonical Definition": "Vendor bill volume per month. Canonical home: deal_sizing.ap_invoices_monthly.",
+   "Type & Normalization": "Number per month. Weekly x4.33 noted; annual /12 noted. Ranges: midpoint, range in notes.",
+   "Positive Signals": "we process N bills; N invoices a month; a few hundred a month; N a week",
+   "Negative Signals / Anti-patterns": "Customer invoices (AR) are the other direction; do not cross-write. 'A lot' is partial pending a number; create the follow-up task.",
+   "Good Example": "Quote: 'Call it 300, 350 bills a month across the group' -> 325; range noted.",
+   "Bad Example": "Quote: 'We send about 200 invoices a month' -> AR volume, route to deal_sizing.ar_invoices_monthly."
+  },
+  {
+   "Section": "Payables, Purchasing & Expenses",
+   "field_key": "payment_methods",
+   "Question": "What payment methods are you using?",
+   "Canonical Definition": "Catch-all confirmation of payment rails if answered separately from vendor_payment_methods; otherwise covered-by that field.",
+   "Type & Normalization": "Same normalization as vendor_payment_methods; merge rather than duplicate.",
+   "Positive Signals": "(same as vendor_payment_methods)",
+   "Negative Signals / Anti-patterns": "This is a doc-level near-duplicate of vendor_payment_methods; extraction treats them as one fact with one home. Curation may merge the rows.",
+   "Good Example": "(merged with vendor_payment_methods)",
+   "Bad Example": "Writing different values to the two fields from one conversation -> forbidden; one fact, one home."
+  },
+  {
+   "Section": "Payables, Purchasing & Expenses",
+   "field_key": "bill_capture_tech",
+   "Question": "Are you using any technology to transcribe or capture bills?",
+   "Canonical Definition": "Whether OCR/capture tooling exists (Bill.com capture, Dext, Ramp bill pay) or entry is fully manual. Tools write company_systems.",
+   "Type & Normalization": "Text/boolean + tool name. 'None, fully manual' is a valid recorded answer and a pain marker at volume.",
+   "Positive Signals": "Bill.com reads them; Dext; we scan into; no, all manual; AI capture",
+   "Negative Signals / Anti-patterns": "A scanner that produces PDFs is not capture tech (no data extraction); record as manual with scanning.",
+   "Good Example": "Quote: 'Bill.com grabs maybe 80% of the fields, we fix the rest' -> Bill.com capture (~80% accuracy stated).",
+   "Bad Example": "Quote: 'We scan everything to a shared drive' -> document storage, entry still manual."
+  },
+  {
+   "Section": "Payables, Purchasing & Expenses",
+   "field_key": "purchasing_process",
+   "Question": "How does your purchasing process work today?",
+   "Canonical Definition": "Pre-spend process: who can buy, how purchases are initiated and approved before the bill arrives.",
+   "Type & Normalization": "Text: initiation -> approval -> ordering, as stated.",
+   "Positive Signals": "to buy something you; purchase approval; we just buy and expense; managers can spend up to",
+   "Negative Signals / Anti-patterns": "'No process, people just buy' is a finding, record it. Bill approval is ap_approval_process.",
+   "Good Example": "Quote: 'Managers buy what they need under $1k, above that they text me' -> informal; $1k threshold; text-based approval (control gap marker).",
+   "Bad Example": "Quote: 'I approve the bills before they're paid' -> AP approval, not purchasing."
+  },
+  {
+   "Section": "Payables, Purchasing & Expenses",
+   "field_key": "uses_requisitions",
+   "Question": "Do you use purchase requisitions?",
+   "Canonical Definition": "Whether a formal requisition step (request-before-order) exists.",
+   "Type & Normalization": "Boolean + tooling in notes.",
+   "Positive Signals": "requisitions; purchase requests; reqs go through; nobody submits a req",
+   "Negative Signals / Anti-patterns": "A verbal ask is not a requisition system; record false with the informal-process note. Don't infer from PO usage; reqs and POs are distinct steps.",
+   "Good Example": "Quote: 'Reqs in a Google Form, then ops approves' -> true; Google Form based.",
+   "Bad Example": "Quote: 'They just ask me' -> false; informal."
+  },
+  {
+   "Section": "Payables, Purchasing & Expenses",
+   "field_key": "uses_purchase_orders",
+   "Question": "Do you use purchase orders?",
+   "Canonical Definition": "Whether POs are issued to vendors, and coverage (all spend, inventory only, rarely).",
+   "Type & Normalization": "Boolean + coverage in notes.",
+   "Positive Signals": "we cut POs; PO number; only for inventory buys; we never PO",
+   "Negative Signals / Anti-patterns": "Receiving against POs (3-way match) is a bonus detail worth capturing in notes when stated. Customer POs received (sales side) are not this.",
+   "Good Example": "Quote: 'POs for inventory purchases only, nothing else' -> true; coverage: inventory only.",
+   "Bad Example": "Quote: 'Customers send us POs' -> sales-side, skip."
+  },
+  {
+   "Section": "Payables, Purchasing & Expenses",
+   "field_key": "expense_report_process",
+   "Question": "How are expense reports handled?",
+   "Canonical Definition": "Employee expense flow: submission method, approval, reimbursement, card-vs-out-of-pocket split.",
+   "Type & Normalization": "Text: tool + flow. Tools (Expensify, Concur, Ramp) write company_systems.",
+   "Positive Signals": "expense reports in; Expensify; they email receipts; reimburse through payroll; nobody submits on time",
+   "Negative Signals / Anti-patterns": "Corporate card reconciliation overlaps cc_rec_sentiment; link shared quotes. Mileage/per-diem specifics are notes, not separate fields.",
+   "Good Example": "Quote: 'Receipts get stapled to a printed form, approved by the manager, reimbursed in payroll two weeks later' -> paper-based; manager approval; payroll reimbursement (pain candidate).",
+   "Bad Example": "Quote: 'The Amex rec is painful' -> cc_rec_sentiment."
+  },
+  {
+   "Section": "Inventory & Manufacturing",
+   "field_key": "inventory_type",
+   "Question": "Do you carry inventory, and if so, what type (buy-to-sell, manufacturing, or supplies)?",
+   "Canonical Definition": "GATE for the section. Whether inventory exists on the balance sheet and its nature: buy-to-sell (distribution), manufactured goods, or internal supplies only.",
+   "Type & Normalization": "Enum: none | buy_to_sell | manufacturing | supplies_only | mixed, + description. 'Supplies only' typically gates the rest of the section OFF.",
+   "Positive Signals": "we stock; we carry inventory; buy and resell; we make; just shop supplies; no inventory",
+   "Negative Signals / Anti-patterns": "Consigned or customer-owned stock is not their inventory; capture the nuance verbatim. Service companies saying 'truck stock' may be supplies_only; clarify via follow-up rather than assuming.",
+   "Good Example": "Quote: 'We buy parts and resell them, about $2M on the shelf' -> buy_to_sell; ~$2M carrying value noted.",
+   "Bad Example": "Quote: 'We keep office supplies in a closet' -> supplies_only; section gates off."
+  },
+  {
+   "Section": "Inventory & Manufacturing",
+   "field_key": "inventory_flow",
+   "Question": "Can you walk me through the full process from purchasing raw materials to selling a finished product?",
+   "Canonical Definition": "The procure-to-sell narrative: buying, receiving, storage, transformation (if any), fulfillment. Accumulates across quotes like invoicing_process_end_to_end.",
+   "Type & Normalization": "Text narrative, every step quote-traced; gaps stay gaps.",
+   "Positive Signals": "we buy from; receive into; it sits in; then we build; ships from",
+   "Negative Signals / Anti-patterns": "Never bridge unstated steps. Drop-ship arrangements (never touching stock) are a distinct flow worth capturing verbatim.",
+   "Good Example": "Quotes -> 'PO to supplier -> receive at main warehouse -> picked per job -> tech installs' (each step traced).",
+   "Bad Example": "Inserting 'then presumably QC checks it' -> fabricated; never write."
+  },
+  {
+   "Section": "Inventory & Manufacturing",
+   "field_key": "inventory_tracking_costing",
+   "Question": "How are you tracking and costing inventory today?",
+   "Canonical Definition": "Current tracking mechanism (system, spreadsheet, physical-only) and how cost is assigned today (the method itself goes to inventory_costing_method).",
+   "Type & Normalization": "Text: tracking tool + process. Tool names write company_systems.",
+   "Positive Signals": "tracked in; a spreadsheet of stock; Fishbowl; we count and adjust; honestly we don't really track",
+   "Negative Signals / Anti-patterns": "'We don't track it' is a finding, record it. Costing METHOD (FIFO etc.) routes to inventory_costing_method when stated.",
+   "Good Example": "Quote: 'Quantities live in Fishbowl, value is a quarterly true-up JE' -> Fishbowl (quantities); quarterly valuation true-up (control gap marker).",
+   "Bad Example": "Quote: 'We're FIFO' -> costing method field."
+  },
+  {
+   "Section": "Inventory & Manufacturing",
+   "field_key": "warehouse_count",
+   "Question": "How many warehouses do you have?",
+   "Canonical Definition": "Count of physical stocking locations (warehouses, stocking branches; trucks if they track truck stock as locations). Canonical home: deal_sizing.warehouse_count (new column).",
+   "Type & Normalization": "Number. Truck-stock counted only if the prospect frames trucks as stock locations; note the framing.",
+   "Positive Signals": "N warehouses; N stocking locations; main DC plus N branches; every truck carries stock",
+   "Negative Signals / Anti-patterns": "Offices and storefronts without stock are not warehouses. Entity count is unrelated; never cross-infer.",
+   "Good Example": "Quote: 'Main warehouse in Atlanta plus three branch stockrooms' -> 4.",
+   "Bad Example": "Quote: 'Twelve offices' -> locations, not warehouses."
+  },
+  {
+   "Section": "Inventory & Manufacturing",
+   "field_key": "inventory_count_frequency",
+   "Question": "How often are inventory counts performed?",
+   "Canonical Definition": "Physical count cadence: annual full count, cycle counts, never.",
+   "Type & Normalization": "Text normalized: annual | quarterly | monthly | cycle_counting | never, + detail.",
+   "Positive Signals": "we count once a year; cycle counts; full physical at year-end; haven't counted since",
+   "Negative Signals / Anti-patterns": "'Should count more' is aspiration. Shrinkage complaints are pain candidates linked here.",
+   "Good Example": "Quote: 'Full count every December, that's it' -> annual.",
+   "Bad Example": "Quote: 'We really need cycle counting' -> desired, note as gap."
+  },
+  {
+   "Section": "Inventory & Manufacturing",
+   "field_key": "inventory_count_method",
+   "Question": "Are inventory counts manual or technology-driven?",
+   "Canonical Definition": "How counts are executed: paper sheets, barcode scanners, RF guns, app-based.",
+   "Type & Normalization": "Enum: manual | barcode | rf_scanners | app, + detail.",
+   "Positive Signals": "clipboards; barcode scanners; we scan; paper count sheets; count in the app",
+   "Negative Signals / Anti-patterns": "Owning scanners unused for counts doesn't make counts technology-driven; the stated process governs.",
+   "Good Example": "Quote: 'Two days of clipboards and rekeying the sheets' -> manual; rekey step noted (pain candidate).",
+   "Bad Example": "Quote: 'We have scanners somewhere' -> ambiguous; partial."
+  },
+  {
+   "Section": "Inventory & Manufacturing",
+   "field_key": "replenishment_process",
+   "Question": "How does replenishment work today?",
+   "Canonical Definition": "How restock decisions happen: gut feel, min/max, system-suggested, vendor-managed.",
+   "Type & Normalization": "Text: trigger + decider + mechanism.",
+   "Positive Signals": "we reorder when; min max; the system tells us; Joe eyeballs the shelf; vendor manages",
+   "Negative Signals / Anti-patterns": "Reorder POINTS specifically route to uses_reorder_points (boolean); this is the broader process. One quote often fills both; link it.",
+   "Good Example": "Quote: 'The warehouse manager eyeballs it and texts the buyer' -> informal/visual; person-dependent (risk marker).",
+   "Bad Example": "Quote: 'Min/max in Fishbowl' -> also sets uses_reorder_points=true; link quote to both."
+  },
+  {
+   "Section": "Inventory & Manufacturing",
+   "field_key": "uses_reorder_points",
+   "Question": "Do you use reorder points?",
+   "Canonical Definition": "Whether quantitative reorder triggers (min/max, ROP) are configured and used.",
+   "Type & Normalization": "Boolean + where configured.",
+   "Positive Signals": "reorder points; min max levels; when it hits N we buy",
+   "Negative Signals / Anti-patterns": "Intending to set them up is false-with-note. Manager intuition is not a reorder point.",
+   "Good Example": "Quote: 'Min/max on the A items only' -> true; partial coverage noted.",
+   "Bad Example": "Quote: 'We know roughly when to reorder' -> false; intuition-based."
+  },
+  {
+   "Section": "Inventory & Manufacturing",
+   "field_key": "uses_serialization",
+   "Question": "Do you use serialization?",
+   "Canonical Definition": "Whether individual units are tracked by serial number (distinct from lot tracking).",
+   "Type & Normalization": "Boolean. Lot tracking, if stated, recorded in notes as lot (not serial).",
+   "Positive Signals": "serial numbers; serialized; we track each unit; lot numbers",
+   "Negative Signals / Anti-patterns": "Lot/batch tracking is NOT serialization; record accurately, the distinction is product-functional. Warranty registration by serial without operational tracking: capture the nuance.",
+   "Good Example": "Quote: 'Every unit has a serial we track from receipt to install' -> true.",
+   "Bad Example": "Quote: 'We track lots for recalls' -> lot tracking; serialization false unless also stated."
+  },
+  {
+   "Section": "Inventory & Manufacturing",
+   "field_key": "uses_kits",
+   "Question": "Do you use kits?",
+   "Canonical Definition": "Whether items are sold/assembled as kits or bundles (kitted SKUs, light assembly into sellable bundles).",
+   "Type & Normalization": "Boolean + kit nature in notes (sales kits vs assembled kits).",
+   "Positive Signals": "kits; bundles; we kit; assembled into a package",
+   "Negative Signals / Anti-patterns": "Manufacturing BOMs are manufacturing_type territory; a kit is pick-and-bundle. If they use 'kit' to mean full assembly, capture verbatim and route per the described process.",
+   "Good Example": "Quote: 'We sell starter kits, pick five SKUs into a box' -> true; sales kits.",
+   "Bad Example": "Quote: 'We build units from 40 components' -> manufacturing/BOM, not kitting."
+  },
+  {
+   "Section": "Inventory & Manufacturing",
+   "field_key": "inventory_costing_method",
+   "Question": "What costing method do you use?",
+   "Canonical Definition": "Inventory costing method: FIFO, LIFO, weighted/moving average, standard, specific identification.",
+   "Type & Normalization": "Enum normalized to method names; 'don't know' is partial with a CFO follow-up task (common answer).",
+   "Positive Signals": "FIFO; average cost; standard cost; whatever QuickBooks does",
+   "Negative Signals / Anti-patterns": "'Whatever the system does' is partial, not average-cost: capture verbatim, task to confirm (QB default is average, but stating that for them would be inference).",
+   "Good Example": "Quote: 'FIFO, the auditors require it' -> FIFO.",
+   "Bad Example": "Quote: 'Whatever QuickBooks defaults to' -> partial; follow-up task; do NOT write 'average'."
+  },
+  {
+   "Section": "Inventory & Manufacturing",
+   "field_key": "inventory_key_metrics",
+   "Question": "When reporting on inventory, what metrics matter most to you?",
+   "Canonical Definition": "The inventory measures they manage by: turns, carrying value, fill rate, dead stock, margin by item.",
+   "Type & Normalization": "List of metrics, prospect's words.",
+   "Positive Signals": "we watch turns; dead stock; fill rate; what's sitting too long; margin by SKU",
+   "Negative Signals / Anti-patterns": "Metrics they CAN'T get today are also desired_reporting candidates; tag current vs desired per quote.",
+   "Good Example": "Quote: 'Turns by category, and I want to know what hasn't moved in 90 days' -> [turns by category (current), 90-day dead stock (desired)].",
+   "Bad Example": "Rep: 'Most distributors watch turns' -> nothing without prospect confirmation."
+  },
+  {
+   "Section": "Inventory & Manufacturing",
+   "field_key": "manufacturing_type",
+   "Question": "If you manufacture, is it assembly or true manufacturing?",
+   "Canonical Definition": "SUB-GATE. Nature of production: light assembly (kit/configure) vs true manufacturing (transformation, BOM depth, routing).",
+   "Type & Normalization": "Enum: none | assembly | true_manufacturing | mixed, + description.",
+   "Positive Signals": "we assemble; light assembly; we machine; multi-level BOM; fabrication",
+   "Negative Signals / Anti-patterns": "Outsourced manufacturing (contract manufacturers) is its own nuance: they may need PO/landed-cost handling, not production. Capture verbatim.",
+   "Good Example": "Quote: 'We assemble units from purchased components, no fabrication' -> assembly.",
+   "Bad Example": "Quote: 'Our contract manufacturer in Texas builds it' -> outsourced; not internal manufacturing; note structure."
+  },
+  {
+   "Section": "Inventory & Manufacturing",
+   "field_key": "manufacturing_process_style",
+   "Question": "Does manufacturing follow an assembly line or multi-day or multi-week processes?",
+   "Canonical Definition": "Production flow shape: continuous/line, job-shop, long-cycle builds (multi-day/week WIP).",
+   "Type & Normalization": "Text: style + cycle time as stated. Long WIP cycles are a WIP-accounting signal worth flagging.",
+   "Positive Signals": "down the line; each build takes N days; job shop; batches",
+   "Negative Signals / Anti-patterns": "Applies only when manufacturing_type is assembly/true; otherwise skip. Lead time from VENDORS is procurement, not production cycle.",
+   "Good Example": "Quote: 'A unit takes about two weeks on the floor' -> long-cycle (~2 weeks WIP).",
+   "Bad Example": "Quote: 'Parts take six weeks to arrive' -> vendor lead time, not production style."
+  },
+  {
+   "Section": "Inventory & Manufacturing",
+   "field_key": "manufacturing_serialization",
+   "Question": "Is serialization used in manufacturing?",
+   "Canonical Definition": "Whether serials are assigned/tracked during production (as-built records), distinct from sales-side serialization.",
+   "Type & Normalization": "Boolean + at what stage assigned.",
+   "Positive Signals": "serialized on the line; as-built; we assign serials when",
+   "Negative Signals / Anti-patterns": "Sales-side serialization already captured does not imply production serialization; ask-level distinction, keep separate.",
+   "Good Example": "Quote: 'Serial gets etched at final assembly and logged' -> true; assigned at final assembly.",
+   "Bad Example": "(uses_serialization true from sales context) -> do not auto-set this; separate fact."
+  },
+  {
+   "Section": "Inventory & Manufacturing",
+   "field_key": "labor_costing",
+   "Question": "How is labor costing handled?",
+   "Canonical Definition": "Whether/how labor is captured into product or job cost: time tracking to jobs, standard labor rates, absorbed in overhead, not captured.",
+   "Type & Normalization": "Text: capture method + rate basis. 'Not captured' is a finding.",
+   "Positive Signals": "labor goes to the job; standard rate per hour; we don't cost labor; time clocks feed",
+   "Negative Signals / Anti-patterns": "Payroll processing is not labor costing. Wanting job-level labor visibility is desired state and a pain candidate.",
+   "Good Example": "Quote: 'Techs clock to jobs in ServiceTitan but it never hits the financials' -> captured operationally, not costed financially (gap finding).",
+   "Bad Example": "Quote: 'Payroll is biweekly' -> payroll process, not costing."
+  },
+  {
+   "Section": "Inventory & Manufacturing",
+   "field_key": "inventory_other_challenges",
+   "Question": "What other inventory challenges exist today?",
+   "Canonical Definition": "Open-capture for inventory pains not covered above (shrinkage, landed cost, returns, obsolescence). Each is a pain candidate.",
+   "Type & Normalization": "List; each quantified item links a pain row.",
+   "Positive Signals": "our biggest inventory headache; shrinkage; landed cost; returns pile up; we write off",
+   "Negative Signals / Anti-patterns": "Already-captured bottlenecks should link, not duplicate (dedup layer applies). Rep-suggested challenges unconfirmed are nothing.",
+   "Good Example": "Quote: 'We wrote off $80k of dead stock last year' -> obsolescence pain, quantified $80k/yr; pain row.",
+   "Bad Example": "Rep: 'Landed cost is usually a mess' Prospect: 'maybe' -> nothing."
+  },
+  {
+   "Section": "Projects",
+   "field_key": "project_types",
+   "Question": "What types of projects do you run?",
+   "Canonical Definition": "GATE for the section. The kinds of projects (client engagements, construction jobs, internal capital projects, grants).",
+   "Type & Normalization": "List. Empty/none gates the section off.",
+   "Positive Signals": "our projects are; engagements; jobs; we run grants as projects",
+   "Negative Signals / Anti-patterns": "Using 'project' loosely for initiatives without financial tracking may not gate the section on; the test is whether money is tracked per project. Capture the quote and judge by that test.",
+   "Good Example": "Quote: 'Every client engagement is a project with its own budget' -> client engagements (financially tracked); gate ON.",
+   "Bad Example": "Quote: 'We have a project to redo the website' -> internal initiative, not project accounting; does not gate on alone."
+  },
+  {
+   "Section": "Projects",
+   "field_key": "project_billing",
+   "Question": "How is project billing handled?",
+   "Canonical Definition": "How project work converts to invoices: milestone, percent-complete, T&M, fixed-fee schedules, retainage.",
+   "Type & Normalization": "Text per project type if they differ. Retainage stated is a strong vertical signal; flag it.",
+   "Positive Signals": "we bill milestones; monthly T&M; fixed fee up front; retainage held",
+   "Negative Signals / Anti-patterns": "General invoicing process is invoicing_ar_process; this is the project-specific layer. Don't duplicate; link shared quotes.",
+   "Good Example": "Quote: '30% up front, 60% at delivery, 10% retainage for 90 days' -> milestone + retainage structure.",
+   "Bad Example": "Quote: 'Invoices go out of QB' -> general AR mechanics."
+  },
+  {
+   "Section": "Projects",
+   "field_key": "time_entry_method",
+   "Question": "How is time entry captured?",
+   "Canonical Definition": "How project hours are recorded: tool, cadence, compliance reality ('nobody submits until month-end' is the finding).",
+   "Type & Normalization": "Text: tool + cadence + compliance color. Tools write company_systems.",
+   "Positive Signals": "time goes into; Harvest; timesheets weekly; nobody fills them out until",
+   "Negative Signals / Anti-patterns": "Payroll time clocks for hourly wages are not project time entry unless they feed job costing; the destination decides.",
+   "Good Example": "Quote: 'Harvest, supposedly daily, realistically the Friday panic' -> Harvest; weekly-at-best compliance (data-quality marker).",
+   "Bad Example": "Quote: 'Hourly guys punch a clock for payroll' -> payroll time, unless stated to feed jobs."
+  },
+  {
+   "Section": "Projects",
+   "field_key": "project_revenue_recognition",
+   "Question": "How is revenue recognized on projects?",
+   "Canonical Definition": "Rec method for project revenue: POC (input/output method), milestone, completed contract, as-billed.",
+   "Type & Normalization": "Text normalized to method names. 'As-billed' stated is a 606-risk flag worth noting verbatim.",
+   "Positive Signals": "percentage of completion; we recognize when we bill; at completion; based on cost incurred",
+   "Negative Signals / Anti-patterns": "Same billing-vs-recognition trap as revenue_recognition_method: billing schedule answers do not establish rec method; mark partial and task it.",
+   "Good Example": "Quote: 'POC off cost incurred, the auditors check it' -> POC (cost-input).",
+   "Bad Example": "Quote: 'We bill monthly' -> billing, not rec; partial."
+  },
+  {
+   "Section": "Projects",
+   "field_key": "project_costing",
+   "Question": "How is project costing managed?",
+   "Canonical Definition": "What costs hit projects (labor, materials, subs, overhead allocation) and where that lives.",
+   "Type & Normalization": "Text: cost components captured + tooling.",
+   "Positive Signals": "costs hit the job; we job-cost; subs get coded to; overhead allocated at N%",
+   "Negative Signals / Anti-patterns": "Wanting true job cost is desired state and a pain candidate. Labor specifics overlap labor_costing for manufacturers; for project businesses this is the home.",
+   "Good Example": "Quote: 'Materials and subs get coded to jobs, labor never makes it' -> partial job costing; labor gap (finding + pain candidate).",
+   "Bad Example": "Quote: 'We'd kill for real job margins' -> desired; pain candidate; not current process."
+  },
+  {
+   "Section": "Projects",
+   "field_key": "project_performance_visibility",
+   "Question": "How much visibility do you have into current project performance?",
+   "Canonical Definition": "What they can see about in-flight projects today (real-time margin, only-at-completion, nothing until the client complains).",
+   "Type & Normalization": "Text; lag and blind spots verbatim.",
+   "Positive Signals": "we only know at the end; can't see margin until; real-time we have nothing; the PM keeps a spreadsheet",
+   "Negative Signals / Anti-patterns": "Visibility into the PIPELINE of projects (sales) is not delivery performance visibility. Keep scoped to financial/delivery performance.",
+   "Good Example": "Quote: 'We find out a job lost money when it closes, months later' -> completion-lag visibility only (pain candidate).",
+   "Bad Example": "Quote: 'We can see what's in the sales pipeline' -> sales visibility, skip."
+  },
+  {
+   "Section": "Projects",
+   "field_key": "project_performance_vs_target",
+   "Question": "How does that compare to target or goal performance?",
+   "Canonical Definition": "Whether they compare project actuals to budget/target and how (budget-vs-actual per job, margin targets).",
+   "Type & Normalization": "Text: comparison mechanism + targets if stated.",
+   "Positive Signals": "against budget; target margin is N%; we don't really compare; variance review",
+   "Negative Signals / Anti-patterns": "Having targets without comparing actuals is the finding; capture both halves as stated.",
+   "Good Example": "Quote: 'Target is 35% margin but we only check it at year-end across everything' -> 35% target; no per-job comparison (gap).",
+   "Bad Example": "Quote: 'We want to start budgeting jobs' -> desired; not current."
+  },
+  {
+   "Section": "Fixed Assets",
+   "field_key": "fixed_asset_count",
+   "Question": "Approximately how many fixed assets do you have?",
+   "Canonical Definition": "Approximate count of tracked fixed assets. Canonical home: deal_sizing.fixed_assets.",
+   "Type & Normalization": "Number. Dollar value stated instead of count goes to notes (don't convert). Ranges: midpoint + range note.",
+   "Positive Signals": "N assets; a few hundred on the schedule; the depreciation schedule has N lines",
+   "Negative Signals / Anti-patterns": "Asset VALUE is not asset count. Leased equipment under ASC 842 may or may not be on their schedule; capture as stated, don't reclassify.",
+   "Good Example": "Quote: 'Schedule's got about 400 lines' -> 400.",
+   "Bad Example": "Quote: '$3M of equipment' -> value, notes only; count remains unknown."
+  },
+  {
+   "Section": "Fixed Assets",
+   "field_key": "fixed_asset_management",
+   "Question": "Are fixed assets managed in-house or by a CPA?",
+   "Canonical Definition": "Who maintains the asset register and depreciation: internal team, external CPA, or split (books internal, tax CPA).",
+   "Type & Normalization": "Enum: in_house | cpa | split, + detail.",
+   "Positive Signals": "our CPA keeps the schedule; we track in Excel; controller maintains; CPA does tax depreciation",
+   "Negative Signals / Anti-patterns": "CPA doing TAX depreciation while books are internal = split, a common and meaningful answer; don't collapse it to 'cpa'.",
+   "Good Example": "Quote: 'We keep book depreciation, the CPA runs tax' -> split.",
+   "Bad Example": "Quote: 'Our CPA does our taxes' -> ambiguous; partial."
+  },
+  {
+   "Section": "Fixed Assets",
+   "field_key": "depreciation_method",
+   "Question": "What depreciation method is used?",
+   "Canonical Definition": "Book depreciation method(s): straight-line, declining balance, units of production.",
+   "Type & Normalization": "Text normalized to method names; per-class differences noted.",
+   "Positive Signals": "straight line; double declining; we depreciate over N years",
+   "Negative Signals / Anti-patterns": "Tax methods (MACRS, Section 179, bonus) are tax-side; if mentioned, they belong in book_vs_tax_depreciation, not here.",
+   "Good Example": "Quote: 'Straight line, mostly five and seven year lives' -> straight-line; 5/7-yr lives.",
+   "Bad Example": "Quote: 'We take bonus depreciation' -> tax method; route to book_vs_tax."
+  },
+  {
+   "Section": "Fixed Assets",
+   "field_key": "book_vs_tax_depreciation",
+   "Question": "How do you handle book versus tax depreciation?",
+   "Canonical Definition": "Whether separate book and tax depreciation are maintained and by whom; or single set of books.",
+   "Type & Normalization": "Text: arrangement + who maintains tax side.",
+   "Positive Signals": "two sets; book and tax; CPA handles tax depreciation; we only keep one",
+   "Negative Signals / Anti-patterns": "'CPA does taxes' alone doesn't establish dual tracking; partial unless the depreciation split is stated.",
+   "Good Example": "Quote: 'Book is straight-line with us, CPA maintains MACRS for the return' -> dual; tax via CPA.",
+   "Bad Example": "Quote: 'Taxes are outsourced' -> partial."
+  },
+  {
+   "Section": "Fixed Assets",
+   "field_key": "maintains_fixed_asset_schedule",
+   "Question": "Do you maintain a fixed asset schedule?",
+   "Canonical Definition": "Whether a maintained asset register exists, and where (Excel, system module, CPA's file).",
+   "Type & Normalization": "Boolean + location. 'The CPA has one we never see' = true with an access-gap note.",
+   "Positive Signals": "the schedule; asset register; it's an Excel file; CPA has it",
+   "Negative Signals / Anti-patterns": "An insurance equipment list is not an accounting asset schedule; capture as stated, mark partial if that's all that exists.",
+   "Good Example": "Quote: 'Excel schedule the controller updates quarterly' -> true; Excel, quarterly.",
+   "Bad Example": "Quote: 'Insurance has our equipment list' -> partial; not an accounting register."
+  },
+  {
+   "Section": "Allocations",
+   "field_key": "uses_allocations",
+   "Question": "Do you make allocations across entities, departments, or other dimensions?",
+   "Canonical Definition": "GATE. Whether shared costs are allocated (overhead, corporate costs, shared services) across entities/departments/dimensions.",
+   "Type & Normalization": "Boolean + what gets allocated.",
+   "Positive Signals": "we allocate; spread across; corporate gets charged out; overhead allocation; we split rent between",
+   "Negative Signals / Anti-patterns": "Intercompany BILLING (management fees) is intercompany_billing; allocations are accounting distributions. The prospect may describe a fee that IS their allocation mechanism; capture verbatim and link to both if genuinely both.",
+   "Good Example": "Quote: 'Corporate overhead gets spread to the nine entities by revenue' -> true; overhead by revenue basis.",
+   "Bad Example": "Quote: 'Each entity pays its own bills' -> likely false; record the statement."
+  },
+  {
+   "Section": "Allocations",
+   "field_key": "allocation_process",
+   "Question": "Can you walk me through how allocations are done today?",
+   "Canonical Definition": "The mechanics: basis (revenue, headcount, square footage), frequency, tooling (Excel + JE is the common answer), effort.",
+   "Type & Normalization": "Text: basis + frequency + mechanism. Effort quantified links a pain row.",
+   "Positive Signals": "based on headcount; monthly allocation JE; the spreadsheet calculates; takes a day to book",
+   "Negative Signals / Anti-patterns": "Only applies when uses_allocations is true. Wanting to START allocating is desired state; gate stays per current state with the desire noted.",
+   "Good Example": "Quote: 'Revenue-based, computed in Excel, booked as one monthly JE, half a day every month' -> revenue basis; Excel + manual JE; ~0.5 day/month (pain row).",
+   "Bad Example": "Quote: 'We should be allocating IT costs' -> desired; not current process."
+  },
+  {
+   "Section": "Budgeting & Planning",
+   "field_key": "budgeting_process",
+   "Question": "What does your budgeting process look like today?",
+   "Canonical Definition": "The annual/rolling budget process: who builds it, in what tool, on what cycle, with what participation.",
+   "Type & Normalization": "Text: owner + tool + cycle + participation.",
+   "Positive Signals": "budget season; we build it in Excel; each manager submits; takes us N months; rolling forecast",
+   "Negative Signals / Anti-patterns": "FORECASTING (in-year reprojection) vs budgeting (the plan): capture both if both described, labeled. Wanting a budget process is a finding if none exists.",
+   "Good Example": "Quote: 'CFO builds it in Excel over two months, entity managers email their numbers in' -> Excel; CFO-owned; ~2-month cycle; email-based inputs.",
+   "Bad Example": "Quote: 'We reforecast quarterly' -> forecasting cadence; capture labeled, distinct from the budget build."
+  },
+  {
+   "Section": "Budgeting & Planning",
+   "field_key": "budget_basis",
+   "Question": "What are budget values based on?",
+   "Canonical Definition": "How budget numbers are derived: prior year +/- %, zero-based, driver-based (headcount, units), top-down targets.",
+   "Type & Normalization": "Text normalized: prior_year_adjusted | zero_based | driver_based | top_down | mixed, + detail.",
+   "Positive Signals": "last year plus; zero based; driven off headcount; the board hands down a number",
+   "Negative Signals / Anti-patterns": "Aspirations to move driver-based are desired state. The basis may differ by line (revenue driver-based, opex prior-year): capture the split.",
+   "Good Example": "Quote: 'Honestly last year plus 5%, except payroll which we build from the roster' -> mixed: prior-year-adjusted opex, driver-based payroll.",
+   "Bad Example": "Quote: 'We want to get to driver-based' -> desired."
+  },
+  {
+   "Section": "Budgeting & Planning",
+   "field_key": "budget_version_control",
+   "Question": "How do you manage version control?",
+   "Canonical Definition": "How budget versions/iterations are managed: file naming chaos, single master, system-managed versions. 'FINAL_v7_REALLYFINAL.xlsx' stories are the classic pain quote.",
+   "Type & Normalization": "Text; chaos described verbatim is the value.",
+   "Positive Signals": "versions; v1 v2 v3; which file is final; we lock the budget; everyone has their own copy",
+   "Negative Signals / Anti-patterns": "This only matters as stated; don't manufacture version pain from the mere fact they use Excel.",
+   "Good Example": "Quote: 'There are six versions on the shared drive and we argued in the board meeting about which was final' -> version chaos (pain row candidate).",
+   "Bad Example": "(uses Excel, no version complaint stated) -> not_discussed; do not infer pain."
+  },
+  {
+   "Section": "Budgeting & Planning",
+   "field_key": "does_scenario_planning",
+   "Question": "Do you perform scenario planning?",
+   "Canonical Definition": "Whether multiple scenarios/what-ifs are modeled (best/worst case, hiring scenarios, M&A cases).",
+   "Type & Normalization": "Boolean + scenario types in notes.",
+   "Positive Signals": "scenarios; best case worst case; we model what happens if; sensitivity",
+   "Negative Signals / Anti-patterns": "A single contingency conversation is not a scenario-planning practice; the test is a maintained practice. Desire to scenario-plan is desired state.",
+   "Good Example": "Quote: 'Three cases every year: base, stretch, and the bank covenant case' -> true; three maintained cases.",
+   "Bad Example": "Quote: 'We talked about what a recession would do' -> ad hoc discussion; false with note."
+  }
+ ],
+ "Core Entities": [
+  {
+   "Entity": "Pain Point",
+   "Table": "deal_pain_points",
+   "Canonical Definition": "A problem the prospect currently EXPERIENCES, stated by a prospect-side speaker, in their business operations or finance function. Must be present-tense reality, not risk, desire, or hypothesis.",
+   "Row & Normalization Rules": "One row per distinct underlying problem. Quantification (annual_cost / annual_hours) only from explicit prospect statements or simple arithmetic on stated numbers (2 days/week x 50 weeks), with the conversion noted. category from the controlled list; affected_team and mentioned_by captured when stated.",
+   "Positive Signals": "what kills us; we waste; takes forever; error-prone; we can't; manual; my team spends",
+   "Anti-patterns": "NOT pains: desires ('we want dashboards' -> ideal/desired), risks not yet experienced ('we might outgrow it'), rep assertions, research-derived industry pains never voiced by the prospect, and restatements of an existing pain (dedup: enrich the existing row).",
+   "Good Example": "Quote: 'My controller spends two days a week keying AP' -> pain: manual AP entry; annual_hours ~800 (2d x 8h x 50wk, conversion noted); affected_team: accounting.",
+   "Bad Example": "Quote: 'Companies like ours usually struggle with consolidation' (rep) -> nothing; rep speech."
+  },
+  {
+   "Entity": "Business Catalyst",
+   "Table": "business_catalysts",
+   "Canonical Definition": "A force or event actively DRIVING change: something happening (or recently happened) that creates the need to act. Acquisition, growth, new leadership, system end-of-life, funding event, regulatory change, audit finding.",
+   "Row & Normalization Rules": "One row per distinct force. category + urgency from stated timeline pressure; impact from stated consequences. Research-sourced catalysts allowed ONLY with citation (e.g., press release of an acquisition) and remain unverified until voiced on a call.",
+   "Positive Signals": "we just acquired; growing fast; new CFO; our PE firm wants; the system sunsets; we raised",
+   "Anti-patterns": "NOT catalysts: pains (current suffering without a driving force), compelling events (consequences of inaction), generic ambitions ('we want to grow'), or the rep's narrative of why they should buy.",
+   "Good Example": "Quote: 'We closed two acquisitions this year and the board wants consolidated numbers by Q3' -> catalysts: acquisition activity; board reporting mandate (urgency: Q3).",
+   "Bad Example": "Quote: 'Close is painful' -> pain, not catalyst."
+  },
+  {
+   "Entity": "Compelling Event",
+   "Table": "compelling_events",
+   "Canonical Definition": "The bad thing that happens if the prospect does NOT change: the consequence of inaction, with a date or trigger where stated. The Sage canon definition; the inverse of a catalyst.",
+   "Row & Normalization Rules": "One row per consequence. event_date when a date/trigger is stated; strength from the stated severity and specificity; verified=true only when prospect-voiced (research can propose CE candidates only as hypotheses, never as CE rows).",
+   "Positive Signals": "if we don't; by [date] we have to; the bank requires; we lose the contract unless; can't survive another year-end like",
+   "Anti-patterns": "NOT CEs: catalysts (drivers), soft preferences ('we'd like it before busy season' is timing color unless a consequence is attached), vendor-created urgency (rep's discount deadline is not the prospect's CE).",
+   "Good Example": "Quote: 'If we can't produce audited consolidations by June the credit line doesn't renew' -> CE: credit-line non-renewal; date: June; strength: high.",
+   "Bad Example": "Quote: 'Pricing goes up next quarter' (rep) -> vendor urgency; never a CE."
+  },
+  {
+   "Entity": "Decision Criterion",
+   "Table": "deal_decision_criteria",
+   "Canonical Definition": "A standard the prospect states they will judge vendors against: must-haves, evaluation factors, comparison dimensions.",
+   "Row & Normalization Rules": "One row per criterion; importance from stated weight ('non-negotiable' vs 'nice to have'); our_position filled only from evidence, else Unknown.",
+   "Positive Signals": "has to have; must; we're comparing on; what matters to us is; deal-breaker",
+   "Anti-patterns": "NOT criteria: ideal-solution color without pass/fail weight, the rep's differentiators recited back, process steps ('we'll do demos' is decision_process).",
+   "Good Example": "Quote: 'Multi-entity consolidation is non-negotiable, and it has to talk to ServiceTitan' -> two criteria, both must-have.",
+   "Bad Example": "Quote: 'Your dimensions thing seems cool' -> reaction, not a stated criterion; partial at most."
+  },
+  {
+   "Entity": "Company System",
+   "Table": "company_systems",
+   "Canonical Definition": "A software system the company currently uses (is_current) or states it needs (is_needed), with category, and integration purpose when stated.",
+   "Row & Normalization Rules": "Natural key: system_name + category per deal; match-before-insert (NetSuite vs 'NetSuite ERP' = same row). confirmed=true only when prospect-voiced; research rows stay confidence-tagged until confirmed.",
+   "Positive Signals": "we use; we're on; runs on; we need it to talk to",
+   "Anti-patterns": "NOT systems: competitors under evaluation (deal_competitors), clients' systems, generic tool mentions with no business role (Slack small talk).",
+   "Good Example": "Quote: 'Field ops runs on ServiceTitan' -> ServiceTitan, category operational, is_current, confirmed.",
+   "Bad Example": "Quote: 'NetSuite quoted us last month' -> competitor."
+  },
+  {
+   "Entity": "Deal Risk",
+   "Table": "deal_risks",
+   "Canonical Definition": "A threat to THE DEAL (not to the prospect's business): competitive bias, no access to power, timeline slippage, budget uncertainty, champion weakness.",
+   "Row & Normalization Rules": "One row per risk; category + severity from evidence; status open by default. AI may write quote-backed risks (e.g., prospect states the CFO is NetSuite-biased); pattern-inferred risks without quotes belong in deal_hypotheses, not here.",
+   "Positive Signals": "the CFO prefers; we've been burned by; no budget approved yet; timeline depends on",
+   "Anti-patterns": "NOT risks: the prospect's business problems (pains), generic deal-stage facts, hypotheses without quote backing (those go to deal_hypotheses).",
+   "Good Example": "Quote: 'Our CFO came from a NetSuite shop and loves it' -> risk: competitive bias at economic buyer; severity high; quote-backed.",
+   "Bad Example": "AI pattern: 'no exec sponsor identified yet' with no quote -> deal_hypotheses, not deal_risks."
+  },
+  {
+   "Entity": "Contact Role Fact",
+   "Table": "contacts",
+   "Canonical Definition": "Role-in-deal facts about a person: champion/EB/signer status, influence, alignment, sentiment, reporting line. Identity facts (name, title) may come from research with citation; ROLE facts require call evidence.",
+   "Row & Normalization Rules": "Match-before-insert on name/email (Apollo rows enrich, never duplicate). is_champion/is_economic_buyer/is_signer set only on quote-backed evidence; otherwise hypothesis territory.",
+   "Positive Signals": "I report to; the decision is mine; I'll champion this internally; final sign-off is",
+   "Anti-patterns": "NOT role facts: title-based inference (CFO does not equal economic buyer without evidence: that inference is a deal_hypotheses row), Apollo seniority labels as influence claims.",
+   "Good Example": "Quote: 'Whatever we pick, Senake signs it' -> Senake: is_signer=true, quote-backed.",
+   "Bad Example": "Apollo: 'Senake Gajamera, CFO' -> identity fact (cited); does NOT set is_economic_buyer."
+  },
+  {
+   "Entity": "Deal Module",
+   "Table": "deal_modules (new)",
+   "Canonical Definition": "An SC-managed record that a Sage Intacct module is recommended for this deal and/or was demonstrated. Recommendations may be AI-SUGGESTED from verified discovery facts but only become recommended on SC/AE confirmation.",
+   "Row & Normalization Rules": "One row per module per deal; is_recommended / is_demoed independently togglable; demoed links the demo conversation; recommended_reason references the driving discovery facts; maps to pricebook SKUs via the module reference list.",
+   "Positive Signals": "n/a (human/AI-suggest surface, not transcript-extracted; demo detection may set is_demoed candidates from demo-call transcripts for confirmation)",
+   "Anti-patterns": "AI never sets is_recommended directly; suggestions only. Demo detection proposes, SC confirms.",
+   "Good Example": "inventory_type=buy_to_sell + warehouse_count=4 -> AI suggests Inventory + Order Entry modules; SC confirms -> is_recommended.",
+   "Bad Example": "AI auto-marking modules recommended without confirmation -> forbidden."
+  }
+ ],
+ "Universal Rules": [
+  {
+   "Rule": "Quote gate",
+   "Statement": "No value is written without a verbatim quote and speaker (transcript) or URL citation (research). No quote = field stays Unknown / not_discussed."
+  },
+  {
+   "Rule": "Speaker discipline",
+   "Statement": "Facts about the prospect's business require a prospect-side speaker stating or explicitly confirming. Rep-stated facts with silence or weak acknowledgment are partial at most."
+  },
+  {
+   "Rule": "No hypothesis",
+   "Statement": "Anything reasoned rather than stated goes to deal_hypotheses, never to fact fields. This includes title-based role inference and industry-pattern pains."
+  },
+  {
+   "Rule": "Current vs desired",
+   "Statement": "Every field is CURRENT STATE unless the definition says otherwise. Desires route to ideal_solution / desired_reporting / success_definition. Aspirational phrasing ('we want', 'we should', 'ideally') is the routing signal."
+  },
+  {
+   "Rule": "Manual lock",
+   "Statement": "Manually entered values are never overwritten by extraction. Contradicting evidence files a field_suggestions row with full provenance."
+  },
+  {
+   "Rule": "Change-aware recency",
+   "Statement": "Every write classifies as new_fact / confirmation / changed_fact against the prior value provided in context. changed_fact records both values and surfaces qualifying-spine changes on the deal timeline."
+  },
+  {
+   "Rule": "One fact, one home",
+   "Statement": "Each fact has one canonical storage home (see architecture doc field map). Quotes may link to multiple fields when one statement genuinely answers several, but the same fact never writes two homes."
+  },
+  {
+   "Rule": "Partial + task",
+   "Statement": "Ambiguous or incomplete answers write status=partial with the quote and generate a follow-up task. Partial never guesses the value."
+  },
+  {
+   "Rule": "Numbers in quotes",
+   "Statement": "A numeric value must appear in its quote or be a flagged unit conversion (weeks to business days, weekly to monthly). The edge function rejects numeric writes failing this containment check."
+  },
+  {
+   "Rule": "Pain tie-in",
+   "Statement": "Quantified functional answers that evidence a problem link to a deal_pain_points row (existing or proposed) via pain_point_id, subject to match-before-insert dedup."
+  },
+  {
+   "Rule": "Gates",
+   "Statement": "Section gate fields (inventory_type, project_types, uses_allocations) control whether the gated fields run. Gated-off fields are not_applicable, not not_discussed."
+  },
+  {
+   "Rule": "Granola summaries",
+   "Statement": "Granola AI summaries and notes are auxiliary context only. They can never serve as provenance; only the verbatim transcript produces quotes."
+  },
+  {
+   "Rule": "Concept-driven, not question-anchored",
+   "Statement": "The question text in this catalog documents INTENT; it is not a script. Reps ask similar-but-different questions and prospects volunteer facts unprompted. Extraction matches the canonical definition and signals against ANY phrasing, anywhere in the call: a fact buried in a story, an answer to a differently-worded question, or an aside all count equally. Never require that the catalog question (or any question) was asked."
+  },
+  {
+   "Rule": "Metrics sweep",
+   "Statement": "Independently of the field catalog, every quantified business statement by a prospect-side speaker is captured as a metric observation (value, unit, period, quote, speaker): stated metrics must never be lost because no field matched. Observations map to the metric taxonomy when unambiguous, otherwise store under the prospect's own label for review. Field values and pain quantifications link to their metric observations rather than duplicating them."
+  }
+ ]
+}

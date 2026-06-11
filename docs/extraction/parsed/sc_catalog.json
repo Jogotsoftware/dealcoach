@@ -1,0 +1,978 @@
+{
+ "Field Catalog": [
+  {
+   "Section": "Business Drivers & ERP Motivation",
+   "Question": "What is driving the need for a new ERP?",
+   "Proposed field_key": "driver_for_new_erp",
+   "Value Type": "text",
+   "Applicability": "always",
+   "Stored In": "existing AE extraction",
+   "Keep? (Y/N)": "Y",
+   "Notes": "Catalyst (business_catalysts / driving_factors)"
+  },
+  {
+   "Section": "Business Drivers & ERP Motivation",
+   "Question": "What problems are you trying to solve today?",
+   "Proposed field_key": "problems_to_solve",
+   "Value Type": "list",
+   "Applicability": "always",
+   "Stored In": "existing AE extraction",
+   "Keep? (Y/N)": "Y",
+   "Notes": "deal_pain_points"
+  },
+  {
+   "Section": "Business Drivers & ERP Motivation",
+   "Question": "What does success look like with a new system?",
+   "Proposed field_key": "success_definition",
+   "Value Type": "text",
+   "Applicability": "always",
+   "Stored In": "existing AE extraction",
+   "Keep? (Y/N)": "Y",
+   "Notes": "deal_analysis.ideal_solution"
+  },
+  {
+   "Section": "Business Drivers & ERP Motivation",
+   "Question": "What would your ideal solution look like?",
+   "Proposed field_key": "ideal_solution",
+   "Value Type": "text",
+   "Applicability": "always",
+   "Stored In": "existing AE extraction",
+   "Keep? (Y/N)": "Y",
+   "Notes": "deal_analysis.ideal_solution"
+  },
+  {
+   "Section": "Business Drivers & ERP Motivation",
+   "Question": "What do you need Sage Intacct to manage for you?",
+   "Proposed field_key": "required_capabilities",
+   "Value Type": "list",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": "Scope / fit"
+  },
+  {
+   "Section": "Company & Organizational Structure",
+   "Question": "How many entities do you have?",
+   "Proposed field_key": "entity_count",
+   "Value Type": "number",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": "QuoteBuilder sizing"
+  },
+  {
+   "Section": "Company & Organizational Structure",
+   "Question": "What revenue streams do you have?",
+   "Proposed field_key": "revenue_streams",
+   "Value Type": "list",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Company & Organizational Structure",
+   "Question": "Is there shared ownership across entities?",
+   "Proposed field_key": "shared_ownership",
+   "Value Type": "boolean",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Company & Organizational Structure",
+   "Question": "Where are entities located by country and currency?",
+   "Proposed field_key": "entity_locations_currencies",
+   "Value Type": "list",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": "Multi-currency = fit signal"
+  },
+  {
+   "Section": "Company & Organizational Structure",
+   "Question": "Do you use a shared chart of accounts?",
+   "Proposed field_key": "shared_chart_of_accounts",
+   "Value Type": "boolean",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Company & Organizational Structure",
+   "Question": "How are you handling inter-entity accounting today?",
+   "Proposed field_key": "interentity_accounting_today",
+   "Value Type": "text",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": "Fit signal"
+  },
+  {
+   "Section": "Users & Access",
+   "Question": "How many total users will be in the system?",
+   "Proposed field_key": "total_users",
+   "Value Type": "number",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": "QuoteBuilder sizing"
+  },
+  {
+   "Section": "Users & Access",
+   "Question": "How many users need reporting or read-only access?",
+   "Proposed field_key": "reporting_readonly_users",
+   "Value Type": "number",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": "QuoteBuilder sizing"
+  },
+  {
+   "Section": "Current Technology Stack",
+   "Question": "What accounting or ERP system are you using today?",
+   "Proposed field_key": "system_accounting_erp",
+   "Value Type": "text",
+   "Applicability": "always",
+   "Stored In": "company_systems",
+   "Keep? (Y/N)": "Y",
+   "Notes": "system_category=accounting"
+  },
+  {
+   "Section": "Current Technology Stack",
+   "Question": "What payroll system are you using?",
+   "Proposed field_key": "system_payroll",
+   "Value Type": "text",
+   "Applicability": "always",
+   "Stored In": "company_systems",
+   "Keep? (Y/N)": "Y",
+   "Notes": "system_category=payroll"
+  },
+  {
+   "Section": "Current Technology Stack",
+   "Question": "What order management system do you use?",
+   "Proposed field_key": "system_order_management",
+   "Value Type": "text",
+   "Applicability": "always",
+   "Stored In": "company_systems",
+   "Keep? (Y/N)": "Y",
+   "Notes": "system_category=order_management"
+  },
+  {
+   "Section": "Current Technology Stack",
+   "Question": "What ticketing or operational systems are in place?",
+   "Proposed field_key": "system_operational",
+   "Value Type": "list",
+   "Applicability": "always",
+   "Stored In": "company_systems",
+   "Keep? (Y/N)": "Y",
+   "Notes": "system_category=operational"
+  },
+  {
+   "Section": "Current Technology Stack",
+   "Question": "What other systems integrate with accounting today?",
+   "Proposed field_key": "system_integrations",
+   "Value Type": "list",
+   "Applicability": "always",
+   "Stored In": "company_systems",
+   "Keep? (Y/N)": "Y",
+   "Notes": "Integration scope"
+  },
+  {
+   "Section": "Financial & Accounting Foundations",
+   "Question": "What is your fiscal year structure (12 months, 13 periods)?",
+   "Proposed field_key": "fiscal_year_structure",
+   "Value Type": "text",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Financial & Accounting Foundations",
+   "Question": "What accounting method do you use (cash, accrual, both)?",
+   "Proposed field_key": "accounting_method",
+   "Value Type": "text",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Financial & Accounting Foundations",
+   "Question": "How is payroll handled today?",
+   "Proposed field_key": "payroll_handling",
+   "Value Type": "text",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": "Overlaps system_payroll"
+  },
+  {
+   "Section": "Financial & Accounting Foundations",
+   "Question": "How do you manage sales tax?",
+   "Proposed field_key": "sales_tax_management",
+   "Value Type": "text",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Financial & Accounting Foundations",
+   "Question": "What does your internal control environment look like?",
+   "Proposed field_key": "internal_controls",
+   "Value Type": "text",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Month-End Close",
+   "Question": "How long does it take you to close a month?",
+   "Proposed field_key": "close_duration_days",
+   "Value Type": "number",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": "Pain / fit metric"
+  },
+  {
+   "Section": "Month-End Close",
+   "Question": "What are the biggest bottlenecks in the close process?",
+   "Proposed field_key": "close_bottlenecks",
+   "Value Type": "list",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Month-End Close",
+   "Question": "Where do delays typically occur?",
+   "Proposed field_key": "close_delay_points",
+   "Value Type": "text",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Reporting & Data Confidence",
+   "Question": "What reports do you review most often today?",
+   "Proposed field_key": "key_reports",
+   "Value Type": "list",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Reporting & Data Confidence",
+   "Question": "What are you using those reports to analyze or decide?",
+   "Proposed field_key": "report_decision_usage",
+   "Value Type": "text",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Reporting & Data Confidence",
+   "Question": "How confident are you in the data you are using?",
+   "Proposed field_key": "data_confidence",
+   "Value Type": "text",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Reporting & Data Confidence",
+   "Question": "How is your data segmented (classes, departments, crews, dimensions)?",
+   "Proposed field_key": "data_segmentation",
+   "Value Type": "list",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": "Dimensions = fit signal"
+  },
+  {
+   "Section": "Reporting & Data Confidence",
+   "Question": "What reporting would you ideally want to see?",
+   "Proposed field_key": "desired_reporting",
+   "Value Type": "text",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Reporting & Data Confidence",
+   "Question": "What do you use Excel for today?",
+   "Proposed field_key": "excel_usage",
+   "Value Type": "text",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Reporting & Data Confidence",
+   "Question": "Are you using pivot tables or offline analysis?",
+   "Proposed field_key": "pivot_offline_analysis",
+   "Value Type": "text",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Reporting & Data Confidence",
+   "Question": "What types of charts and graphs do you rely on?",
+   "Proposed field_key": "charts_used",
+   "Value Type": "list",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Reporting & Data Confidence",
+   "Question": "If you had a magic wand, what insight would you want instantly?",
+   "Proposed field_key": "wishlist_insight",
+   "Value Type": "text",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Revenue, Billing & Invoicing",
+   "Question": "Can you walk me through how you make money?",
+   "Proposed field_key": "revenue_model",
+   "Value Type": "text",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Revenue, Billing & Invoicing",
+   "Question": "How does invoicing and accounts receivable work today?",
+   "Proposed field_key": "invoicing_ar_process",
+   "Value Type": "text",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Revenue, Billing & Invoicing",
+   "Question": "What items are billable?",
+   "Proposed field_key": "billable_items",
+   "Value Type": "list",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Revenue, Billing & Invoicing",
+   "Question": "Are any external systems feeding billing data?",
+   "Proposed field_key": "billing_feed_systems",
+   "Value Type": "list",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": "Overlaps system_integrations"
+  },
+  {
+   "Section": "Revenue, Billing & Invoicing",
+   "Question": "How are billing rates calculated?",
+   "Proposed field_key": "billing_rate_method",
+   "Value Type": "text",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Revenue, Billing & Invoicing",
+   "Question": "How are taxes applied to invoices?",
+   "Proposed field_key": "invoice_tax_handling",
+   "Value Type": "text",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Revenue, Billing & Invoicing",
+   "Question": "What revenue recognition method do you use?",
+   "Proposed field_key": "revenue_recognition_method",
+   "Value Type": "text",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": "Fit signal"
+  },
+  {
+   "Section": "Revenue, Billing & Invoicing",
+   "Question": "Is billing structured across entities or intercompany?",
+   "Proposed field_key": "intercompany_billing",
+   "Value Type": "text",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Revenue, Billing & Invoicing",
+   "Question": "What does your end-to-end invoicing process look like?",
+   "Proposed field_key": "invoicing_process_end_to_end",
+   "Value Type": "text",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Banking & Cash Management",
+   "Question": "What bank are you using today?",
+   "Proposed field_key": "bank",
+   "Value Type": "text",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Banking & Cash Management",
+   "Question": "What credit cards are in use?",
+   "Proposed field_key": "credit_cards",
+   "Value Type": "list",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Banking & Cash Management",
+   "Question": "How do you feel about your current bank reconciliation process?",
+   "Proposed field_key": "bank_rec_sentiment",
+   "Value Type": "text",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Banking & Cash Management",
+   "Question": "How do you feel about your current credit card reconciliation process?",
+   "Proposed field_key": "cc_rec_sentiment",
+   "Value Type": "text",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Payables, Purchasing & Expenses",
+   "Question": "How does payables work for rent, utilities, and other recurring expenses?",
+   "Proposed field_key": "ap_recurring_process",
+   "Value Type": "text",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Payables, Purchasing & Expenses",
+   "Question": "What does the approval process look like?",
+   "Proposed field_key": "ap_approval_process",
+   "Value Type": "text",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Payables, Purchasing & Expenses",
+   "Question": "How are vendor bills paid today?",
+   "Proposed field_key": "vendor_payment_methods",
+   "Value Type": "list",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Payables, Purchasing & Expenses",
+   "Question": "How do vendor bills get into the system?",
+   "Proposed field_key": "bill_intake_method",
+   "Value Type": "text",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Payables, Purchasing & Expenses",
+   "Question": "How many bills are you processing in a typical period?",
+   "Proposed field_key": "bills_per_period",
+   "Value Type": "number",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": "Volume = sizing"
+  },
+  {
+   "Section": "Payables, Purchasing & Expenses",
+   "Question": "What payment methods are you using?",
+   "Proposed field_key": "payment_methods",
+   "Value Type": "list",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Payables, Purchasing & Expenses",
+   "Question": "Are you using technology to transcribe or capture bills?",
+   "Proposed field_key": "bill_capture_tech",
+   "Value Type": "text",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": "Overlaps system stack"
+  },
+  {
+   "Section": "Payables, Purchasing & Expenses",
+   "Question": "How does your purchasing process work today?",
+   "Proposed field_key": "purchasing_process",
+   "Value Type": "text",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Payables, Purchasing & Expenses",
+   "Question": "Do you use purchase requisitions?",
+   "Proposed field_key": "uses_requisitions",
+   "Value Type": "boolean",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Payables, Purchasing & Expenses",
+   "Question": "Do you use purchase orders?",
+   "Proposed field_key": "uses_purchase_orders",
+   "Value Type": "boolean",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Payables, Purchasing & Expenses",
+   "Question": "How are expense reports handled?",
+   "Proposed field_key": "expense_report_process",
+   "Value Type": "text",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Inventory & Manufacturing",
+   "Question": "Do you carry inventory, and what type (buy-to-sell, manufacturing, supplies)?",
+   "Proposed field_key": "inventory_type",
+   "Value Type": "text",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": "Gate for this section"
+  },
+  {
+   "Section": "Inventory & Manufacturing",
+   "Question": "Walk me through the full process from purchasing raw materials to selling a finished product.",
+   "Proposed field_key": "inventory_flow",
+   "Value Type": "text",
+   "Applicability": "conditional: carries inventory",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Inventory & Manufacturing",
+   "Question": "How are you tracking and costing inventory today?",
+   "Proposed field_key": "inventory_tracking_costing",
+   "Value Type": "text",
+   "Applicability": "conditional: carries inventory",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Inventory & Manufacturing",
+   "Question": "How many warehouses do you have?",
+   "Proposed field_key": "warehouse_count",
+   "Value Type": "number",
+   "Applicability": "conditional: carries inventory",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": "Sizing"
+  },
+  {
+   "Section": "Inventory & Manufacturing",
+   "Question": "How often are inventory counts performed?",
+   "Proposed field_key": "inventory_count_frequency",
+   "Value Type": "text",
+   "Applicability": "conditional: carries inventory",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Inventory & Manufacturing",
+   "Question": "Are inventory counts manual or technology-driven?",
+   "Proposed field_key": "inventory_count_method",
+   "Value Type": "text",
+   "Applicability": "conditional: carries inventory",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Inventory & Manufacturing",
+   "Question": "How does replenishment work today?",
+   "Proposed field_key": "replenishment_process",
+   "Value Type": "text",
+   "Applicability": "conditional: carries inventory",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Inventory & Manufacturing",
+   "Question": "Do you use reorder points?",
+   "Proposed field_key": "uses_reorder_points",
+   "Value Type": "boolean",
+   "Applicability": "conditional: carries inventory",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Inventory & Manufacturing",
+   "Question": "Do you use serialization?",
+   "Proposed field_key": "uses_serialization",
+   "Value Type": "boolean",
+   "Applicability": "conditional: carries inventory",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Inventory & Manufacturing",
+   "Question": "Do you use kits?",
+   "Proposed field_key": "uses_kits",
+   "Value Type": "boolean",
+   "Applicability": "conditional: carries inventory",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Inventory & Manufacturing",
+   "Question": "What costing method do you use?",
+   "Proposed field_key": "inventory_costing_method",
+   "Value Type": "text",
+   "Applicability": "conditional: carries inventory",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Inventory & Manufacturing",
+   "Question": "When reporting on inventory, what metrics matter most?",
+   "Proposed field_key": "inventory_key_metrics",
+   "Value Type": "list",
+   "Applicability": "conditional: carries inventory",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Inventory & Manufacturing",
+   "Question": "If you manufacture, is it assembly or true manufacturing?",
+   "Proposed field_key": "manufacturing_type",
+   "Value Type": "text",
+   "Applicability": "conditional: manufactures",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Inventory & Manufacturing",
+   "Question": "Does manufacturing follow an assembly line or multi-day/multi-week processes?",
+   "Proposed field_key": "manufacturing_process_style",
+   "Value Type": "text",
+   "Applicability": "conditional: manufactures",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Inventory & Manufacturing",
+   "Question": "Is serialization used in manufacturing?",
+   "Proposed field_key": "manufacturing_serialization",
+   "Value Type": "boolean",
+   "Applicability": "conditional: manufactures",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Inventory & Manufacturing",
+   "Question": "How is labor costing handled?",
+   "Proposed field_key": "labor_costing",
+   "Value Type": "text",
+   "Applicability": "conditional: manufactures",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Inventory & Manufacturing",
+   "Question": "What other inventory challenges exist today?",
+   "Proposed field_key": "inventory_other_challenges",
+   "Value Type": "text",
+   "Applicability": "conditional: carries inventory",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Projects",
+   "Question": "What types of projects do you run?",
+   "Proposed field_key": "project_types",
+   "Value Type": "list",
+   "Applicability": "conditional: runs projects",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": "Gate for this section"
+  },
+  {
+   "Section": "Projects",
+   "Question": "How is project billing handled?",
+   "Proposed field_key": "project_billing",
+   "Value Type": "text",
+   "Applicability": "conditional: runs projects",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Projects",
+   "Question": "How is time entry captured?",
+   "Proposed field_key": "time_entry_method",
+   "Value Type": "text",
+   "Applicability": "conditional: runs projects",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Projects",
+   "Question": "How is revenue recognized on projects?",
+   "Proposed field_key": "project_revenue_recognition",
+   "Value Type": "text",
+   "Applicability": "conditional: runs projects",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Projects",
+   "Question": "How is project costing managed?",
+   "Proposed field_key": "project_costing",
+   "Value Type": "text",
+   "Applicability": "conditional: runs projects",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Projects",
+   "Question": "How much visibility do you have into current project performance?",
+   "Proposed field_key": "project_performance_visibility",
+   "Value Type": "text",
+   "Applicability": "conditional: runs projects",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Projects",
+   "Question": "How does that compare to target or goal performance?",
+   "Proposed field_key": "project_performance_vs_target",
+   "Value Type": "text",
+   "Applicability": "conditional: runs projects",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Fixed Assets",
+   "Question": "Approximately how many fixed assets do you have?",
+   "Proposed field_key": "fixed_asset_count",
+   "Value Type": "number",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Fixed Assets",
+   "Question": "Are fixed assets managed in-house or by a CPA?",
+   "Proposed field_key": "fixed_asset_management",
+   "Value Type": "text",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Fixed Assets",
+   "Question": "What depreciation method is used?",
+   "Proposed field_key": "depreciation_method",
+   "Value Type": "text",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Fixed Assets",
+   "Question": "How do you handle book versus tax depreciation?",
+   "Proposed field_key": "book_vs_tax_depreciation",
+   "Value Type": "text",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Fixed Assets",
+   "Question": "Do you maintain a fixed asset schedule?",
+   "Proposed field_key": "maintains_fixed_asset_schedule",
+   "Value Type": "boolean",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Allocations",
+   "Question": "Do you make allocations across entities, departments, or dimensions?",
+   "Proposed field_key": "uses_allocations",
+   "Value Type": "boolean",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": "Gate"
+  },
+  {
+   "Section": "Allocations",
+   "Question": "Walk me through how allocations are done today.",
+   "Proposed field_key": "allocation_process",
+   "Value Type": "text",
+   "Applicability": "conditional: uses allocations",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Budgeting & Planning",
+   "Question": "What does your budgeting process look like today?",
+   "Proposed field_key": "budgeting_process",
+   "Value Type": "text",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Budgeting & Planning",
+   "Question": "What are budget values based on?",
+   "Proposed field_key": "budget_basis",
+   "Value Type": "text",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Budgeting & Planning",
+   "Question": "How do you manage version control?",
+   "Proposed field_key": "budget_version_control",
+   "Value Type": "text",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  },
+  {
+   "Section": "Budgeting & Planning",
+   "Question": "Do you perform scenario planning?",
+   "Proposed field_key": "does_scenario_planning",
+   "Value Type": "boolean",
+   "Applicability": "always",
+   "Stored In": "deal attribute (new)",
+   "Keep? (Y/N)": "Y",
+   "Notes": ""
+  }
+ ],
+ "Summary": [
+  {
+   "SC / Opportunity Discovery Field Catalog": "Total fields",
+   "": "94"
+  },
+  {
+   "SC / Opportunity Discovery Field Catalog": "Routing",
+   "": ""
+  },
+  {
+   "SC / Opportunity Discovery Field Catalog": "deal attribute (new)",
+   "": "85"
+  },
+  {
+   "SC / Opportunity Discovery Field Catalog": "company_systems",
+   "": "5"
+  },
+  {
+   "SC / Opportunity Discovery Field Catalog": "existing AE extraction",
+   "": "4"
+  },
+  {
+   "SC / Opportunity Discovery Field Catalog": "Conditional (gated) fields",
+   "": "24"
+  },
+  {
+   "SC / Opportunity Discovery Field Catalog": "Always-asked fields",
+   "": "70"
+  },
+  {
+   "SC / Opportunity Discovery Field Catalog": "Edit the Keep? column or delete rows to curate; counts update on recalc.",
+   "": ""
+  }
+ ]
+}

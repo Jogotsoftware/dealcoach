@@ -1,0 +1,337 @@
+{
+ "Pre-Call Research Fields": [
+  {
+   "Group": "Identity",
+   "Field": "Overview",
+   "Stored In": "company_profile.overview",
+   "Source Channel": "Perplexity",
+   "Post-QDC Policy": "Research stays (facts about company, calls rarely cover)",
+   "Overlaps (SC / AE)": "none",
+   "Notes": "Narrative; rarely contradicted on calls"
+  },
+  {
+   "Group": "Identity",
+   "Field": "Industry",
+   "Stored In": "company_profile.industry",
+   "Source Channel": "Perplexity/Apollo",
+   "Post-QDC Policy": "Confirm/correct from transcript (research seeds, call verifies)",
+   "Overlaps (SC / AE)": "none",
+   "Notes": "Drives ROIBuilder industry KB"
+  },
+  {
+   "Group": "Identity",
+   "Field": "Headquarters",
+   "Stored In": "company_profile.headquarters",
+   "Source Channel": "Perplexity/Apollo",
+   "Post-QDC Policy": "Research stays (facts about company, calls rarely cover)",
+   "Overlaps (SC / AE)": "none",
+   "Notes": ""
+  },
+  {
+   "Group": "Identity",
+   "Field": "Founded",
+   "Stored In": "company_profile.founded",
+   "Source Channel": "Perplexity",
+   "Post-QDC Policy": "Research stays (facts about company, calls rarely cover)",
+   "Overlaps (SC / AE)": "none",
+   "Notes": ""
+  },
+  {
+   "Group": "Identity",
+   "Field": "Logo",
+   "Stored In": "company_profile.logo_url",
+   "Source Channel": "NinjaPear",
+   "Post-QDC Policy": "Research stays (facts about company, calls rarely cover)",
+   "Overlaps (SC / AE)": "none",
+   "Notes": "Cosmetic"
+  },
+  {
+   "Group": "Identity",
+   "Field": "Leadership",
+   "Stored In": "company_profile.leadership",
+   "Source Channel": "Perplexity/Apollo",
+   "Post-QDC Policy": "Confirm/correct from transcript (research seeds, call verifies)",
+   "Overlaps (SC / AE)": "AE contacts",
+   "Notes": "Seeds contact targets"
+  },
+  {
+   "Group": "Identity",
+   "Field": "Parent company",
+   "Stored In": "company_profile.parent_company",
+   "Source Channel": "Perplexity",
+   "Post-QDC Policy": "Confirm/correct from transcript (research seeds, call verifies)",
+   "Overlaps (SC / AE)": "SC shared_ownership",
+   "Notes": "Org structure"
+  },
+  {
+   "Group": "Identity",
+   "Field": "Sister companies",
+   "Stored In": "company_profile.sister_companies",
+   "Source Channel": "Perplexity",
+   "Post-QDC Policy": "Confirm/correct from transcript (research seeds, call verifies)",
+   "Overlaps (SC / AE)": "SC shared_ownership",
+   "Notes": ""
+  },
+  {
+   "Group": "Identity",
+   "Field": "Corporate structure",
+   "Stored In": "company_profile.corporate_structure_list",
+   "Source Channel": "Perplexity",
+   "Post-QDC Policy": "Confirm/correct from transcript (research seeds, call verifies)",
+   "Overlaps (SC / AE)": "SC org structure section",
+   "Notes": ""
+  },
+  {
+   "Group": "Identity",
+   "Field": "Ownership structure",
+   "Stored In": "company_profile.ownership_structure",
+   "Source Channel": "Perplexity",
+   "Post-QDC Policy": "Confirm/correct from transcript (research seeds, call verifies)",
+   "Overlaps (SC / AE)": "SC shared_ownership",
+   "Notes": "PE-backed = ICP signal"
+  },
+  {
+   "Group": "Identity",
+   "Field": "PE/VC investors",
+   "Stored In": "company_profile.pe_vc_investors",
+   "Source Channel": "Perplexity",
+   "Post-QDC Policy": "Research stays (facts about company, calls rarely cover)",
+   "Overlaps (SC / AE)": "none",
+   "Notes": "coach_pe_portfolio match"
+  },
+  {
+   "Group": "Scale",
+   "Field": "Revenue",
+   "Stored In": "company_profile.revenue",
+   "Source Channel": "Perplexity/Apollo",
+   "Post-QDC Policy": "Confirm/correct from transcript (research seeds, call verifies)",
+   "Overlaps (SC / AE)": "none",
+   "Notes": "Estimate until stated on call"
+  },
+  {
+   "Group": "Scale",
+   "Field": "Employee count",
+   "Stored In": "company_profile.employee_count",
+   "Source Channel": "Apollo",
+   "Post-QDC Policy": "Confirm/correct from transcript (research seeds, call verifies)",
+   "Overlaps (SC / AE)": "related: payroll employees (deal_sizing)",
+   "Notes": ""
+  },
+  {
+   "Group": "Scale",
+   "Field": "Entity count",
+   "Stored In": "company_profile.entity_count",
+   "Source Channel": "Perplexity",
+   "Post-QDC Policy": "Transcript takes over (call answer supersedes research guess)",
+   "Overlaps (SC / AE)": "deal_sizing.entity_count + SC entity_count",
+   "Notes": "THREE-HOME COLLISION - needs one canonical home"
+  },
+  {
+   "Group": "Scale",
+   "Field": "Entities & locations",
+   "Stored In": "company_profile.entities_locations(_list)",
+   "Source Channel": "Perplexity",
+   "Post-QDC Policy": "Transcript takes over (call answer supersedes research guess)",
+   "Overlaps (SC / AE)": "SC entity_locations_currencies",
+   "Notes": "Same collision family"
+  },
+  {
+   "Group": "Scale",
+   "Field": "International operations",
+   "Stored In": "company_profile.international_operations",
+   "Source Channel": "Perplexity",
+   "Post-QDC Policy": "Confirm/correct from transcript (research seeds, call verifies)",
+   "Overlaps (SC / AE)": "SC entity_locations_currencies",
+   "Notes": "Multi-currency signal"
+  },
+  {
+   "Group": "Scale",
+   "Field": "Tax IDs / locations",
+   "Stored In": "company_profile.tax_ids_locations",
+   "Source Channel": "Perplexity",
+   "Post-QDC Policy": "Confirm/correct from transcript (research seeds, call verifies)",
+   "Overlaps (SC / AE)": "SC org structure",
+   "Notes": ""
+  },
+  {
+   "Group": "Business model",
+   "Field": "Revenue streams",
+   "Stored In": "company_profile.revenue_streams(_list)",
+   "Source Channel": "Perplexity",
+   "Post-QDC Policy": "Transcript takes over (call answer supersedes research guess)",
+   "Overlaps (SC / AE)": "SC revenue_streams + revenue_model",
+   "Notes": "Call answer is authoritative"
+  },
+  {
+   "Group": "Business model",
+   "Field": "Business offerings",
+   "Stored In": "company_profile.business_offerings(_list)",
+   "Source Channel": "Perplexity",
+   "Post-QDC Policy": "Confirm/correct from transcript (research seeds, call verifies)",
+   "Overlaps (SC / AE)": "none",
+   "Notes": ""
+  },
+  {
+   "Group": "Business model",
+   "Field": "Customer segments",
+   "Stored In": "company_profile.customer_segments_text",
+   "Source Channel": "Perplexity",
+   "Post-QDC Policy": "Confirm/correct from transcript (research seeds, call verifies)",
+   "Overlaps (SC / AE)": "none",
+   "Notes": ""
+  },
+  {
+   "Group": "Strategy signals",
+   "Field": "Business goals",
+   "Stored In": "company_profile.business_goals(_list)",
+   "Source Channel": "Perplexity",
+   "Post-QDC Policy": "Confirm/correct from transcript (research seeds, call verifies)",
+   "Overlaps (SC / AE)": "feeds drivers summary",
+   "Notes": "Hypothesis until voiced on call"
+  },
+  {
+   "Group": "Strategy signals",
+   "Field": "Business priorities",
+   "Stored In": "company_profile.business_priorities(_list)",
+   "Source Channel": "Perplexity",
+   "Post-QDC Policy": "Confirm/correct from transcript (research seeds, call verifies)",
+   "Overlaps (SC / AE)": "feeds drivers summary",
+   "Notes": ""
+  },
+  {
+   "Group": "Strategy signals",
+   "Field": "Growth plans",
+   "Stored In": "company_profile.growth_plans(_list)",
+   "Source Channel": "Perplexity",
+   "Post-QDC Policy": "Confirm/correct from transcript (research seeds, call verifies)",
+   "Overlaps (SC / AE)": "feeds drivers summary / catalysts",
+   "Notes": "Growth = catalyst candidate"
+  },
+  {
+   "Group": "Strategy signals",
+   "Field": "Other initiatives",
+   "Stored In": "company_profile.other_initiatives(_list)",
+   "Source Channel": "Perplexity",
+   "Post-QDC Policy": "Confirm/correct from transcript (research seeds, call verifies)",
+   "Overlaps (SC / AE)": "feeds drivers summary",
+   "Notes": ""
+  },
+  {
+   "Group": "Strategy signals",
+   "Field": "Hiring signals",
+   "Stored In": "company_profile.hiring_signals",
+   "Source Channel": "Perplexity",
+   "Post-QDC Policy": "Research stays (facts about company, calls rarely cover)",
+   "Overlaps (SC / AE)": "none",
+   "Notes": "Catalyst candidate (e.g. hiring controller)"
+  },
+  {
+   "Group": "Strategy signals",
+   "Field": "Events attended",
+   "Stored In": "company_profile.events_attended",
+   "Source Channel": "Perplexity",
+   "Post-QDC Policy": "Research stays (facts about company, calls rarely cover)",
+   "Overlaps (SC / AE)": "none",
+   "Notes": ""
+  },
+  {
+   "Group": "Market",
+   "Field": "Competitive landscape",
+   "Stored In": "company_profile.competitive_landscape",
+   "Source Channel": "Perplexity",
+   "Post-QDC Policy": "Research stays (facts about company, calls rarely cover)",
+   "Overlaps (SC / AE)": "AE deal_competitors (different concept)",
+   "Notes": "Industry comp, not deal comp"
+  },
+  {
+   "Group": "Market",
+   "Field": "Industry competitors",
+   "Stored In": "company_profile.industry_competitors",
+   "Source Channel": "Perplexity",
+   "Post-QDC Policy": "Research stays (facts about company, calls rarely cover)",
+   "Overlaps (SC / AE)": "AE deal_competitors (different concept)",
+   "Notes": ""
+  },
+  {
+   "Group": "Market",
+   "Field": "Industry trends/knowledge/research",
+   "Stored In": "company_profile.industry_trends / industry_knowledge / industry_research",
+   "Source Channel": "Perplexity",
+   "Post-QDC Policy": "Research stays (facts about company, calls rarely cover)",
+   "Overlaps (SC / AE)": "none",
+   "Notes": "Feeds ROIBuilder + coaching context"
+  },
+  {
+   "Group": "News",
+   "Field": "Recent news + summary",
+   "Stored In": "company_profile.recent_news(_summary); company_news.*",
+   "Source Channel": "Perplexity",
+   "Post-QDC Policy": "Research stays (facts about company, calls rarely cover)",
+   "Overlaps (SC / AE)": "none",
+   "Notes": "Catalyst candidates surface here"
+  },
+  {
+   "Group": "Systems",
+   "Field": "Tech stack",
+   "Stored In": "company_profile.tech_stack; company_systems (source_type=research, confidence)",
+   "Source Channel": "Perplexity",
+   "Post-QDC Policy": "Transcript takes over (call answer supersedes research guess)",
+   "Overlaps (SC / AE)": "SC Technology Stack section",
+   "Notes": "Research seeds suspected systems; call confirms (company_systems.confirmed)"
+  },
+  {
+   "Group": "Deal seeds",
+   "Field": "Suspected red/green flags",
+   "Stored In": "deal_analysis.red_flags/green_flags (seeded)",
+   "Source Channel": "Research pass",
+   "Post-QDC Policy": "Transcript takes over (call answer supersedes research guess)",
+   "Overlaps (SC / AE)": "AE flags",
+   "Notes": "Hypotheses; QDC replaces"
+  },
+  {
+   "Group": "Deal seeds",
+   "Field": "Apollo contacts",
+   "Stored In": "contacts.* (source: apollo)",
+   "Source Channel": "Apollo",
+   "Post-QDC Policy": "Confirm/correct from transcript (research seeds, call verifies)",
+   "Overlaps (SC / AE)": "AE contacts",
+   "Notes": "Enriched; call adds role-in-deal data"
+  },
+  {
+   "Group": "Deal seeds",
+   "Field": "ICP score",
+   "Stored In": "via coach_icp scoring (score_against_icp)",
+   "Source Channel": "Research pass",
+   "Post-QDC Policy": "Confirm/correct from transcript (research seeds, call verifies)",
+   "Overlaps (SC / AE)": "deal_scores.fit",
+   "Notes": "Pre-call fit hypothesis"
+  },
+  {
+   "Group": "Provenance",
+   "Field": "Research citations",
+   "Stored In": "deal_sources (source_origin=research, urls)",
+   "Source Channel": "All",
+   "Post-QDC Policy": "Research stays (facts about company, calls rarely cover)",
+   "Overlaps (SC / AE)": "shared provenance spine",
+   "Notes": "Same table transcript extraction writes to"
+  }
+ ],
+ "Policy Key": [
+  {
+   "Post-QDC Policy Key": "Research stays",
+   "": "Company facts calls rarely cover. Research remains the source unless manually edited."
+  },
+  {
+   "Post-QDC Policy Key": "Confirm/correct",
+   "": "Research seeds the value as a hypothesis. Transcript pass confirms or corrects it; field shows which happened."
+  },
+  {
+   "Post-QDC Policy Key": "Transcript takes over",
+   "": "Call answer is authoritative. Research value is replaced and demoted to history once the prospect states the fact."
+  },
+  {
+   "Post-QDC Policy Key": "Source precedence (proposed)",
+   "": "Manual > Transcript > Research. Higher source never silently overwritten by lower. Every value carries source + history."
+  }
+ ]
+}
