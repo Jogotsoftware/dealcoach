@@ -61,6 +61,7 @@ Lumen is a multi-product AI-powered revenue platform for enterprise B2B sales te
 | `/deal/:id` | `DealDetail.jsx` | 6 tabs: Overview, Contacts, Transcripts, MSP, Proposal, Tasks |
 | `/deal/:dealId/call/:conversationId` | `CallDetail.jsx` | Transcript + AI analysis + coaching scores |
 | `/deal/:dealId/msp` | `MSPPage.jsx` | Full MSP builder |
+| `/deal/:dealId/discovery` | `DiscoveryPage.jsx` | Shared AE/SC catalog surface — 93 fields with provenance chips, inline manual edits (lock), readiness gate, modules, suggestions tray |
 | `/deal/:dealId/quote/new` | `QuoteEditor.jsx` | |
 | `/deal/:dealId/quote/:quoteId` | `QuoteEditor.jsx` | |
 | `/deal/:dealId/quote/:quoteId/proposal` | `ProposalRenderer.jsx` | AE-side proposal preview / PDF print |
@@ -97,7 +98,10 @@ All functions use `verify_jwt: false` and implement auth internally. Embed versi
 | Function | Version | Purpose |
 |----------|---------|---------|
 | `process-transcript` | v29 | Transcript AI analysis — loads 13 tables of deal context, calls Claude, writes tasks/contacts/catalysts/events/pains/flags/scores. Uses `assemble_coach_prompt` RPC. |
-| `research-company` | v33 | Perplexity + Apollo + NinjaPear logo in parallel. Populates company_profile. |
+| `research-company` | v35 | Facts-only research: Perplexity + Apollo; citations enforced in code (uncited claims dropped); flags/risks → `deal_hypotheses`; sizing via provenance writer; favicon logo fallback; ICP labeled "fit based on N verified facts". |
+| `extract-pass` | v1 | Catalog-driven extraction engine (overhaul Phase 4). Full pass (93-field catalog + entities + metrics + hypotheses + stated risks) on qdc/functional_discovery/scoping/demo; light pass otherwise. All writes through `_shared/provenance-writer.ts`. `{reuse_raw:true}` re-runs parse+write credit-free from `conversations.metadata.extract_pass.raw`. Fired after process-transcript by all import paths; fires compute-deal-risks + execution-pass. |
+| `execution-pass` | v1 | Coaching extraction dimension: `call_questions` (typed inventory), `call_moments` (nuggets/pauses/objections/loops, evidence-backed), call-level metrics onto `call_analyses`, deterministic Business Drivers synthesis (suggest-don't-overwrite). |
+| `compute-deal-risks` | v1 | Deterministic risk + spine-score engine: CE/Catalyst scores → `deal_scores` (scored_by='auto'), gap risks keyed to `risk_definitions` that auto-raise AND auto-resolve, qualifying-spine flag. Accepts `{deal_id}` or `{org_id}` sweep. |
 | `generate-email` | v11 | Template-based email generation with credit metering. |
 | `deal-chat` | v11 | AI coaching chat. Queries 17 tables. Accepts `context_type`: deal/pipeline/coaching/general/help. |
 | `onboard-organization` | v8 | 19-step org bootstrap: Perplexity research → Claude coach generation → full scaffolding. |
@@ -177,6 +181,17 @@ async function safeInsert(table, data) {
 - **Business Catalysts** = high-level forces driving change in the buyer's environment (funding round, new exec hire, M&A, regulatory change, system EOL, strategic initiative). NOT operational pain.
 - **Compelling Events** = the specific bad thing that happens if they don't act. Must be specific, dated, material.
 - **Pain Points** = operational/functional problems the buyer experiences day-to-day.
+
+### Provenance Writer (extraction overhaul, 2026-06-10)
+`supabase/functions/_shared/provenance-writer.ts` is THE single write path for AI-extracted scalar facts. Never write extracted facts around it. It enforces in code: quote gate (transcript needs verbatim quote+speaker; research needs URL), prospect-side speaker discipline, numeric containment (number must appear in quote or carry a conversion note), manual-lock (manual values are permanent — automated conflicts become `field_suggestions` rows with `suggestion_kind='value_update'`), change-aware recency (new_fact / confirmation / changed_fact with history + `deal_change_events` for spine facts), and `storage_target` routing (custom_field_values / `deal_sizing.<col>` with per-field `sources` jsonb / `deal_analysis.<col>`). Scores are computed by compute-deal-risks, never written by extraction.
+
+Key conventions:
+- `custom_field_definitions.org_id NULL` = platform template (93 SC catalog fields); org rows override the same `field_key`.
+- `deal_hypotheses` quarantines ALL AI pattern-reasoning (research + transcript). Never render client-facing; never seed fact tables from it.
+- `field_suggestions` is a dual-purpose queue discriminated by `suggestion_kind` (`new_field` legacy | `value_update`).
+- Seeds regenerate via `scripts/seed_extraction_workbooks.py` → `scripts/generated/*.sql` (idempotent) + `_shared/extraction-protocol.ts` (locked Platform Core prompt segment).
+- New reference tables: `metric_taxonomy` (22), `risk_definitions` (27), `module_reference` (15). New per-deal tables: `deal_hypotheses`, `deal_metrics`, `call_questions`, `call_moments`, `deal_modules`, `deal_change_events`.
+- `get_handoff_readiness(p_deal_id)` RPC: demo-readiness grade + named blockers.
 
 ### Source Linkage
 Every AI-extracted catalyst, compelling event, and pain point must include:
@@ -277,6 +292,7 @@ QDC quality score and scheduled-QDC date are still pending the BDR/intake overha
 | `cleanup-old-dashboard-snapshots` | Sunday 2:00 AM | Deletes dashboard_snapshots > 90 days |
 | `cleanup-idempotency` | 4:00 AM daily | Deletes expired edge_function_idempotency rows |
 | `process-retrospective-queue` | Every 5 min | Polls retrospective_queue — **pending deployment** |
+| `nightly-risk-sweep` | 4:30 AM daily | compute-deal-risks org sweep via net.http_post — **demo tenant only** until real-org sign-off |
 
 ---
 
