@@ -14,6 +14,7 @@ import TranscriptUpload from '../components/TranscriptUpload'
 import CompanyLogo from '../components/CompanyLogo'
 import WidgetRenderer from '../components/WidgetRenderer'
 import QdcViewWidget from '../components/QdcViewWidget'
+import CloseDealModal from '../components/CloseDealModal'
 import { Responsive, WidthProvider } from 'react-grid-layout'
 import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
@@ -150,6 +151,7 @@ export default function Pipeline() {
 
   // Data
   const [deals, setDeals] = useState([])
+  const [closingDeal, setClosingDeal] = useState(null) // { deal, outcome } -> CloseDealModal
   const [tasks, setTasks] = useState([])
   const [coachingSummary, setCoachingSummary] = useState(null)
   const [orgBenchmarks, setOrgBenchmarks] = useState(null)
@@ -550,6 +552,7 @@ export default function Pipeline() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: T.textSecondary }}><StatusDot text={deal.next_steps} /><span style={{ maxWidth: 100, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{deal.next_steps?.split(',')[0]?.substring(0, 25) || 'No next steps'}</span></div>
                       <span style={{ fontWeight: 600, fontFeatureSettings: '"tnum"', color: days != null && days < 0 ? T.error : days != null && days <= 30 ? T.warning : T.textMuted }}>{days != null ? (days < 0 ? `${Math.abs(days)}d late` : `${days}d`) : '--'}</span>
                     </div>
+                    <CloseQuickActions deal={deal} onPick={(outcome) => setClosingDeal({ deal, outcome })} />
                   </div>
                 )
               })}
@@ -581,7 +584,7 @@ export default function Pipeline() {
     const showRep = isManager || drillRepId || dealFilter === 'all'
     return (
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-        <thead><tr>{th('company_name', 'Company')}{showRep && th('rep', 'Rep')}{th('stage', 'Stage')}{th('forecast_category', 'Forecast')}{th('deal_value', 'ARR')}{th('cmrr', 'CMRR')}{th('target_close_date', 'Close')}{th('icp_fit_score', 'ICP')}{th('fit_score', 'Fit')}{th('deal_health_score', 'Health')}<th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 10, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase', borderBottom: `1px solid ${T.border}` }}>Next Steps</th></tr></thead>
+        <thead><tr>{th('company_name', 'Company')}{showRep && th('rep', 'Rep')}{th('stage', 'Stage')}{th('forecast_category', 'Forecast')}{th('deal_value', 'ARR')}{th('cmrr', 'CMRR')}{th('target_close_date', 'Close')}{th('icp_fit_score', 'ICP')}{th('fit_score', 'Fit')}{th('deal_health_score', 'Health')}<th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 10, fontWeight: 700, color: '#8899aa', textTransform: 'uppercase', borderBottom: `1px solid ${T.border}` }}>Next Steps</th><th style={{ borderBottom: `1px solid ${T.border}` }} /></tr></thead>
         <tbody>
           {tSorted.map(d => {
             const days = daysUntil(d.target_close_date)
@@ -607,6 +610,9 @@ export default function Pipeline() {
                 <td style={{ padding: '8px' }}>{d.fit_score ?? '--'}</td>
                 <td style={{ padding: '8px' }}>{d.deal_health_score ?? '--'}</td>
                 <td style={{ padding: '8px', color: T.textMuted, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11 }}>{d.next_steps?.substring(0, 60) || '--'}</td>
+                <td style={{ padding: '8px', whiteSpace: 'nowrap' }} onClick={e => e.stopPropagation()}>
+                  <CloseQuickActions deal={d} onPick={(outcome) => setClosingDeal({ deal: d, outcome })} bare />
+                </td>
               </tr>
             )
           })}
@@ -1202,6 +1208,39 @@ export default function Pipeline() {
       </div>
         </div>
       )}
+      {/* Close-out modal — opened by the Won/Lost quick actions on kanban
+          cards and table rows. On close, the deal leaves the active views. */}
+      {closingDeal && (
+        <CloseDealModal
+          deal={closingDeal.deal}
+          outcome={closingDeal.outcome}
+          onClose={() => setClosingDeal(null)}
+          onDone={(outcome) => {
+            const now = new Date().toISOString()
+            setDeals(prev => prev.map(d => d.id === closingDeal.deal.id ? { ...d, stage: outcome, closed_at: now, stage_changed_at: now } : d))
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+// Small Won/Lost quick actions used on kanban cards + table rows.
+function CloseQuickActions({ deal, onPick, bare = false }) {
+  const btn = (outcome, label, color, bg, border) => (
+    <button
+      onClick={(e) => { e.stopPropagation(); onPick(outcome) }}
+      title={outcome === 'closed_won' ? 'Close this deal as Won' : 'Close this deal as Lost'}
+      style={{ padding: '2px 8px', borderRadius: 4, border: `1px solid ${border}`, background: bg, color, fontSize: 10, fontWeight: 700, fontFamily: T.font, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+      {label}
+    </button>
+  )
+  return (
+    <div onClick={e => e.stopPropagation()} style={bare
+      ? { display: 'inline-flex', gap: 4 }
+      : { display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 6, paddingTop: 6, borderTop: `1px solid ${T.borderLight}` }}>
+      {btn('closed_won', 'Won', T.success, T.successLight, `${T.success}40`)}
+      {btn('closed_lost', 'Lost', T.error, T.errorLight, `${T.error}40`)}
     </div>
   )
 }

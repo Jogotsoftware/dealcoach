@@ -46,6 +46,7 @@ import DisqualifyDealModal from '../components/DisqualifyDealModal'
 import QdcPrepView from '../components/QdcPrepView'
 import SuggestionsTray from '../components/SuggestionsTray'
 import HypothesesPanel from '../components/HypothesesPanel'
+import CloseDealModal from '../components/CloseDealModal'
 import { useAuth } from '../hooks/useAuth'
 import { useModules } from '../hooks/useModules'
 import { Responsive, WidthProvider } from 'react-grid-layout'
@@ -532,7 +533,6 @@ export default function DealDetail() {
   const [expandedRisk, setExpandedRisk] = useState(null)
   const [showCloseOutModal, setShowCloseOutModal] = useState(false)
   const [pendingStage, setPendingStage] = useState(null)
-  const [closeOutForm, setCloseOutForm] = useState({ primary_reason: '', what_helped: '', key_lesson: '' })
 
   // New item forms
   const [newRisk, setNewRisk] = useState({ risk_description: '', category: 'general', severity: 'medium', mitigation_plan: '' })
@@ -1121,7 +1121,12 @@ export default function DealDetail() {
     )
   }
 
-  const allStageOptions = [...STAGES, { key: 'closed_won', label: 'Closed Won' }, { key: 'closed_lost', label: 'Closed Lost' }, { key: 'disqualified', label: 'Disqualified' }]
+  // Active stages only — closing goes through the Close Deal button / popover
+  // so the close-out modal owns the write. A closed deal's current stage is
+  // appended so the selector can display it (picking an active stage reopens).
+  const allStageOptions = ['closed_won', 'closed_lost', 'disqualified'].includes(deal?.stage)
+    ? [...STAGES, { key: deal.stage, label: deal.stage === 'closed_won' ? 'Closed Won' : deal.stage === 'closed_lost' ? 'Closed Lost' : 'Disqualified' }]
+    : STAGES
   const totalPainCost = painPoints.reduce((s, p) => s + (p.annual_cost || 0), 0)
 
   function ScoresWidget() {
@@ -1188,14 +1193,18 @@ export default function DealDetail() {
   function DealInfoWidget() {
     return (
       <>
-        <EditableField label="Stage" value={deal.stage} field="stage" table="deals" recordId={deal.id} type="select" options={allStageOptions} onSaved={(f, v) => {
-          const terminalStages = ['closed_won', 'closed_lost', 'disqualified']
-          if (terminalStages.includes(v) && v !== deal.stage) {
-            setPendingStage(v)
-            setShowCloseOutModal(true)
-          } else {
-            setDeal(p => ({ ...p, [f]: v }))
+        <EditableField label="Stage" value={deal.stage} field="stage" table="deals" recordId={deal.id} type="select" options={allStageOptions} onSaved={async (f, v) => {
+          // Terminal stages aren't in this selector anymore — closing goes
+          // through the Close Deal button / stage popover so the close-out
+          // modal owns the write. Picking an active stage on a closed deal
+          // reopens it: clear closed_at.
+          const wasTerminal = ['closed_won', 'closed_lost', 'disqualified'].includes(deal.stage)
+          if (wasTerminal && !['closed_won', 'closed_lost', 'disqualified'].includes(v)) {
+            await supabase.from('deals').update({ closed_at: null, stage_changed_at: new Date().toISOString() }).eq('id', deal.id)
+            setDeal(p => ({ ...p, [f]: v, closed_at: null }))
+            return
           }
+          setDeal(p => ({ ...p, [f]: v }))
         }} />
         <EditableField label="Forecast" value={deal.forecast_category} field="forecast_category" table="deals" recordId={deal.id} type="select" options={FORECAST_CATEGORIES} onSaved={(f, v) => setDeal(p => ({ ...p, [f]: v }))} />
         <EditableField label="Deal Value" value={deal.deal_value} field="deal_value" table="deals" recordId={deal.id} type="number" onSaved={(f, v) => setDeal(p => ({ ...p, [f]: v }))} />
@@ -1868,6 +1877,30 @@ export default function DealDetail() {
               )}
               {/* Sage canon: dual-date display (Close + MSP target side-by-side when they differ) */}
               <DualDateDisplay dealId={deal.id} dealCloseDate={deal.target_close_date} />
+              {/* Explicit close-out controls — the discoverable way to close a deal. */}
+              {!isDealRoomOnly && !['closed_won', 'closed_lost', 'disqualified'].includes(deal.stage) && (
+                <span style={{ display: 'inline-flex', gap: 6 }}>
+                  <button onClick={() => { setPendingStage('closed_won'); setShowCloseOutModal(true) }}
+                    style={{ padding: '3px 10px', borderRadius: 5, border: `1px solid ${T.success}40`, background: T.successLight, color: T.success, fontSize: 11, fontWeight: 700, fontFamily: T.font, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                    Close Won
+                  </button>
+                  <button onClick={() => { setPendingStage('closed_lost'); setShowCloseOutModal(true) }}
+                    style={{ padding: '3px 10px', borderRadius: 5, border: `1px solid ${T.error}40`, background: T.errorLight, color: T.error, fontSize: 11, fontWeight: 700, fontFamily: T.font, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                    Close Lost
+                  </button>
+                </span>
+              )}
+              {!isDealRoomOnly && ['closed_won', 'closed_lost', 'disqualified'].includes(deal.stage) && (
+                <button onClick={async () => {
+                  const now = new Date().toISOString()
+                  const { error: e } = await supabase.from('deals').update({ stage: 'selection', stage_changed_at: now, closed_at: null }).eq('id', deal.id)
+                  if (!e) setDeal(p => ({ ...p, stage: 'selection', stage_changed_at: now, closed_at: null }))
+                }}
+                  style={{ padding: '3px 10px', borderRadius: 5, border: `1px solid ${T.border}`, background: T.surface, color: T.textSecondary, fontSize: 11, fontWeight: 600, fontFamily: T.font, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                  title="Reopen this deal (back to Selection)">
+                  Reopen
+                </button>
+              )}
               {/* Sage canon: platform-admin-only debug action — recalculates Path to Close evaluation */}
               {isPlatformAdmin && (
                 <button
@@ -1909,8 +1942,18 @@ export default function DealDetail() {
                       setShowStagePopover(false)
                       return
                     }
-                    const { error: e } = await supabase.from('deals').update({ stage: k }).eq('id', deal.id)
-                    if (!e) setDeal(p => ({ ...p, stage: k, stage_changed_at: new Date().toISOString(), closed_at: ['closed_won','closed_lost','disqualified'].includes(k) ? new Date().toISOString() : null }))
+                    // Won/Lost route through the close-out modal, which owns the
+                    // full close write (stage + stage_changed_at + closed_at +
+                    // outcome factors). Nothing is written until it confirms.
+                    if (k === 'closed_won' || k === 'closed_lost') {
+                      setPendingStage(k)
+                      setShowCloseOutModal(true)
+                      setShowStagePopover(false)
+                      return
+                    }
+                    const reopening = ['closed_won', 'closed_lost', 'disqualified'].includes(deal.stage)
+                    const { error: e } = await supabase.from('deals').update({ stage: k, stage_changed_at: new Date().toISOString(), ...(reopening ? { closed_at: null } : {}) }).eq('id', deal.id)
+                    if (!e) setDeal(p => ({ ...p, stage: k, stage_changed_at: new Date().toISOString(), closed_at: reopening ? null : p.closed_at }))
                     setShowStagePopover(false)
                   }}
                 />
@@ -2685,107 +2728,15 @@ export default function DealDetail() {
       <DealChat dealId={id} userId={profile?.id} orgId={profile?.org_id} isOpen={showChat} onClose={() => setShowChat(false)} onAction={() => loadDeal()} />
       {showSlideGenerator && <SlideGenerator dealId={id} companyName={deal.company_name} onClose={() => setShowSlideGenerator(false)} />}
 
-      {/* Mandatory close-out modal */}
-      {showCloseOutModal && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 9200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)' }} />
-          <div style={{ position: 'relative', zIndex: 1, background: T.surface, borderRadius: 12, padding: 28, width: 480, boxShadow: '0 20px 60px rgba(0,0,0,0.2)', border: `1px solid ${T.border}` }}>
-            <h3 style={{ margin: '0 0 4px', fontSize: 17, fontWeight: 700, color: T.text }}>
-              {pendingStage === 'closed_won' ? 'Deal Won' : pendingStage === 'closed_lost' ? 'Deal Lost' : 'Deal Disqualified'}
-            </h3>
-            <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 16 }}>Quick close-out to capture learnings. Takes under 60 seconds.</div>
-            <div style={{ marginBottom: 12 }}>
-              <label style={labelStyle}>Primary Reason *</label>
-              <select style={{ ...inputStyle, cursor: 'pointer' }} value={closeOutForm.primary_reason} onChange={e => setCloseOutForm(p => ({ ...p, primary_reason: e.target.value }))}>
-                <option value="">Select...</option>
-                {pendingStage === 'closed_won' ? (
-                  <>
-                    <option value="product_fit">Product fit</option>
-                    <option value="champion_strength">Strong champion</option>
-                    <option value="compelling_event">Compelling event / urgency</option>
-                    <option value="competitive_win">Won against competitor</option>
-                    <option value="price_value">Price / value</option>
-                    <option value="relationship">Relationship / trust</option>
-                    <option value="other_won">Other</option>
-                  </>
-                ) : pendingStage === 'closed_lost' ? (
-                  <>
-                    <option value="lost_to_competitor">Lost to competitor</option>
-                    <option value="no_decision">No decision / status quo</option>
-                    <option value="budget">Budget constraints</option>
-                    <option value="timing">Timing / not ready</option>
-                    <option value="product_gap">Product gap</option>
-                    <option value="champion_left">Champion left / changed</option>
-                    <option value="other_lost">Other</option>
-                  </>
-                ) : (
-                  <>
-                    <option value="bad_fit">Bad product fit</option>
-                    <option value="no_budget">No budget</option>
-                    <option value="no_authority">No decision authority</option>
-                    <option value="no_need">No real need</option>
-                    <option value="unresponsive">Unresponsive</option>
-                    <option value="other_dq">Other</option>
-                  </>
-                )}
-              </select>
-            </div>
-            <div style={{ marginBottom: 12 }}>
-              <label style={labelStyle}>What helped or hurt most? *</label>
-              <input style={inputStyle} value={closeOutForm.what_helped} onChange={e => setCloseOutForm(p => ({ ...p, what_helped: e.target.value }))} placeholder="One sentence..." />
-            </div>
-            <div style={{ marginBottom: 16 }}>
-              <label style={labelStyle}>Key lesson *</label>
-              <input style={inputStyle} value={closeOutForm.key_lesson} onChange={e => setCloseOutForm(p => ({ ...p, key_lesson: e.target.value }))} placeholder="What would you do differently?" />
-            </div>
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between', alignItems: 'center' }}>
-              <Button onClick={async () => {
-                // Skip — still close the deal, but log that the user dismissed the form
-                const { error: skipErr } = await supabase.from('deal_outcome_factors').insert({
-                  deal_id: id, org_id: profile?.org_id || null, rep_id: profile?.id || null,
-                  outcome: pendingStage, primary_reason: 'dismissed',
-                  what_helped_or_hurt: null, key_lesson: null,
-                  filled_by: profile?.id || null,
-                  structured_factors: { dismissed: true },
-                })
-                if (skipErr) console.error('deal_outcome_factors (dismissed) insert failed:', skipErr)
-                await supabase.from('deals').update({ stage: pendingStage }).eq('id', id)
-                track('deal_closed', { outcome: pendingStage, primary_reason: 'dismissed', skipped: true, deal_value: deal?.deal_value || null })
-                setDeal(p => ({ ...p, stage: pendingStage }))
-                setShowCloseOutModal(false); setPendingStage(null)
-                setCloseOutForm({ primary_reason: '', what_helped: '', key_lesson: '' })
-              }} style={{ fontSize: 11, color: T.textMuted }}>Skip</Button>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <Button onClick={() => { setShowCloseOutModal(false); setPendingStage(null) }}>Cancel</Button>
-                <Button primary disabled={!closeOutForm.primary_reason || !closeOutForm.what_helped || !closeOutForm.key_lesson} onClick={async () => {
-                  const { error: submitErr } = await supabase.from('deal_outcome_factors').insert({
-                    deal_id: id, org_id: profile?.org_id || null, rep_id: profile?.id || null,
-                    outcome: pendingStage,
-                    primary_reason: closeOutForm.primary_reason,
-                    what_helped_or_hurt: closeOutForm.what_helped,
-                    key_lesson: closeOutForm.key_lesson,
-                    filled_by: profile?.id || null,
-                  })
-                  if (submitErr) console.error('deal_outcome_factors insert failed:', submitErr)
-                  await supabase.from('deals').update({ stage: pendingStage }).eq('id', id)
-                  track('deal_closed', { outcome: pendingStage, primary_reason: closeOutForm.primary_reason, deal_value: deal?.deal_value || null, cmrr: deal?.cmrr || null })
-                  setDeal(p => ({ ...p, stage: pendingStage }))
-                  setShowCloseOutModal(false)
-                  setPendingStage(null)
-                  setCloseOutForm({ primary_reason: '', what_helped: '', key_lesson: '' })
-                  // Fire-and-forget retrospective generation (trigger also queues, this is an immediate kick)
-                  try {
-                    fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-deal-retrospective`, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`, 'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY },
-                      body: JSON.stringify({ deal_id: id }),
-                    }).catch(() => {})
-                  } catch (e) {}
-                }}>Submit & Close Deal</Button>
-              </div>
-            </div>
-          </div>
-        </div>
+      {/* Close-out modal (Won/Lost) — owns the full close write including
+          closed_at, which the old inline version never persisted. */}
+      {showCloseOutModal && (pendingStage === 'closed_won' || pendingStage === 'closed_lost') && (
+        <CloseDealModal
+          deal={deal}
+          outcome={pendingStage}
+          onClose={() => { setShowCloseOutModal(false); setPendingStage(null) }}
+          onDone={(outcome) => setDeal(p => ({ ...p, stage: outcome, stage_changed_at: new Date().toISOString(), closed_at: new Date().toISOString() }))}
+        />
       )}
 
       {/* Edit deal modal — opened by the pencil icon in the header */}
