@@ -41,9 +41,6 @@ export default function HypothesesPanel({ dealId }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
         <span style={{ fontSize: 13, fontWeight: 700, color: '#5b21b6' }}>AI hypotheses</span>
         <Badge color="#7c3aed">{open.length} open</Badge>
-        <span style={{ fontSize: 11, color: T.textSecondary }}>
-          Pattern-based reasoning, not facts. Nothing here appears to the customer or in proposals.
-        </span>
         <div style={{ flex: 1 }} />
         {resolved.length > 0 && (
           <button onClick={() => setShowResolved(s => !s)}

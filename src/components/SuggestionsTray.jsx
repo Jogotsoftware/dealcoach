@@ -94,7 +94,6 @@ export default function SuggestionsTray({ dealId, onChanged }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
         <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>Suggested updates</span>
         <Badge color={T.warning}>{suggestions.length}</Badge>
-        <span style={{ fontSize: 11, color: T.textSecondary }}>Newer information conflicts with manually entered values. Accepting locks the new value.</span>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {suggestions.map(s => (

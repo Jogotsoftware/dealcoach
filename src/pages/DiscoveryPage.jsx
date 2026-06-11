@@ -165,9 +165,7 @@ export default function DiscoveryPage() {
         <div style={{ flex: 1 }} />
         <Link to={`/deal/${dealId}`} style={{ fontSize: 12, color: T.primary, fontWeight: 600 }}>Back to deal</Link>
       </div>
-      <div style={{ fontSize: 12, color: T.textSecondary, marginBottom: 16 }}>
-        Shared AE / SC surface. Every value carries its evidence; typing a value here marks it manual and locks it against automated overwrites.
-      </div>
+      <div style={{ marginBottom: 16 }} />
 
       {/* Readiness gate */}
       {readiness && (
@@ -192,9 +190,6 @@ export default function DiscoveryPage() {
       {analysis?.driving_factors && analysis.driving_factors.toLowerCase() !== 'unknown' && (
         <Card title="Business Drivers" style={{ marginBottom: 16 }}>
           <div style={{ fontSize: 13, color: T.text, whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{analysis.driving_factors}</div>
-          <div style={{ fontSize: 10, color: T.textMuted, marginTop: 6 }}>
-            Synthesized from verified catalysts and compelling events. Refresh suggestions appear in the tray above after new discovery calls.
-          </div>
         </Card>
       )}
 
