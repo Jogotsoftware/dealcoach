@@ -87,6 +87,19 @@ Deno.serve(async (req: Request) => {
     const { data: deal } = await sb.from("deals").select("id, org_id, company_name").eq("id", conv.deal_id).single();
     if (!deal) return jr({ error: "execution-pass v1: deal not found" }, 404);
 
+    // Auth: service-role bearer (internal chain), the vault-backed cron
+    // secret, or a user JWT in the deal's org.
+    const cronSecret = Deno.env.get("CRON_SECRET");
+    const isCron = !!cronSecret && req.headers.get("x-cron-secret") === cronSecret;
+    const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
+    if (!isCron && token !== SERVICE_KEY) {
+      if (!token) return jr({ error: "execution-pass v1: missing authorization" }, 401);
+      const { data: u, error: uErr } = await sb.auth.getUser(token);
+      if (uErr || !u?.user) return jr({ error: "execution-pass v1: invalid token" }, 401);
+      const { data: prof } = await sb.from("profiles").select("org_id").eq("id", u.user.id).single();
+      if (!prof || prof.org_id !== deal.org_id) return jr({ error: "execution-pass v1: not your org" }, 403);
+    }
+
     let raw: string | null = null;
     if (body.reuse_raw === true) {
       raw = conv.metadata?.execution_pass?.raw || null;

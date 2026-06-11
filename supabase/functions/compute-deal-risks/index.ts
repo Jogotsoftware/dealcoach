@@ -185,11 +185,33 @@ Deno.serve(async (req: Request) => {
   const sb = createClient(SUPABASE_URL, SERVICE_KEY);
   try {
     const body = await req.json().catch(() => ({}));
+
+    // Auth: service-role bearer (internal chain), the shared cron secret
+    // (pg_cron sweep — vault-stored, no service key in the database), or a
+    // user JWT whose org owns the target. verify_jwt is false platform-wide.
+    const cronSecret = Deno.env.get("CRON_SECRET");
+    const isCron = !!cronSecret && req.headers.get("x-cron-secret") === cronSecret;
+    const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
+    let callerOrg: string | null = null;
+    if (!isCron && token !== SERVICE_KEY) {
+      if (!token) return jr({ error: "compute-deal-risks v1: missing authorization" }, 401);
+      const { data: u, error: uErr } = await sb.auth.getUser(token);
+      if (uErr || !u?.user) return jr({ error: "compute-deal-risks v1: invalid token" }, 401);
+      const { data: prof } = await sb.from("profiles").select("org_id").eq("id", u.user.id).single();
+      if (!prof?.org_id) return jr({ error: "compute-deal-risks v1: no org" }, 403);
+      callerOrg = prof.org_id;
+    }
+
     if (body.deal_id) {
+      if (callerOrg) {
+        const { data: d } = await sb.from("deals").select("org_id").eq("id", body.deal_id).maybeSingle();
+        if (!d || d.org_id !== callerOrg) return jr({ error: "compute-deal-risks v1: not your org" }, 403);
+      }
       const r = await computeForDeal(sb, body.deal_id);
       return jr({ success: true, version: "compute-deal-risks v1", ...r });
     }
     if (body.org_id) {
+      if (callerOrg && callerOrg !== body.org_id) return jr({ error: "compute-deal-risks v1: not your org" }, 403);
       // Nightly sweep across active deals for one org.
       const { data: deals } = await sb.from("deals").select("id").eq("org_id", body.org_id)
         .not("stage", "in", "(closed_won,closed_lost,disqualified)");

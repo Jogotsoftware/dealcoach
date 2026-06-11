@@ -117,6 +117,21 @@ Deno.serve(async (req: Request) => {
     const { data: deal } = await sb.from("deals").select("id, org_id, rep_id, company_name, stage").eq("id", conv.deal_id).single();
     if (!deal) return jr({ error: "extract-pass v1: deal not found" }, 404);
     const orgId = deal.org_id;
+
+    // Auth: service-role bearer (internal chain), the vault-backed cron
+    // secret, or a user JWT whose org owns the deal. verify_jwt is false
+    // platform-wide, so this is the gate.
+    const cronSecret = Deno.env.get("CRON_SECRET");
+    const isCron = !!cronSecret && req.headers.get("x-cron-secret") === cronSecret;
+    const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
+    if (!isCron && token !== SERVICE_KEY) {
+      if (!token) return jr({ error: "extract-pass v1: missing authorization" }, 401);
+      const { data: u, error: uErr } = await sb.auth.getUser(token);
+      if (uErr || !u?.user) return jr({ error: "extract-pass v1: invalid token" }, 401);
+      const { data: prof } = await sb.from("profiles").select("org_id").eq("id", u.user.id).single();
+      if (!prof || prof.org_id !== orgId) return jr({ error: "extract-pass v1: not your org" }, 403);
+    }
+
     const fullPass = FULL_PASS_TYPES.has(conv.call_type);
     const observedAt = conv.call_date ? new Date(conv.call_date).toISOString() : new Date(conv.created_at).toISOString();
 
