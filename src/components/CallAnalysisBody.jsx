@@ -7,6 +7,7 @@ import { callGenerateEmail } from '../lib/webhooks'
 import { useAuth } from '../hooks/useAuth'
 import DealChat from './DealChat'
 import AttendeesEditor from './coaching/AttendeesEditor'
+import ExecutionAnalytics from './ExecutionAnalytics'
 
 function callTypeLabel(key) {
   const t = CALL_TYPES.find(c => c.key === key)
@@ -432,8 +433,13 @@ export default function CallAnalysisBody({ dealId, conversationId, onBack, onCal
           </Card>
         </div>
 
+        {/* Execution analytics (extraction overhaul): question inventory,
+            coaching moments, call-level metrics — renders only once the
+            execution-pass engine has run for this conversation. */}
+        <ExecutionAnalytics conversationId={conversationId} />
+
         {/* SECTION 5: Transcript */}
-        <div style={sectionStyle}>Transcript</div>
+        <div style={{ ...sectionStyle, marginTop: 20 }}>Transcript</div>
         <div style={{ marginBottom: 16 }}>
           <Button onClick={() => setShowTranscript(!showTranscript)} style={{ marginBottom: showTranscript ? 12 : 0 }}>
             {showTranscript ? 'Hide Transcript' : 'Show Transcript'}
