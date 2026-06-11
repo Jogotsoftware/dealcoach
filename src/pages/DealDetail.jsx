@@ -762,6 +762,29 @@ export default function DealDetail() {
     return () => clearInterval(interval)
   }, [companyProfile?.researched_at, id])
 
+  // Poll while any transcript is still processing — flips the UI to done
+  // without a manual refresh (mirrors the research-completion poll above).
+  // Fires for ALL call types: process-transcript sets processed=true, then
+  // we reload the deal so the freshly-extracted entities appear. Stops once
+  // everything is processed or the remaining ones are stuck (>10 min = failed).
+  const PROCESSING_STUCK_MS = 10 * 60 * 1000
+  useEffect(() => {
+    const pendingIds = conversations
+      .filter(c => !c.processed && (Date.now() - new Date(c.created_at).getTime() < PROCESSING_STUCK_MS))
+      .map(c => c.id)
+    if (pendingIds.length === 0) return
+    const interval = setInterval(async () => {
+      const { data } = await supabase.from('conversations').select('id, processed').in('id', pendingIds)
+      const nowDone = (data || []).filter(r => r.processed).map(r => r.id)
+      if (nowDone.length) {
+        setConversations(prev => prev.map(c => nowDone.includes(c.id) ? { ...c, processed: true } : c))
+        loadDeal() // pull in the entities/scores the finished pass wrote
+      }
+    }, 6000)
+    return () => clearInterval(interval)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversations.map(c => `${c.id}:${c.processed}`).join(','), id])
+
   // === LAYOUT FUNCTIONS ===
   async function saveLayout(newLayout) {
     setLayout(newLayout)
@@ -2341,7 +2364,13 @@ export default function DealDetail() {
           </div>
         )}
 
-        {showTranscriptUpload && <TranscriptUpload deals={[deal]} onClose={() => setShowTranscriptUpload(false)} onUploaded={() => { setShowTranscriptUpload(false); loadDeal() }} />}
+        {showTranscriptUpload && <TranscriptUpload deals={[deal]} onClose={() => setShowTranscriptUpload(false)} onUploaded={(c) => {
+          // Land the user on the call they just imported, in the Analysis tab,
+          // so they watch it process live (the poll above flips it to done).
+          setShowTranscriptUpload(false)
+          if (c?.id) { setSelectedCallId(c.id); setTab('analysis') }
+          loadDeal()
+        }} />}
 
         {/* ===== MSP TAB ===== */}
         {tab === 'msp' && (
@@ -3523,7 +3552,13 @@ function AnalysisTab({ conversations, dealId, selectedCallId, onSelectCall, onUp
               )}
               <span style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</span>
               {dateStr && <span style={{ fontSize: 11, color: T.textMuted, fontWeight: 500 }}>{dateStr}</span>}
-              {!call.processed && <span style={{ fontSize: 10, color: T.warning, fontWeight: 700 }}>•</span>}
+              {(() => {
+                if (call.processed) return null
+                const stuck = Date.now() - new Date(call.created_at).getTime() > 10 * 60 * 1000
+                return stuck
+                  ? <span style={{ fontSize: 9, fontWeight: 700, color: T.error, background: T.errorLight, padding: '1px 6px', borderRadius: 8, whiteSpace: 'nowrap' }}>Failed</span>
+                  : <span style={{ fontSize: 9, fontWeight: 700, color: T.primary, background: T.primaryLight, padding: '1px 6px', borderRadius: 8, whiteSpace: 'nowrap', animation: 'pulse 1.5s ease-in-out infinite' }}>Processing…</span>
+              })()}
             </button>
           )
         })}
@@ -3540,9 +3575,32 @@ function AnalysisTab({ conversations, dealId, selectedCallId, onSelectCall, onUp
             </div>
           )}
         </div>
-      ) : (
-        <CallAnalysisBody key={selectedCallId} dealId={dealId} conversationId={selectedCallId} onCallUpdate={onCallUpdate} />
-      )}
+      ) : (() => {
+        const sel = sorted.find(c => c.id === selectedCallId)
+        const processing = sel && !sel.processed
+        const stuck = processing && (Date.now() - new Date(sel.created_at).getTime() > 10 * 60 * 1000)
+        return (
+          <div>
+            {processing && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', marginBottom: 14, borderRadius: 8, background: stuck ? T.errorLight : T.primaryLight, border: `1px solid ${stuck ? T.error : T.primary}25` }}>
+                {!stuck && <MiniSun size={14} />}
+                <span style={{ fontSize: 12, color: stuck ? T.error : T.primary, flex: 1, fontWeight: 500 }}>
+                  {stuck
+                    ? 'Processing seems to have stalled. You can retry the analysis.'
+                    : 'AI is analyzing this transcript — pain points, catalysts, events, risks, scores, and call execution. This updates automatically when it finishes.'}
+                </span>
+                {stuck && (
+                  <Button onClick={async () => {
+                    const { callProcessTranscript } = await import('../lib/webhooks')
+                    await callProcessTranscript(selectedCallId)
+                  }} style={{ padding: '4px 12px', fontSize: 11 }}>Retry</Button>
+                )}
+              </div>
+            )}
+            <CallAnalysisBody key={selectedCallId} dealId={dealId} conversationId={selectedCallId} onCallUpdate={onCallUpdate} />
+          </div>
+        )
+      })()}
     </div>
   )
 }
