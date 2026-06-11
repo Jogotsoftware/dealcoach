@@ -85,13 +85,16 @@ async function computeForDeal(sb: any, dealId: string): Promise<any> {
   }
 
   // Upsert scores (one row per score_type per deal, refreshed in place).
+  const summary_score_errors: string[] = [];
   for (const [type, score] of [["compelling_event", ceScore], ["catalyst", catScore]] as const) {
     try {
       const { data: existing } = await sb.from("deal_scores").select("id").eq("deal_id", dealId).eq("score_type", type).maybeSingle();
-      const row = { deal_id: dealId, score_type: type, score, max_score: 100, scored_by: "compute-deal-risks v1", scored_at: new Date().toISOString() };
-      if (existing) await sb.from("deal_scores").update(row).eq("id", existing.id);
-      else await sb.from("deal_scores").insert(row);
-    } catch (e: any) { console.error("compute-deal-risks v1: score upsert:", e?.message); }
+      const row = { deal_id: dealId, score_type: type, score, max_score: 100, scored_by: "auto", notes: "compute-deal-risks v1", scored_at: new Date().toISOString() };
+      const { error } = existing
+        ? await sb.from("deal_scores").update(row).eq("id", existing.id)
+        : await sb.from("deal_scores").insert(row);
+      if (error) throw new Error(error.message);
+    } catch (e: any) { console.error("compute-deal-risks v1: score upsert:", e?.message); summary_score_errors.push(`${type}: ${e?.message}`); }
   }
 
   // ── Gap risks (deterministic; auto-resolve when the gap closes) ──
@@ -132,6 +135,7 @@ async function computeForDeal(sb: any, dealId: string): Promise<any> {
   ];
 
   const summary: any = { deal_id: dealId, ce_score: ceScore, catalyst_score: catScore, raised: [], resolved: [] };
+  if (summary_score_errors.length) summary.score_errors = summary_score_errors;
   for (const g of gaps) {
     const existing = autoRisks.find((r: any) => r.risk_key === g.key && r.status === "open");
     if (g.present && !existing) {
