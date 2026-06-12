@@ -15,8 +15,8 @@ import DealRoomConfig from '../DealRoomConfig'
 // first SC open after a push, stamps sc_handoff.first_viewed_by_sc_at and
 // notifies the AE (sc_viewed_notes).
 const VIEWS = [
+  { key: 'research', label: 'QDC Notes' },
   { key: 'notes', label: 'Discovery notes' },
-  { key: 'research', label: 'Pre-call research' },
   { key: 'modules', label: 'Modules' },
   { key: 'dealroom', label: 'Deal room' },
 ]
@@ -30,7 +30,7 @@ export default function SCDealWorkspace() {
   const [rep, setRep] = useState(null)
   const [readiness, setReadiness] = useState(null)
   const [loading, setLoading] = useState(true)
-  const view = params.get('view') || 'notes'
+  const view = params.get('view') || 'research'
   const firedView = useRef(false)
 
   useEffect(() => { load() }, [dealId])

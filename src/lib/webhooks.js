@@ -362,6 +362,13 @@ export async function reprocessDeal(dealId, onStatus) {
           const res = await fetch(base + '/process-transcript', { method: 'POST', headers, body: JSON.stringify({ conversation_id: convs[i].id }) })
           results.steps.push({ step: `transcript_${i + 1}`, ...(await res.json()) })
         } catch (e) { results.steps.push({ step: `transcript_${i + 1}`, error: e.message }) }
+        // Catalog extraction (SC discovery fields) — process-transcript alone
+        // doesn't populate them; extract-pass is the engine that does.
+        onStatus?.(`Extracting discovery fields ${i + 1} of ${convs.length}...`)
+        try {
+          const res2 = await fetch(base + '/extract-pass', { method: 'POST', headers, body: JSON.stringify({ conversation_id: convs[i].id }) })
+          results.steps.push({ step: `extract_${i + 1}`, ...(await res2.json()) })
+        } catch (e) { results.steps.push({ step: `extract_${i + 1}`, error: e.message }) }
       }
     }
   } catch (e) { results.steps.push({ step: 'transcripts', error: e.message }) }
