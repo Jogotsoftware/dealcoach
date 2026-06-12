@@ -29,9 +29,12 @@ export default function SCHome() {
   async function load() {
     setLoading(true)
     try {
-      const { data: deals } = await supabase.from('deals')
-        .select('id, company_name, stage, rep_id, target_close_date')
-        .eq('sc_user_id', profile.id)
+      // Super-admins see every assigned deal (RLS-scoped to their accessible
+      // orgs); an SC sees only deals assigned to them.
+      const { data: pa } = await supabase.from('platform_admins').select('user_id').eq('user_id', profile.id).maybeSingle()
+      let q = supabase.from('deals').select('id, company_name, stage, rep_id, target_close_date')
+      q = pa ? q.not('sc_user_id', 'is', null) : q.eq('sc_user_id', profile.id)
+      const { data: deals } = await q
       const list = deals || []
       const ids = list.map(d => d.id)
       if (ids.length === 0) { setCards([]); setLoading(false); return }
