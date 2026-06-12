@@ -6,6 +6,7 @@ import { theme as T } from '../../lib/theme'
 import { Spinner, StageBadge } from '../../components/Shared'
 import { notify } from '../../lib/notifications'
 import KtEmailButton from '../../components/KtEmailButton'
+import ScChatPanel from '../../components/sc/ScChatPanel'
 import SCDiscoveryNotes from '../../components/sc/SCDiscoveryNotes'
 import PreCallResearch from '../../components/sc/PreCallResearch'
 import ModulesSurface from '../../components/sc/ModulesSurface'
@@ -80,6 +81,7 @@ export default function SCDealWorkspace() {
         <StageBadge stage={deal.stage} />
         <div style={{ flex: 1 }} />
         <span style={{ fontSize: 12, color: T.textSecondary }}>AE: {rep?.full_name || '—'}</span>
+        <ScChatPanel deal={deal} />
         <KtEmailButton dealId={deal.id} />
       </div>
 

@@ -177,7 +177,7 @@ const THUMBS_DOWN_REASONS = [
   { key: 'other', label: 'Other' },
 ]
 
-export default function DealChat({ dealId, userId, isOpen, onClose, onAction, orgId, scope = 'deal' }) {
+export default function DealChat({ dealId, userId, isOpen, onClose, onAction, orgId, scope = 'deal', seedMessage }) {
   // scope: 'deal' (default, requires dealId) | 'pipeline' (rep-wide, requires userId only)
   const navigate = useNavigate()
   const isPipelineScope = scope === 'pipeline'
@@ -204,6 +204,9 @@ export default function DealChat({ dealId, userId, isOpen, onClose, onAction, or
       setTimeout(() => inputRef.current?.focus(), 300)
     }
   }, [isOpen, dealId, userId, isPipelineScope])
+
+  // Seed the input from a saved prompt when opened with one.
+  useEffect(() => { if (isOpen && seedMessage) setInput(seedMessage) }, [isOpen, seedMessage])
 
   // Auto-scroll
   useEffect(() => {
