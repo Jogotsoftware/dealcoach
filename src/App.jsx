@@ -53,6 +53,11 @@ import GateCriteriaPage from './pages/path/GateCriteriaPage'
 import GateDimensionPage from './pages/path/GateDimensionPage'
 import LibraryAdmin from './pages/LibraryAdmin'
 import DiscoveryPage from './pages/DiscoveryPage'
+import RequireSC from './components/guards/RequireSC'
+import SCLayout from './components/SCLayout'
+import SCHome from './pages/sc/SCHome'
+import SCSchedule from './pages/sc/SCSchedule'
+import SCDealWorkspace from './pages/sc/SCDealWorkspace'
 import { theme as T } from './lib/theme'
 
 function ProtectedRoute({ children }) {
@@ -82,6 +87,7 @@ function PublicRoute({ children }) {
 //   3. Everyone else → the standard Pipeline view.
 function HomeRoute() {
   const { profile } = useAuth()
+  if (profile?.role === 'sc') return <Navigate to="/sc" replace />
   if (profile?.role === 'bdr') return <Navigate to="/bdr/my-leads" replace />
   if (profile && ['head_of_sales','avp','rvp'].includes(profile.role_level)) {
     return <Navigate to="/revenue" replace />
@@ -104,6 +110,16 @@ export default function App() {
 
             {/* Onboarding — authenticated but no org */}
             <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
+
+            {/* SC portal — its own login world (role='sc' or super-admin),
+                outside the AE Layout. RequireSC gates; RLS is canonical. */}
+            <Route element={<ProtectedRoute><RequireSC /></ProtectedRoute>}>
+              <Route element={<SCLayout />}>
+                <Route path="/sc" element={<ErrorBoundary label="your deals"><SCHome /></ErrorBoundary>} />
+                <Route path="/sc/schedule" element={<ErrorBoundary label="demo schedule"><SCSchedule /></ErrorBoundary>} />
+                <Route path="/sc/deals/:dealId" element={<ErrorBoundary label="this deal"><SCDealWorkspace /></ErrorBoundary>} />
+              </Route>
+            </Route>
 
             {/* Protected routes requiring org — inside Layout (sidebar) */}
             <Route element={<ProtectedRoute><RequireOrg /></ProtectedRoute>}>

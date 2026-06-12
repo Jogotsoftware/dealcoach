@@ -6,19 +6,20 @@ import { Badge, Button } from './Shared'
 // Quarantined AI-hypotheses surface — AE deal view ONLY. Visually distinct
 // from facts; never rendered on the SC page, DealRoom, proposals, or any
 // client-facing surface. Lifecycle: open -> confirmed / refuted / dismissed.
-export default function HypothesesPanel({ dealId }) {
+export default function HypothesesPanel({ dealId, generatedBy, title = 'AI hypotheses' }) {
   const [hyps, setHyps] = useState(null)
   const [busy, setBusy] = useState(null)
   const [showResolved, setShowResolved] = useState(false)
 
   async function load() {
     try {
-      const { data } = await supabase.from('deal_hypotheses')
-        .select('*').eq('deal_id', dealId).order('created_at', { ascending: false })
+      let q = supabase.from('deal_hypotheses').select('*').eq('deal_id', dealId)
+      if (generatedBy) q = q.eq('generated_by', generatedBy)
+      const { data } = await q.order('created_at', { ascending: false })
       setHyps(data || [])
     } catch (e) { console.error('[HypothesesPanel] load:', e); setHyps([]) }
   }
-  useEffect(() => { if (dealId) load() }, [dealId])
+  useEffect(() => { if (dealId) load() }, [dealId, generatedBy])
 
   async function setStatus(h, status) {
     setBusy(h.id)
@@ -39,7 +40,7 @@ export default function HypothesesPanel({ dealId }) {
       border: `1px dashed #7c3aed60`, borderRadius: 8, padding: 14, marginBottom: 16,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-        <span style={{ fontSize: 13, fontWeight: 700, color: '#5b21b6' }}>AI hypotheses</span>
+        <span style={{ fontSize: 13, fontWeight: 700, color: '#5b21b6' }}>{title}</span>
         <Badge color="#7c3aed">{open.length} open</Badge>
         <div style={{ flex: 1 }} />
         {resolved.length > 0 && (
