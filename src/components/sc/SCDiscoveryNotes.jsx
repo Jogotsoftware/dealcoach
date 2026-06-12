@@ -90,31 +90,11 @@ export default function SCDiscoveryNotes({ deal, readiness, onReadinessChange })
 
   if (loading) return <Spinner />
   const activeSection = sections.find(s => s.key === active) || sections[0]
-  const gm = readiness ? (GRADE[readiness.readiness_grade] || { label: readiness.readiness_grade ? String(readiness.readiness_grade).replace(/_/g, ' ') : 'In progress', color: T.textMuted }) : null
 
   return (
     <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start' }}>
       <CoverageRail sections={sections} activeSection={active} onJump={setActive} />
       <div style={{ flex: 1, minWidth: 0 }}>
-        {/* Readiness gate */}
-        {readiness && (
-          <div style={{ background: T.surface, border: `1px solid ${gm.color}50`, borderLeft: `4px solid ${gm.color}`, borderRadius: 8, padding: 14, marginBottom: 16 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 13, fontWeight: 800, color: gm.color, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Demo readiness: {gm.label}</span>
-              <span style={{ fontSize: 12, color: T.textSecondary }}>Coverage {readiness.coverage_pct ?? 0}%</span>
-            </div>
-            {blockers.length > 0 && (
-              <ul style={{ margin: '8px 0 0', paddingLeft: 18 }}>
-                {blockers.map((b, i) => (
-                  <li key={i} style={{ fontSize: 12, color: T.text }}>
-                    <span style={{ fontWeight: 600, color: b.severity === 'critical' ? T.error : T.warning }}>{b.name}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
-
         <SuggestionsTray dealId={deal.id} onChanged={() => { load(); onReadinessChange?.() }} />
 
         {/* Business Drivers */}

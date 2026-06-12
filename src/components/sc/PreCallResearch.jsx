@@ -40,21 +40,25 @@ export default function PreCallResearch({ deal }) {
   const [systems, setSystems] = useState([])
   const [events, setEvents] = useState([])
   const [sources, setSources] = useState({})
+  const [website, setWebsite] = useState(null)
+  const [drivers, setDrivers] = useState(null)
 
   useEffect(() => { load() }, [deal?.id])
 
   async function load() {
     setLoading(true)
     try {
-      const [cp, ct, comp, nw, pn, sy, ce, src] = await Promise.all([
+      const [cp, ct, comp, nw, pn, sy, ce, src, dl, da] = await Promise.all([
         supabase.from('company_profile').select('*').eq('deal_id', deal.id).maybeSingle(),
         supabase.from('contacts').select('name, title, department, role_in_deal, linkedin, background, source_url').eq('deal_id', deal.id),
         supabase.from('deal_competitors').select('competitor_name, website, notes, source_url').eq('deal_id', deal.id),
         supabase.from('company_news').select('headline, date_text, source_url').eq('deal_id', deal.id),
-        supabase.from('deal_pain_points').select('pain_description, source_url, observed_at, source').eq('deal_id', deal.id).eq('source', 'ai_research'),
+        supabase.from('deal_pain_points').select('pain_description, annual_cost, source_url, observed_at, source').eq('deal_id', deal.id).order('annual_cost', { ascending: false, nullsFirst: false }),
         supabase.from('company_systems').select('system_name, system_category, source_url, source_type, observed_at, is_current').eq('deal_id', deal.id).eq('is_current', true),
         supabase.from('compelling_events').select('event_description, event_date, source_url, observed_at, source').eq('deal_id', deal.id),
         supabase.from('deal_sources').select('field_name, source_url, source_title').eq('deal_id', deal.id).eq('source_origin', 'research'),
+        supabase.from('deals').select('website').eq('id', deal.id).maybeSingle(),
+        supabase.from('deal_analysis').select('driving_factors').eq('deal_id', deal.id).maybeSingle(),
       ])
       setProfile(cp.data || null)
       setContacts(ct.data || [])
@@ -63,6 +67,8 @@ export default function PreCallResearch({ deal }) {
       setPains(pn.data || [])
       setSystems(sy.data || [])
       setEvents(ce.data || [])
+      setWebsite(dl.data?.website || null)
+      setDrivers(da.data?.driving_factors && da.data.driving_factors.toLowerCase() !== 'unknown' ? da.data.driving_factors : null)
       const m = {}
       ;(src.data || []).forEach(s => { if (s.field_name && !m[s.field_name]) m[s.field_name] = s })
       setSources(m)
@@ -85,8 +91,14 @@ export default function PreCallResearch({ deal }) {
         <EmptyState icon="◎" title="No research yet" message="Research runs automatically when the deal is created. The company snapshot, contacts, competitors, news, pains, and systems show up here once it completes." />
       )}
 
-      {(scalarRows.length > 0 || listRows.length > 0) && (
+      {(scalarRows.length > 0 || listRows.length > 0 || website || drivers || pains.length > 0) && (
         <Card title="Company snapshot">
+          {website && (
+            <div style={{ marginBottom: 8 }}>
+              <a href={website.startsWith('http') ? website : `https://${website}`} target="_blank" rel="noopener noreferrer"
+                style={{ fontSize: 13, color: T.primary, fontWeight: 600 }}>{website.replace(/^https?:\/\//, '').replace(/\/$/, '')} ↗</a>
+            </div>
+          )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             {scalarRows.map(([k, label]) => (
               <div key={k} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '8px 0', borderBottom: `1px solid ${T.borderLight}` }}>
@@ -103,6 +115,24 @@ export default function PreCallResearch({ deal }) {
                 </ul>
               </div>
             ))}
+            {drivers && (
+              <div style={{ padding: '8px 0', borderBottom: pains.length ? `1px solid ${T.borderLight}` : 'none' }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: T.textSecondary, marginBottom: 4 }}>Drivers</div>
+                <div style={{ fontSize: 13, color: T.text, whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{drivers}</div>
+              </div>
+            )}
+            {pains.length > 0 && (
+              <div style={{ padding: '8px 0' }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: T.textSecondary, marginBottom: 4 }}>Top pains</div>
+                <ul style={{ margin: 0, paddingLeft: 18 }}>
+                  {pains.slice(0, 8).map((p, i) => (
+                    <li key={i} style={{ fontSize: 13, color: T.text, marginBottom: 3 }}>
+                      {p.pain_description}{typeof p.annual_cost === 'number' && p.annual_cost > 0 ? <span style={{ color: T.textMuted }}> (${p.annual_cost.toLocaleString()}/yr)</span> : null}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         </Card>
       )}
@@ -148,19 +178,6 @@ export default function PreCallResearch({ deal }) {
                 {n.source_url
                   ? <a href={n.source_url} target="_blank" rel="noopener noreferrer" style={{ flex: 1, fontSize: 13, color: T.primary }}>{n.headline} ↗</a>
                   : <span style={{ flex: 1, fontSize: 13, color: T.text }}>{n.headline}</span>}
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
-
-      {pains.length > 0 && (
-        <Card title={`Pain points (${pains.length})`}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {pains.map((p, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '6px 0', borderBottom: i < pains.length - 1 ? `1px solid ${T.borderLight}` : 'none' }}>
-                <span style={{ flex: 1, fontSize: 13, color: T.text }}>{p.pain_description}</span>
-                {rChip(null, p.observed_at, p.source_url)}
               </div>
             ))}
           </div>

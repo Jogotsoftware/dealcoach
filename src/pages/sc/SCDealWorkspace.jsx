@@ -7,17 +7,15 @@ import { Spinner, StageBadge } from '../../components/Shared'
 import { notify } from '../../lib/notifications'
 import KtEmailButton from '../../components/KtEmailButton'
 import SCDiscoveryNotes from '../../components/sc/SCDiscoveryNotes'
-import PerCallAnalysis from '../../components/sc/PerCallAnalysis'
 import PreCallResearch from '../../components/sc/PreCallResearch'
 import ModulesSurface from '../../components/sc/ModulesSurface'
-import DealRoomSurface from '../../components/sc/DealRoomSurface'
+import DealRoomConfig from '../DealRoomConfig'
 
 // SC deal workspace — four surfaces over one deal. Defaults to notes. On the
 // first SC open after a push, stamps sc_handoff.first_viewed_by_sc_at and
 // notifies the AE (sc_viewed_notes).
 const VIEWS = [
   { key: 'notes', label: 'Discovery notes' },
-  { key: 'calls', label: 'Per-call analysis' },
   { key: 'research', label: 'Pre-call research' },
   { key: 'modules', label: 'Modules' },
   { key: 'dealroom', label: 'Deal room' },
@@ -99,10 +97,9 @@ export default function SCDealWorkspace() {
       </div>
 
       {view === 'notes' && <SCDiscoveryNotes deal={deal} readiness={readiness} onReadinessChange={load} />}
-      {view === 'calls' && <PerCallAnalysis dealId={deal.id} />}
       {view === 'research' && <PreCallResearch deal={deal} />}
       {view === 'modules' && <ModulesSurface deal={deal} />}
-      {view === 'dealroom' && <DealRoomSurface deal={deal} />}
+      {view === 'dealroom' && <DealRoomConfig embedded dealId={deal.id} />}
     </div>
   )
 }
