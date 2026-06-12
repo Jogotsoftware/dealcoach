@@ -29,40 +29,45 @@ export default function SCHome() {
   async function load() {
     setLoading(true)
     try {
-      // An SC sees deals they're assigned to (deal_sc_assignments). Everyone
-      // else who can reach the portal (ops/admins previewing) sees every
-      // assigned deal, RLS-scoped to their accessible orgs.
-      let dealIds = null
-      if (profile.role === 'sc') {
+      // A true SC sees only deals assigned to them. An admin / ops user sees
+      // ALL their org's active deals (RLS-scoped), assigned or not.
+      const isSC = profile.role === 'sc'
+      let list = []
+      if (isSC) {
         const { data: mine } = await supabase.from('deal_sc_assignments').select('deal_id').eq('sc_user_id', profile.id)
-        dealIds = [...new Set((mine || []).map(a => a.deal_id))]
+        const dealIds = [...new Set((mine || []).map(a => a.deal_id))]
         if (dealIds.length === 0) { setCards([]); setLoading(false); return }
+        const { data: deals } = await supabase.from('deals').select('id, company_name, stage, rep_id, target_close_date').in('id', dealIds)
+        list = deals || []
       } else {
-        const { data: all } = await supabase.from('deal_sc_assignments').select('deal_id')
-        dealIds = [...new Set((all || []).map(a => a.deal_id))]
-        if (dealIds.length === 0) { setCards([]); setLoading(false); return }
+        const { data: deals } = await supabase.from('deals')
+          .select('id, company_name, stage, rep_id, target_close_date')
+          .not('stage', 'in', '(closed_won,closed_lost,disqualified)')
+          .order('updated_at', { ascending: false }).limit(300)
+        list = deals || []
       }
-      const { data: deals } = await supabase.from('deals')
-        .select('id, company_name, stage, rep_id, target_close_date').in('id', dealIds)
-      const list = deals || []
       const ids = list.map(d => d.id)
       if (ids.length === 0) { setCards([]); setLoading(false); return }
 
-      const [readyRes, repRes, unreadRes] = await Promise.all([
+      const [readyRes, repRes, unreadRes, assignRes] = await Promise.all([
         supabase.from('deal_readiness').select('deal_id, coverage_pct, readiness_grade, open_blocker_count').in('deal_id', ids),
         supabase.from('profiles').select('id, full_name').in('id', list.map(d => d.rep_id).filter(Boolean)),
         supabase.from('internal_notifications').select('deal_id').eq('recipient_user_id', profile.id).is('read_at', null).in('deal_id', ids),
+        supabase.from('deal_sc_assignments').select('deal_id, sc_user_id').in('deal_id', ids),
       ])
       const ready = Object.fromEntries((readyRes.data || []).map(r => [r.deal_id, r]))
       const reps = Object.fromEntries((repRes.data || []).map(r => [r.id, r.full_name]))
       const unread = {}
       ;(unreadRes.data || []).forEach(r => { unread[r.deal_id] = (unread[r.deal_id] || 0) + 1 })
+      const scCount = {}
+      ;(assignRes.data || []).forEach(a => { scCount[a.deal_id] = (scCount[a.deal_id] || 0) + 1 })
 
       const built = list.map(d => ({
         ...d,
         rep: reps[d.rep_id] || '—',
         readiness: ready[d.id] || {},
         unread: unread[d.id] || 0,
+        scCount: scCount[d.id] || 0,
       })).sort((a, b) =>
         (b.readiness.open_blocker_count || 0) - (a.readiness.open_blocker_count || 0)
         || (a.readiness.coverage_pct || 0) - (b.readiness.coverage_pct || 0)
@@ -71,16 +76,17 @@ export default function SCHome() {
     } catch (e) { console.error('[SCHome] load', e) } finally { setLoading(false) }
   }
 
+  const isSCUser = profile?.role === 'sc'
   if (loading) return <Spinner />
 
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 18 }}>
-        <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: T.text }}>Your deals</h1>
-        <span style={{ fontSize: 13, color: T.textMuted }}>{cards.length} assigned</span>
+        <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: T.text }}>{isSCUser ? 'Your deals' : 'All deals'}</h1>
+        <span style={{ fontSize: 13, color: T.textMuted }}>{cards.length}{isSCUser ? ' assigned' : ''}</span>
       </div>
       {cards.length === 0 ? (
-        <EmptyState icon="▦" title="No deals assigned yet" message="When an AE hands you a deal, it shows up here with its discovery coverage and demo readiness." />
+        <EmptyState icon="▦" title={isSCUser ? 'No deals assigned yet' : 'No active deals'} message={isSCUser ? 'When an AE hands you a deal, it shows up here with its discovery coverage and demo readiness.' : 'Active deals in your org will show here.'} />
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 14 }}>
           {cards.map(c => {
@@ -105,7 +111,7 @@ export default function SCHome() {
                   <div style={{ width: `${cov}%`, height: '100%', background: cov >= 70 ? T.success : cov >= 30 ? T.warning : T.error, borderRadius: 3 }} />
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 12, fontSize: 11, color: T.textSecondary }}>
-                  <span>AE: {c.rep}</span>
+                  <span>AE: {c.rep}{!isSCUser && (c.scCount > 0 ? ` · ${c.scCount} SC` : ' · no SC')}</span>
                   {c.readiness.open_blocker_count > 0
                     ? <span style={{ color: T.error, fontWeight: 600 }}>{c.readiness.open_blocker_count} blocker{c.readiness.open_blocker_count === 1 ? '' : 's'}</span>
                     : <span style={{ color: T.textMuted }}>No open blockers</span>}
