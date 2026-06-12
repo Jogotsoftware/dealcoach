@@ -47,6 +47,7 @@ import QdcPrepView from '../components/QdcPrepView'
 import SuggestionsTray from '../components/SuggestionsTray'
 import HypothesesPanel from '../components/HypothesesPanel'
 import CloseDealModal from '../components/CloseDealModal'
+import SCHandoffPanel from '../components/SCHandoffPanel'
 import { useAuth } from '../hooks/useAuth'
 import { useModules } from '../hooks/useModules'
 import { Responsive, WidthProvider } from 'react-grid-layout'
@@ -1370,7 +1371,59 @@ export default function DealDetail() {
       return () => { live = false }
     }, [])
     const [expandedRisk, setExpandedRisk] = useState(null)
-    const sorted = [...risks].sort((a, b) => (a.status === 'resolved') - (b.status === 'resolved'))
+    const [showResolved, setShowResolved] = useState(false)
+    const SEV_ORDER = ['critical', 'high', 'medium', 'low']
+    const openRisks = risks.filter(r => r.status !== 'resolved')
+    const resolvedRisks = risks.filter(r => r.status === 'resolved')
+    const renderRow = (r) => {
+      const plainName = r.risk_key && riskDefs ? riskDefs.get(r.risk_key) : null
+      const statedQuote = r.evidence_type === 'stated' ? r.evidence?.quotes?.[0] : null
+      const gapEvidence = r.evidence_type === 'gap' ? r.evidence : null
+      const resolved = r.status === 'resolved'
+      const expandable = !!(statedQuote || gapEvidence)
+      return (
+        <div key={r.id} style={{ background: T.surfaceAlt, borderRadius: 6, marginBottom: 4, border: `1px solid ${T.borderLight}`, opacity: resolved ? 0.55 : 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', cursor: expandable ? 'pointer' : 'default' }}
+            onClick={() => expandable && setExpandedRisk(expandedRisk === r.id ? null : r.id)}>
+            <Badge color={SEVERITY_COLORS[r.severity] || T.textMuted}>{r.severity}</Badge>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{plainName || r.risk_description}</span>
+              {plainName && <span style={{ fontSize: 11, color: T.textSecondary, marginLeft: 8 }}>{r.risk_description}</span>}
+            </div>
+            {r.evidence_type === 'gap' && (
+              <span title="Computed from the deal record — resolves itself when the gap closes"
+                style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.04em', padding: '1px 7px', borderRadius: 9, background: T.textMuted + '15', color: T.textMuted, border: `1px solid ${T.textMuted}30` }}>GAP</span>
+            )}
+            {r.evidence_type === 'stated' && (
+              <span title="Stated aloud on a call — click for the quote"
+                style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.04em', padding: '1px 7px', borderRadius: 9, background: '#2563eb15', color: '#2563eb', border: '1px solid #2563eb30' }}>STATED</span>
+            )}
+            <Badge color={T.primary}>{(r.category || '').replace(/_/g, ' ')}</Badge>
+            {resolved ? (
+              <span style={{ fontSize: 10, fontWeight: 700, color: T.success }}>RESOLVED</span>
+            ) : (
+              <select style={{ fontSize: 10, fontWeight: 600, padding: '2px 6px', borderRadius: 3, border: `1px solid ${STATUS_COLORS[r.status] || T.textMuted}30`, background: (STATUS_COLORS[r.status] || T.textMuted) + '12', color: STATUS_COLORS[r.status] || T.textMuted, cursor: 'pointer', fontFamily: T.font }}
+                value={r.status} onClick={e => e.stopPropagation()} onChange={e => updateRiskField(r.id, 'status', e.target.value)}>
+                {RISK_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            )}
+            <SourceBadge source={r.source} sourceUrl={r.source_url} conversationId={r.source_conversation_id} dealId={id} navigate={navigate} />
+            {!r.auto_generated && <DeleteBtn onClick={() => deleteRisk(r.id)} />}
+          </div>
+          {expandedRisk === r.id && statedQuote && (
+            <div style={{ padding: '0 12px 10px', fontSize: 12, color: T.textSecondary, fontStyle: 'italic' }}>
+              {'“'}{statedQuote.quote}{'”'}{statedQuote.speaker ? <span style={{ fontStyle: 'normal' }}> — {statedQuote.speaker}</span> : null}
+            </div>
+          )}
+          {expandedRisk === r.id && gapEvidence && (
+            <div style={{ padding: '0 12px 10px', fontSize: 11, color: T.textSecondary }}>
+              Computed: {Object.entries(gapEvidence).map(([k, v]) => `${k.replace(/_/g, ' ')} = ${v}`).join(' · ')}
+              {!resolved && <span> · resolves automatically when the gap closes</span>}
+            </div>
+          )}
+        </div>
+      )
+    }
     return (
       <>
         <div style={{ marginBottom: 8 }}><PlusButton onClick={() => setShowAddRisk(true)} title="Add a risk" style={{ width: 24, height: 24, fontSize: 16 }} /></div>
@@ -1387,59 +1440,33 @@ export default function DealDetail() {
             </div>
           </div>
         )}
-        {risks.length === 0 ? <div style={{ color: '#bbb', fontSize: 13, fontStyle: 'italic' }}>No risks identified.</div> : sorted.map(r => {
-          const plainName = r.risk_key && riskDefs ? riskDefs.get(r.risk_key) : null
-          const statedQuote = r.evidence_type === 'stated' ? r.evidence?.quotes?.[0] : null
-          const gapEvidence = r.evidence_type === 'gap' ? r.evidence : null
-          const resolved = r.status === 'resolved'
-          const expandable = !!(statedQuote || gapEvidence)
-          return (
-            <div key={r.id} style={{ background: T.surfaceAlt, borderRadius: 6, marginBottom: 4, border: `1px solid ${T.borderLight}`, opacity: resolved ? 0.55 : 1 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', cursor: expandable ? 'pointer' : 'default' }}
-                onClick={() => expandable && setExpandedRisk(expandedRisk === r.id ? null : r.id)}>
-                <Badge color={SEVERITY_COLORS[r.severity] || T.textMuted}>{r.severity}</Badge>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{plainName || r.risk_description}</span>
-                  {plainName && <span style={{ fontSize: 11, color: T.textSecondary, marginLeft: 8 }}>{r.risk_description}</span>}
+        {risks.length === 0 ? <div style={{ color: '#bbb', fontSize: 13, fontStyle: 'italic' }}>No risks identified.</div> : (
+          <>
+            {SEV_ORDER.map(sev => {
+              const rows = openRisks.filter(r => (r.severity || 'medium') === sev)
+              if (!rows.length) return null
+              return (
+                <div key={sev} style={{ marginBottom: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '4px 0' }}>
+                    <span style={{ width: 8, height: 8, borderRadius: 4, background: SEVERITY_COLORS[sev] || T.textMuted }} />
+                    <span style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: SEVERITY_COLORS[sev] || T.textMuted }}>{sev}</span>
+                    <span style={{ fontSize: 10, color: T.textMuted }}>({rows.length})</span>
+                  </div>
+                  {rows.map(renderRow)}
                 </div>
-                {r.evidence_type === 'gap' && (
-                  <span title="Computed from the deal record — resolves itself when the gap closes"
-                    style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.04em', padding: '1px 7px', borderRadius: 9, background: T.textMuted + '15', color: T.textMuted, border: `1px solid ${T.textMuted}30` }}>
-                    GAP
-                  </span>
-                )}
-                {r.evidence_type === 'stated' && (
-                  <span title="Stated aloud on a call — click for the quote"
-                    style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.04em', padding: '1px 7px', borderRadius: 9, background: '#2563eb15', color: '#2563eb', border: '1px solid #2563eb30' }}>
-                    STATED
-                  </span>
-                )}
-                <Badge color={T.primary}>{(r.category || '').replace(/_/g, ' ')}</Badge>
-                {resolved ? (
-                  <span style={{ fontSize: 10, fontWeight: 700, color: T.success }}>RESOLVED</span>
-                ) : (
-                  <select style={{ fontSize: 10, fontWeight: 600, padding: '2px 6px', borderRadius: 3, border: `1px solid ${STATUS_COLORS[r.status] || T.textMuted}30`, background: (STATUS_COLORS[r.status] || T.textMuted) + '12', color: STATUS_COLORS[r.status] || T.textMuted, cursor: 'pointer', fontFamily: T.font }}
-                    value={r.status} onClick={e => e.stopPropagation()} onChange={e => updateRiskField(r.id, 'status', e.target.value)}>
-                    {RISK_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                )}
-                <SourceBadge source={r.source} sourceUrl={r.source_url} conversationId={r.source_conversation_id} dealId={id} navigate={navigate} />
-                {!r.auto_generated && <DeleteBtn onClick={() => deleteRisk(r.id)} />}
+              )
+            })}
+            {openRisks.length === 0 && <div style={{ fontSize: 12, color: T.success, padding: '4px 0' }}>No open risks.</div>}
+            {resolvedRisks.length > 0 && (
+              <div style={{ marginTop: 6, borderTop: `1px solid ${T.borderLight}`, paddingTop: 6 }}>
+                <button onClick={() => setShowResolved(s => !s)} style={{ background: 'none', border: 'none', color: T.textMuted, fontSize: 11, cursor: 'pointer', fontFamily: T.font, textDecoration: 'underline' }}>
+                  {showResolved ? 'Hide' : 'Show'} auto-resolved ({resolvedRisks.length})
+                </button>
+                {showResolved && <div style={{ marginTop: 6 }}>{resolvedRisks.map(renderRow)}</div>}
               </div>
-              {expandedRisk === r.id && statedQuote && (
-                <div style={{ padding: '0 12px 10px', fontSize: 12, color: T.textSecondary, fontStyle: 'italic' }}>
-                  {'“'}{statedQuote.quote}{'”'}{statedQuote.speaker ? <span style={{ fontStyle: 'normal' }}> — {statedQuote.speaker}</span> : null}
-                </div>
-              )}
-              {expandedRisk === r.id && gapEvidence && (
-                <div style={{ padding: '0 12px 10px', fontSize: 11, color: T.textSecondary }}>
-                  Computed: {Object.entries(gapEvidence).map(([k, v]) => `${k.replace(/_/g, ' ')} = ${v}`).join(' · ')}
-                  {!resolved && <span> · resolves automatically when the gap closes</span>}
-                </div>
-              )}
-            </div>
-          )
-        })}
+            )}
+          </>
+        )}
       </>
     )
   }
@@ -2132,6 +2159,7 @@ export default function DealDetail() {
             AI hypotheses (AE view only — never client-facing). */}
         {!isDealRoomOnly && tab === 'home' && (
           <>
+            <SCHandoffPanel deal={deal} onAssigned={(scId) => setDeal(p => ({ ...p, sc_user_id: scId }))} />
             <SuggestionsTray dealId={id} onChanged={() => loadDeal()} />
             <HypothesesPanel dealId={id} />
           </>
