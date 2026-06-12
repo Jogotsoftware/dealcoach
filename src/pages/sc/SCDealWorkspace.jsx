@@ -10,6 +10,7 @@ import SCDiscoveryNotes from '../../components/sc/SCDiscoveryNotes'
 import PerCallAnalysis from '../../components/sc/PerCallAnalysis'
 import PreCallResearch from '../../components/sc/PreCallResearch'
 import ModulesSurface from '../../components/sc/ModulesSurface'
+import DealRoomSurface from '../../components/sc/DealRoomSurface'
 
 // SC deal workspace — four surfaces over one deal. Defaults to notes. On the
 // first SC open after a push, stamps sc_handoff.first_viewed_by_sc_at and
@@ -19,6 +20,7 @@ const VIEWS = [
   { key: 'calls', label: 'Per-call analysis' },
   { key: 'research', label: 'Pre-call research' },
   { key: 'modules', label: 'Modules' },
+  { key: 'dealroom', label: 'Deal room' },
 ]
 
 export default function SCDealWorkspace() {
@@ -100,6 +102,7 @@ export default function SCDealWorkspace() {
       {view === 'calls' && <PerCallAnalysis dealId={deal.id} />}
       {view === 'research' && <PreCallResearch deal={deal} />}
       {view === 'modules' && <ModulesSurface deal={deal} />}
+      {view === 'dealroom' && <DealRoomSurface deal={deal} />}
     </div>
   )
 }
