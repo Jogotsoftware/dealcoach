@@ -5,6 +5,7 @@ import { useAuth } from '../hooks/useAuth'
 import { theme as T } from '../lib/theme'
 import { Card, Button, Badge, inputStyle } from './Shared'
 import { notify } from '../lib/notifications'
+import KtEmailButton from './KtEmailButton'
 
 // AE-side SC handoff + readiness companion. Assign an SC (sets
 // deals.sc_user_id), push the deal to them (sc_handoff pushed +
@@ -97,6 +98,7 @@ export default function SCHandoffPanel({ deal, onAssigned }) {
         <div style={{ flex: 1 }} />
 
         {status && <Badge color={status === 'pushed' ? T.success : status === 'in_review' ? T.primary : T.textMuted}>{status.replace(/_/g, ' ')}</Badge>}
+        <KtEmailButton dealId={deal.id} />
         <Button onClick={() => navigate(`/deal/${deal.id}/discovery`)} style={{ padding: '6px 12px', fontSize: 12 }}>Discovery notes</Button>
         {scUserId && (
           <Button primary disabled={busy} onClick={push} style={{ padding: '6px 12px', fontSize: 12 }}>

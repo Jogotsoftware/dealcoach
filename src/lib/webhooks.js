@@ -140,6 +140,32 @@ export async function callProcessTranscript(conversationId) {
 }
 
 /**
+ * Generate a knowledge-transfer email (AE -> SC handoff) from structured
+ * deal data. Returns { subject, body, email_id } or { error }.
+ */
+export async function callGenerateKtEmail(dealId) {
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) return { error: 'Not authenticated' }
+  try {
+    const response = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-kt-email`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ deal_id: dealId }),
+      }
+    )
+    return await response.json()
+  } catch (err) {
+    return { error: err.message }
+  }
+}
+
+/**
  * Call the Supabase Edge Function to generate an email from a template.
  */
 export async function callGenerateEmail(dealId, templateId, conversationId = null) {
