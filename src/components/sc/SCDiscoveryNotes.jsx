@@ -4,6 +4,7 @@ import { theme as T } from '../../lib/theme'
 import { Spinner, Card, Button } from '../Shared'
 import CoverageRail from '../CoverageRail'
 import FieldRow from '../FieldRow'
+import ManageQuestionsModal from './ManageQuestionsModal'
 
 // SC Discovery Notes — the catalog workspace: CoverageRail (display_section
 // groups) + readiness gate banner with named blockers + one section of
@@ -22,13 +23,14 @@ export default function SCDiscoveryNotes({ deal, readiness, onReadinessChange })
   const [drivers, setDrivers] = useState(null)
   const [suggestions, setSuggestions] = useState(new Map())
   const [active, setActive] = useState(null)
+  const [manageOpen, setManageOpen] = useState(false)
 
   useEffect(() => { load() }, [deal?.id])
 
   async function load() {
     setLoading(true)
     try {
-      const [defRes, flatRes, riskRes, daRes, sugRes] = await Promise.all([
+      const [defRes, flatRes, riskRes, daRes, sugRes, hidRes] = await Promise.all([
         supabase.from('custom_field_definitions')
           .select('id, org_id, field_key, field_label, field_type, display_section, ai_context, extraction_instructions, storage_target, sort_order')
           .eq('entity_type', 'deal').eq('is_active', true).or(`org_id.eq.${deal.org_id},org_id.is.null`).order('sort_order'),
@@ -36,10 +38,14 @@ export default function SCDiscoveryNotes({ deal, readiness, onReadinessChange })
         supabase.from('deal_risks').select('risk_key, risk_description, severity, status').eq('deal_id', deal.id).eq('status', 'open'),
         supabase.from('deal_analysis').select('driving_factors').eq('deal_id', deal.id).maybeSingle(),
         supabase.from('field_suggestions').select('id, field_key, suggested_value, current_value, provenance').eq('deal_id', deal.id).eq('suggestion_kind', 'value_update').eq('status', 'open'),
+        supabase.from('org_hidden_fields').select('field_key').eq('org_id', deal.org_id),
       ])
-      // Org definitions override template rows on the same field_key.
+      // Org definitions override template rows on the same field_key; hidden
+      // fields are excluded from the org's discovery.
+      const hidden = new Set((hidRes.data || []).map(h => h.field_key))
       const byKey = new Map()
       for (const d of (defRes.data || [])) {
+        if (hidden.has(d.field_key)) continue
         const prior = byKey.get(d.field_key)
         if (!prior || (prior.org_id === null && d.org_id !== null)) byKey.set(d.field_key, d)
       }
@@ -95,6 +101,15 @@ export default function SCDiscoveryNotes({ deal, readiness, onReadinessChange })
     <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start' }}>
       <CoverageRail sections={sections} activeSection={active} onJump={setActive} />
       <div style={{ flex: 1, minWidth: 0 }}>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
+          <Button onClick={() => setManageOpen(true)} style={{ padding: '5px 12px', fontSize: 12 }}>Manage questions</Button>
+        </div>
+
+        {manageOpen && (
+          <ManageQuestionsModal deal={deal} sections={sections.map(s => s.key)}
+            onClose={() => setManageOpen(false)} onChanged={load} />
+        )}
 
         {/* Business Drivers */}
         {drivers && drivers.toLowerCase() !== 'unknown' && (
