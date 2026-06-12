@@ -48,6 +48,7 @@ import SuggestionsTray from '../components/SuggestionsTray'
 import HypothesesPanel from '../components/HypothesesPanel'
 import CloseDealModal from '../components/CloseDealModal'
 import SCHandoffPanel from '../components/SCHandoffPanel'
+import DocumentsPanel from '../components/DocumentsPanel'
 import { useAuth } from '../hooks/useAuth'
 import { useModules } from '../hooks/useModules'
 import { Responsive, WidthProvider } from 'react-grid-layout'
@@ -2160,6 +2161,7 @@ export default function DealDetail() {
         {!isDealRoomOnly && tab === 'home' && (
           <>
             <SCHandoffPanel deal={deal} onAssigned={(scId) => setDeal(p => ({ ...p, sc_user_id: scId }))} />
+            <DocumentsPanel deal={deal} />
             <SuggestionsTray dealId={id} onChanged={() => loadDeal()} />
             <HypothesesPanel dealId={id} />
           </>

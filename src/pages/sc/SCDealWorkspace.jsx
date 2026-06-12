@@ -11,6 +11,7 @@ import SCDiscoveryNotes from '../../components/sc/SCDiscoveryNotes'
 import PreCallResearch from '../../components/sc/PreCallResearch'
 import ModulesSurface from '../../components/sc/ModulesSurface'
 import DealRoomConfig from '../DealRoomConfig'
+import DocumentsPanel from '../../components/DocumentsPanel'
 
 // SC deal workspace — four surfaces over one deal. Defaults to notes. On the
 // first SC open after a push, stamps sc_handoff.first_viewed_by_sc_at and
@@ -19,6 +20,7 @@ const VIEWS = [
   { key: 'research', label: 'QDC Notes' },
   { key: 'notes', label: 'Discovery notes' },
   { key: 'modules', label: 'Modules' },
+  { key: 'documents', label: 'Documents' },
   { key: 'dealroom', label: 'Deal room' },
 ]
 
@@ -101,6 +103,7 @@ export default function SCDealWorkspace() {
       {view === 'notes' && <SCDiscoveryNotes deal={deal} readiness={readiness} onReadinessChange={load} />}
       {view === 'research' && <PreCallResearch deal={deal} />}
       {view === 'modules' && <ModulesSurface deal={deal} />}
+      {view === 'documents' && <DocumentsPanel deal={deal} />}
       {view === 'dealroom' && <DealRoomConfig embedded dealId={deal.id} />}
     </div>
   )

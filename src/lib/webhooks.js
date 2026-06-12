@@ -140,6 +140,23 @@ export async function callProcessTranscript(conversationId) {
 }
 
 /**
+ * Extract catalog field values from a document (by id, or pasted text) and
+ * write them as inline field suggestions. Returns { suggested } or { error }.
+ */
+export async function callExtractFromDocument(dealId, { documentId = null, text = null } = {}) {
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) return { error: 'Not authenticated' }
+  try {
+    const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/extract-from-document`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}`, 'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY },
+      body: JSON.stringify({ deal_id: dealId, document_id: documentId, text }),
+    })
+    return await res.json()
+  } catch (err) { return { error: err.message } }
+}
+
+/**
  * Generate a knowledge-transfer email (AE -> SC handoff) from structured
  * deal data. Returns { subject, body, email_id } or { error }.
  */
