@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { supabase } from '../lib/supabase'
 import { theme as T } from '../lib/theme'
 import { Card, Badge, Spinner } from './Shared'
 
@@ -372,7 +373,15 @@ function RolePill({ contact }) {
   return null
 }
 
-function ContactCard({ contact }) {
+const ORG_REL_OPTS = [
+  { v: 'prospect_employee', l: 'Their team' },
+  { v: 'vendor', l: 'Vendor' },
+  { v: 'partner', l: 'Partner' },
+  { v: 'rep_side', l: 'Our side' },
+  { v: 'reference', l: 'Reference' },
+  { v: 'other', l: 'Other' },
+]
+function ContactCard({ contact, onSetRel }) {
   const [expanded, setExpanded] = useState(false)
 
   const tenureStr = contact.tenure_months != null
@@ -426,6 +435,12 @@ function ContactCard({ contact }) {
           </a>
         )}
         <RolePill contact={contact} />
+        <select value={contact.org_relationship || ''} onClick={e => e.stopPropagation()} onChange={e => { e.stopPropagation(); onSetRel?.(contact.id, e.target.value) }}
+          title="Who this person is relative to the prospect"
+          style={{ fontSize: 9, color: T.textSecondary, border: `1px solid ${T.borderLight}`, borderRadius: 4, padding: '1px 3px', background: T.surface, cursor: 'pointer', fontFamily: T.font, flexShrink: 0 }}>
+          <option value="">?</option>
+          {ORG_REL_OPTS.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
+        </select>
         <span style={{ fontSize: 10, color: T.textMuted, flexShrink: 0 }}>{expanded ? '▴' : '▾'}</span>
       </div>
 
@@ -485,39 +500,106 @@ function ContactCard({ contact }) {
 }
 
 function ContactsCard({ contacts }) {
-  const list = contacts || []
+  const [rows, setRows] = useState(contacts || [])
+  async function setRel(id, rel) {
+    setRows(rs => rs.map(c => c.id === id ? { ...c, org_relationship: rel } : c))
+    try { await supabase.from('contacts').update({ org_relationship: rel || null }).eq('id', id) }
+    catch (e) { console.error('[ContactsCard] setRel', e) }
+  }
+  // Prospect team: explicitly their employee, OR unclassified but looks like a
+  // real titled person. First-name-only with no title and unclassified is
+  // likely a name dropped on a call, not a confirmed contact -> "Other".
+  const isTeam = (c) => {
+    if (c.org_relationship) return c.org_relationship === 'prospect_employee'
+    const hasTitle = !!(c.title && c.title.trim())
+    const hasLastName = (c.name || '').trim().split(/\s+/).length > 1
+    return hasTitle || hasLastName
+  }
+  const team = rows.filter(isTeam)
+  const other = rows.filter(c => !isTeam(c))
+  const grid = (arr) => (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 8, alignItems: 'start' }}>
+      {arr.map(c => <ContactCard key={c.id} contact={c} onSetRel={setRel} />)}
+    </div>
+  )
   return (
     <Card title="Contacts">
-      {list.length === 0 ? (
+      {rows.length === 0 ? (
         <div style={{ color: T.textMuted, fontStyle: 'italic', fontSize: 13 }}>No contacts on this deal yet.</div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 8, alignItems: 'start' }}>
-          {list.map(c => <ContactCard key={c.id} contact={c} />)}
-        </div>
+        <>
+          {team.length > 0 ? grid(team) : <div style={{ fontSize: 12, color: T.textMuted, fontStyle: 'italic' }}>No confirmed prospect contacts yet.</div>}
+          {other.length > 0 && (
+            <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${T.borderLight}` }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Other people mentioned (verify)</div>
+              {grid(other)}
+            </div>
+          )}
+        </>
       )}
     </Card>
   )
 }
 
+const REL_OPTS = [
+  { v: 'current', l: 'Current' },
+  { v: 'competitor', l: 'Competitor' },
+  { v: 'prior', l: 'Prior experience' },
+  { v: 'evaluating', l: 'Evaluating' },
+  { v: 'complementary', l: 'Complementary' },
+]
 function SystemsCard({ systems }) {
-  const list = systems || []
+  const [rows, setRows] = useState(systems || [])
+  // Effective relationship: explicit value, else back-compat (is_current -> current).
+  const relOf = (s) => s.relationship || (s.is_current ? 'current' : 'other')
+  async function setRel(id, rel) {
+    setRows(rs => rs.map(s => s.id === id ? { ...s, relationship: rel, is_current: rel === 'current' } : s))
+    try { await supabase.from('company_systems').update({ relationship: rel, is_current: rel === 'current' }).eq('id', id) }
+    catch (e) { console.error('[SystemsCard] setRel', e) }
+  }
+  const current = rows.filter(s => relOf(s) === 'current')
+  const other = rows.filter(s => relOf(s) !== 'current')
+
+  const tile = (s) => (
+    <div key={s.id} style={{ padding: '8px 10px', background: T.surfaceAlt, border: `1px solid ${T.borderLight}`, borderRadius: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: T.text, flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.system_name || s.name || 'Unknown system'}</span>
+        {s.is_needed && <Badge color={T.warning}>Needed</Badge>}
+        <SourcePill sourceType={s.source_type} sourceUrl={s.source_url} sourceExcerpt={s.source_excerpt} />
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+        {s.category && <span style={{ fontSize: 10, color: T.textMuted, flex: 1 }}>{s.category}</span>}
+        <select value={relOf(s) === 'other' ? '' : relOf(s)} onChange={e => setRel(s.id, e.target.value)}
+          title="How this system relates to the prospect"
+          style={{ fontSize: 10, color: T.textSecondary, border: `1px solid ${T.borderLight}`, borderRadius: 4, padding: '1px 4px', background: T.surface, cursor: 'pointer', fontFamily: T.font }}>
+          {relOf(s) === 'other' && <option value="">Unclassified</option>}
+          {REL_OPTS.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
+        </select>
+      </div>
+    </div>
+  )
+
   return (
     <Card title="Tech stack">
-      {list.length === 0 ? (
+      {rows.length === 0 ? (
         <div style={{ color: T.textMuted, fontStyle: 'italic', fontSize: 13 }}>No systems identified yet.</div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 8, alignItems: 'start' }}>
-          {list.map(s => (
-            <div key={s.id} style={{ padding: '8px 10px', background: T.surfaceAlt, border: `1px solid ${T.borderLight}`, borderRadius: 6 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: T.text, flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.system_name || s.name || 'Unknown system'}</span>
-                {s.is_needed && <Badge color={T.warning}>Needed</Badge>}
-                <SourcePill sourceType={s.source_type} sourceUrl={s.source_url} sourceExcerpt={s.source_excerpt} />
-              </div>
-              {s.category && <div style={{ fontSize: 10, color: T.textMuted, marginTop: 1 }}>{s.category}</div>}
+        <>
+          {current.length > 0 && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 8, alignItems: 'start' }}>
+              {current.map(tile)}
             </div>
-          ))}
-        </div>
+          )}
+          {current.length === 0 && <div style={{ fontSize: 12, color: T.textMuted, fontStyle: 'italic' }}>Nothing confirmed as their current stack yet.</div>}
+          {other.length > 0 && (
+            <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${T.borderLight}` }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Also mentioned (not their stack)</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 8, alignItems: 'start' }}>
+                {other.map(tile)}
+              </div>
+            </div>
+          )}
+        </>
       )}
     </Card>
   )

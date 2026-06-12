@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-// research-company v35
+// research-company v36
 // CHANGES FROM v34 (extraction overhaul Phase 3 — facts-only research):
 // - Claims-with-citations contract ENFORCED IN CODE: row facts (pains, CEs,
 //   systems, news, hiring, criteria) without a source_url are dropped, not
@@ -32,7 +32,7 @@ const PERPLEXITY_API_KEY = Deno.env.get("PERPLEXITY_API_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-const SCHEMA = `{"company_profile":{"overview":"string","industry":"string","revenue":"string","employee_count":"string","headquarters":"string","founded":"string","revenue_streams":["stream"],"tech_stack":["system"],"international_operations":"string","business_goals":["goal"],"business_priorities":["priority"],"growth_plans":["plan"],"recent_news":[{"date":"YYYY-MM","headline":"string","source_url":"URL REQUIRED"}],"other_initiatives":["initiative"],"tax_ids_locations":"string","ownership":"string"},"profile_citations":{"overview":"URL","industry":"URL","revenue":"URL","employee_count":"URL","headquarters":"URL","founded":"URL","international_operations":"URL","ownership":"URL"},"sizing":{"entity_count":{"value":0,"source_url":"URL REQUIRED"}},"contacts":[{"name":"full name","title":"title","department":"dept","email":"email","linkedin":"REAL LinkedIn URL from Apollo/search ONLY","role_in_deal":"Economic Buyer|Champion|Technical Evaluator|Decision Maker|Influencer","influence_level":"high|medium|low","is_economic_buyer":false,"is_champion":false,"is_signer":false,"alignment_status":"aligned|neutral|resistant|unknown","background":"2-3 previous roles","previous_erp_experience":"ERP systems or null","source":"Apollo|LinkedIn|website","source_url":"URL REQUIRED"}],"company_systems":[{"system_category":"accounting|billing_invoicing|crm|project_management|inventory|payroll|expenses|fpa|front_end_operational|banks_credit_cards|other","system_name":"name","confidence":"high|medium|low","is_current":true,"is_needed":false,"integration_purpose":"null or string","source_url":"URL REQUIRED","notes":"evidence"}],"competitors":[{"name":"name","website":"URL","relevance":"why"}],"pain_points":[{"pain_description":"pain stated in a cited source, NOT inferred","category":"financial|operational|compliance|growth|competitive|technology|personnel","annual_cost":null,"annual_hours":null,"impact_text":"business impact","solution_component":"module or null","reasoning":"evidence","source_url":"URL REQUIRED"}],"compelling_events":[{"event_description":"consequence of inaction, from a cited source","event_date":"YYYY-MM-DD or null","strength":"strong|medium|weak","impact":"urgency","source_url":"URL REQUIRED"}],"hypotheses":[{"hypothesis_type":"red_flag|green_flag","hypothesis":"suspected pattern about this deal","reasoning":"why you believe this","confidence":"high|medium|low","basis_urls":["URLs the reasoning drew on"]}],"decision_criteria":[{"criterion":"what they evaluate on","importance":"high|medium|low","our_position":"strong|neutral|weak","notes":"context","source_url":"URL REQUIRED"}],"analysis":{"quantified_pain":"summary of CITED pains only","driving_factors":"summary","decision_process":"string","decision_method":"string","business_impact":[{"impact":"string","category":"string","cost":null}],"ideal_solution":[{"component":"string","description":"string"}],"timeline_drivers":[{"driver":"string","date":"null","urgency":"high|medium|low"}]},"hiring_signals":[{"job_title":"title","key_requirements":"software","implications":"meaning","source_url":"URL REQUIRED"}],"icp_fit":{"score":"0-100","summary":"string","verified_fact_count":0}}`;
+const SCHEMA = `{"company_profile":{"overview":"string","industry":"string","revenue":"string","employee_count":"string","headquarters":"string","founded":"string","revenue_streams":["stream"],"tech_stack":["system"],"international_operations":"string","business_goals":["goal"],"business_priorities":["priority"],"growth_plans":["plan"],"recent_news":[{"date":"YYYY-MM","headline":"string","source_url":"URL REQUIRED"}],"other_initiatives":["initiative"],"tax_ids_locations":"string","ownership":"string"},"profile_citations":{"overview":"URL","industry":"URL","revenue":"URL","employee_count":"URL","headquarters":"URL","founded":"URL","international_operations":"URL","ownership":"URL"},"sizing":{"entity_count":{"value":0,"source_url":"URL REQUIRED"}},"contacts":[{"name":"full name","title":"title","department":"dept","email":"email","linkedin":"REAL LinkedIn URL from Apollo/search ONLY","role_in_deal":"Economic Buyer|Champion|Technical Evaluator|Decision Maker|Influencer","influence_level":"high|medium|low","is_economic_buyer":false,"is_champion":false,"is_signer":false,"alignment_status":"aligned|neutral|resistant|unknown","background":"2-3 previous roles","previous_erp_experience":"ERP systems or null","org_relationship":"prospect_employee|vendor|partner|reference|other — default prospect_employee for people who work at the company","source":"Apollo|LinkedIn|website","source_url":"URL REQUIRED"}],"company_systems":[{"system_category":"accounting|billing_invoicing|crm|project_management|inventory|payroll|expenses|fpa|front_end_operational|banks_credit_cards|other","system_name":"name","relationship":"current|competitor|prior|evaluating|complementary — current = they run it now; competitor = a vendor we compete with; only current is their tech stack","confidence":"high|medium|low","is_current":true,"is_needed":false,"integration_purpose":"null or string","source_url":"URL REQUIRED","notes":"evidence"}],"competitors":[{"name":"name","website":"URL","relevance":"why"}],"pain_points":[{"pain_description":"pain stated in a cited source, NOT inferred","category":"financial|operational|compliance|growth|competitive|technology|personnel","annual_cost":null,"annual_hours":null,"impact_text":"business impact","solution_component":"module or null","reasoning":"evidence","source_url":"URL REQUIRED"}],"compelling_events":[{"event_description":"consequence of inaction, from a cited source","event_date":"YYYY-MM-DD or null","strength":"strong|medium|weak","impact":"urgency","source_url":"URL REQUIRED"}],"hypotheses":[{"hypothesis_type":"red_flag|green_flag","hypothesis":"suspected pattern about this deal","reasoning":"why you believe this","confidence":"high|medium|low","basis_urls":["URLs the reasoning drew on"]}],"decision_criteria":[{"criterion":"what they evaluate on","importance":"high|medium|low","our_position":"strong|neutral|weak","notes":"context","source_url":"URL REQUIRED"}],"analysis":{"quantified_pain":"summary of CITED pains only","driving_factors":"summary","decision_process":"string","decision_method":"string","business_impact":[{"impact":"string","category":"string","cost":null}],"ideal_solution":[{"component":"string","description":"string"}],"timeline_drivers":[{"driver":"string","date":"null","urgency":"high|medium|low"}]},"hiring_signals":[{"job_title":"title","key_requirements":"software","implications":"meaning","source_url":"URL REQUIRED"}],"icp_fit":{"score":"0-100","summary":"string","verified_fact_count":0}}`;
 
 const RULES = 'RULES: 1)ONLY JSON. 2)null=unknown — NEVER guess. 3)LinkedIn from Apollo/search only. 4)FACTS REQUIRE CITATIONS: any pain/event/system/news/hiring/criteria/profile claim without a real source_url WILL BE DROPPED by the server. Do not fabricate URLs. 5)Suspicions and pattern-reasoning go ONLY in hypotheses[], never as facts. 6)Events=consequences of INACTION. 7)Competitors=INDUSTRY peers. 8)ARRAYS not semicolons. 9)icp_fit scores ONLY verified cited facts; set verified_fact_count. 10)SOURCE QUALITY ORDER: company website > press releases > SEC EDGAR > state business registries > official marketplaces/case studies > reputable trade press > aggregators. Forums and low-quality aggregators are NOT fact sources (leads to verify only).';
 
@@ -125,9 +125,9 @@ Deno.serve(async (req: Request) => {
   let logId: string | null = null;
 
   try {
-    if (!ANTHROPIC_API_KEY) return resp({ error: 'v35: No API key' }, 500);
-    const { deal_id } = await req.json(); if (!deal_id) return resp({ error: 'v35: deal_id required' }, 400);
-    const { data: deal } = await sb.from('deals').select('*').eq('id', deal_id).single(); if (!deal) return resp({ error: 'v35: Deal not found' }, 404);
+    if (!ANTHROPIC_API_KEY) return resp({ error: 'v36: No API key' }, 500);
+    const { deal_id } = await req.json(); if (!deal_id) return resp({ error: 'v36: deal_id required' }, 400);
+    const { data: deal } = await sb.from('deals').select('*').eq('id', deal_id).single(); if (!deal) return resp({ error: 'v36: Deal not found' }, 404);
     const { data: rep } = await sb.from('profiles').select('active_coach_id, org_id').eq('id', deal.rep_id).single();
     const cid = rep?.active_coach_id;
 
@@ -168,7 +168,7 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    console.log(`Research v35: ${deal.company_name}, model=${model}, px=${usePx}, ap=${useAp}`);
+    console.log(`Research v36: ${deal.company_name}, model=${model}, px=${usePx}, ap=${useAp}`);
 
     // Run data sources in parallel
     const [pxR, apP, apC] = await Promise.all([
@@ -194,7 +194,7 @@ Deno.serve(async (req: Request) => {
 
     console.log('Calling Claude...');
     const cr = await claude(body);
-    if (!cr.ok) { const e = await cr.text(); console.error('Claude error:', cr.status, e); await ulog(sb, logId, 'failed', `v35: Claude ${cr.status}: ${e.substring(0, 200)}`, t0); return resp({ error: `v35: Claude ${cr.status}` }, 500); }
+    if (!cr.ok) { const e = await cr.text(); console.error('Claude error:', cr.status, e); await ulog(sb, logId, 'failed', `v36: Claude ${cr.status}: ${e.substring(0, 200)}`, t0); return resp({ error: `v36: Claude ${cr.status}` }, 500); }
     const cd = await cr.json(); const usage = cd.usage || {};
     console.log(`Claude done: ${usage.input_tokens}in ${usage.output_tokens}out`);
 
@@ -206,11 +206,11 @@ Deno.serve(async (req: Request) => {
       p = JSON.parse(m[0]);
     } catch (e: any) {
       console.error('Parse error:', e.message);
-      await ulog(sb, logId, 'partial', `v35: ${e.message}`, t0, usage);
+      await ulog(sb, logId, 'partial', `v36: ${e.message}`, t0, usage);
       return resp({ success: true, status: 'partial' });
     }
 
-    const sum: any = { perplexity: !!pxR, apollo: !!(apP || apC), model: pxM, version: 'v35', dropped_uncited: 0 };
+    const sum: any = { perplexity: !!pxR, apollo: !!(apP || apC), model: pxM, version: 'v36', dropped_uncited: 0 };
     const researchOrgId = rep?.org_id || deal.org_id;
     const observedAt = new Date().toISOString();
 
@@ -226,7 +226,7 @@ Deno.serve(async (req: Request) => {
           source_title: title || null, accessed_at: observedAt,
         }).select('id').single();
         return data?.id || null;
-      } catch (e: any) { console.error('v35 deal_sources insert:', e?.message); return null; }
+      } catch (e: any) { console.error('v36 deal_sources insert:', e?.message); return null; }
     }
 
     // ========== CLEAR OLD RESEARCH DATA ==========
@@ -238,9 +238,9 @@ Deno.serve(async (req: Request) => {
     await sb.from('company_news').delete().eq('deal_id', deal_id);
     // Open research hypotheses refresh on re-run; resolved ones are history.
     await sb.from('deal_hypotheses').delete().eq('deal_id', deal_id).eq('generated_by', 'research').eq('status', 'open');
-    // NOTE v35: deal_risks / deal_flags from research are no longer written
+    // NOTE v36: deal_risks / deal_flags from research are no longer written
     // (hypothesis layer owns research reasoning), so no clearing either —
-    // except one-time cleanup of pre-v35 research rows:
+    // except one-time cleanup of pre-v36 research rows:
     await sb.from('deal_risks').delete().eq('deal_id', deal_id).eq('source', 'ai_research');
     await sb.from('deal_flags').delete().eq('deal_id', deal_id).eq('source', 'ai_research');
 
@@ -299,7 +299,8 @@ Deno.serve(async (req: Request) => {
         for (const c of p.contacts) {
           if (!c.name) continue;
           const { data: ex } = await sb.from('contacts').select('id').eq('deal_id', deal_id).ilike('name', `%${c.name}%`).limit(1);
-          const d: any = { name: c.name, title: c.title || null, department: c.department || null, email: c.email || null, linkedin: c.linkedin || null, role_in_deal: c.role_in_deal || 'Unknown', influence_level: ['high', 'medium', 'low'].includes(c.influence_level) ? c.influence_level : 'Unknown', is_economic_buyer: c.is_economic_buyer || false, is_champion: c.is_champion || false, is_signer: c.is_signer || false, background: c.background || null, previous_erp_experience: c.previous_erp_experience || null, personality_notes: c.personality_notes || null, source_url: c.source_url || null, notes: c.source ? `Source: ${c.source}` : null };
+          const ORG_REL = ['prospect_employee', 'vendor', 'partner', 'reference', 'other'];
+          const d: any = { name: c.name, title: c.title || null, department: c.department || null, email: c.email || null, linkedin: c.linkedin || null, role_in_deal: c.role_in_deal || 'Unknown', influence_level: ['high', 'medium', 'low'].includes(c.influence_level) ? c.influence_level : 'Unknown', is_economic_buyer: c.is_economic_buyer || false, is_champion: c.is_champion || false, is_signer: c.is_signer || false, background: c.background || null, previous_erp_experience: c.previous_erp_experience || null, personality_notes: c.personality_notes || null, org_relationship: ORG_REL.includes(c.org_relationship) ? c.org_relationship : 'prospect_employee', source_url: c.source_url || null, notes: c.source ? `Source: ${c.source}` : null };
           if (ALIGN.has(c.alignment_status)) d.alignment_status = c.alignment_status;
           if (ex?.length) { await sb.from('contacts').update(d).eq('id', ex[0].id); }
           else { const { error } = await sb.from('contacts').insert({ ...d, deal_id }); if (!error) cc++; }
@@ -316,7 +317,9 @@ Deno.serve(async (req: Request) => {
           if (!s.system_name) continue;
           const sid = await citedSource('company_systems', s.system_name, `${s.system_category}: ${s.system_name}`, s.source_url);
           if (!sid) continue;
-          await sb.from('company_systems').insert({ deal_id, system_category: SYS_CATS.has(s.system_category) ? s.system_category : 'other', system_name: s.system_name, confidence: s.confidence || 'medium', is_current: s.is_current !== false, is_needed: s.is_needed || false, integration_purpose: s.integration_purpose || null, source_url: s.source_url, observed_at: observedAt, notes: `AI research: ${s.notes || ''}` });
+          const SYS_REL = ['current', 'competitor', 'prior', 'evaluating', 'complementary'];
+          const sRel = SYS_REL.includes(s.relationship) ? s.relationship : 'current';
+          await sb.from('company_systems').insert({ deal_id, system_category: SYS_CATS.has(s.system_category) ? s.system_category : 'other', system_name: s.system_name, relationship: sRel, confidence: s.confidence || 'medium', is_current: sRel === 'current' ? (s.is_current !== false) : false, is_needed: s.is_needed || false, integration_purpose: s.integration_purpose || null, source_url: s.source_url, observed_at: observedAt, notes: `AI research: ${s.notes || ''}` });
           written++;
         }
         sum.systems = written;
@@ -392,7 +395,7 @@ Deno.serve(async (req: Request) => {
       }
     } catch (e: any) { console.error('Events error:', e.message); }
 
-    // v35: research writes NO deal_risks and NO deal_flags — that reasoning
+    // v36: research writes NO deal_risks and NO deal_flags — that reasoning
     // lives in deal_hypotheses until evidence confirms or refutes it.
 
     // ========== DECISION CRITERIA (citation required) ==========
@@ -413,7 +416,7 @@ Deno.serve(async (req: Request) => {
     // ========== DEAL ANALYSIS (no flag seeding; no pain_points blob) ==========
     try {
       const au: any = {};
-      // v35 canonical-home deprecation: pain_points text blob no longer
+      // v36 canonical-home deprecation: pain_points text blob no longer
       // written (deal_pain_points is canonical). red_flags/green_flags are
       // verified-fact territory — research never writes them.
       if (p.hiring_signals?.length) {
@@ -439,7 +442,7 @@ Deno.serve(async (req: Request) => {
     try {
       if (p.icp_fit) {
         const verifiedCount = Number(p.icp_fit.verified_fact_count) || (sum.pains || 0) + (sum.events || 0) + (sum.systems || 0) + (sum.profile || 0);
-        const breakdown = { ...p.icp_fit, basis: `fit based on ${verifiedCount} verified facts`, computed_over: 'verified_facts_only', version: 'v35' };
+        const breakdown = { ...p.icp_fit, basis: `fit based on ${verifiedCount} verified facts`, computed_over: 'verified_facts_only', version: 'v36' };
         await sb.from('deals').update({ icp_fit_score: clamp(p.icp_fit.score, 0, 100), icp_fit_breakdown: breakdown }).eq('id', deal_id);
         sum.icp = p.icp_fit.score;
       }
@@ -477,12 +480,12 @@ Deno.serve(async (req: Request) => {
 
     console.log('Research complete:', JSON.stringify(sum));
     await ulog(sb, logId, 'completed', null, t0, usage, sum);
-    return resp({ success: true, version: 'v35', status: 'completed', summary: sum });
+    return resp({ success: true, version: 'v36', status: 'completed', summary: sum });
 
   } catch (err: any) {
-    console.error('FATAL v35:', err.message, err.stack);
-    await ulog(sb, logId, 'failed', `v35: ${err.message}`, t0);
-    return resp({ error: `v35: ${err.message}` }, 500);
+    console.error('FATAL v36:', err.message, err.stack);
+    await ulog(sb, logId, 'failed', `v36: ${err.message}`, t0);
+    return resp({ error: `v36: ${err.message}` }, 500);
   }
 });
 

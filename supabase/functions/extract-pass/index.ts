@@ -82,7 +82,7 @@ const OUTPUT_CONTRACT = `Return ONLY JSON matching:
    "compelling_events": [{"match_existing_id": null, "description": "", "event_date": "YYYY-MM-DD or null", "strength": "strong|medium|weak", "impact": "", "quote": "", "speaker": "", "speaker_side": ""}],
    "business_catalysts": [{"match_existing_id": null, "catalyst": "", "category": "", "urgency": "high|medium|low", "impact": "high|medium|low", "quote": "", "speaker": "", "speaker_side": ""}],
    "decision_criteria": [{"match_existing_id": null, "criterion": "", "importance": "high|medium|low", "quote": "", "speaker": "", "speaker_side": ""}],
-   "company_systems": [{"match_existing_id": null, "system_category": "accounting|billing_invoicing|crm|project_management|inventory|payroll|expenses|fpa|front_end_operational|banks_credit_cards|other", "system_name": "", "is_current": true, "is_needed": false, "integration_purpose": null, "quote": "", "speaker": "", "speaker_side": ""}],
+   "company_systems": [{"match_existing_id": null, "system_category": "accounting|billing_invoicing|crm|project_management|inventory|payroll|expenses|fpa|front_end_operational|banks_credit_cards|other", "system_name": "", "relationship": "current|competitor|prior|evaluating|complementary", "is_current": true, "is_needed": false, "integration_purpose": null, "quote": "", "speaker": "", "speaker_side": ""}],
    "risks_stated": [{"risk_key": "from the risk taxonomy or null", "description": "", "severity": "critical|high|medium|low", "quote": "", "speaker": "", "speaker_side": ""}]
  },
  "metrics": [{"metric_key": "taxonomy key or null", "label": "prospect's own term", "value": 0, "unit": "", "period": "month|year|event|point_in_time", "quote": "", "speaker": "", "speaker_side": ""}],
@@ -96,6 +96,7 @@ HARD RULES (server enforces; violations are dropped):
 - match_existing_id: when a candidate is the SAME real-world thing as an existing row shown to you, return that row's id instead of describing it as new. Borderline -> new row + possible_duplicate_of.
 - Every quantified business statement by a prospect-side speaker belongs in metrics[], even when no catalog field matches.
 - Suspicions / pattern-reasoning (title implies role, industry patterns) go ONLY in hypotheses[].
+- company_systems.relationship classifies how the prospect relates to each system, NOT every tool named on the call: current = they run it today; prior = they used it in the past / migrated off it; competitor = a vendor competing with us (e.g. the incumbent ERP we'd replace, or an alternative they're weighing AGAINST us); evaluating = a complementary tool they're considering alongside us; complementary = an adjacent tool that would integrate. Only relationship=current is their tech stack. Do not mark a system current unless the prospect says they actually use it now.
 - status=partial when an answer is touched but incomplete; never guess values.
 - Gated-off sections (inventory_type=services_only kills inventory fields, no projects kills project fields, uses_allocations=false kills allocation detail) -> status=not_applicable.`;
 
@@ -474,14 +475,16 @@ Deno.serve(async (req: Request) => {
       if (g) { sum.entities.rejected++; rejections.push(`system: ${g}`); continue; }
       const matched = realId(e.match_existing_id, sysRes.data || []) ||
         (sysRes.data || []).find((s: any) => fuzzyName(s.system_name, e.system_name || ""))?.id || null;
+      const REL = ["current", "competitor", "prior", "evaluating", "complementary"];
+      const rel = REL.includes(e.relationship) ? e.relationship : null;
       if (matched) {
-        await enrich("company_systems", matched, "company_system", `${e.system_name} reconfirmed`, e, { confirmed: true, source_type: "transcript" });
+        await enrich("company_systems", matched, "company_system", `${e.system_name} reconfirmed`, e, { confirmed: true, source_type: "transcript", ...(rel ? { relationship: rel } : {}) });
         continue;
       }
       try {
         const { error } = await sb.from("company_systems").insert({
           deal_id: deal.id, system_category: e.system_category || "other", system_name: e.system_name,
-          is_current: e.is_current !== false, is_needed: !!e.is_needed,
+          relationship: rel, is_current: rel ? rel === "current" : (e.is_current !== false), is_needed: !!e.is_needed,
           integration_purpose: e.integration_purpose || null, confidence: "high", confirmed: true,
           source_type: "transcript", source_excerpt: e.quote, speaker: e.speaker,
           source_conversation_id: conversationId, observed_at: observedAt,
