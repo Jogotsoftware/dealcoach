@@ -44,8 +44,11 @@ export default function CoverageRail({ sections, activeSection, onJump, headerRi
               onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent' }}>
               <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                 <span style={{ fontSize: 12, fontWeight: active ? 700 : 500, color: s.gated ? T.textMuted : T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.label}</span>
-                <span style={{ fontSize: 10, color: T.textMuted, fontFeatureSettings: '"tnum"', flexShrink: 0 }}>
-                  {s.gated ? 'N/A' : `${s.answered}/${s.total}`}
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+                  {s.suggCount > 0 && <span title={`${s.suggCount} suggested`} style={{ width: 7, height: 7, borderRadius: 4, background: T.warning }} />}
+                  <span style={{ fontSize: 10, color: T.textMuted, fontFeatureSettings: '"tnum"' }}>
+                    {s.gated ? 'N/A' : `${s.answered}/${s.total}`}
+                  </span>
                 </span>
               </span>
               {!s.gated && (

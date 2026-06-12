@@ -26,7 +26,7 @@ function parsePills(raw) {
   return s.split(/\n|;/).map(x => x.replace(/^[-•]\s*/, '').trim()).filter(Boolean)
 }
 
-export default function FieldRow({ field, definition, dealId, orgId, onSaved, hasSuggestion, onSuggestionClick, editable = true }) {
+export default function FieldRow({ field, definition, dealId, orgId, onSaved, suggestion, editable = true }) {
   const { profile } = useAuth()
   const fieldKey = field?.field_key || definition?.field_key
   const label = field?.label || definition?.field_label || fieldKey
@@ -124,6 +124,26 @@ export default function FieldRow({ field, definition, dealId, orgId, onSaved, ha
   }
   async function toggleNA() { savePatch({ not_applicable: !na }) }
 
+  async function acceptSuggestion() {
+    if (!suggestion) return
+    const sv = suggestion.suggested_value
+    const asPills = parsePills(sv)
+    setSaving(true); setErr(null)
+    try {
+      if (isPills) await persist({ pills: asPills })
+      else await persist({ value: Array.isArray(sv) ? asPills.join(', ') : String(sv) })
+      await supabase.from('field_suggestions').update({ status: 'accepted', resolved_at: new Date().toISOString() }).eq('id', suggestion.id)
+      onSaved?.()
+    } catch (e) { console.error('[FieldRow] acceptSuggestion', e); setErr(e?.message || 'Failed') }
+    finally { setSaving(false) }
+  }
+  async function dismissSuggestion() {
+    if (!suggestion) return
+    try { await supabase.from('field_suggestions').update({ status: 'dismissed', resolved_at: new Date().toISOString() }).eq('id', suggestion.id); onSaved?.() }
+    catch (e) { console.error('[FieldRow] dismissSuggestion', e) }
+  }
+  const suggDisplay = suggestion ? (Array.isArray(suggestion.suggested_value) ? suggestion.suggested_value.join(', ') : String(suggestion.suggested_value ?? '')) : ''
+
   const highlight = pills.length > 0 && !verified && !na
   return (
     <div style={{
@@ -136,7 +156,6 @@ export default function FieldRow({ field, definition, dealId, orgId, onSaved, ha
         {prov && <ProvenanceChip dealId={dealId} provenance={prov} historyKey={{ entityId: dealId, fieldKey }} />}
         {pills.length > 0 && !verified && !na && <span style={{ fontSize: 9, fontWeight: 700, color: T.warning, textTransform: 'uppercase' }}>unconfirmed</span>}
         {flash && <span style={{ fontSize: 10, color: T.success, fontWeight: 700 }}>Saved</span>}
-        {hasSuggestion && <button onClick={onSuggestionClick} title="Suggested update" style={{ width: 8, height: 8, padding: 0, borderRadius: 4, border: 'none', background: T.warning, cursor: 'pointer' }} />}
         {editable && (
           <button onClick={toggleNA} disabled={saving} title="Mark not applicable"
             style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 5, cursor: 'pointer', fontFamily: T.font,
@@ -181,6 +200,14 @@ export default function FieldRow({ field, definition, dealId, orgId, onSaved, ha
             onBlur={addPill}
             placeholder={pills.length ? 'Add another…' : 'Type an answer and press Enter'}
             style={{ flex: 1, minWidth: 140, border: 'none', outline: 'none', fontSize: 13, fontFamily: T.font, background: 'transparent', color: T.text }} />
+        </div>
+      )}
+      {suggestion && !na && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, padding: '6px 10px', borderRadius: 6, background: T.warning + '12', border: `1px solid ${T.warning}40` }}>
+          <span style={{ fontSize: 9, fontWeight: 800, color: T.warning, textTransform: 'uppercase', letterSpacing: '0.03em', flexShrink: 0 }}>Suggested</span>
+          <span style={{ flex: 1, fontSize: 12, color: T.text }}>{suggDisplay}</span>
+          <button onClick={acceptSuggestion} disabled={saving} style={{ fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 5, border: 'none', background: T.primary, color: '#fff', cursor: 'pointer', fontFamily: T.font }}>Accept</button>
+          <button onClick={dismissSuggestion} disabled={saving} style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 5, border: `1px solid ${T.border}`, background: T.surface, color: T.textSecondary, cursor: 'pointer', fontFamily: T.font }}>Dismiss</button>
         </div>
       )}
       {err && <div style={{ fontSize: 10, color: T.error, marginTop: 2 }}>{err}</div>}

@@ -4,7 +4,6 @@ import { theme as T } from '../../lib/theme'
 import { Spinner, Card, Button } from '../Shared'
 import CoverageRail from '../CoverageRail'
 import FieldRow from '../FieldRow'
-import SuggestionsTray from '../SuggestionsTray'
 
 // SC Discovery Notes — the catalog workspace: CoverageRail (display_section
 // groups) + readiness gate banner with named blockers + one section of
@@ -21,7 +20,7 @@ export default function SCDiscoveryNotes({ deal, readiness, onReadinessChange })
   const [flat, setFlat] = useState(new Map())
   const [blockers, setBlockers] = useState([])
   const [drivers, setDrivers] = useState(null)
-  const [suggestions, setSuggestions] = useState(new Set())
+  const [suggestions, setSuggestions] = useState(new Map())
   const [active, setActive] = useState(null)
 
   useEffect(() => { load() }, [deal?.id])
@@ -36,7 +35,7 @@ export default function SCDiscoveryNotes({ deal, readiness, onReadinessChange })
         supabase.from('deal_field_values_flat').select('*').eq('deal_id', deal.id),
         supabase.from('deal_risks').select('risk_key, risk_description, severity, status').eq('deal_id', deal.id).eq('status', 'open'),
         supabase.from('deal_analysis').select('driving_factors').eq('deal_id', deal.id).maybeSingle(),
-        supabase.from('field_suggestions').select('field_key').eq('deal_id', deal.id).eq('suggestion_kind', 'value_update').eq('status', 'open'),
+        supabase.from('field_suggestions').select('id, field_key, suggested_value, current_value, provenance').eq('deal_id', deal.id).eq('suggestion_kind', 'value_update').eq('status', 'open'),
       ])
       // Org definitions override template rows on the same field_key.
       const byKey = new Map()
@@ -47,7 +46,7 @@ export default function SCDiscoveryNotes({ deal, readiness, onReadinessChange })
       setDefs(Array.from(byKey.values()))
       setFlat(new Map((flatRes.data || []).map(r => [r.field_key, r])))
       setDrivers(daRes.data?.driving_factors || null)
-      setSuggestions(new Set((sugRes.data || []).map(s => s.field_key)))
+      setSuggestions(new Map((sugRes.data || []).map(s => [s.field_key, s])))
 
       // Named blockers: open risks resolved to plain names from the taxonomy.
       const risks = riskRes.data || []
@@ -76,9 +75,10 @@ export default function SCDiscoveryNotes({ deal, readiness, onReadinessChange })
         const v = flat.get(d.field_key)?.value_text
         return v !== null && v !== undefined && String(v).trim() !== ''
       }).length
-      return { key, label: key, total: list.length, answered, gated: false, defs: list }
+      const suggCount = list.filter(d => suggestions.has(d.field_key)).length
+      return { key, label: key, total: list.length, answered, gated: false, defs: list, suggCount }
     })
-  }, [defs, flat])
+  }, [defs, flat, suggestions])
 
   useEffect(() => {
     if (!active && sections.length) {
@@ -95,7 +95,6 @@ export default function SCDiscoveryNotes({ deal, readiness, onReadinessChange })
     <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start' }}>
       <CoverageRail sections={sections} activeSection={active} onJump={setActive} />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <SuggestionsTray dealId={deal.id} onChanged={() => { load(); onReadinessChange?.() }} />
 
         {/* Business Drivers */}
         {drivers && drivers.toLowerCase() !== 'unknown' && (
@@ -117,7 +116,7 @@ export default function SCDiscoveryNotes({ deal, readiness, onReadinessChange })
                 <FieldRow key={def.field_key}
                   field={flat.get(def.field_key) || { field_key: def.field_key, label: def.field_label }}
                   definition={def} dealId={deal.id} orgId={deal.org_id}
-                  hasSuggestion={suggestions.has(def.field_key)}
+                  suggestion={suggestions.get(def.field_key)}
                   onSaved={() => { load(); onReadinessChange?.() }} />
               ))}
             </div>
