@@ -5,15 +5,25 @@ import { theme as T } from '../lib/theme'
 import { inputStyle } from './Shared'
 import ProvenanceChip from './ProvenanceChip'
 
-// One discovery field: label, an always-visible input you can just type into
-// (multi-line for text so bullet answers work), a provenance chip, and an N/A
-// toggle. Editing writes a manual value and locks it (the permanent tier),
-// logging to custom_field_value_history, routed to the field's canonical home
-// via storage_target. No instructional help text — the question is the label.
+// One discovery field: label, an answer input, a provenance chip, and an N/A
+// toggle. Text answers are a pill input — type, press Enter, it becomes a
+// removable pill (one bullet per pill). Numbers/booleans use a plain input.
+// Editing writes a manual, locked value (the permanent tier), logged to
+// history and routed to the field's canonical home via storage_target. No
+// instructional help text.
 const SIZING_COL = {
   entity_count: 'entity_count', total_users: 'full_users',
   reporting_readonly_users: 'view_only_users', bills_per_period: 'ap_invoices_monthly',
   fixed_asset_count: 'fixed_assets', warehouse_count: 'warehouse_count',
+}
+
+function parsePills(raw) {
+  if (raw === null || raw === undefined) return []
+  if (Array.isArray(raw)) return raw.map(String)
+  const s = String(raw).trim()
+  if (!s) return []
+  if (s.startsWith('[')) { try { const a = JSON.parse(s); if (Array.isArray(a)) return a.map(String) } catch (_) { /* fall through */ } }
+  return s.split(/\n|;/).map(x => x.replace(/^[-•]\s*/, '').trim()).filter(Boolean)
 }
 
 export default function FieldRow({ field, definition, dealId, orgId, onSaved, hasSuggestion, onSuggestionClick, editable = true }) {
@@ -25,16 +35,19 @@ export default function FieldRow({ field, definition, dealId, orgId, onSaved, ha
   const has = value !== null && value !== undefined && String(value).trim() !== ''
   const na = !!field?.not_applicable
   const verified = !!field?.verified
+  const isPills = ftype !== 'number' && ftype !== 'boolean'
   const prov = field?.source && !na ? {
     source: field.source, quote: field.extraction_quote, speaker: field.extraction_speaker,
     conversation_id: field.source_conversation_id, observed_at: field.observed_at,
   } : null
 
-  const [draft, setDraft] = useState(has ? String(value) : '')
+  const [pills, setPills] = useState(() => parsePills(value))
+  const [input, setInput] = useState('')
+  const [draft, setDraft] = useState(has ? String(value) : '')   // number/boolean
   const [saving, setSaving] = useState(false)
   const [flash, setFlash] = useState(false)
   const [err, setErr] = useState(null)
-  useEffect(() => { setDraft(has ? String(value) : '') }, [value, has])
+  useEffect(() => { setPills(parsePills(value)); setDraft(has ? String(value) : '') }, [value, has])
 
   async function persist(patch) {
     const target = definition?.storage_target
@@ -62,8 +75,8 @@ export default function FieldRow({ field, definition, dealId, orgId, onSaved, ha
       ? { value_text: null, value_number: null, value_boolean: null, value_json: null, not_applicable: true }
       : ftype === 'number' ? { value_number: Number(patch.value), value_text: null, not_applicable: false }
         : ftype === 'boolean' ? { value_boolean: patch.value === 'true' || patch.value === 'Yes' || patch.value === 'yes', value_text: null, not_applicable: false }
-          : ftype === 'multiselect' ? { value_json: String(patch.value).split('\n').map(s => s.replace(/^[-•]\s*/, '').trim()).filter(Boolean), value_text: null, not_applicable: false }
-            : { value_text: patch.value, not_applicable: false }
+          : ftype === 'multiselect' ? { value_json: patch.pills || [], value_text: null, not_applicable: false }
+            : { value_text: (patch.pills || []).join('\n'), value_json: null, not_applicable: false }
     if (existing) {
       const { error } = await supabase.from('custom_field_values').update({
         ...cols, source: 'manual', is_manual_locked: true, changed_by: profile?.id, observed_at: now,
@@ -74,7 +87,7 @@ export default function FieldRow({ field, definition, dealId, orgId, onSaved, ha
         await supabase.from('custom_field_value_history').insert({
           field_value_id: existing.id, org_id: orgId, entity_type: 'deal', entity_id: dealId, field_key: fieldKey,
           old_value_json: { value: existing.value_number ?? existing.value_boolean ?? existing.value_json ?? existing.value_text, source: existing.source },
-          new_value_json: patch.not_applicable ? { value: 'N/A', source: 'manual' } : { value: patch.value, source: 'manual' },
+          new_value_json: patch.not_applicable ? { value: 'N/A' } : { value: patch.pills || patch.value },
           changed_by: profile?.id, change_source: 'manual', change_reason: patch.not_applicable ? 'Marked N/A' : 'Manual edit',
         })
       } catch (e) { console.error('history', e) }
@@ -87,24 +100,31 @@ export default function FieldRow({ field, definition, dealId, orgId, onSaved, ha
     }
   }
 
-  async function save() {
-    const raw = draft.trim()
-    if (na) return
-    if (raw === String(value ?? '').trim()) return
+  async function savePatch(patch) {
     setSaving(true); setErr(null)
-    try { await persist({ value: raw }); setFlash(true); setTimeout(() => setFlash(false), 1200); onSaved?.() }
+    try { await persist(patch); setFlash(true); setTimeout(() => setFlash(false), 1000); onSaved?.() }
     catch (e) { console.error('[FieldRow] save', e); setErr(e?.message || 'Save failed') }
     finally { setSaving(false) }
   }
 
-  async function toggleNA() {
-    setSaving(true); setErr(null)
-    try { await persist({ not_applicable: !na }); onSaved?.() }
-    catch (e) { console.error('[FieldRow] toggleNA', e); setErr(e?.message || 'Save failed') }
-    finally { setSaving(false) }
+  function commitPills(next) { setPills(next); savePatch({ pills: next }) }
+  function addPill() {
+    const v = input.trim()
+    if (!v) return
+    const next = [...pills, v]
+    setInput('')
+    commitPills(next)
   }
+  function removePill(i) { commitPills(pills.filter((_, idx) => idx !== i)) }
 
-  const highlight = has && !verified && !na
+  async function saveScalar() {
+    const raw = draft.trim()
+    if (raw === String(value ?? '').trim()) return
+    savePatch({ value: raw })
+  }
+  async function toggleNA() { savePatch({ not_applicable: !na }) }
+
+  const highlight = pills.length > 0 && !verified && !na
   return (
     <div style={{
       padding: '10px 14px', borderBottom: `1px solid ${T.borderLight}`,
@@ -114,7 +134,7 @@ export default function FieldRow({ field, definition, dealId, orgId, onSaved, ha
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
         <span style={{ fontSize: 13, fontWeight: 600, color: na ? T.textMuted : T.text, flex: 1 }}>{label}</span>
         {prov && <ProvenanceChip dealId={dealId} provenance={prov} historyKey={{ entityId: dealId, fieldKey }} />}
-        {has && !verified && !na && <span style={{ fontSize: 9, fontWeight: 700, color: T.warning, textTransform: 'uppercase' }}>unconfirmed</span>}
+        {pills.length > 0 && !verified && !na && <span style={{ fontSize: 9, fontWeight: 700, color: T.warning, textTransform: 'uppercase' }}>unconfirmed</span>}
         {flash && <span style={{ fontSize: 10, color: T.success, fontWeight: 700 }}>Saved</span>}
         {hasSuggestion && <button onClick={onSuggestionClick} title="Suggested update" style={{ width: 8, height: 8, padding: 0, borderRadius: 4, border: 'none', background: T.warning, cursor: 'pointer' }} />}
         {editable && (
@@ -125,26 +145,54 @@ export default function FieldRow({ field, definition, dealId, orgId, onSaved, ha
           </button>
         )}
       </div>
+
       {na ? (
         <div style={{ fontSize: 12, color: T.textMuted, fontStyle: 'italic' }}>Not applicable for this deal</div>
       ) : !editable ? (
-        <div style={{ fontSize: 13, color: has ? T.text : T.textMuted, fontStyle: has ? 'normal' : 'italic', whiteSpace: 'pre-wrap' }}>{has ? String(value) : 'Unknown'}</div>
+        pills.length ? (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {pills.map((p, i) => <span key={i} style={readPill}>{p}</span>)}
+          </div>
+        ) : <div style={{ fontSize: 13, color: T.textMuted, fontStyle: 'italic' }}>Unknown</div>
       ) : ftype === 'boolean' ? (
-        <select value={draft} onChange={e => { setDraft(e.target.value); }} onBlur={save}
+        <select value={draft} onChange={e => setDraft(e.target.value)} onBlur={saveScalar}
           style={{ ...inputStyle, padding: '6px 8px', fontSize: 13, width: 160, background: T.surface }}>
           <option value="">Unknown</option><option value="true">Yes</option><option value="false">No</option>
         </select>
       ) : ftype === 'number' ? (
-        <input type="number" value={draft} onChange={e => setDraft(e.target.value)} onBlur={save}
+        <input type="number" value={draft} onChange={e => setDraft(e.target.value)} onBlur={saveScalar}
           onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur() }}
           placeholder="—" style={{ ...inputStyle, padding: '6px 8px', fontSize: 13, width: 200, background: T.surface }} />
       ) : (
-        <textarea value={draft} onChange={e => setDraft(e.target.value)} onBlur={save}
-          rows={Math.min(6, Math.max(1, draft.split('\n').length))}
-          placeholder="Type an answer — one bullet per line"
-          style={{ ...inputStyle, padding: '6px 8px', fontSize: 13, width: '100%', minHeight: 32, resize: 'vertical', lineHeight: 1.5, background: T.surface, fontFamily: T.font }} />
+        // Pill input — Enter turns the text into a pill.
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, padding: '6px 8px', minHeight: 36, border: `1px solid ${T.border}`, borderRadius: 6, background: T.surface }}
+          onClick={e => e.currentTarget.querySelector('input')?.focus()}>
+          {pills.map((p, i) => (
+            <span key={i} style={editPill}>
+              {p}
+              <button onClick={() => removePill(i)} title="Remove" style={{ background: 'none', border: 'none', color: T.primary, cursor: 'pointer', fontSize: 13, lineHeight: 1, padding: 0, marginLeft: 2 }}>×</button>
+            </span>
+          ))}
+          <input value={input} onChange={e => setInput(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') { e.preventDefault(); addPill() }
+              else if (e.key === 'Backspace' && !input && pills.length) removePill(pills.length - 1)
+            }}
+            onBlur={addPill}
+            placeholder={pills.length ? 'Add another…' : 'Type an answer and press Enter'}
+            style={{ flex: 1, minWidth: 140, border: 'none', outline: 'none', fontSize: 13, fontFamily: T.font, background: 'transparent', color: T.text }} />
+        </div>
       )}
       {err && <div style={{ fontSize: 10, color: T.error, marginTop: 2 }}>{err}</div>}
     </div>
   )
+}
+
+const editPill = {
+  display: 'inline-flex', alignItems: 'center', gap: 2, padding: '2px 4px 2px 9px', borderRadius: 14,
+  background: T.primaryLight, border: `1px solid ${T.primaryBorder}`, color: T.text, fontSize: 12,
+}
+const readPill = {
+  display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 14,
+  background: T.surfaceAlt, border: `1px solid ${T.borderLight}`, color: T.text, fontSize: 12,
 }
