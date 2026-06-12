@@ -2,6 +2,7 @@ import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { theme as T } from '../lib/theme'
 import NotificationBell from './NotificationBell'
+import ScChatLauncher from './sc/ScChatLauncher'
 
 // Dedicated SC portal shell — its own login world, not the AE module sidebar.
 // Minimal: brand, Home, Demo schedule, the bell, and the SC's identity.
@@ -52,6 +53,9 @@ export default function SCLayout() {
       <main style={{ flex: 1, width: '100%', maxWidth: 1180, margin: '0 auto', padding: 24 }}>
         <Outlet />
       </main>
+      {/* Floating bottom-corner chat — deal-aware, with suggested questions,
+          prompt templates, and beta feedback. */}
+      <ScChatLauncher />
     </div>
   )
 }

@@ -12,9 +12,11 @@ import { callExtractFromDocument } from '../lib/webhooks'
 const TEXT_RE = /\.(txt|md|markdown|csv|json|html?)$/i
 const isText = (f) => /^text\//.test(f.type || '') || TEXT_RE.test(f.name || '')
 
-export default function DocumentsPanel({ deal, title = 'Documents' }) {
+export default function DocumentsPanel({ deal, title = 'Documents', showTranscripts = false }) {
   const { profile } = useAuth()
   const [docs, setDocs] = useState(null)
+  const [transcripts, setTranscripts] = useState([])
+  const [viewing, setViewing] = useState(null)
   const [uploading, setUploading] = useState(false)
   const [msg, setMsg] = useState(null)
   const [pasteOpen, setPasteOpen] = useState(false)
@@ -33,8 +35,17 @@ export default function DocumentsPanel({ deal, title = 'Documents' }) {
         return { ...d, signedUrl: s?.signedUrl || null }
       }))
       setDocs(withUrls)
+      // SC view: call transcripts load in automatically as read-only documents.
+      if (showTranscripts) {
+        const { data: convs } = await supabase.from('conversations')
+          .select('id, title, call_type, call_date, transcript')
+          .eq('deal_id', deal.id).order('call_date', { ascending: false })
+        setTranscripts((convs || []).filter(c => (c.transcript || '').trim()))
+      }
     } catch (e) { console.error('[DocumentsPanel] load', e); setDocs([]) }
   }
+
+  const callLabel = (c) => `${(c.call_type || 'call').replace(/_/g, ' ')}${c.call_date ? ' — ' + new Date(c.call_date).toLocaleDateString() : ''}`
 
   async function upload(file) {
     if (!file) return
@@ -100,7 +111,7 @@ export default function DocumentsPanel({ deal, title = 'Documents' }) {
         </div>
       )}
       {msg && <div style={{ fontSize: 12, color: T.textSecondary, marginBottom: 10 }}>{msg}</div>}
-      {docs.length === 0 ? (
+      {docs.length === 0 && !(showTranscripts && transcripts.length > 0) ? (
         <EmptyState compact icon="▦" title="No documents yet" message="Upload contracts, notes, or a company snapshot. The SC sees everything you add here." />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -118,6 +129,37 @@ export default function DocumentsPanel({ deal, title = 'Documents' }) {
               <button onClick={() => remove(d)} title="Delete" style={{ background: 'none', border: 'none', color: T.textMuted, cursor: 'pointer', fontSize: 15 }}>×</button>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Call transcripts — auto-loaded, read-only. */}
+      {showTranscripts && transcripts.length > 0 && (
+        <div style={{ marginTop: docs.length ? 18 : 4 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.textSecondary, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 8 }}>Call transcripts ({transcripts.length})</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {transcripts.map(c => (
+              <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', border: `1px solid ${T.borderLight}`, borderRadius: 8 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: T.text, textTransform: 'capitalize' }}>{callLabel(c)}</div>
+                  <div style={{ fontSize: 10, color: T.textMuted }}>{Math.round((c.transcript || '').length / 1024)} KB · transcript</div>
+                </div>
+                <button onClick={() => setViewing(c)} style={{ fontSize: 11, color: T.primary, background: 'none', border: 'none', cursor: 'pointer', fontFamily: T.font, fontWeight: 600 }}>View</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {viewing && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <div onClick={() => setViewing(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)' }} />
+          <div style={{ position: 'relative', zIndex: 1, background: T.surface, borderRadius: 12, width: 760, maxWidth: '94vw', maxHeight: '88vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.2)', border: `1px solid ${T.border}` }}>
+            <div style={{ display: 'flex', alignItems: 'center', padding: '14px 18px', borderBottom: `1px solid ${T.borderLight}` }}>
+              <span style={{ flex: 1, fontSize: 14, fontWeight: 700, color: T.text, textTransform: 'capitalize' }}>{callLabel(viewing)}</span>
+              <button onClick={() => setViewing(null)} style={{ background: 'none', border: 'none', fontSize: 20, color: T.textMuted, cursor: 'pointer' }}>×</button>
+            </div>
+            <div style={{ padding: 18, overflowY: 'auto', whiteSpace: 'pre-wrap', fontSize: 13, lineHeight: 1.6, color: T.text, fontFamily: T.font }}>{viewing.transcript}</div>
+          </div>
         </div>
       )}
     </Card>
