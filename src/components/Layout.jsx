@@ -194,6 +194,13 @@ export default function Layout() {
       { to: '/bdr/submit',   iconKey: 'bdr_submit', label: 'Submit a Lead', show: true },
       { to: '/bdr/my-leads', iconKey: 'bdr_leads',  label: 'BDR Leads',     show: true },
     ]},
+    // Solution Consulting portal — discoverable for AE managers/admins +
+    // platform admins, mirroring how XDR is previewable by ops roles. The link
+    // jumps into the SC portal's own shell (SCLayout). SCs themselves land
+    // there on login and never see this AE sidebar.
+    { label: 'Solution Consulting', show: isAEOpsManager && !isSageDemo, items: [
+      { to: '/sc', icon: '◈', label: 'SC Portal', show: true },
+    ]},
     { label: 'Super Admin', show: isPlatformAdmin, items: [
       { to: '/admin', icon: '\u2691', label: 'Organizations', show: true },
       { to: '/admin/invitations', icon: '\u2709', label: 'Invitations', show: true },

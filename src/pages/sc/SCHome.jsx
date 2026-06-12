@@ -29,11 +29,11 @@ export default function SCHome() {
   async function load() {
     setLoading(true)
     try {
-      // Super-admins see every assigned deal (RLS-scoped to their accessible
-      // orgs); an SC sees only deals assigned to them.
-      const { data: pa } = await supabase.from('platform_admins').select('user_id').eq('user_id', profile.id).maybeSingle()
+      // An SC sees only deals assigned to them. Everyone else who can reach
+      // the portal (ops/admins/super-admins previewing) sees every assigned
+      // deal, RLS-scoped to their accessible orgs.
       let q = supabase.from('deals').select('id, company_name, stage, rep_id, target_close_date')
-      q = pa ? q.not('sc_user_id', 'is', null) : q.eq('sc_user_id', profile.id)
+      q = profile.role === 'sc' ? q.eq('sc_user_id', profile.id) : q.not('sc_user_id', 'is', null)
       const { data: deals } = await q
       const list = deals || []
       const ids = list.map(d => d.id)
