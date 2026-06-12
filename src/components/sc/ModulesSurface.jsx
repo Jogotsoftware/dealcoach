@@ -1,90 +1,142 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { theme as T } from '../../lib/theme'
-import { Spinner, Card } from '../Shared'
+import { Spinner, Card, inputStyle } from '../Shared'
 import { notify } from '../../lib/notifications'
 
-// Modules — every module_reference entry with Recommended / Demoed toggles.
-// AI suggestions (suggested_by_ai) render as pending-confirmation with the
-// reason. Mapped SKUs are read-only. Toggling notifies the AE
+// Modules to demo — dead-simple: type a module, pick from the pricebook
+// (name + SKU, no pricing), it's added to the deal's demo list. AI-suggested
+// modules show as one-click chips. Changes notify the AE
 // (sc_selected_demo_modules).
 export default function ModulesSurface({ deal }) {
   const { profile } = useAuth()
   const [loading, setLoading] = useState(true)
-  const [refs, setRefs] = useState([])
-  const [byKey, setByKey] = useState({})
-  const [saving, setSaving] = useState(null)
+  const [rows, setRows] = useState([])          // deal_modules rows
+  const [refByKey, setRefByKey] = useState({})  // module_reference name lookup
+  const [suggestions, setSuggestions] = useState([]) // AI-suggested, not yet demoed
+  const [q, setQ] = useState('')
+  const [matches, setMatches] = useState([])
+  const [searching, setSearching] = useState(false)
+  const [busy, setBusy] = useState(null)
+  const seq = useRef(0)
 
   useEffect(() => { load() }, [deal?.id])
 
   async function load() {
     setLoading(true)
     try {
-      const [ref, dm] = await Promise.all([
-        supabase.from('module_reference').select('module_key, name, description, maps_to_skus, sort_order').eq('active', true).order('sort_order'),
+      const [dm, ref] = await Promise.all([
         supabase.from('deal_modules').select('*').eq('deal_id', deal.id),
+        supabase.from('module_reference').select('module_key, name, maps_to_skus').eq('active', true),
       ])
-      setRefs(ref.data || [])
-      setByKey(Object.fromEntries((dm.data || []).map(m => [m.module_key, m])))
+      setRows(dm.data || [])
+      setRefByKey(Object.fromEntries((ref.data || []).map(m => [m.module_key, m])))
+      const demoedKeys = new Set((dm.data || []).filter(m => m.is_demoed).map(m => m.module_key))
+      setSuggestions((dm.data || []).filter(m => m.suggested_by_ai && !m.is_demoed && !demoedKeys.has(m.module_key)))
     } catch (e) { console.error('[ModulesSurface] load', e) } finally { setLoading(false) }
   }
 
-  async function toggle(ref, patch) {
-    setSaving(ref.module_key)
+  // Debounced pricebook search (name or SKU, no pricing surfaced).
+  useEffect(() => {
+    if (!q || q.trim().length < 2) { setMatches([]); return }
+    const mySeq = ++seq.current
+    setSearching(true)
+    const t = setTimeout(async () => {
+      const { data } = await supabase.from('products').select('sku, name').eq('active', true)
+        .or(`name.ilike.%${q}%,sku.ilike.%${q}%`).order('name').limit(8)
+      if (mySeq === seq.current) { setMatches(data || []); setSearching(false) }
+    }, 250)
+    return () => clearTimeout(t)
+  }, [q])
+
+  const demoModules = rows.filter(m => m.is_demoed)
+  const nameFor = (m) => m.notes?.replace(/^Shows: /, '') || refByKey[m.module_key]?.name || m.module_key
+
+  async function addModule(sku, name) {
+    setBusy(sku)
     try {
-      const existing = byKey[ref.module_key]
+      const existing = rows.find(m => m.module_key === sku)
       if (existing) {
-        await supabase.from('deal_modules').update(patch).eq('id', existing.id)
+        await supabase.from('deal_modules').update({ is_demoed: true }).eq('id', existing.id)
       } else {
-        await supabase.from('deal_modules').insert({ org_id: deal.org_id, deal_id: deal.id, module_key: ref.module_key, created_by: profile?.id, ...patch })
+        await supabase.from('deal_modules').insert({ org_id: deal.org_id, deal_id: deal.id, module_key: sku, is_demoed: true, notes: name, created_by: profile?.id })
       }
       await notify({ recipientId: deal.rep_id, actorId: profile?.id, dealId: deal.id, orgId: deal.org_id,
-        kind: 'sc_selected_demo_modules', payload: { actor_name: profile?.full_name, deal_company: deal.company_name, module: ref.name } })
+        kind: 'sc_selected_demo_modules', payload: { actor_name: profile?.full_name, deal_company: deal.company_name, module: name } })
+      setQ(''); setMatches([])
       await load()
-    } catch (e) { console.error('[ModulesSurface] toggle', e) } finally { setSaving(null) }
+    } catch (e) { console.error('[ModulesSurface] add', e) } finally { setBusy(null) }
+  }
+
+  async function removeModule(m) {
+    setBusy(m.module_key)
+    try {
+      // Keep AI-suggested rows (just un-demo them); delete user-added ones.
+      if (m.suggested_by_ai || m.is_recommended) await supabase.from('deal_modules').update({ is_demoed: false }).eq('id', m.id)
+      else await supabase.from('deal_modules').delete().eq('id', m.id)
+      await load()
+    } catch (e) { console.error('[ModulesSurface] remove', e) } finally { setBusy(null) }
   }
 
   if (loading) return <Spinner />
 
   return (
-    <Card title="Modules">
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 8 }}>
-        {refs.map(ref => {
-          const m = byKey[ref.module_key]
-          const aiPending = m?.suggested_by_ai && !m?.is_recommended
-          return (
-            <div key={ref.module_key} style={{ padding: '10px 12px', border: `1px solid ${m?.is_recommended ? T.primaryBorder : T.borderLight}`, borderRadius: 8, background: m?.is_recommended ? T.primaryLight : T.surface }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{ref.name}</div>
-                  {ref.description && <div style={{ fontSize: 11, color: T.textMuted, marginTop: 1, lineHeight: 1.4 }}>{ref.description}</div>}
-                  {aiPending && (
-                    <div style={{ fontSize: 10, color: T.warning, marginTop: 4, fontWeight: 600 }}>
-                      AI suggested{m?.recommended_reason ? ` — ${m.recommended_reason}` : ''} · confirm
-                    </div>
-                  )}
-                  {Array.isArray(ref.maps_to_skus) && ref.maps_to_skus.length > 0 && (
-                    <div style={{ fontSize: 9, color: T.textMuted, marginTop: 4, fontFamily: T.mono }}>{ref.maps_to_skus.slice(0, 4).join(', ')}{ref.maps_to_skus.length > 4 ? ` +${ref.maps_to_skus.length - 4}` : ''}</div>
-                  )}
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: T.textSecondary, cursor: saving === ref.module_key ? 'wait' : 'pointer' }}>
-                  <input type="checkbox" checked={!!m?.is_recommended} disabled={saving === ref.module_key}
-                    onChange={e => toggle(ref, { is_recommended: e.target.checked, suggested_by_ai: m?.suggested_by_ai || false })} />
-                  Recommended
-                </label>
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: T.textSecondary, cursor: saving === ref.module_key ? 'wait' : 'pointer' }}>
-                  <input type="checkbox" checked={!!m?.is_demoed} disabled={saving === ref.module_key}
-                    onChange={e => toggle(ref, { is_demoed: e.target.checked })} />
-                  Demoed
-                </label>
-              </div>
-            </div>
-          )
-        })}
+    <Card title="Modules to demo">
+      {/* Typeahead over the pricebook */}
+      <div style={{ position: 'relative', marginBottom: 14 }}>
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Type a module name or SKU to add…"
+          style={{ ...inputStyle }} />
+        {(matches.length > 0 || searching) && (
+          <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 20, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, marginTop: 4, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', maxHeight: 280, overflowY: 'auto' }}>
+            {searching && matches.length === 0 ? (
+              <div style={{ padding: 10, fontSize: 12, color: T.textMuted }}>Searching…</div>
+            ) : matches.map(p => (
+              <button key={p.sku} disabled={busy === p.sku} onClick={() => addModule(p.sku, p.name)}
+                style={{ display: 'flex', width: '100%', textAlign: 'left', alignItems: 'center', gap: 8, padding: '8px 12px', border: 'none', borderBottom: `1px solid ${T.borderLight}`, background: 'transparent', cursor: 'pointer', fontFamily: T.font }}
+                onMouseEnter={e => e.currentTarget.style.background = T.surfaceAlt}
+                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                <span style={{ flex: 1, fontSize: 13, color: T.text }}>{p.name}</span>
+                <span style={{ fontSize: 10, color: T.textMuted, fontFamily: T.mono }}>{p.sku}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
+
+      {/* AI suggestions — one-click add */}
+      {suggestions.length > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.textSecondary, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Suggested</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {suggestions.map(m => (
+              <button key={m.module_key} disabled={busy === m.module_key}
+                onClick={() => addModule(m.module_key, refByKey[m.module_key]?.name || m.module_key)}
+                title={m.recommended_reason || ''}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 16, border: `1px dashed ${T.warning}`, background: T.warning + '12', color: T.text, fontSize: 12, fontFamily: T.font, cursor: 'pointer' }}>
+                + {refByKey[m.module_key]?.name || m.module_key}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* The demo list */}
+      {demoModules.length === 0 ? (
+        <div style={{ fontSize: 13, color: T.textMuted, fontStyle: 'italic' }}>No modules selected to demo yet. Type above to add.</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {demoModules.map(m => (
+            <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', border: `1px solid ${T.borderLight}`, borderRadius: 8, background: T.surfaceAlt }}>
+              <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: T.text }}>{nameFor(m)}</span>
+              {!refByKey[m.module_key] && <span style={{ fontSize: 10, color: T.textMuted, fontFamily: T.mono }}>{m.module_key}</span>}
+              {m.suggested_by_ai && <span style={{ fontSize: 9, fontWeight: 700, color: T.warning }}>AI</span>}
+              <button disabled={busy === m.module_key} onClick={() => removeModule(m)} title="Remove"
+                style={{ background: 'none', border: 'none', color: T.textMuted, cursor: 'pointer', fontSize: 16, lineHeight: 1 }}>×</button>
+            </div>
+          ))}
+        </div>
+      )}
     </Card>
   )
 }

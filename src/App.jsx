@@ -56,7 +56,6 @@ import DiscoveryPage from './pages/DiscoveryPage'
 import RequireSC from './components/guards/RequireSC'
 import SCLayout from './components/SCLayout'
 import SCHome from './pages/sc/SCHome'
-import SCSchedule from './pages/sc/SCSchedule'
 import SCDealWorkspace from './pages/sc/SCDealWorkspace'
 import { theme as T } from './lib/theme'
 
@@ -116,7 +115,6 @@ export default function App() {
             <Route element={<ProtectedRoute><RequireSC /></ProtectedRoute>}>
               <Route element={<SCLayout />}>
                 <Route path="/sc" element={<ErrorBoundary label="your deals"><SCHome /></ErrorBoundary>} />
-                <Route path="/sc/schedule" element={<ErrorBoundary label="demo schedule"><SCSchedule /></ErrorBoundary>} />
                 <Route path="/sc/deals/:dealId" element={<ErrorBoundary label="this deal"><SCDealWorkspace /></ErrorBoundary>} />
               </Route>
             </Route>

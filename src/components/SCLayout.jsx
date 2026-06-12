@@ -7,7 +7,6 @@ import NotificationBell from './NotificationBell'
 // Minimal: brand, Home, Demo schedule, the bell, and the SC's identity.
 const NAV = [
   { to: '/sc', label: 'Home', exact: true },
-  { to: '/sc/schedule', label: 'Demo schedule' },
 ]
 
 export default function SCLayout() {

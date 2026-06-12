@@ -39,30 +39,21 @@ export default function SCHome() {
       const ids = list.map(d => d.id)
       if (ids.length === 0) { setCards([]); setLoading(false); return }
 
-      const [readyRes, repRes, demoRes, unreadRes] = await Promise.all([
+      const [readyRes, repRes, unreadRes] = await Promise.all([
         supabase.from('deal_readiness').select('deal_id, coverage_pct, readiness_grade, open_blocker_count').in('deal_id', ids),
         supabase.from('profiles').select('id, full_name').in('id', list.map(d => d.rep_id).filter(Boolean)),
-        supabase.from('msp_stages').select('deal_id, stage_name, call_type, start_date, due_date')
-          .in('deal_id', ids).or('call_type.eq.demo,stage_name.ilike.%demo%'),
         supabase.from('internal_notifications').select('deal_id').eq('recipient_user_id', profile.id).is('read_at', null).in('deal_id', ids),
       ])
       const ready = Object.fromEntries((readyRes.data || []).map(r => [r.deal_id, r]))
       const reps = Object.fromEntries((repRes.data || []).map(r => [r.id, r.full_name]))
       const unread = {}
       ;(unreadRes.data || []).forEach(r => { unread[r.deal_id] = (unread[r.deal_id] || 0) + 1 })
-      const nextDemo = {}
-      const today = new Date().toISOString().slice(0, 10)
-      ;(demoRes.data || []).forEach(s => {
-        const dt = s.due_date || (s.start_date ? String(s.start_date).slice(0, 10) : null)
-        if (dt && dt >= today && (!nextDemo[s.deal_id] || dt < nextDemo[s.deal_id])) nextDemo[s.deal_id] = dt
-      })
 
       const built = list.map(d => ({
         ...d,
         rep: reps[d.rep_id] || '—',
         readiness: ready[d.id] || {},
         unread: unread[d.id] || 0,
-        nextDemo: nextDemo[d.id] || null,
       })).sort((a, b) =>
         (b.readiness.open_blocker_count || 0) - (a.readiness.open_blocker_count || 0)
         || (a.readiness.coverage_pct || 0) - (b.readiness.coverage_pct || 0)
@@ -108,9 +99,7 @@ export default function SCHome() {
                   <span>AE: {c.rep}</span>
                   {c.readiness.open_blocker_count > 0
                     ? <span style={{ color: T.error, fontWeight: 600 }}>{c.readiness.open_blocker_count} blocker{c.readiness.open_blocker_count === 1 ? '' : 's'}</span>
-                    : c.nextDemo
-                      ? <span>Demo {new Date(c.nextDemo).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
-                      : <span style={{ color: T.textMuted }}>No demo set</span>}
+                    : <span style={{ color: T.textMuted }}>No open blockers</span>}
                 </div>
               </button>
             )
