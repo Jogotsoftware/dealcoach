@@ -29,12 +29,21 @@ export default function SCHome() {
   async function load() {
     setLoading(true)
     try {
-      // An SC sees only deals assigned to them. Everyone else who can reach
-      // the portal (ops/admins/super-admins previewing) sees every assigned
-      // deal, RLS-scoped to their accessible orgs.
-      let q = supabase.from('deals').select('id, company_name, stage, rep_id, target_close_date')
-      q = profile.role === 'sc' ? q.eq('sc_user_id', profile.id) : q.not('sc_user_id', 'is', null)
-      const { data: deals } = await q
+      // An SC sees deals they're assigned to (deal_sc_assignments). Everyone
+      // else who can reach the portal (ops/admins previewing) sees every
+      // assigned deal, RLS-scoped to their accessible orgs.
+      let dealIds = null
+      if (profile.role === 'sc') {
+        const { data: mine } = await supabase.from('deal_sc_assignments').select('deal_id').eq('sc_user_id', profile.id)
+        dealIds = [...new Set((mine || []).map(a => a.deal_id))]
+        if (dealIds.length === 0) { setCards([]); setLoading(false); return }
+      } else {
+        const { data: all } = await supabase.from('deal_sc_assignments').select('deal_id')
+        dealIds = [...new Set((all || []).map(a => a.deal_id))]
+        if (dealIds.length === 0) { setCards([]); setLoading(false); return }
+      }
+      const { data: deals } = await supabase.from('deals')
+        .select('id, company_name, stage, rep_id, target_close_date').in('id', dealIds)
       const list = deals || []
       const ids = list.map(d => d.id)
       if (ids.length === 0) { setCards([]); setLoading(false); return }
