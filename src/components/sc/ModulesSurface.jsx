@@ -1,54 +1,65 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { theme as T } from '../../lib/theme'
 import { Spinner, Card, inputStyle } from '../Shared'
 import { notify } from '../../lib/notifications'
 
-// Modules to demo — dead-simple: type a module, pick from the pricebook
-// (name + SKU, no pricing), it's added to the deal's demo list. AI-suggested
-// modules show as one-click chips. Changes notify the AE
-// (sc_selected_demo_modules).
+// Modules to demo — type a module, pick from the FULL pricebook (name + SKU,
+// no pricing), it's added to the deal's demo list. The whole pricebook is
+// loaded once and searched in-memory with tokenized matching, so partial /
+// out-of-order / SKU-fragment queries all hit (e.g. "scaling standard" or
+// "GB" both find IFM-GB-STAN "Sage for Scaling Businesses - Standard").
+// AI-suggested modules show as one-click chips. Changes notify the AE.
 export default function ModulesSurface({ deal }) {
   const { profile } = useAuth()
   const [loading, setLoading] = useState(true)
   const [rows, setRows] = useState([])          // deal_modules rows
   const [refByKey, setRefByKey] = useState({})  // module_reference name lookup
   const [suggestions, setSuggestions] = useState([]) // AI-suggested, not yet demoed
+  const [products, setProducts] = useState([])  // full pricebook (sku, name)
   const [q, setQ] = useState('')
-  const [matches, setMatches] = useState([])
-  const [searching, setSearching] = useState(false)
   const [busy, setBusy] = useState(null)
-  const seq = useRef(0)
 
   useEffect(() => { load() }, [deal?.id])
 
   async function load() {
     setLoading(true)
     try {
-      const [dm, ref] = await Promise.all([
+      const [dm, ref, prod] = await Promise.all([
         supabase.from('deal_modules').select('*').eq('deal_id', deal.id),
         supabase.from('module_reference').select('module_key, name, maps_to_skus').eq('active', true),
+        // Full active pricebook, paged past PostgREST's 1000-row cap just in case.
+        supabase.from('products').select('sku, name').eq('active', true).order('name').limit(2000),
       ])
       setRows(dm.data || [])
       setRefByKey(Object.fromEntries((ref.data || []).map(m => [m.module_key, m])))
+      setProducts(prod.data || [])
       const demoedKeys = new Set((dm.data || []).filter(m => m.is_demoed).map(m => m.module_key))
       setSuggestions((dm.data || []).filter(m => m.suggested_by_ai && !m.is_demoed && !demoedKeys.has(m.module_key)))
     } catch (e) { console.error('[ModulesSurface] load', e) } finally { setLoading(false) }
   }
 
-  // Debounced pricebook search (name or SKU, no pricing surfaced).
-  useEffect(() => {
-    if (!q || q.trim().length < 2) { setMatches([]); return }
-    const mySeq = ++seq.current
-    setSearching(true)
-    const t = setTimeout(async () => {
-      const { data } = await supabase.from('products').select('sku, name').eq('active', true)
-        .or(`name.ilike.%${q}%,sku.ilike.%${q}%`).order('name').limit(8)
-      if (mySeq === seq.current) { setMatches(data || []); setSearching(false) }
-    }, 250)
-    return () => clearTimeout(t)
-  }, [q])
+  // Tokenized in-memory search: every token must appear in name+sku. Ranks
+  // SKU-exact and name-prefix hits first. Shows up to 40.
+  const matches = useMemo(() => {
+    const s = q.trim().toLowerCase()
+    if (s.length < 1) return []
+    const tokens = s.split(/\s+/).filter(Boolean)
+    const scored = []
+    for (const p of products) {
+      const sku = (p.sku || '').toLowerCase()
+      const name = (p.name || '').toLowerCase()
+      const hay = name + ' ' + sku
+      if (!tokens.every(t => hay.includes(t))) continue
+      let rank = 3
+      if (sku === s) rank = 0
+      else if (name.startsWith(s) || sku.startsWith(s)) rank = 1
+      else if (name.includes(s) || sku.includes(s)) rank = 2
+      scored.push({ p, rank })
+    }
+    return scored.sort((a, b) => a.rank - b.rank || a.p.name.localeCompare(b.p.name)).slice(0, 40).map(x => x.p)
+  }, [q, products])
 
   const demoModules = rows.filter(m => m.is_demoed)
   const nameFor = (m) => m.notes?.replace(/^Shows: /, '') || refByKey[m.module_key]?.name || m.module_key
@@ -87,10 +98,10 @@ export default function ModulesSurface({ deal }) {
       <div style={{ position: 'relative', marginBottom: 14 }}>
         <input value={q} onChange={e => setQ(e.target.value)} placeholder="Type a module name or SKU to add…"
           style={{ ...inputStyle }} />
-        {(matches.length > 0 || searching) && (
-          <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 20, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, marginTop: 4, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', maxHeight: 280, overflowY: 'auto' }}>
-            {searching && matches.length === 0 ? (
-              <div style={{ padding: 10, fontSize: 12, color: T.textMuted }}>Searching…</div>
+        {q.trim().length >= 1 && (
+          <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 20, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, marginTop: 4, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', maxHeight: 320, overflowY: 'auto' }}>
+            {matches.length === 0 ? (
+              <div style={{ padding: 10, fontSize: 12, color: T.textMuted }}>No matching modules in the pricebook.</div>
             ) : matches.map(p => (
               <button key={p.sku} disabled={busy === p.sku} onClick={() => addModule(p.sku, p.name)}
                 style={{ display: 'flex', width: '100%', textAlign: 'left', alignItems: 'center', gap: 8, padding: '8px 12px', border: 'none', borderBottom: `1px solid ${T.borderLight}`, background: 'transparent', cursor: 'pointer', fontFamily: T.font }}
