@@ -399,18 +399,16 @@ function ContactCard({ contact }) {
     <div
       onClick={() => setExpanded(e => !e)}
       style={{
-        padding: 12, background: T.surfaceAlt, border: `1px solid ${T.borderLight}`, borderRadius: 6,
+        padding: '8px 10px', background: T.surfaceAlt, border: `1px solid ${T.borderLight}`, borderRadius: 6,
         cursor: 'pointer', transition: 'border-color 0.15s',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{contact.name || 'Unnamed contact'}</div>
-          <div style={{ fontSize: 12, color: T.textSecondary, marginTop: 2 }}>{contact.title || <Unknown />}</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{contact.name || 'Unnamed contact'}</div>
+          {contact.title && <div style={{ fontSize: 11, color: T.textSecondary, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{contact.title}</div>}
         </div>
-        <div style={{ fontSize: 11, color: T.textMuted }}>
-          Tenure: {tenureStr || <Unknown />}
-        </div>
+        {tenureStr && <span style={{ fontSize: 10, color: T.textMuted, whiteSpace: 'nowrap' }}>{tenureStr}</span>}
         {contact.linkedin && (
           <a
             href={contact.linkedin}
@@ -421,14 +419,14 @@ function ContactCard({ contact }) {
             style={{
               fontSize: 10, fontWeight: 700, letterSpacing: '0.03em',
               color: T.primary, background: T.primaryLight, border: `1px solid ${T.primaryBorder}`,
-              padding: '2px 6px', borderRadius: 3, textDecoration: 'none',
+              padding: '2px 6px', borderRadius: 3, textDecoration: 'none', flexShrink: 0,
             }}
           >
             in
           </a>
         )}
         <RolePill contact={contact} />
-        <span style={{ fontSize: 10, color: T.textMuted }}>{expanded ? '▴' : '▾'}</span>
+        <span style={{ fontSize: 10, color: T.textMuted, flexShrink: 0 }}>{expanded ? '▴' : '▾'}</span>
       </div>
 
       {expanded && (
@@ -493,7 +491,7 @@ function ContactsCard({ contacts }) {
       {list.length === 0 ? (
         <div style={{ color: T.textMuted, fontStyle: 'italic', fontSize: 13 }}>No contacts on this deal yet.</div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 8, alignItems: 'start' }}>
           {list.map(c => <ContactCard key={c.id} contact={c} />)}
         </div>
       )}
@@ -504,26 +502,19 @@ function ContactsCard({ contacts }) {
 function SystemsCard({ systems }) {
   const list = systems || []
   return (
-    <Card title="Systems they run">
+    <Card title="Tech stack">
       {list.length === 0 ? (
         <div style={{ color: T.textMuted, fontStyle: 'italic', fontSize: 13 }}>No systems identified yet.</div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 8, alignItems: 'start' }}>
           {list.map(s => (
-            <div key={s.id} style={{ padding: 10, background: T.surfaceAlt, border: `1px solid ${T.borderLight}`, borderRadius: 6 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{s.system_name || s.name || 'Unknown system'}</span>
-                {s.category && <span style={{ fontSize: 11, color: T.textMuted }}>({s.category})</span>}
-                {s.is_current && <Badge color={T.success}>Current</Badge>}
+            <div key={s.id} style={{ padding: '8px 10px', background: T.surfaceAlt, border: `1px solid ${T.borderLight}`, borderRadius: 6 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: T.text, flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.system_name || s.name || 'Unknown system'}</span>
                 {s.is_needed && <Badge color={T.warning}>Needed</Badge>}
-                <div style={{ flex: 1 }} />
                 <SourcePill sourceType={s.source_type} sourceUrl={s.source_url} sourceExcerpt={s.source_excerpt} />
               </div>
-              {s.notes && (
-                <div style={{ fontSize: 12, color: T.textMuted, marginTop: 6, lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>
-                  {s.notes}
-                </div>
-              )}
+              {s.category && <div style={{ fontSize: 10, color: T.textMuted, marginTop: 1 }}>{s.category}</div>}
             </div>
           ))}
         </div>
