@@ -38,14 +38,17 @@ async function computeForDeal(sb: any, dealId: string): Promise<any> {
   const { data: deal } = await sb.from("deals").select("id, org_id, stage, forecast_category").eq("id", dealId).maybeSingle();
   if (!deal) return { deal_id: dealId, error: "not found" };
 
-  const [cesR, catsR, convsR, contactsR, risksR, changesR, valuesR] = await Promise.all([
+  const [cesR, catsR, convsR, contactsR, risksR, changesR, valuesR, sizingR, moduleRefR, dealModsR] = await Promise.all([
     sb.from("compelling_events").select("id, event_date, strength, verified, reconfirmed_at, observed_at, created_at").eq("deal_id", dealId),
     sb.from("business_catalysts").select("id, urgency, impact, verified").eq("deal_id", dealId),
     sb.from("conversations").select("id, call_type, call_date").eq("deal_id", dealId),
     sb.from("contacts").select("id, is_economic_buyer, role_in_deal").eq("deal_id", dealId),
     sb.from("deal_risks").select("id, risk_key, status, auto_generated").eq("deal_id", dealId).eq("auto_generated", true),
     sb.from("deal_change_events").select("field_key, created_at").eq("deal_id", dealId),
-    sb.from("custom_field_values").select("field_key, value_text").eq("entity_type", "deal").eq("entity_id", dealId),
+    sb.from("custom_field_values").select("field_key, value_text, value_number, value_boolean, value_json").eq("entity_type", "deal").eq("entity_id", dealId),
+    sb.from("deal_sizing").select("*").eq("deal_id", dealId).maybeSingle(),
+    sb.from("module_reference").select("module_key, name, suggestion_rules").eq("active", true).not("suggestion_rules", "is", null),
+    sb.from("deal_modules").select("module_key").eq("deal_id", dealId),
   ]);
   const ces = cesR.data || [];
   const cats = catsR.data || [];
@@ -163,6 +166,47 @@ async function computeForDeal(sb: any, dealId: string): Promise<any> {
       try { await sb.from("deal_risks").update({ evidence: g.evidence, observed_at: new Date().toISOString() }).eq("id", existing.id); } catch (_) { /* non-fatal */ }
     }
   }
+
+  // ── Module suggestions (rules over discovery facts; SC confirms) ──
+  // AI only ever sets suggested_by_ai on rows it creates — it never touches
+  // a module the SC has already acted on, and never un-suggests.
+  try {
+    const sizing = sizingR.data || null;
+    const SIZING_KEY = { entity_count: "entity_count", total_users: "full_users", reporting_readonly_users: "view_only_users", bills_per_period: "ap_invoices_monthly", fixed_asset_count: "fixed_assets", warehouse_count: "warehouse_count" } as Record<string, string>;
+    const fieldValue = (key: string): unknown => {
+      if (SIZING_KEY[key]) return sizing?.[SIZING_KEY[key]] ?? null;
+      const v = (valuesR.data || []).find((r: any) => r.field_key === key);
+      if (!v) return null;
+      return v.value_number ?? v.value_boolean ?? v.value_json ?? v.value_text;
+    };
+    const checkRule = (r: any): boolean => {
+      const val = fieldValue(r.field);
+      switch (r.op) {
+        case ">": return typeof val === "number" ? val > Number(r.value) : Number(val) > Number(r.value);
+        case "in": return Array.isArray(r.value) && r.value.includes(String(val ?? "").toLowerCase());
+        case "true": return val === true || String(val).toLowerCase() === "true" || String(val).toLowerCase() === "yes";
+        case "nonempty": return Array.isArray(val) ? val.length > 0 : !!String(val ?? "").trim();
+        case "answered": return val !== null && val !== undefined && String(val).trim() !== "" && String(val).toLowerCase() !== "unknown";
+        case "multi": return Array.isArray(val) ? val.length > 1 : /,| and /i.test(String(val ?? ""));
+        default: return false;
+      }
+    };
+    const existing = new Set((dealModsR.data || []).map((m: any) => m.module_key));
+    const suggested: string[] = [];
+    for (const mod of (moduleRefR.data || [])) {
+      if (existing.has(mod.module_key)) continue;
+      const rules = mod.suggestion_rules?.any || [];
+      const hit = rules.find((r: any) => { try { return checkRule(r); } catch (_) { return false; } });
+      if (!hit) continue;
+      const { error } = await sb.from("deal_modules").insert({
+        org_id: deal.org_id, deal_id: dealId, module_key: mod.module_key,
+        is_recommended: false, suggested_by_ai: true,
+        recommended_reason: `${hit.field} = ${JSON.stringify(fieldValue(hit.field))}`,
+      });
+      if (!error) suggested.push(mod.module_key);
+    }
+    if (suggested.length) summary.modules_suggested = suggested;
+  } catch (e: any) { console.error("compute-deal-risks v1: module suggestions:", e?.message); }
 
   // ── Qualifying-spine flag ──
   const spineMissing = ceScore === 0 && catScore === 0 && !orientationValue;

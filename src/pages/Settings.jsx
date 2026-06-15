@@ -51,8 +51,8 @@ const MEMBER_TYPES = [
 ]
 
 export default function Settings() {
-  const { profile } = useAuth()
-  const { fyEndMonth: orgFyEndMonth } = useOrg()
+  const { profile, refreshProfile, setProfile } = useAuth()
+  const { fyEndMonth: orgFyEndMonth, allowChatWebSearch } = useOrg()
   const [loading, setLoading] = useState(false)
   const [saved, setSaved] = useState(false)
   const [fyEndMonth, setFyEndMonth] = useState(orgFyEndMonth || 12)
@@ -533,6 +533,38 @@ export default function Settings() {
             </div>
           ))}
         </SectionCard>
+
+        {/* v21: Lux chat preferences — hidden entirely when org has disabled web search */}
+        {allowChatWebSearch && (
+          <SectionCard id="lux_preferences" title="Lux chat preferences" defaultOpen={false}>
+            <div style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              padding: '12px 0',
+            }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>Enable web search in chat</div>
+                <div style={{ fontSize: 12, color: T.textSecondary }}>When enabled, Lux can search the web during chat. Each web-search-augmented message costs 3× credits.</div>
+              </div>
+              <div
+                onClick={async () => {
+                  if (!profile?.id) return
+                  const next = !profile.chat_web_search_enabled
+                  if (setProfile) setProfile({ ...profile, chat_web_search_enabled: next })
+                  const { error } = await supabase.from('profiles').update({ chat_web_search_enabled: next }).eq('id', profile.id)
+                  if (error) {
+                    console.error('Lux web search toggle failed:', error)
+                    if (setProfile) setProfile({ ...profile, chat_web_search_enabled: !next })
+                    return
+                  }
+                  if (refreshProfile) refreshProfile()
+                }}
+                style={{ width: 40, height: 22, borderRadius: 11, background: profile?.chat_web_search_enabled ? T.success : T.borderLight, cursor: 'pointer', position: 'relative', transition: 'background 0.15s' }}
+              >
+                <div style={{ width: 18, height: 18, borderRadius: '50%', background: '#fff', position: 'absolute', right: profile?.chat_web_search_enabled ? 2 : 'auto', left: profile?.chat_web_search_enabled ? 'auto' : 2, top: 2, boxShadow: T.shadow, transition: 'left 0.15s, right 0.15s' }} />
+              </div>
+            </div>
+          </SectionCard>
+        )}
 
         {/* Quota — moved to after Preferences per layout request */}
         {/* Granola integration - per-user connection + default folder */}

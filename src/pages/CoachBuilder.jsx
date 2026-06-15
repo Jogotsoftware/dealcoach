@@ -267,7 +267,7 @@ export default function CoachBuilder() {
           <Card title="Coach Identity">
             {helperText('Define who this coach is and how it operates. These settings control the AI engine behind your coaching.')}
             <div style={{ display: 'grid', gap: 12 }}>
-              <div><label style={labelStyle}>Coach Name</label><input style={inputStyle} value={name} onChange={e => setName(e.target.value)} placeholder="Revenue Instruments Coach" /></div>
+              <div><label style={labelStyle}>Coach Name</label><input style={inputStyle} value={name} onChange={e => setName(e.target.value)} placeholder="Lumen Coach" /></div>
               <div><label style={labelStyle}>Description</label><textarea style={{ ...inputStyle, minHeight: 60, resize: 'vertical' }} value={description} onChange={e => setDescription(e.target.value)} placeholder="What does this coach specialize in? What type of deals, team, or motion?" /></div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div><label style={labelStyle}>AI Model</label><select style={{ ...inputStyle, cursor: 'pointer' }} value={model} onChange={e => setModel(e.target.value)}><option value="claude-sonnet-4-20250514">Claude Sonnet 4</option><option value="claude-opus-4-20250514">Claude Opus 4</option><option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option></select></div>
@@ -490,10 +490,10 @@ export default function CoachBuilder() {
           <Card title="Sales Methodology">
             <div style={{ padding: 12, background: T.surfaceAlt, borderRadius: 8, border: `1px solid ${T.primaryBorder || T.border}`, marginBottom: 16 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                <span style={{ fontSize: 14, fontWeight: 700, color: T.primary }}>Revenue Instruments Framework</span>
+                <span style={{ fontSize: 14, fontWeight: 700, color: T.primary }}>Lumen Framework</span>
                 <span style={{ fontSize: 9, fontWeight: 700, color: T.success, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Baseline (locked)</span>
               </div>
-              <div style={{ fontSize: 12, color: T.textMuted }}>Seven pillars: Curiosity, Independently Wealthy, Continuous Qualification, Empathetic Listening, Outcome-Goal Alignment, Mutual Authoring, Buyer Risk Mitigation. Managed by Revenue Instruments -- not editable.</div>
+              <div style={{ fontSize: 12, color: T.textMuted }}>Seven pillars: Curiosity, Independently Wealthy, Continuous Qualification, Empathetic Listening, Outcome-Goal Alignment, Mutual Authoring, Buyer Risk Mitigation. Managed by Lumen -- not editable.</div>
             </div>
             <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 8 }}>Add-on Methodologies</div>
             <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 12 }}>Select additional frameworks to layer onto the baseline coaching approach.</div>
@@ -630,7 +630,7 @@ export default function CoachBuilder() {
                     const isLocked = section.includes('(locked)') || section.includes('PLATFORM CORE') || section.includes('METHODOLOGY')
                     return (
                       <div key={i} style={{ marginBottom: 12 }}>
-                        {isLocked && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 3, background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.textMuted, marginBottom: 4, display: 'inline-block' }}>Managed by Revenue Instruments</span>}
+                        {isLocked && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 3, background: T.surfaceAlt, border: `1px solid ${T.border}`, color: T.textMuted, marginBottom: 4, display: 'inline-block' }}>Managed by Lumen</span>}
                         <pre style={{ fontSize: 11, fontFamily: T.mono, lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word', background: isLocked ? T.surfaceAlt : 'transparent', padding: isLocked ? 10 : 0, borderRadius: 4, color: T.text, margin: 0 }}>{section}</pre>
                       </div>
                     )

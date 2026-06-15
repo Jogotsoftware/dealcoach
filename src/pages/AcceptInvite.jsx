@@ -123,7 +123,7 @@ export default function AcceptInvite() {
       background: '#fff', fontFamily: T.font,
     }}>
       <div style={{ fontSize: 16, fontWeight: 700, color: T.text, marginBottom: 16, letterSpacing: '-0.01em' }}>
-        Revenue Instruments
+        Lumen
       </div>
       <div style={{
         width: '100%', maxWidth: 440, background: '#fff',

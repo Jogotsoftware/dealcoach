@@ -1,7 +1,14 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-// process-transcript v34
+// process-transcript v35
+// CHANGES FROM v34:
+// - Adds key_observations[] to the extraction schema. Each observation becomes
+//   a separate ai_memory row with memory_type='observation' so Lux's chat read
+//   path (deal-chat v20) surfaces them under "WHAT LUX REMEMBERS ABOUT THIS DEAL."
+// - Fixes source_type for ai_memory writes: 'transcript' is not in the Phase A
+//   allowlist; canonical value is 'transcript_analysis'. v34 writes were
+//   silently rejected by the CHECK constraint.
 // CHANGES FROM v33:
 // - Commitment extraction tightened: explicit bans on deal-risk-disguised-as-task
 //   items (validate compelling event / quantify pain / confirm budget / etc.),
@@ -72,6 +79,7 @@ const EXTRACTION_SCHEMA = `Return a JSON object with ALL of these fields:
   "deal_updates": {"champion": "string or null", "economic_buyer": "string or null", "budget": "string or null", "current_spend": "string or null", "decision_process": "string or null", "decision_method": "string or null", "quantified_pain": "summary", "business_impact": "summary", "driving_factors": "summary", "ideal_solution": "string", "integrations_needed": "string", "timeline_drivers": "string", "exec_alignment": "string"},
   "commitments": [{"title": "specific commitment", "committed_by": "rep|prospect", "committed_by_name": "who", "category": "Follow Up|Internal|Send Materials|Deal Action|CRM Update|Research", "priority": "high|medium|low", "notes": "context"}],
   "memory_observations": [{"memory_type": "commitment_tracking|contradiction|unanswered_question|competitive_signal|champion_risk|stakeholder_gap|coaching_observation|budget_signal|timeline_signal", "content": "Specific observation to remember for next call. Be concrete.", "priority": "critical|high|medium|low", "related_contact_name": "name or null", "resolved_memory_ids": ["uuid of previous memory this call resolved"]}],
+  "key_observations": [{"content": "Durable fact about this deal that contradicts or extends prior structured data (champion turnover, budget shift, competitor change, etc.). Specific and self-contained — readable months later without context.", "priority": "critical|high|medium|low", "related_field": "contacts|budget|competitors|champion|economic_buyer|timeline|decision_criteria|company_systems|other"}],
   "next_steps_suggestion": "formatted next steps shorthand",
   "score_suggestions": {"fit_score": null, "deal_health_score": null}
 }`;
@@ -210,22 +218,22 @@ Deno.serve(async (req: Request) => {
   const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
   try {
-    if (!ANTHROPIC_API_KEY) return jr({ error: 'v34: No API key' }, 500);
+    if (!ANTHROPIC_API_KEY) return jr({ error: 'v35: No API key' }, 500);
     const reqBody = await req.json();
-    console.log('process-transcript v34 keys:', Object.keys(reqBody));
+    console.log('process-transcript v35 keys:', Object.keys(reqBody));
 
     const conversation_id = reqBody.conversation_id || reqBody.conversationId || reqBody.id;
-    if (!conversation_id) return jr({ error: `v34: no conversation_id. Keys: ${Object.keys(reqBody).join(', ')}` }, 400);
+    if (!conversation_id) return jr({ error: `v35: no conversation_id. Keys: ${Object.keys(reqBody).join(', ')}` }, 400);
 
     const { data: conv } = await sb.from('conversations').select('*').eq('id', conversation_id).single();
-    if (!conv) return jr({ error: 'v34: Conversation not found' }, 404);
-    if (!conv.transcript) return jr({ error: 'v34: No transcript' }, 400);
+    if (!conv) return jr({ error: 'v35: Conversation not found' }, 404);
+    if (!conv.transcript) return jr({ error: 'v35: No transcript' }, 400);
 
     const deal_id = reqBody.deal_id || reqBody.dealId || conv.deal_id;
-    if (!deal_id) return jr({ error: 'v34: No deal_id' }, 400);
+    if (!deal_id) return jr({ error: 'v35: No deal_id' }, 400);
 
     const { data: deal } = await sb.from('deals').select('*').eq('id', deal_id).single();
-    if (!deal) return jr({ error: 'v34: Deal not found' }, 404);
+    if (!deal) return jr({ error: 'v35: Deal not found' }, 404);
 
     const { data: rep } = await sb.from('profiles').select('active_coach_id, org_id, full_name, initials, email').eq('id', deal.rep_id).single();
     const cid = rep?.active_coach_id;
@@ -311,7 +319,7 @@ Deno.serve(async (req: Request) => {
     const { data: log } = await sb.from('ai_response_log').insert({ deal_id, response_type: 'transcript_analysis', coach_id: cid, ai_model_used: model, temperature: temp, status: 'processing', triggered_by: deal.rep_id }).select('id').single();
 
     const cr = await callClaude({ model, max_tokens: 8000, temperature: temp, system: sysPrompt, messages: [{ role: 'user', content: prompt }] });
-    if (!cr.ok) { const e = await cr.text(); await ulog(sb, log?.id, 'failed', `v34: ${e}`, t0); return jr({ error: `v34: Claude ${cr.status}` }, 500); }
+    if (!cr.ok) { const e = await cr.text(); await ulog(sb, log?.id, 'failed', `v35: ${e}`, t0); return jr({ error: `v35: Claude ${cr.status}` }, 500); }
 
     const cd = await cr.json();
     const usage = cd.usage || {};
@@ -323,7 +331,7 @@ Deno.serve(async (req: Request) => {
       const match = cleaned.match(/\{[\s\S]*\}/);
       if (!match) throw new Error('No JSON');
       p = JSON.parse(match[0]);
-    } catch (e: any) { await ulog(sb, log?.id, 'partial', `v34: ${e.message}`, t0, usage); return jr({ success: true, status: 'partial', error: e.message }); }
+    } catch (e: any) { await ulog(sb, log?.id, 'partial', `v35: ${e.message}`, t0, usage); return jr({ success: true, status: 'partial', error: e.message }); }
 
     await sb.from('conversations').update({ ai_summary: p.summary || null, ai_coaching_notes: p.coaching_notes || null, ai_raw_response: cd, processed: true }).eq('id', conversation_id);
 
@@ -529,7 +537,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // ── COMMITMENTS ──
-    // v34 post-filter: reject deal-risk / discovery-gap items that slipped past
+    // v35 post-filter: reject deal-risk / discovery-gap items that slipped past
     // the prompt. These belong in memory_observations (coaching) not tasks.
     const BAD_TASK_PATTERNS = [
       /^\s*validate\b.*\b(compelling event|pain|budget|authority|timeline|champion|criteria|process|need)\b/i,
@@ -563,7 +571,7 @@ Deno.serve(async (req: Request) => {
             memory_type: 'coaching_observation',
             content: `Discovery gap from call: ${t.title}${t.notes ? ' — ' + t.notes : ''}`,
             priority: t.priority === 'high' ? 'high' : 'medium',
-            source_type: 'transcript', source_conversation_id: conversation_id, source_ai_log_id: log?.id || null,
+            source_type: 'transcript_analysis', source_conversation_id: conversation_id, source_ai_log_id: log?.id || null,
             active: true, resolved: false,
           });
           continue;
@@ -621,7 +629,7 @@ Deno.serve(async (req: Request) => {
           const { data: ct } = await sb.from('contacts').select('id').eq('deal_id', deal_id).ilike('name', `%${m.related_contact_name}%`).limit(1);
           if (ct?.length) contactId = ct[0].id;
         }
-        await safeInsertNoReturn(sb, 'ai_memory', { deal_id, org_id: rep?.org_id || null, memory_type: VM.includes(m.memory_type) ? m.memory_type : 'coaching_observation', content: m.content, priority: VS.includes(m.priority) ? m.priority : 'medium', source_type: 'transcript', source_conversation_id: conversation_id, source_ai_log_id: log?.id || null, related_contact_id: contactId, active: true, resolved: false });
+        await safeInsertNoReturn(sb, 'ai_memory', { deal_id, org_id: rep?.org_id || null, memory_type: VM.includes(m.memory_type) ? m.memory_type : 'coaching_observation', content: m.content, priority: VS.includes(m.priority) ? m.priority : 'medium', source_type: 'transcript_analysis', source_conversation_id: conversation_id, source_ai_log_id: log?.id || null, related_contact_id: contactId, active: true, resolved: false });
         memCt++;
       }
       sum.memories_created = memCt;
@@ -650,6 +658,39 @@ Deno.serve(async (req: Request) => {
         if (autoResolved) sum.memories_auto_resolved = autoResolved;
         try { await sb.rpc('increment_memory_surfaced', { memory_ids: memories.map(m => m.id) }); } catch (e) {}
       }
+    }
+
+    // ── KEY OBSERVATIONS (v35: durable facts → memory_type='observation') ──
+    // These are surfaced by deal-chat v20's "WHAT LUX REMEMBERS ABOUT THIS DEAL"
+    // block — which is itself gated to the demo orgs. Gate the write loop to
+    // match so other orgs don't accumulate observation rows that no one reads.
+    //   0acebff8 = Intacct - Direct - NA
+    //   c8a7ea52 = Sage Intacct — Demo
+    const DEMO_ORG_IDS = new Set([
+      '0acebff8-8827-4984-b478-cbcad404539d',
+      'c8a7ea52-42b8-4b66-9d38-91c9b1dda883',
+    ]);
+    const isDemoOrg = !!rep?.org_id && DEMO_ORG_IDS.has(rep.org_id);
+    if (memoryEnabled && p.key_observations?.length && rep?.org_id && isDemoOrg) {
+      let obsCt = 0;
+      for (const o of p.key_observations) {
+        if (!o.content || typeof o.content !== 'string') continue;
+        const ok = await safeInsertNoReturn(sb, 'ai_memory', {
+          deal_id,
+          org_id: rep.org_id,
+          memory_type: 'observation',
+          content: o.content,
+          priority: VS.includes(o.priority) ? o.priority : 'medium',
+          source_type: 'transcript_analysis',
+          source_conversation_id: conversation_id,
+          source_ai_log_id: log?.id || null,
+          related_field: typeof o.related_field === 'string' ? o.related_field.slice(0, 80) : null,
+          active: true,
+          resolved: false,
+        });
+        if (ok) obsCt++;
+      }
+      sum.observations_created = obsCt;
     }
 
     // ── ICP SCORING ──
@@ -685,11 +726,11 @@ Deno.serve(async (req: Request) => {
     } catch (e) { console.error('v32 ingest setup error:', e); }
 
     await ulog(sb, log?.id, 'completed', null, t0, usage, sum);
-    return jr({ success: true, version: 'v34', summary: sum, commitments_created: sum.commitments || 0, contacts_found: sum.contacts || 0, memories_created: sum.memories_created || 0, icp_score: sum.icp_score || null });
+    return jr({ success: true, version: 'v35', summary: sum, commitments_created: sum.commitments || 0, contacts_found: sum.contacts || 0, memories_created: sum.memories_created || 0, observations_created: sum.observations_created || 0, icp_score: sum.icp_score || null });
 
   } catch (e: any) {
-    console.error('process-transcript v34 error:', e);
-    return jr({ error: `v34: ${e.message}` }, 500);
+    console.error('process-transcript v35 error:', e);
+    return jr({ error: `v35: ${e.message}` }, 500);
   }
 });
 

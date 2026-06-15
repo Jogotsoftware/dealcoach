@@ -99,8 +99,18 @@ export function AuthProvider({ children }) {
     analyticsReset()
   }
 
+  // v21: refreshProfile lets callers re-read the profile row after a column
+  // mutation (e.g. toggling chat_web_search_enabled) so derived UI stays in sync.
+  async function refreshProfile() {
+    if (!user?.id) return
+    try {
+      const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single()
+      if (data) setProfile(data)
+    } catch (e) { console.error('refreshProfile error:', e) }
+  }
+
   return (
-    <AuthContext.Provider value={{ user, profile, loading, signIn, signUp, signOut }}>
+    <AuthContext.Provider value={{ user, profile, loading, signIn, signUp, signOut, refreshProfile, setProfile }}>
       {children}
     </AuthContext.Provider>
   )
