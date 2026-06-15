@@ -43,3 +43,14 @@ It's an **"SME" (subject-matter-expert) escalation/citation feature**:
 
 ## To run locally
 `npm install` then the dev script in `package.json` (Vite). See `CLAUDE.md` for the full dev workflow.
+
+## Secrets / .env — where to find them
+This repo's secrets are gitignored, so they are NOT on GitHub. File(s) needed:
+- `.env` (repo root) — Supabase URL + anon key, etc.
+
+Find them in either place (both were migrated via iCloud):
+1. Inside this project folder itself (the `.env` is already at the path above), or
+2. The consolidated **`ENV-FILES-BACKUP`** folder made during the migration — it mirrors every
+   repo's env files and has a `RESTORE.txt` mapping each back to its path.
+
+All keys are re-issuable from their source dashboards (Supabase / Anthropic / etc.) if stale.
