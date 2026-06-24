@@ -109,8 +109,14 @@ ai_response_log, next_steps_history
 
 ## Sales Methodology
 
-Built around the Sage Intacct sales process:
-- BANT qualification (Budget, Authority, Need, Timeline)
+Built around the following Philosophies:
+- MEDDPOC
 - Selling Through Curiosity
 - Structured deal execution
-- Fiscal year starts October (FY2026 = Oct 2025 - Sep 2026)
+- Give/Get Negotiation
+- Black Swan Negotiation
+- Challenger Sale
+- JOLT Effect
+- SPIN Selling
+- Sandler Sales
+- The New Solution Selling (Eades)
