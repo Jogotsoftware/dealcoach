@@ -1,4 +1,15 @@
-// dealroom-access v10
+// dealroom-access v12
+// v12 changes: Evaluation Room app tabs. deal_rooms grew show_models_tab and
+// show_schedules_tab; visibleTabs/tabAllowed now cover 'models' and 'schedules'
+// (additive — DealCoach's DealRoomViewer filters a fixed 3-key list, unaffected).
+// get-tab-anon accepts new tabs `quote` (Investment Summary, gated by
+// show_proposal_tab), `models`, `schedules`, and `deck` (published room_proposals
+// row, gated by show_proposal_tab + status='published'). Authed equivalents:
+// get-quote-tab / get-models-tab / get-schedules-tab / get-deck-tab.
+// Quote payloads respect quote_lines.show_in_deal_room, payment-schedule rows
+// respect show_in_proposal, and implementation schedule rows are dropped when
+// the deal has no SOW on file (mirrors QuoteBuilder's SowStrip gating).
+//
 // v10 changes: anonymous open share support. New action `validate-share` takes
 // only `share_token` (no magic_token) and loads the room for an anonymous viewer.
 // Anonymous viewers can read all visible tabs but cannot write (no comments, no
@@ -71,14 +82,72 @@ function visibleTabs(room: Record<string, unknown>): string[] {
   if (room.show_msp_tab !== false) out.push('msp')
   if (room.show_library_tab !== false) out.push('library')
   if (room.show_proposal_tab !== false) out.push('proposal')
+  if (room.show_models_tab !== false) out.push('models')
+  if (room.show_schedules_tab !== false) out.push('schedules')
   return out
 }
 
 function tabAllowed(room: Record<string, unknown>, tab: string): boolean {
   if (tab === 'msp') return room.show_msp_tab !== false
   if (tab === 'library') return room.show_library_tab !== false
-  if (tab === 'proposal') return room.show_proposal_tab !== false
+  // 'quote' (Investment Summary) and the slide deck share the proposal flag.
+  if (tab === 'proposal' || tab === 'quote' || tab === 'deck') return room.show_proposal_tab !== false
+  if (tab === 'models') return room.show_models_tab !== false
+  if (tab === 'schedules') return room.show_schedules_tab !== false
   return true
+}
+
+// v12: shared read-only loaders for the quote-backed tabs. dealId comes from the
+// room row, so RLS-free service-role reads stay scoped to the shared deal.
+async function loadPrimaryQuote(sb: Sb, dealId: unknown) {
+  const { data: quotes, error } = await sb.from('quotes')
+    .select('id, name, version, status, list_subtotal, discount_total, net_total, global_discount_pct, blended_discount_pct, contract_term_id, contract_start_date, free_months, free_months_placement, billing_cadence, signing_bonus_amount, signing_bonus_months, signing_bonus_label, sage_subscription_total, sage_implementation_total, sage_total, solution_total, tco_scenarios, deal_room_display_config, signer_contact_id, proposal_customer_logo_url, proposal_org_logo_url, is_primary, updated_at')
+    .eq('deal_id', dealId).order('is_primary', { ascending: false }).order('created_at', { ascending: false }).limit(1)
+  if (error) return { error: `v12: quote lookup failed: ${error.message}` }
+  const quote = (quotes || [])[0]
+  if (!quote) return { quote: null }
+  const [linesRes, implRes, termRes, signerRes] = await Promise.all([
+    sb.from('quote_lines').select('id, product_id, parent_line_id, line_order, quantity, unit_price, discount_pct, effective_discount_pct, discount_amount, extended, notes, show_in_deal_room').eq('quote_id', quote.id).order('line_order'),
+    sb.from('quote_implementation_items').select('id, name, description, total_amount, billing_type, hours, rate_per_hour, estimated_start_date, estimated_completion_date, sort_order, sow_document_id').eq('quote_id', quote.id).order('sort_order'),
+    quote.contract_term_id ? sb.from('contract_terms').select('id, name, term_years, yoy_caps, description').eq('id', quote.contract_term_id).maybeSingle() : Promise.resolve({ data: null }),
+    quote.signer_contact_id ? sb.from('contacts').select('id, name, title').eq('id', quote.signer_contact_id).maybeSingle() : Promise.resolve({ data: null }),
+  ])
+  const lines = (linesRes.data || []).filter((l: Record<string, unknown>) => l.show_in_deal_room !== false)
+  const productIds = [...new Set(lines.map((l: Record<string, unknown>) => l.product_id).filter(Boolean))]
+  let products: unknown[] = []
+  if (productIds.length) {
+    const { data: prodRows } = await sb.from('products').select('id, name, sku, is_bundle').in('id', productIds)
+    products = prodRows || []
+  }
+  return { quote, lines, products, implementation_items: implRes.data || [], contract_term: termRes.data || null, signer: signerRes.data || null }
+}
+
+async function dealHasSow(sb: Sb, dealId: unknown): Promise<boolean> {
+  const { count } = await sb.from('sow_documents').select('id', { count: 'exact', head: true }).eq('deal_id', dealId)
+  return (count || 0) > 0
+}
+
+// v12: Models tab — the primary quote plus its comparison-group siblings
+// (scenario quotes), each with the contract term needed for TCO math.
+async function loadModelScenarios(sb: Sb, dealId: unknown) {
+  const q = await loadPrimaryQuote(sb, dealId)
+  if ((q as Record<string, unknown>).error) return q
+  const primary = (q as Record<string, unknown>).quote as Record<string, unknown> | null
+  if (!primary) return { quotes: [], contract_terms: [] }
+  let scenarioQuotes: Record<string, unknown>[] = [primary]
+  if (primary.comparison_group_id) {
+    const { data: siblings } = await sb.from('quotes')
+      .select('id, name, version, status, net_total, sage_subscription_total, sage_implementation_total, contract_term_id, contract_start_date, free_months, free_months_placement, billing_cadence, signing_bonus_amount, signing_bonus_months, signing_bonus_label, tco_scenarios, deal_room_display_config, scenario_type, scenario_label, comparison_group_id, is_primary')
+      .eq('comparison_group_id', primary.comparison_group_id).eq('deal_id', dealId)
+    if (siblings?.length) scenarioQuotes = siblings
+  }
+  const termIds = [...new Set(scenarioQuotes.map(sq => sq.contract_term_id).filter(Boolean))]
+  let terms: unknown[] = []
+  if (termIds.length) {
+    const { data: termRows } = await sb.from('contract_terms').select('id, name, term_years, yoy_caps, description').in('id', termIds)
+    terms = termRows || []
+  }
+  return { quotes: scenarioQuotes, contract_terms: terms }
 }
 
 function requireWrite(archived: boolean) {
@@ -148,9 +217,39 @@ Deno.serve(async (req: Request) => {
       if ((v as Record<string, unknown>).error) return resp({ error: (v as Record<string, unknown>).error }, 401)
       const { room } = v as { room: Record<string, unknown> }
       const tab = String(body.tab || '')
-      if (!['msp', 'library', 'proposal'].includes(tab)) return resp({ error: 'v10: invalid tab' }, 400)
+      if (!['msp', 'library', 'proposal', 'quote', 'models', 'schedules', 'deck'].includes(tab)) return resp({ error: 'v10: invalid tab' }, 400)
       if (!tabAllowed(room, tab)) return resp({ error: 'v10: this tab is not visible in this room' }, 403)
       const dealId = room.deal_id
+
+      // v12 tabs — read-only quote-backed payloads for the Evaluation Room app.
+      if (tab === 'quote' || tab === 'models') {
+        const q = await loadPrimaryQuote(sb, dealId)
+        if ((q as Record<string, unknown>).error) return resp({ error: (q as Record<string, unknown>).error }, 500)
+        if (tab === 'models') {
+          const m = await loadModelScenarios(sb, dealId)
+          if ((m as Record<string, unknown>).error) return resp({ error: (m as Record<string, unknown>).error }, 500)
+          return resp({ ok: true, ...m })
+        }
+        return resp({ ok: true, ...q })
+      }
+      if (tab === 'schedules') {
+        const q = await loadPrimaryQuote(sb, dealId)
+        if ((q as Record<string, unknown>).error) return resp({ error: (q as Record<string, unknown>).error }, 500)
+        const quote = (q as Record<string, unknown>).quote as Record<string, unknown> | null
+        if (!quote) return resp({ ok: true, quote: null, schedule: [], has_sow: false })
+        const hasSow = await dealHasSow(sb, dealId)
+        const { data: schedRows, error: schedErr } = await sb.from('quote_payment_schedule').select('id, sequence_number, payment_type, invoice_date, period_start, period_end, amount, description, line_breakdown, source, implementor_name, implementation_item_id, show_in_proposal').eq('quote_id', quote.id).order('sequence_number')
+        if (schedErr) return resp({ error: `v12: schedule load failed: ${schedErr.message}` }, 500)
+        const schedule = (schedRows || []).filter((r: Record<string, unknown>) => r.show_in_proposal !== false)
+          .filter((r: Record<string, unknown>) => hasSow || (!r.implementation_item_id && r.source !== 'implementation'))
+        return resp({ ok: true, quote: { id: quote.id, name: quote.name, billing_cadence: quote.billing_cadence, contract_start_date: quote.contract_start_date }, schedule, has_sow: hasSow, implementation_items: hasSow ? (q as Record<string, unknown>).implementation_items : [] })
+      }
+      if (tab === 'deck') {
+        const { data: deck, error: deckErr } = await sb.from('room_proposals').select('id, title, cover_headline, cover_subhead, cover_title, cover_subtitle, cover_logo_url, hero_image_url, hero_wash_color, hero_wash_opacity, theme_color, status, published_at, sections, agenda_items, intro_people, solution_map, map_legend, company_overview, slide_excluded, custom_elements, slides, updated_at').eq('deal_room_id', room.id).eq('status', 'published').order('published_at', { ascending: false }).limit(1).maybeSingle()
+        if (deckErr) return resp({ error: `v12: deck load failed: ${deckErr.message}` }, 500)
+        if (!deck) return resp({ ok: true, deck: null, message: 'Proposal not yet published' })
+        return resp({ ok: true, deck })
+      }
 
       if (tab === 'msp') {
         const [stagesRes, milestonesRes] = await Promise.all([
@@ -250,6 +349,40 @@ Deno.serve(async (req: Request) => {
       if (!tabAllowed(room, 'proposal')) return resp({ error: 'v7: this tab is not visible in this room' }, 403)
       if (!room.proposal_snapshot) return resp({ ok: true, snapshot: null, message: 'Proposal not yet shared' })
       return resp({ ok: true, snapshot: room.proposal_snapshot, snapshotted_at: room.proposal_snapshotted_at })
+    }
+
+    // v12: authed (magic-link) equivalents of the new anonymous tabs.
+    if (action === 'get-quote-tab' || action === 'get-models-tab') {
+      const tab = action === 'get-quote-tab' ? 'quote' : 'models'
+      if (!tabAllowed(room, tab)) return resp({ error: 'v12: this tab is not visible in this room' }, 403)
+      const q = await loadPrimaryQuote(sb, dealId)
+      if ((q as Record<string, unknown>).error) return resp({ error: (q as Record<string, unknown>).error }, 500)
+      if (tab === 'models') {
+        const m = await loadModelScenarios(sb, dealId)
+        if ((m as Record<string, unknown>).error) return resp({ error: (m as Record<string, unknown>).error }, 500)
+        return resp({ ok: true, ...m })
+      }
+      return resp({ ok: true, ...q })
+    }
+    if (action === 'get-schedules-tab') {
+      if (!tabAllowed(room, 'schedules')) return resp({ error: 'v12: this tab is not visible in this room' }, 403)
+      const q = await loadPrimaryQuote(sb, dealId)
+      if ((q as Record<string, unknown>).error) return resp({ error: (q as Record<string, unknown>).error }, 500)
+      const quote = (q as Record<string, unknown>).quote as Record<string, unknown> | null
+      if (!quote) return resp({ ok: true, quote: null, schedule: [], has_sow: false })
+      const hasSow = await dealHasSow(sb, dealId)
+      const { data: schedRows, error: schedErr } = await sb.from('quote_payment_schedule').select('id, sequence_number, payment_type, invoice_date, period_start, period_end, amount, description, line_breakdown, source, implementor_name, implementation_item_id, show_in_proposal').eq('quote_id', quote.id).order('sequence_number')
+      if (schedErr) return resp({ error: `v12: schedule load failed: ${schedErr.message}` }, 500)
+      const schedule = (schedRows || []).filter((r: Record<string, unknown>) => r.show_in_proposal !== false)
+        .filter((r: Record<string, unknown>) => hasSow || (!r.implementation_item_id && r.source !== 'implementation'))
+      return resp({ ok: true, quote: { id: quote.id, name: quote.name, billing_cadence: quote.billing_cadence, contract_start_date: quote.contract_start_date }, schedule, has_sow: hasSow, implementation_items: hasSow ? (q as Record<string, unknown>).implementation_items : [] })
+    }
+    if (action === 'get-deck-tab') {
+      if (!tabAllowed(room, 'deck')) return resp({ error: 'v12: this tab is not visible in this room' }, 403)
+      const { data: deck, error: deckErr } = await sb.from('room_proposals').select('id, title, cover_headline, cover_subhead, cover_title, cover_subtitle, cover_logo_url, hero_image_url, hero_wash_color, hero_wash_opacity, theme_color, status, published_at, sections, agenda_items, intro_people, solution_map, map_legend, company_overview, slide_excluded, custom_elements, slides, updated_at').eq('deal_room_id', viewer.deal_room_id).eq('status', 'published').order('published_at', { ascending: false }).limit(1).maybeSingle()
+      if (deckErr) return resp({ error: `v12: deck load failed: ${deckErr.message}` }, 500)
+      if (!deck) return resp({ ok: true, deck: null, message: 'Proposal not yet published' })
+      return resp({ ok: true, deck })
     }
 
     if (action === 'add-comment') {
