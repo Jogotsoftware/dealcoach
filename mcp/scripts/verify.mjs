@@ -170,7 +170,7 @@ if (!stage) {
       .eq("actor_role", "mcp")
       .order("created_at", { ascending: false })
       .limit(1);
-    check("audit_log recorded the write", audit?.[0]?.action === "update_field" && audit?.[0]?.entity_table === "msp_stages", JSON.stringify(audit?.[0]?.after_state ?? null));
+    check("audit_log recorded the write", audit?.[0]?.action === "updated" && audit?.[0]?.entity_table === "msp_stages", JSON.stringify(audit?.[0]?.after_state ?? null));
     await handlers.updateField({ table: "msp_stages", row_id: stage.id, field: "is_completed", value: String(original) });
     const { data: reverted } = await supabase.from("msp_stages").select("is_completed").eq("id", stage.id).single();
     check("reverted to the original value", reverted?.is_completed === original);
@@ -236,7 +236,7 @@ if (sampleDeal) {
         .eq("entity_id", rowId)
         .eq("actor_role", "mcp")
         .limit(1);
-      check("audit_log recorded the create", audit?.[0]?.action === "create_row" && audit?.[0]?.entity_table === "tasks");
+      check("audit_log recorded the create", audit?.[0]?.action === "created" && audit?.[0]?.entity_table === "tasks");
       const { error: cleanupErr } = await supabase.from("tasks").delete().eq("id", rowId);
       check("verify row cleaned up", !cleanupErr, cleanupErr?.message ?? "");
     }

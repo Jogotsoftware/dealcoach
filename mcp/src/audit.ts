@@ -13,7 +13,9 @@ export type MutationRecord = {
 
 /**
  * Writes the mutation to audit_log. That table has no `source` column, so the
- * source is carried as actor_role = 'mcp' plus action = 'update_field'.
+ * source is carried as actor_role = 'mcp' plus the tool name in reason/diff.
+ * audit_log_action_check only admits created/updated/deleted/status_changed/
+ * shared/archived/restored, so action uses those verbs, not the tool names.
  * Returns a warning string when the audit write fails: a silent audit gap is
  * worse than a noisy one.
  */
@@ -28,10 +30,11 @@ export async function logMutation(
     actor_role: "mcp",
     entity_table: record.table,
     entity_id: UUID_RE.test(record.rowId) ? record.rowId : null,
-    action: "update_field",
+    action: "updated",
     before_state: { [record.field]: record.oldValue ?? null },
     after_state: { [record.field]: record.newValue ?? null },
     diff: {
+      tool: "update_field",
       row_id: record.rowId,
       field: record.field,
       old: record.oldValue ?? null,
@@ -67,10 +70,10 @@ export async function logCreate(
     actor_role: "mcp",
     entity_table: record.table,
     entity_id: UUID_RE.test(record.rowId) ? record.rowId : null,
-    action: "create_row",
+    action: "created",
     before_state: {},
     after_state: record.row,
-    diff: { row_id: record.rowId, created: true },
+    diff: { tool: "create_row", row_id: record.rowId },
     reason: "lumen-mcp create_row",
   };
 

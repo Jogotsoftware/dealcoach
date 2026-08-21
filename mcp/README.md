@@ -84,7 +84,7 @@ without it.
 | `find_deal` | Deals by company name (case-insensitive partial match), limit 25. |
 | `read_deal` | One deal composed with its `deal_analysis` and `company_profile`. |
 | `query_rows` | Rows from any readable table with optional equality filters. Default limit 50, hard cap 200. This is how the model finds the `row_id` an update needs. |
-| `create_row` | Inserts one row in a writable table. `org_id` is injected server-side and refused as input. Foreign keys are accepted at creation, but every referenced parent row is verified in-org by walking its FK chain first, and a table owned through a parent must include that parent column. Values are cast per column type, required columns are preflighted when the catalog RPC is available, the row is read back, and the insert lands in `audit_log` as `action = 'create_row'`. Creating a deal auto-creates its `company_profile` and `deal_analysis` via the existing trigger. |
+| `create_row` | Inserts one row in a writable table. `org_id` is injected server-side and refused as input. Foreign keys are accepted at creation, but every referenced parent row is verified in-org by walking its FK chain first, and a table owned through a parent must include that parent column. Values are cast per column type, required columns are preflighted when the catalog RPC is available, the row is read back, and the insert lands in `audit_log` as `action = 'created'` with `diff.tool = 'create_row'`. Creating a deal auto-creates its `company_profile` and `deal_analysis` via the existing trigger. |
 | `update_field` | Sets one field on one row. Marked destructive, so Claude confirms first. |
 
 Org scoping on reads is automatic. Tables carrying `org_id` are filtered directly.
@@ -107,11 +107,12 @@ The scope is never dropped.
 4. Casts the incoming string to the column's type. A failed cast is an error naming
    the expected type. Nothing is written, and a bad cast never lands as null.
 5. Writes, then reads the row back and returns the new value.
-6. Records the change in `audit_log`. That table has no `source` column, so the
-   source is carried as `actor_role = 'mcp'` with `action = 'update_field'`,
-   `actor_id = LUMEN_USER_ID`, and the old and new values in `before_state`,
-   `after_state` and `diff`. An audit failure is surfaced as a warning on the
-   result rather than swallowed.
+6. Records the change in `audit_log`. That table has no `source` column and its
+   check constraint only admits generic verbs, so the source is carried as
+   `actor_role = 'mcp'` with `action = 'updated'`, the tool name in `reason` and
+   `diff.tool`, `actor_id = LUMEN_USER_ID`, and the old and new values in
+   `before_state`, `after_state` and `diff`. An audit failure is surfaced as a
+   warning on the result rather than swallowed.
 
 ## The stdout rule
 
