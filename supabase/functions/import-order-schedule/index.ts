@@ -1,4 +1,4 @@
-// import-order-schedule v1
+// import-order-schedule v2
 //
 // Takes an AE-uploaded PDF order schedule, sends it to Claude with a structured
 // extraction prompt, and writes the result back to the quote (quote_lines +
@@ -22,7 +22,7 @@
 // - verify_jwt: false (we authenticate via supabase service-role and re-check
 //   that the caller's session can access the quote's org).
 // - apikey header required by Kong.
-// - Version stamps in every error: "import-order-schedule v1: <reason>".
+// - Version stamps in every error: "import-order-schedule v2: <reason>".
 
 // @ts-nocheck
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -31,7 +31,7 @@ const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY')!
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
-const CLAUDE_MODEL = 'claude-sonnet-4-20250514'
+const CLAUDE_MODEL = 'claude-opus-5'
 
 function cors() {
   return {
@@ -90,7 +90,8 @@ Return ONLY the JSON object. No explanation.`
 async function callClaude(pdfBase64: string): Promise<any> {
   const body = {
     model: CLAUDE_MODEL,
-    max_tokens: 8000,
+    max_tokens: 16000,
+    output_config: { effort: 'medium' },
     messages: [
       {
         role: 'user',
@@ -118,13 +119,19 @@ async function callClaude(pdfBase64: string): Promise<any> {
     throw new Error(`Claude API ${r.status}: ${err.slice(0, 500)}`)
   }
   const data = await r.json()
-  const text = data?.content?.[0]?.text || ''
+  if (data?.stop_reason === 'refusal') {
+    throw new Error(`v2: claude refused (${data?.stop_details?.category ?? 'unknown'})`)
+  }
+  // Thinking is on by default on Opus 5, so content[0] is a thinking block.
+  // Take the last text block, which is the model's final answer.
+  const blocks = Array.isArray(data?.content) ? data.content : []
+  const text = blocks.filter((b: any) => b?.type === 'text').map((b: any) => b.text).join('').trim()
   // Claude sometimes wraps JSON in fences despite "no markdown" — be tolerant.
   const stripped = text.replace(/^\s*```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim()
   try {
     return JSON.parse(stripped)
   } catch (e: any) {
-    throw new Error(`v1: claude returned non-JSON: ${stripped.slice(0, 400)}`)
+    throw new Error(`v2: claude returned non-JSON: ${stripped.slice(0, 400)}`)
   }
 }
 
@@ -159,9 +166,9 @@ Deno.serve(async (req: Request) => {
     const body = await req.json()
     const quoteId = String(body.quote_id || '')
     const storagePath = String(body.storage_path || '')
-    if (!quoteId) return resp({ error: 'v1: quote_id required' }, 400)
-    if (!storagePath) return resp({ error: 'v1: storage_path required' }, 400)
-    if (!ANTHROPIC_API_KEY) return resp({ error: 'v1: ANTHROPIC_API_KEY not configured' }, 500)
+    if (!quoteId) return resp({ error: 'v2: quote_id required' }, 400)
+    if (!storagePath) return resp({ error: 'v2: storage_path required' }, 400)
+    if (!ANTHROPIC_API_KEY) return resp({ error: 'v2: ANTHROPIC_API_KEY not configured' }, 500)
 
     const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
@@ -171,13 +178,13 @@ Deno.serve(async (req: Request) => {
       .select('id, org_id, deal_id, contract_term_id')
       .eq('id', quoteId)
       .single()
-    if (qErr || !quote) return resp({ error: `v1: quote not found: ${qErr?.message}` }, 404)
+    if (qErr || !quote) return resp({ error: `v2: quote not found: ${qErr?.message}` }, 404)
 
     // 2. Download the PDF from storage.
     const { data: file, error: fErr } = await sb.storage
       .from('order-schedule-uploads')
       .download(storagePath)
-    if (fErr || !file) return resp({ error: `v1: pdf download failed: ${fErr?.message}` }, 404)
+    if (fErr || !file) return resp({ error: `v2: pdf download failed: ${fErr?.message}` }, 404)
 
     const buf = new Uint8Array(await file.arrayBuffer())
     // Base64-encode in 32 KB chunks to avoid Deno's String.fromCharCode arg limit.
@@ -293,12 +300,42 @@ Deno.serve(async (req: Request) => {
     await sb.from('quote_payment_schedule').delete().eq('quote_id', quoteId)
 
     if (linesToInsert.length) {
-      const { error: insErr } = await sb.from('quote_lines').insert(linesToInsert)
-      if (insErr) return resp({ error: `v1: insert quote_lines: ${insErr.message}` }, 500)
+      const { data: insertedLines, error: insErr } = await sb.from('quote_lines').insert(linesToInsert).select('id, product_id')
+      if (insErr) return resp({ error: `v2: insert quote_lines: ${insErr.message}` }, 500)
+
+      // Expand bundles (e.g. Sage for Scaling Businesses) into $0 child lines
+      // so every surface can list what the bundle includes. Matches the shape
+      // the product picker writes: parent_line_id set, unit_price 0.
+      const bundleProductIds = new Set((products || []).filter((p: any) => p.is_bundle).map((p: any) => p.id))
+      const bundleParents = (insertedLines || []).filter((l: any) => bundleProductIds.has(l.product_id))
+      if (bundleParents.length) {
+        const { data: bundleItems } = await sb
+          .from('product_bundle_items')
+          .select('bundle_product_id, child_product_id, included_quantity, sort_order')
+          .in('bundle_product_id', bundleParents.map((l: any) => l.product_id))
+        let childOrder = linesToInsert.length + 1
+        const childLines: any[] = []
+        for (const parent of bundleParents) {
+          const items = (bundleItems || [])
+            .filter((i: any) => i.bundle_product_id === parent.product_id)
+            .sort((a: any, b: any) => (a.sort_order || 0) - (b.sort_order || 0))
+          for (const it of items) {
+            childLines.push({
+              quote_id: quoteId, product_id: it.child_product_id, parent_line_id: parent.id,
+              line_order: childOrder++, quantity: Number(it.included_quantity) || 1,
+              unit_price: 0, discount_pct: 0, extended: 0,
+            })
+          }
+        }
+        if (childLines.length) {
+          const { error: childErr } = await sb.from('quote_lines').insert(childLines)
+          if (childErr) return resp({ error: `v3: insert bundle child lines: ${childErr.message}` }, 500)
+        }
+      }
     }
     if (implToInsert.length) {
       const { error: insErr } = await sb.from('quote_implementation_items').insert(implToInsert)
-      if (insErr) return resp({ error: `v1: insert impl items: ${insErr.message}` }, 500)
+      if (insErr) return resp({ error: `v2: insert impl items: ${insErr.message}` }, 500)
     }
 
     // 9. Update quote header fields from extraction.
@@ -311,7 +348,7 @@ Deno.serve(async (req: Request) => {
     }
     if (Object.keys(headerUpdates).length) {
       const { error: upErr } = await sb.from('quotes').update(headerUpdates).eq('id', quoteId)
-      if (upErr) return resp({ error: `v1: update quote header: ${upErr.message}` }, 500)
+      if (upErr) return resp({ error: `v2: update quote header: ${upErr.message}` }, 500)
     }
 
     return resp({
@@ -323,6 +360,6 @@ Deno.serve(async (req: Request) => {
       warnings: [],
     })
   } catch (e: any) {
-    return resp({ error: `v1: ${e?.message || String(e)}` }, 500)
+    return resp({ error: `v2: ${e?.message || String(e)}` }, 500)
   }
 })
