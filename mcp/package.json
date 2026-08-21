@@ -1,0 +1,22 @@
+{
+  "name": "lumen-mcp",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Local stdio MCP server for reading and updating Lumen (dealcoach) Supabase tables with FK-derived tenant isolation.",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "inspect": "npm run build && npx @modelcontextprotocol/inspector node dist/index.js",
+    "verify": "node scripts/verify.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "@supabase/supabase-js": "^2.49.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  }
+}
