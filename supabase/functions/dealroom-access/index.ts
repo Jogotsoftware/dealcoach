@@ -1,4 +1,12 @@
-// dealroom-access v12
+// dealroom-access v14
+// v14 changes: ROI calculator tab. deal_rooms grew show_roi_tab; visibleTabs/
+// tabAllowed cover 'roi'. get-tab-anon accepts tab `roi` (and authed
+// get-roi-tab): returns the minimal pieces the client's buildRoiSetup needs:
+// quote investment totals + contract-term YoY caps (locked rows), the deal's
+// current_system_cost, the lead's revenue/finance-team size, and the AE's
+// saved roi_scenarios inputs. Customer-side slider changes are ephemeral by
+// design: there is no write path for scenarios through this function.
+//
 // v12 changes: Evaluation Room app tabs. deal_rooms grew show_models_tab and
 // show_schedules_tab; visibleTabs/tabAllowed now cover 'models' and 'schedules'
 // (additive — DealCoach's DealRoomViewer filters a fixed 3-key list, unaffected).
@@ -84,6 +92,7 @@ function visibleTabs(room: Record<string, unknown>): string[] {
   if (room.show_proposal_tab !== false) out.push('proposal')
   if (room.show_models_tab !== false) out.push('models')
   if (room.show_schedules_tab !== false) out.push('schedules')
+  if (room.show_roi_tab !== false) out.push('roi')
   return out
 }
 
@@ -94,7 +103,42 @@ function tabAllowed(room: Record<string, unknown>, tab: string): boolean {
   if (tab === 'proposal' || tab === 'quote' || tab === 'deck') return room.show_proposal_tab !== false
   if (tab === 'models') return room.show_models_tab !== false
   if (tab === 'schedules') return room.show_schedules_tab !== false
+  if (tab === 'roi') return room.show_roi_tab !== false
   return true
+}
+
+// v14: ROI tab payload: the minimal inputs the client-side calculator merges
+// (see evaluation-room src/lib/roiPrefill.js). Every field here is already
+// customer-facing elsewhere in the room or exists to be shown in the calculator.
+async function loadRoiTab(sb: Sb, dealId: unknown) {
+  const [quoteRes, dealRes, leadRes, scenRes] = await Promise.all([
+    sb.from('quotes')
+      .select('id, contract_term_id, sage_subscription_total, sage_implementation_total, signing_bonus_amount, signing_bonus_months, free_months, is_primary, created_at')
+      .eq('deal_id', dealId).order('is_primary', { ascending: false }).order('created_at', { ascending: false }).limit(1),
+    sb.from('deals').select('current_system_cost').eq('id', dealId).maybeSingle(),
+    sb.from('bdr_leads').select('annual_revenue, accounting_team_size').eq('deal_id', dealId).limit(1).maybeSingle(),
+    sb.from('roi_scenarios').select('inputs, model_version, updated_at').eq('deal_id', dealId).maybeSingle(),
+  ])
+  if (quoteRes.error) return { error: `v14: quote lookup failed: ${quoteRes.error.message}` }
+  const quote = (quoteRes.data || [])[0] || null
+  let contractTerm: Record<string, unknown> | null = null
+  if (quote?.contract_term_id) {
+    const { data: term } = await sb.from('contract_terms').select('yoy_caps').eq('id', quote.contract_term_id).maybeSingle()
+    contractTerm = term || null
+  }
+  return {
+    quote: quote ? {
+      sage_subscription_total: quote.sage_subscription_total,
+      sage_implementation_total: quote.sage_implementation_total,
+      signing_bonus_amount: quote.signing_bonus_amount,
+      signing_bonus_months: quote.signing_bonus_months,
+      free_months: quote.free_months,
+    } : null,
+    contract_term: contractTerm,
+    deal: { current_system_cost: dealRes.data?.current_system_cost ?? null },
+    lead: leadRes.data || null,
+    scenario: scenRes.data || null,
+  }
 }
 
 // v12: shared read-only loaders for the quote-backed tabs. dealId comes from the
@@ -217,9 +261,16 @@ Deno.serve(async (req: Request) => {
       if ((v as Record<string, unknown>).error) return resp({ error: (v as Record<string, unknown>).error }, 401)
       const { room } = v as { room: Record<string, unknown> }
       const tab = String(body.tab || '')
-      if (!['msp', 'library', 'proposal', 'quote', 'models', 'schedules', 'deck'].includes(tab)) return resp({ error: 'v10: invalid tab' }, 400)
+      if (!['msp', 'library', 'proposal', 'quote', 'models', 'schedules', 'deck', 'roi'].includes(tab)) return resp({ error: 'v10: invalid tab' }, 400)
       if (!tabAllowed(room, tab)) return resp({ error: 'v10: this tab is not visible in this room' }, 403)
       const dealId = room.deal_id
+
+      // v14: ROI calculator payload.
+      if (tab === 'roi') {
+        const r = await loadRoiTab(sb, dealId)
+        if ((r as Record<string, unknown>).error) return resp({ error: (r as Record<string, unknown>).error }, 500)
+        return resp({ ok: true, ...r })
+      }
 
       // v12 tabs — read-only quote-backed payloads for the Evaluation Room app.
       if (tab === 'quote' || tab === 'models') {
@@ -363,6 +414,12 @@ Deno.serve(async (req: Request) => {
         return resp({ ok: true, ...m })
       }
       return resp({ ok: true, ...q })
+    }
+    if (action === 'get-roi-tab') {
+      if (!tabAllowed(room, 'roi')) return resp({ error: 'v14: this tab is not visible in this room' }, 403)
+      const r = await loadRoiTab(sb, dealId)
+      if ((r as Record<string, unknown>).error) return resp({ error: (r as Record<string, unknown>).error }, 500)
+      return resp({ ok: true, ...r })
     }
     if (action === 'get-schedules-tab') {
       if (!tabAllowed(room, 'schedules')) return resp({ error: 'v12: this tab is not visible in this room' }, 403)
