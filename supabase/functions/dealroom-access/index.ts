@@ -1,4 +1,25 @@
-// dealroom-access v14
+// dealroom-access v17
+// v17 changes: the implementation schedule moved from its own tab to a section
+// under Schedules, so its payload rides along with the schedules response.
+// 'implementation' is no longer advertised in visibleTabs (the standalone tab
+// endpoint still answers, for anything already calling it), and
+// show_implementation_tab now governs whether the section is included at all
+// rather than whether a tab appears.
+//
+// v16 changes: Models tab now returns every quote on the deal, not only those
+// sharing a comparison_group_id -- a second quote used to silently never
+// appear -- and quotes flagged deal_room_display_config.model_hidden are
+// dropped SERVER-SIDE. They were previously included in the payload and merely
+// not rendered by the client, which put a hidden quote's full financials in an
+// anonymous customer's browser.
+//
+// v15 changes: Implementation schedule tab. deal_rooms grew
+// show_implementation_tab + implementation_anchor_date; visibleTabs/tabAllowed
+// cover 'implementation'. The payload stays raw (rows, the anchor override,
+// and the MSP dates the anchor falls back to) so the client keeps the single
+// resolveAnchor implementation in lib/implementationSchedule.js rather than
+// this function growing a second copy of that rule.
+//
 // v14 changes: ROI calculator tab. deal_rooms grew show_roi_tab; visibleTabs/
 // tabAllowed cover 'roi'. get-tab-anon accepts tab `roi` (and authed
 // get-roi-tab): returns the minimal pieces the client's buildRoiSetup needs:
@@ -104,12 +125,37 @@ function tabAllowed(room: Record<string, unknown>, tab: string): boolean {
   if (tab === 'models') return room.show_models_tab !== false
   if (tab === 'schedules') return room.show_schedules_tab !== false
   if (tab === 'roi') return room.show_roi_tab !== false
+  if (tab === 'implementation') return room.show_implementation_tab !== false
   return true
 }
 
 // v14: ROI tab payload: the minimal inputs the client-side calculator merges
 // (see evaluation-room src/lib/roiPrefill.js). Every field here is already
 // customer-facing elsewhere in the room or exists to be shown in the calculator.
+// v15: the implementation schedule as the customer sees it. Rows are already
+// customer-safe (phase names, labels, weeks, dates); the SOW contributes only
+// its two stated durations, never its pricing.
+async function loadImplementationTab(sb: Sb, dealId: unknown, room: Record<string, unknown>) {
+  const [itemsRes, sowRes, msRes, stRes] = await Promise.all([
+    sb.from('implementation_items')
+      .select('id, kind, phase_name, label, start_week, end_week, start_date, end_date, date_source, color, sort_order')
+      .eq('deal_id', dealId).order('sort_order'),
+    sb.from('sow_documents')
+      .select('duration_to_live_weeks, duration_to_complete_weeks')
+      .eq('deal_id', dealId).order('created_at', { ascending: false }).limit(1),
+    sb.from('msp_milestones').select('milestone_name, due_date').eq('deal_id', dealId),
+    sb.from('msp_stages').select('start_date').eq('deal_id', dealId),
+  ])
+  if (itemsRes.error) return { error: `v15: implementation load failed: ${itemsRes.error.message}` }
+  return {
+    items: itemsRes.data || [],
+    sow: (sowRes.data || [])[0] || null,
+    room: { implementation_anchor_date: room.implementation_anchor_date ?? null },
+    milestones: msRes.data || [],
+    stages: stRes.data || [],
+  }
+}
+
 async function loadRoiTab(sb: Sb, dealId: unknown) {
   const [quoteRes, dealRes, leadRes, scenRes] = await Promise.all([
     sb.from('quotes')
@@ -178,13 +224,19 @@ async function loadModelScenarios(sb: Sb, dealId: unknown) {
   if ((q as Record<string, unknown>).error) return q
   const primary = (q as Record<string, unknown>).quote as Record<string, unknown> | null
   if (!primary) return { quotes: [], contract_terms: [] }
-  let scenarioQuotes: Record<string, unknown>[] = [primary]
-  if (primary.comparison_group_id) {
-    const { data: siblings } = await sb.from('quotes')
-      .select('id, name, version, status, net_total, sage_subscription_total, sage_implementation_total, contract_term_id, contract_start_date, free_months, free_months_placement, billing_cadence, signing_bonus_amount, signing_bonus_months, signing_bonus_label, tco_scenarios, deal_room_display_config, scenario_type, scenario_label, comparison_group_id, is_primary')
-      .eq('comparison_group_id', primary.comparison_group_id).eq('deal_id', dealId)
-    if (siblings?.length) scenarioQuotes = siblings
-  }
+  // v16: every quote on the deal is a model. Hidden ones are dropped here, not
+  // left to the client to skip rendering.
+  const { data: allQuotes } = await sb.from('quotes')
+    .select('id, name, version, status, net_total, sage_subscription_total, sage_implementation_total, contract_term_id, contract_start_date, free_months, free_months_placement, billing_cadence, signing_bonus_amount, signing_bonus_months, signing_bonus_label, tco_scenarios, deal_room_display_config, scenario_type, scenario_label, comparison_group_id, is_primary, created_at')
+    .eq('deal_id', dealId)
+  const isHidden = (row: Record<string, unknown>) =>
+    !!(row?.deal_room_display_config as Record<string, unknown> | null)?.model_hidden
+  let scenarioQuotes: Record<string, unknown>[] = (allQuotes || []).filter(sq => !isHidden(sq))
+  if (!scenarioQuotes.length) scenarioQuotes = isHidden(primary) ? [] : [primary]
+  scenarioQuotes.sort((a, b) => {
+    if (!!b.is_primary !== !!a.is_primary) return b.is_primary ? 1 : -1
+    return String(b.created_at || '').localeCompare(String(a.created_at || ''))
+  })
   const termIds = [...new Set(scenarioQuotes.map(sq => sq.contract_term_id).filter(Boolean))]
   let terms: unknown[] = []
   if (termIds.length) {
@@ -261,9 +313,16 @@ Deno.serve(async (req: Request) => {
       if ((v as Record<string, unknown>).error) return resp({ error: (v as Record<string, unknown>).error }, 401)
       const { room } = v as { room: Record<string, unknown> }
       const tab = String(body.tab || '')
-      if (!['msp', 'library', 'proposal', 'quote', 'models', 'schedules', 'deck', 'roi'].includes(tab)) return resp({ error: 'v10: invalid tab' }, 400)
+      if (!['msp', 'library', 'proposal', 'quote', 'models', 'schedules', 'deck', 'roi', 'implementation'].includes(tab)) return resp({ error: 'v10: invalid tab' }, 400)
       if (!tabAllowed(room, tab)) return resp({ error: 'v10: this tab is not visible in this room' }, 403)
       const dealId = room.deal_id
+
+      // v15: implementation schedule payload.
+      if (tab === 'implementation') {
+        const im = await loadImplementationTab(sb, dealId, room)
+        if ((im as Record<string, unknown>).error) return resp({ error: (im as Record<string, unknown>).error }, 500)
+        return resp({ ok: true, ...im })
+      }
 
       // v14: ROI calculator payload.
       if (tab === 'roi') {
@@ -293,7 +352,8 @@ Deno.serve(async (req: Request) => {
         if (schedErr) return resp({ error: `v12: schedule load failed: ${schedErr.message}` }, 500)
         const schedule = (schedRows || []).filter((r: Record<string, unknown>) => r.show_in_proposal !== false)
           .filter((r: Record<string, unknown>) => hasSow || (!r.implementation_item_id && r.source !== 'implementation'))
-        return resp({ ok: true, quote: { id: quote.id, name: quote.name, billing_cadence: quote.billing_cadence, contract_start_date: quote.contract_start_date }, schedule, has_sow: hasSow, implementation_items: hasSow ? (q as Record<string, unknown>).implementation_items : [] })
+        const impl = room.show_implementation_tab !== false ? await loadImplementationTab(sb, dealId, room) : null
+        return resp({ ok: true, quote: { id: quote.id, name: quote.name, billing_cadence: quote.billing_cadence, contract_start_date: quote.contract_start_date }, schedule, has_sow: hasSow, implementation_items: hasSow ? (q as Record<string, unknown>).implementation_items : [], implementation: impl && !(impl as Record<string, unknown>).error ? impl : null })
       }
       if (tab === 'deck') {
         const { data: deck, error: deckErr } = await sb.from('room_proposals').select('id, title, cover_headline, cover_subhead, cover_title, cover_subtitle, cover_logo_url, hero_image_url, hero_wash_color, hero_wash_opacity, theme_color, status, published_at, sections, agenda_items, intro_people, solution_map, map_legend, company_overview, slide_excluded, custom_elements, slides, updated_at').eq('deal_room_id', room.id).eq('status', 'published').order('published_at', { ascending: false }).limit(1).maybeSingle()
@@ -415,6 +475,12 @@ Deno.serve(async (req: Request) => {
       }
       return resp({ ok: true, ...q })
     }
+    if (action === 'get-implementation-tab') {
+      if (!tabAllowed(room, 'implementation')) return resp({ error: 'v15: this tab is not visible in this room' }, 403)
+      const im = await loadImplementationTab(sb, dealId, room)
+      if ((im as Record<string, unknown>).error) return resp({ error: (im as Record<string, unknown>).error }, 500)
+      return resp({ ok: true, ...im })
+    }
     if (action === 'get-roi-tab') {
       if (!tabAllowed(room, 'roi')) return resp({ error: 'v14: this tab is not visible in this room' }, 403)
       const r = await loadRoiTab(sb, dealId)
@@ -432,7 +498,8 @@ Deno.serve(async (req: Request) => {
       if (schedErr) return resp({ error: `v12: schedule load failed: ${schedErr.message}` }, 500)
       const schedule = (schedRows || []).filter((r: Record<string, unknown>) => r.show_in_proposal !== false)
         .filter((r: Record<string, unknown>) => hasSow || (!r.implementation_item_id && r.source !== 'implementation'))
-      return resp({ ok: true, quote: { id: quote.id, name: quote.name, billing_cadence: quote.billing_cadence, contract_start_date: quote.contract_start_date }, schedule, has_sow: hasSow, implementation_items: hasSow ? (q as Record<string, unknown>).implementation_items : [] })
+      const implA = room.show_implementation_tab !== false ? await loadImplementationTab(sb, dealId, room) : null
+      return resp({ ok: true, quote: { id: quote.id, name: quote.name, billing_cadence: quote.billing_cadence, contract_start_date: quote.contract_start_date }, schedule, has_sow: hasSow, implementation_items: hasSow ? (q as Record<string, unknown>).implementation_items : [], implementation: implA && !(implA as Record<string, unknown>).error ? implA : null })
     }
     if (action === 'get-deck-tab') {
       if (!tabAllowed(room, 'deck')) return resp({ error: 'v12: this tab is not visible in this room' }, 403)
