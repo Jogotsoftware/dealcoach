@@ -1,4 +1,21 @@
-// dealroom-access v17
+// dealroom-access v19
+// v19 changes: Models payload. (1) Each model quote now carries
+// discount_total, list_subtotal, blended_discount_pct, finance_charges_total
+// and finance_charges_list, so the customer's cards can show List Price and
+// Subscription Discount and keep a first-year-only surcharge out of later
+// years, the way the rep's TCO tab does. (2) Scenarios saved on a quote's
+// tco_scenarios that the rep hid (hidden: true) are dropped SERVER-SIDE, as
+// hidden quotes have been since v16 -- they were shipped to the anonymous
+// customer's browser and merely not drawn.
+//
+// v18 changes: open-access enforcement actually works. The guard tested
+// room.allow_open_access, a column that does not exist on deal_rooms, so the
+// expression was always `undefined === false` and never fired -- every room
+// was readable by anyone holding the share token regardless of how it was
+// configured. The real column is access_mode ('magic_link' | 'open_token').
+// A magic_link room now requires a personal link, as its setting always said
+// it did.
+//
 // v17 changes: the implementation schedule moved from its own tab to a section
 // under Schedules, so its payload rides along with the schedules response.
 // 'implementation' is no longer advertised in visibleTabs (the standalone tab
@@ -101,7 +118,11 @@ async function loadRoomByShare(sb: Sb, share_token: string) {
   if (error) return { error: `v10: room lookup failed: ${error.message}` }
   if (!room) return { error: 'v10: invalid share link' }
   if (!room.enabled) return { error: 'v10: this room is disabled' }
-  if (room.allow_open_access === false) return { error: 'v10: this room requires a personal magic link — ask your AE' }
+  // access_mode is the real column. Anything that is not explicitly
+  // open_token requires a personal magic link.
+  if (room.access_mode && room.access_mode !== 'open_token') {
+    return { error: 'v18: this room requires a personal link — ask your AE to send you one' }
+  }
   const archived = !!room.expires_at && new Date(room.expires_at).getTime() <= Date.now()
   return { room, archived }
 }
@@ -191,7 +212,7 @@ async function loadRoiTab(sb: Sb, dealId: unknown) {
 // room row, so RLS-free service-role reads stay scoped to the shared deal.
 async function loadPrimaryQuote(sb: Sb, dealId: unknown) {
   const { data: quotes, error } = await sb.from('quotes')
-    .select('id, name, version, status, list_subtotal, discount_total, net_total, global_discount_pct, blended_discount_pct, contract_term_id, contract_start_date, free_months, free_months_placement, billing_cadence, signing_bonus_amount, signing_bonus_months, signing_bonus_label, sage_subscription_total, sage_implementation_total, sage_total, solution_total, tco_scenarios, deal_room_display_config, signer_contact_id, proposal_customer_logo_url, proposal_org_logo_url, is_primary, updated_at')
+    .select('id, name, version, status, list_subtotal, discount_total, net_total, global_discount_pct, blended_discount_pct, contract_term_id, contract_start_date, free_months, free_months_placement, billing_cadence, signing_bonus_amount, signing_bonus_months, signing_bonus_label, sage_subscription_total, sage_implementation_total, sage_total, solution_total, finance_charges_total, finance_charges_list, tco_scenarios, deal_room_display_config, signer_contact_id, proposal_customer_logo_url, proposal_org_logo_url, is_primary, updated_at')
     .eq('deal_id', dealId).order('is_primary', { ascending: false }).order('created_at', { ascending: false }).limit(1)
   if (error) return { error: `v12: quote lookup failed: ${error.message}` }
   const quote = (quotes || [])[0]
@@ -227,12 +248,18 @@ async function loadModelScenarios(sb: Sb, dealId: unknown) {
   // v16: every quote on the deal is a model. Hidden ones are dropped here, not
   // left to the client to skip rendering.
   const { data: allQuotes } = await sb.from('quotes')
-    .select('id, name, version, status, net_total, sage_subscription_total, sage_implementation_total, contract_term_id, contract_start_date, free_months, free_months_placement, billing_cadence, signing_bonus_amount, signing_bonus_months, signing_bonus_label, tco_scenarios, deal_room_display_config, scenario_type, scenario_label, comparison_group_id, is_primary, created_at')
+    .select('id, name, version, status, net_total, list_subtotal, discount_total, blended_discount_pct, sage_subscription_total, sage_implementation_total, finance_charges_total, finance_charges_list, contract_term_id, contract_start_date, free_months, free_months_placement, billing_cadence, signing_bonus_amount, signing_bonus_months, signing_bonus_label, tco_scenarios, deal_room_display_config, scenario_type, scenario_label, comparison_group_id, is_primary, created_at')
     .eq('deal_id', dealId)
   const isHidden = (row: Record<string, unknown>) =>
     !!(row?.deal_room_display_config as Record<string, unknown> | null)?.model_hidden
-  let scenarioQuotes: Record<string, unknown>[] = (allQuotes || []).filter(sq => !isHidden(sq))
-  if (!scenarioQuotes.length) scenarioQuotes = isHidden(primary) ? [] : [primary]
+  // v19: a scenario the rep hid on the TCO tab never leaves the server.
+  const withoutHiddenScenarios = (row: Record<string, unknown>) => ({
+    ...row,
+    tco_scenarios: (Array.isArray(row.tco_scenarios) ? row.tco_scenarios as Record<string, unknown>[] : [])
+      .filter(t => t && !t.hidden),
+  })
+  let scenarioQuotes: Record<string, unknown>[] = (allQuotes || []).filter(sq => !isHidden(sq)).map(withoutHiddenScenarios)
+  if (!scenarioQuotes.length) scenarioQuotes = isHidden(primary) ? [] : [withoutHiddenScenarios(primary)]
   scenarioQuotes.sort((a, b) => {
     if (!!b.is_primary !== !!a.is_primary) return b.is_primary ? 1 : -1
     return String(b.created_at || '').localeCompare(String(a.created_at || ''))
