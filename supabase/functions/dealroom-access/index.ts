@@ -1,4 +1,11 @@
-// dealroom-access v19
+// dealroom-access v20
+// v20 changes: the deal payload (validate-share, validate-token) carries
+// customer_logo_bg -- the optional background plate the rep put behind the
+// customer logo (deals.metadata.logo_bg), so the customer's room header draws
+// the logo the way the rep set it. Only that one key is read out of metadata
+// (it also holds internal notes such as qdc_prep_notes), and anything that is
+// not a #rrggbb hex goes out as null.
+//
 // v19 changes: Models payload. (1) Each model quote now carries
 // discount_total, list_subtotal, blended_discount_pct, finance_charges_total
 // and finance_charges_list, so the customer's cards can show List Price and
@@ -95,6 +102,12 @@ async function hashIp(ip: string): Promise<string> {
   const data = new TextEncoder().encode('dealroom:' + ip)
   const buf = await crypto.subtle.digest('SHA-256', data)
   return Array.from(new Uint8Array(buf)).slice(0, 8).map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+// v20: the rep's background plate behind the customer logo -- a #rrggbb hex
+// or null, never anything else out of deals.metadata.
+function logoBgOf(v: unknown): string | null {
+  return typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? v.toLowerCase() : null
 }
 
 type Sb = ReturnType<typeof createClient>
@@ -302,7 +315,7 @@ Deno.serve(async (req: Request) => {
       if ((v as Record<string, unknown>).error) return resp({ error: (v as Record<string, unknown>).error }, 401)
       const { room, archived } = v as { room: Record<string, unknown>, archived: boolean }
 
-      const { data: deal } = await sb.from('deals').select('id, company_name, customer_logo_url, org_id, rep_id').eq('id', room.deal_id).single()
+      const { data: deal } = await sb.from('deals').select('id, company_name, customer_logo_url, logo_bg:metadata->>logo_bg, org_id, rep_id').eq('id', room.deal_id).single()
       const { data: org } = deal ? await sb.from('organizations').select('name, logo_url').eq('id', deal.org_id).single() : { data: null }
       const { data: rep } = deal?.rep_id ? await sb.from('profiles').select('full_name, email, phone').eq('id', deal.rep_id).maybeSingle() : { data: null }
 
@@ -314,7 +327,7 @@ Deno.serve(async (req: Request) => {
         viewer: null,
         deal_room_id: room.id,
         share_token: room.share_token,
-        deal: deal ? { company_name: deal.company_name, customer_logo_url: deal.customer_logo_url } : null,
+        deal: deal ? { company_name: deal.company_name, customer_logo_url: deal.customer_logo_url, customer_logo_bg: logoBgOf(deal.logo_bg) } : null,
         org: org ? { name: org.name, logo_url: org.logo_url } : null,
         rep: rep ? { full_name: rep.full_name, email: rep.email, phone: rep.phone } : null,
         ae_notes: room.ae_notes || null,
@@ -413,7 +426,7 @@ Deno.serve(async (req: Request) => {
       if ((v as Record<string, unknown>).error) return resp({ error: (v as Record<string, unknown>).error }, 401)
       const { viewer, room, archived } = v as { viewer: Record<string, unknown>, room: Record<string, unknown>, archived: boolean }
 
-      const { data: deal } = await sb.from('deals').select('id, company_name, customer_logo_url, org_id, rep_id').eq('id', room.deal_id).single()
+      const { data: deal } = await sb.from('deals').select('id, company_name, customer_logo_url, logo_bg:metadata->>logo_bg, org_id, rep_id').eq('id', room.deal_id).single()
       const { data: org } = deal ? await sb.from('organizations').select('name, logo_url').eq('id', deal.org_id).single() : { data: null }
       const { data: rep } = deal?.rep_id ? await sb.from('profiles').select('full_name, email, phone').eq('id', deal.rep_id).maybeSingle() : { data: null }
 
@@ -433,7 +446,7 @@ Deno.serve(async (req: Request) => {
         viewer: { id: viewer.id, email: viewer.email, name: viewer.name },
         deal_room_id: viewer.deal_room_id,
         share_token: room.share_token,
-        deal: deal ? { company_name: deal.company_name, customer_logo_url: deal.customer_logo_url } : null,
+        deal: deal ? { company_name: deal.company_name, customer_logo_url: deal.customer_logo_url, customer_logo_bg: logoBgOf(deal.logo_bg) } : null,
         org: org ? { name: org.name, logo_url: org.logo_url } : null,
         rep: rep ? { full_name: rep.full_name, email: rep.email, phone: rep.phone } : null,
         ae_notes: room.ae_notes || null,
