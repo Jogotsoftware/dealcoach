@@ -207,7 +207,22 @@ export function createToolHandlers(supabase: SupabaseClient, res: Resolution, cf
     );
   }
 
+  /**
+   * A missing or wrongly-named argument used to surface as a raw TypeError --
+   * "Cannot read properties of undefined (reading 'replace')" -- which says
+   * nothing about which argument was wanted. Name it instead.
+   */
+  function requireArg(args: Record<string, unknown> | undefined, name: string, tool: string): string {
+    const v = args?.[name];
+    if (typeof v !== "string" || v.trim() === "") {
+      const got = args && Object.keys(args).length ? Object.keys(args).join(", ") : "none";
+      throw new LumenError(`${tool} requires a non-empty "${name}" argument. Received: ${got}.`);
+    }
+    return v;
+  }
+
   async function describeTable(args: { table: string }): Promise<ToolResult> {
+    requireArg(args as Record<string, unknown>, "table", "describe_table");
     const ownership = requireOwnership(res, args.table);
     const meta = catalog.tables.get(args.table)!;
     const header = [
@@ -232,7 +247,8 @@ export function createToolHandlers(supabase: SupabaseClient, res: Resolution, cf
   }
 
   async function findDeal(args: { company_name: string }): Promise<ToolResult> {
-    const pattern = `%${args.company_name.replace(/[%_]/g, (m) => `\\${m}`)}%`;
+    const companyName = requireArg(args as Record<string, unknown>, "company_name", "find_deal");
+    const pattern = `%${companyName.replace(/[%_]/g, (m) => `\\${m}`)}%`;
     try {
       const { data, error } = await supabase
         .from("deals")
@@ -252,6 +268,7 @@ export function createToolHandlers(supabase: SupabaseClient, res: Resolution, cf
   }
 
   async function readDeal(args: { deal_id: string }): Promise<ToolResult> {
+    requireArg(args as Record<string, unknown>, "deal_id", "read_deal");
     const deal = await selectOne(supabase, "deals", "id", args.deal_id);
     if (!deal) throw new LumenError(`deal ${args.deal_id} not found`);
     if (deal.org_id !== cfg.orgId) {
