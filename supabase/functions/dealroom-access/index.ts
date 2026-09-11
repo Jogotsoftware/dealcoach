@@ -1,4 +1,17 @@
-// dealroom-access v20
+// dealroom-access v21
+// v21 changes: Business Overview tab, the first tab a customer WRITES to.
+// deal_rooms grew show_business_overview_tab (visibleTabs/tabAllowed cover
+// 'business_overview'). get-tab-anon accepts tab `business_overview` (authed:
+// get-business-overview-tab) and returns the deal's deal_business_overviews
+// row plus the company name and a website that reads like one. Writes:
+// save-business-overview-anon { share_token, patch } for the open link --
+// 51 of 52 rooms are open_token, so this is the path customers actually use --
+// and save-business-overview { magic_token, patch } for a named viewer. Both
+// refuse an archived room or a hidden tab, check the patch's shape (flat
+// snake_case keys; strings, or rows whose cells are strings; size caps) and
+// merge it through the business_overview_merge RPC, so a rep and a customer
+// editing different fields never overwrite each other.
+//
 // v20 changes: the deal payload (validate-share, validate-token) carries
 // customer_logo_bg -- the optional background plate the rep put behind the
 // customer logo (deals.metadata.logo_bg), so the customer's room header draws
@@ -148,6 +161,7 @@ function visibleTabs(room: Record<string, unknown>): string[] {
   if (room.show_models_tab !== false) out.push('models')
   if (room.show_schedules_tab !== false) out.push('schedules')
   if (room.show_roi_tab !== false) out.push('roi')
+  if (room.show_business_overview_tab !== false) out.push('business_overview')
   return out
 }
 
@@ -160,6 +174,7 @@ function tabAllowed(room: Record<string, unknown>, tab: string): boolean {
   if (tab === 'schedules') return room.show_schedules_tab !== false
   if (tab === 'roi') return room.show_roi_tab !== false
   if (tab === 'implementation') return room.show_implementation_tab !== false
+  if (tab === 'business_overview') return room.show_business_overview_tab !== false
   return true
 }
 
@@ -286,6 +301,84 @@ async function loadModelScenarios(sb: Sb, dealId: unknown) {
   return { quotes: scenarioQuotes, contract_terms: terms }
 }
 
+// v21: Business Overview. The website on the deal row is sometimes a rep's
+// note typed into the wrong box, so it goes out as the starting value only
+// when it reads like an address (evaluation-room looksLikeWebsite: same rule).
+function websiteOrNull(v: unknown): string | null {
+  const s = String(v ?? '').trim()
+  if (!s || s.length > 200 || /\s/.test(s) || !s.includes('.')) return null
+  return s
+}
+
+async function loadBusinessOverview(sb: Sb, dealId: unknown) {
+  const [ovRes, dealRes] = await Promise.all([
+    sb.from('deal_business_overviews')
+      .select('data, updated_at, updated_by_kind, updated_by_name, customer_updated_at')
+      .eq('deal_id', dealId).maybeSingle(),
+    sb.from('deals').select('company_name, website').eq('id', dealId).maybeSingle(),
+  ])
+  if (ovRes.error) return { error: `v21: business overview load failed: ${ovRes.error.message}` }
+  return {
+    overview: ovRes.data || null,
+    deal: { company_name: dealRes.data?.company_name ?? null, website: websiteOrNull(dealRes.data?.website) },
+  }
+}
+
+// A customer's patch comes from an anonymous browser, so its shape is checked
+// rather than trusted: snake_case keys (evaluation-room lib/businessOverview.js
+// KEY_PATTERN -- keep the two in step), each value a string or a list of rows
+// whose cells are strings, with caps so one link cannot fill the table.
+const BO_KEY = /^[a-z][a-z0-9_]{0,47}$/
+function cleanOverviewPatch(raw: unknown): { patch?: Record<string, unknown>, error?: string } {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { error: 'v21: patch must be an object' }
+  const entries = Object.entries(raw as Record<string, unknown>)
+  if (!entries.length) return { error: 'v21: patch is empty' }
+  if (entries.length > 60) return { error: 'v21: too many fields in one save' }
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of entries) {
+    if (!BO_KEY.test(k)) return { error: `v21: invalid field '${k.slice(0, 48)}'` }
+    if (v === null || typeof v === 'string' || typeof v === 'number') {
+      const s = v === null ? '' : String(v)
+      if (s.length > 10000) return { error: `v21: '${k}' is too long` }
+      out[k] = s
+    } else if (Array.isArray(v)) {
+      if (v.length > 200) return { error: `v21: '${k}' has too many rows` }
+      const rows: Record<string, string>[] = []
+      for (const row of v) {
+        if (!row || typeof row !== 'object' || Array.isArray(row)) return { error: `v21: '${k}' rows must be objects` }
+        const cells = Object.entries(row as Record<string, unknown>)
+        if (cells.length > 12) return { error: `v21: '${k}' rows have too many columns` }
+        const clean: Record<string, string> = {}
+        for (const [ck, cv] of cells) {
+          if (!BO_KEY.test(ck)) return { error: `v21: invalid column '${ck.slice(0, 48)}'` }
+          const s = cv == null ? '' : String(cv)
+          if (s.length > 2000) return { error: `v21: '${k}.${ck}' is too long` }
+          clean[ck] = s
+        }
+        rows.push(clean)
+      }
+      out[k] = rows
+    } else {
+      return { error: `v21: '${k}' has an unsupported value` }
+    }
+  }
+  return { patch: out }
+}
+
+async function saveBusinessOverview(sb: Sb, room: Record<string, unknown>, archived: boolean, rawPatch: unknown, name: string | null) {
+  if (archived) return resp({ error: 'v21: This room is archived. Contact the AE to make changes.' }, 403)
+  if (!tabAllowed(room, 'business_overview')) return resp({ error: 'v21: this tab is not visible in this room' }, 403)
+  const { patch, error } = cleanOverviewPatch(rawPatch)
+  if (error || !patch) return resp({ error: error || 'v21: patch required' }, 400)
+  const { data, error: rpcErr } = await sb.rpc('business_overview_merge', {
+    p_deal_id: room.deal_id, p_patch: patch, p_kind: 'customer', p_name: name,
+  })
+  if (rpcErr) return resp({ error: `v21: save failed: ${rpcErr.message}` }, 500)
+  const out = (data || {}) as Record<string, unknown>
+  if (!out.ok) return resp({ error: `v21: ${out.error || 'save failed'}` }, 400)
+  return resp({ ...out, ok: true })
+}
+
 function requireWrite(archived: boolean) {
   if (archived) {
     return resp({ error: 'v7: This room is archived. Contact the AE for the current proposal.' }, 403)
@@ -351,11 +444,19 @@ Deno.serve(async (req: Request) => {
     if (action === 'get-tab-anon') {
       const v = await loadRoomByShare(sb, share_token)
       if ((v as Record<string, unknown>).error) return resp({ error: (v as Record<string, unknown>).error }, 401)
-      const { room } = v as { room: Record<string, unknown> }
+      const { room, archived } = v as { room: Record<string, unknown>, archived: boolean }
       const tab = String(body.tab || '')
-      if (!['msp', 'library', 'proposal', 'quote', 'models', 'schedules', 'deck', 'roi', 'implementation'].includes(tab)) return resp({ error: 'v10: invalid tab' }, 400)
+      if (!['msp', 'library', 'proposal', 'quote', 'models', 'schedules', 'deck', 'roi', 'implementation', 'business_overview'].includes(tab)) return resp({ error: 'v10: invalid tab' }, 400)
       if (!tabAllowed(room, tab)) return resp({ error: 'v10: this tab is not visible in this room' }, 403)
       const dealId = room.deal_id
+
+      // v21: Business Overview payload. Writes go through
+      // save-business-overview-anon.
+      if (tab === 'business_overview') {
+        const bo = await loadBusinessOverview(sb, dealId)
+        if ((bo as Record<string, unknown>).error) return resp({ error: (bo as Record<string, unknown>).error }, 500)
+        return resp({ ok: true, ...bo, can_edit: !archived })
+      }
 
       // v15: implementation schedule payload.
       if (tab === 'implementation') {
@@ -419,6 +520,15 @@ Deno.serve(async (req: Request) => {
         return resp({ ok: true, snapshot: room.proposal_snapshot, snapshotted_at: room.proposal_snapshotted_at })
       }
       return resp({ error: 'v10: unreachable' }, 500)
+    }
+
+    // v21: the open link may fill in the Business Overview -- and write
+    // nothing else.
+    if (action === 'save-business-overview-anon') {
+      const v = await loadRoomByShare(sb, share_token)
+      if ((v as Record<string, unknown>).error) return resp({ error: (v as Record<string, unknown>).error }, 401)
+      const { room, archived } = v as { room: Record<string, unknown>, archived: boolean }
+      return await saveBusinessOverview(sb, room, archived, body.patch, null)
     }
 
     if (action === 'validate-token') {
@@ -547,6 +657,17 @@ Deno.serve(async (req: Request) => {
       if (deckErr) return resp({ error: `v12: deck load failed: ${deckErr.message}` }, 500)
       if (!deck) return resp({ ok: true, deck: null, message: 'Proposal not yet published' })
       return resp({ ok: true, deck })
+    }
+
+    // v21: Business Overview for a named viewer, whose edits carry their name.
+    if (action === 'get-business-overview-tab') {
+      if (!tabAllowed(room, 'business_overview')) return resp({ error: 'v21: this tab is not visible in this room' }, 403)
+      const bo = await loadBusinessOverview(sb, dealId)
+      if ((bo as Record<string, unknown>).error) return resp({ error: (bo as Record<string, unknown>).error }, 500)
+      return resp({ ok: true, ...bo, can_edit: !archived })
+    }
+    if (action === 'save-business-overview') {
+      return await saveBusinessOverview(sb, room, archived, body.patch, String(viewer.name || viewer.email || '') || null)
     }
 
     if (action === 'add-comment') {
