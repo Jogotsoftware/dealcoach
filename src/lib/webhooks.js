@@ -56,6 +56,33 @@ export async function callSendInvitation(invitationId) {
   }
 }
 
+/**
+ * Trigger the granola-sync edge function for a single deal's mapped folder.
+ * Pulls newly-recorded labeled Granola calls into the deal (call type derived
+ * from the title label). Pass { dryRun: true } to preview without importing.
+ */
+export async function callGranolaSync(dealId, { dryRun = false } = {}) {
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) return { error: 'Not authenticated' }
+  try {
+    const response = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/granola-sync`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ deal_id: dealId, dry_run: dryRun }),
+      }
+    )
+    return await response.json()
+  } catch (err) {
+    return { error: err.message }
+  }
+}
+
 
 /**
  * Call the Supabase Edge Function to research a company.

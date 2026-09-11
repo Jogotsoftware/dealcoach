@@ -6,6 +6,7 @@ import { Card, Badge, ForecastBadge, StageBadge, ScoreBar, Field, StatusDot, Tab
 import PlusButton from '../components/PlusButton'
 import CopyButton from '../components/CopyButton'
 import TranscriptUpload from '../components/TranscriptUpload'
+import GranolaFolderLink from '../components/GranolaFolderLink'
 import { callGenerateEmail, callResearchFunction, reprocessDeal } from '../lib/webhooks'
 import { track } from '../lib/analytics'
 
@@ -2360,6 +2361,9 @@ export default function DealDetail() {
               <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: T.text }}>Transcripts</h3>
               {hasModule('transcript_analysis') ? <Button primary onClick={() => setShowTranscriptUpload(true)}>Upload Transcript</Button> : <Button disabled title="Upgrade your plan">Upload Transcript</Button>}
             </div>
+            {hasModule('transcript_analysis') && (
+              <GranolaFolderLink dealId={id} orgId={deal?.org_id || profile?.org_id} userId={profile?.id} onSynced={loadDeal} />
+            )}
             {conversations.length === 0 ? <EmptyState icon="▶" title="No transcripts yet" message="Upload a call transcript (.txt / .vtt / .srt) or paste text. The AI analyses it and writes pain points, flags, contacts, tasks, and coaching scores into this deal." action={<Button primary onClick={() => setShowTranscriptUpload(true)} style={{ padding: '6px 14px', fontSize: 12 }}>Upload transcript</Button>} /> : conversations.map(cv => {
               const isStuck = !cv.processed && (Date.now() - new Date(cv.created_at).getTime() > 10 * 60 * 1000)
               return (
