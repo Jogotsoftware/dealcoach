@@ -175,7 +175,7 @@ Deno.serve(async (req: Request) => {
     // 1. Load the quote + its org. We use the org_id to scope the product lookup.
     const { data: quote, error: qErr } = await sb
       .from('quotes')
-      .select('id, org_id, deal_id, contract_term_id')
+      .select('id, org_id, deal_id, contract_term_id, price_book_id')
       .eq('id', quoteId)
       .single()
     if (qErr || !quote) return resp({ error: `v2: quote not found: ${qErr?.message}` }, 404)
@@ -200,15 +200,19 @@ Deno.serve(async (req: Request) => {
     const linesIn: any[] = Array.isArray(extraction.lines) ? extraction.lines : []
     const implIn: any[] = Array.isArray(extraction.implementation) ? extraction.implementation : []
 
-    // 4. Load the org's product catalog once. is_implementation is the
+    // 4. Load the quote's price book once (the same SKU exists once per
+    //    book since 2026-09-24, so matching across the whole org would pick
+    //    whichever year's row came first). is_implementation is the
     //    authoritative classifier — products flagged true (professional
     //    services, training, activation fees, etc.) get routed to one-time
     //    costs even if the PDF listed them in the subscription section.
-    const { data: products } = await sb
+    let productQuery = sb
       .from('products')
       .select('id, sku, name, list_price, is_bundle, is_implementation')
       .eq('org_id', quote.org_id)
       .eq('active', true)
+    if (quote.price_book_id) productQuery = productQuery.eq('price_book_id', quote.price_book_id)
+    const { data: products } = await productQuery
 
     // 5. Map lines → either quote_lines (subscription) or
     //    quote_implementation_items (one-time) based on the matched product's
