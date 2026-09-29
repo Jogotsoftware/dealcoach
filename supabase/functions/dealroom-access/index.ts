@@ -245,11 +245,16 @@ async function loadPrimaryQuote(sb: Sb, dealId: unknown) {
   if (error) return { error: `v12: quote lookup failed: ${error.message}` }
   const quote = (quotes || [])[0]
   if (!quote) return { quote: null }
-  const [linesRes, implRes, termRes, signerRes] = await Promise.all([
+  // v22: implementation rows carry source/implementor_name and the quote's
+  // partner blocks + lines ride along, so the customer's Investment Summary
+  // can show partner pricing (MindCloud, DataBlend) beside the Sage lines.
+  const [linesRes, implRes, termRes, signerRes, partnerBlocksRes, partnerLinesRes] = await Promise.all([
     sb.from('quote_lines').select('id, product_id, parent_line_id, line_order, quantity, unit_price, discount_pct, effective_discount_pct, discount_amount, extended, notes, show_in_deal_room').eq('quote_id', quote.id).order('line_order'),
-    sb.from('quote_implementation_items').select('id, name, description, total_amount, billing_type, hours, rate_per_hour, estimated_start_date, estimated_completion_date, sort_order, sow_document_id').eq('quote_id', quote.id).order('sort_order'),
+    sb.from('quote_implementation_items').select('id, name, description, total_amount, billing_type, hours, rate_per_hour, estimated_start_date, estimated_completion_date, sort_order, sow_document_id, source, implementor_name').eq('quote_id', quote.id).order('sort_order'),
     quote.contract_term_id ? sb.from('contract_terms').select('id, name, term_years, yoy_caps, description').eq('id', quote.contract_term_id).maybeSingle() : Promise.resolve({ data: null }),
     quote.signer_contact_id ? sb.from('contacts').select('id, name, title').eq('id', quote.signer_contact_id).maybeSingle() : Promise.resolve({ data: null }),
+    sb.from('quote_partner_blocks').select('id, partner_name, term_years, billing_cadence, notes, sort_order').eq('quote_id', quote.id).order('sort_order'),
+    sb.from('quote_partner_lines').select('id, block_id, sku, name, description, quantity, unit_price, discount_pct, extended, sort_order').eq('quote_id', quote.id).order('sort_order'),
   ])
   const lines = (linesRes.data || []).filter((l: Record<string, unknown>) => l.show_in_deal_room !== false)
   const productIds = [...new Set(lines.map((l: Record<string, unknown>) => l.product_id).filter(Boolean))]
@@ -258,7 +263,7 @@ async function loadPrimaryQuote(sb: Sb, dealId: unknown) {
     const { data: prodRows } = await sb.from('products').select('id, name, sku, is_bundle').in('id', productIds)
     products = prodRows || []
   }
-  return { quote, lines, products, implementation_items: implRes.data || [], contract_term: termRes.data || null, signer: signerRes.data || null }
+  return { quote, lines, products, implementation_items: implRes.data || [], contract_term: termRes.data || null, signer: signerRes.data || null, partner_blocks: partnerBlocksRes.data || [], partner_lines: partnerLinesRes.data || [] }
 }
 
 async function dealHasSow(sb: Sb, dealId: unknown): Promise<boolean> {
