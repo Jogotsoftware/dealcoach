@@ -240,7 +240,7 @@ async function loadRoiTab(sb: Sb, dealId: unknown) {
 // room row, so RLS-free service-role reads stay scoped to the shared deal.
 async function loadPrimaryQuote(sb: Sb, dealId: unknown) {
   const { data: quotes, error } = await sb.from('quotes')
-    .select('id, name, version, status, list_subtotal, discount_total, net_total, global_discount_pct, blended_discount_pct, contract_term_id, contract_start_date, free_months, free_months_placement, billing_cadence, signing_bonus_amount, signing_bonus_months, signing_bonus_label, sage_subscription_total, sage_implementation_total, sage_total, solution_total, finance_charges_total, finance_charges_list, tco_scenarios, deal_room_display_config, signer_contact_id, proposal_customer_logo_url, proposal_org_logo_url, is_primary, updated_at')
+    .select('id, name, version, status, list_subtotal, discount_total, net_total, global_discount_pct, blended_discount_pct, contract_term_id, contract_start_date, free_months, free_months_placement, billing_cadence, signing_bonus_amount, signing_bonus_months, signing_bonus_label, sage_subscription_total, sage_implementation_total, sage_total, solution_total, partner_subscription_total, partner_implementation_total, partner_total, finance_charges_total, finance_charges_list, tco_scenarios, deal_room_display_config, signer_contact_id, proposal_customer_logo_url, proposal_org_logo_url, is_primary, updated_at')
     .eq('deal_id', dealId).order('is_primary', { ascending: false }).order('created_at', { ascending: false }).limit(1)
   if (error) return { error: `v12: quote lookup failed: ${error.message}` }
   const quote = (quotes || [])[0]
@@ -281,7 +281,7 @@ async function loadModelScenarios(sb: Sb, dealId: unknown) {
   // v16: every quote on the deal is a model. Hidden ones are dropped here, not
   // left to the client to skip rendering.
   const { data: allQuotes } = await sb.from('quotes')
-    .select('id, name, version, status, net_total, list_subtotal, discount_total, blended_discount_pct, sage_subscription_total, sage_implementation_total, finance_charges_total, finance_charges_list, contract_term_id, contract_start_date, free_months, free_months_placement, billing_cadence, signing_bonus_amount, signing_bonus_months, signing_bonus_label, tco_scenarios, deal_room_display_config, scenario_type, scenario_label, comparison_group_id, is_primary, created_at')
+    .select('id, name, version, status, net_total, list_subtotal, discount_total, blended_discount_pct, sage_subscription_total, sage_implementation_total, partner_subscription_total, partner_implementation_total, finance_charges_total, finance_charges_list, contract_term_id, contract_start_date, free_months, free_months_placement, billing_cadence, signing_bonus_amount, signing_bonus_months, signing_bonus_label, tco_scenarios, deal_room_display_config, scenario_type, scenario_label, comparison_group_id, is_primary, created_at')
     .eq('deal_id', dealId)
   const isHidden = (row: Record<string, unknown>) =>
     !!(row?.deal_room_display_config as Record<string, unknown> | null)?.model_hidden
@@ -303,7 +303,20 @@ async function loadModelScenarios(sb: Sb, dealId: unknown) {
     const { data: termRows } = await sb.from('contract_terms').select('id, name, term_years, yoy_caps, description').in('id', termIds)
     terms = termRows || []
   }
-  return { quotes: scenarioQuotes, contract_terms: terms }
+  // v22: each model quote's partner blocks and lines, so the customer's cards
+  // draw a partner's recurring price and set-up the way the rep's TCO tab does.
+  const modelQuoteIds = scenarioQuotes.map(sq => sq.id).filter(Boolean)
+  let partnerBlocks: unknown[] = []
+  let partnerLines: unknown[] = []
+  if (modelQuoteIds.length) {
+    const [pb, pl] = await Promise.all([
+      sb.from('quote_partner_blocks').select('id, quote_id, partner_name, term_years, billing_cadence, notes, sort_order').in('quote_id', modelQuoteIds).order('sort_order'),
+      sb.from('quote_partner_lines').select('id, quote_id, block_id, sku, name, description, quantity, unit_price, discount_pct, extended, sort_order').in('quote_id', modelQuoteIds).order('sort_order'),
+    ])
+    partnerBlocks = pb.data || []
+    partnerLines = pl.data || []
+  }
+  return { quotes: scenarioQuotes, contract_terms: terms, partner_blocks: partnerBlocks, partner_lines: partnerLines }
 }
 
 // v21: Business Overview. The website on the deal row is sometimes a rep's
