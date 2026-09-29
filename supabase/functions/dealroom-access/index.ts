@@ -308,15 +308,18 @@ async function loadModelScenarios(sb: Sb, dealId: unknown) {
   const modelQuoteIds = scenarioQuotes.map(sq => sq.id).filter(Boolean)
   let partnerBlocks: unknown[] = []
   let partnerLines: unknown[] = []
+  let partnerSetup: unknown[] = []
   if (modelQuoteIds.length) {
-    const [pb, pl] = await Promise.all([
+    const [pb, pl, ps] = await Promise.all([
       sb.from('quote_partner_blocks').select('id, quote_id, partner_name, term_years, billing_cadence, notes, sort_order').in('quote_id', modelQuoteIds).order('sort_order'),
       sb.from('quote_partner_lines').select('id, quote_id, block_id, sku, name, description, quantity, unit_price, discount_pct, extended, sort_order').in('quote_id', modelQuoteIds).order('sort_order'),
+      sb.from('quote_implementation_items').select('id, quote_id, source, implementor_name, name, total_amount, billing_type, sort_order').eq('source', 'partner').in('quote_id', modelQuoteIds).order('sort_order'),
     ])
     partnerBlocks = pb.data || []
     partnerLines = pl.data || []
+    partnerSetup = ps.data || []
   }
-  return { quotes: scenarioQuotes, contract_terms: terms, partner_blocks: partnerBlocks, partner_lines: partnerLines }
+  return { quotes: scenarioQuotes, contract_terms: terms, partner_blocks: partnerBlocks, partner_lines: partnerLines, partner_setup: partnerSetup }
 }
 
 // v21: Business Overview. The website on the deal row is sometimes a rep's
