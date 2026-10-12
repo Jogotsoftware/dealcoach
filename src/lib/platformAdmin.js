@@ -35,7 +35,7 @@ export async function setOrgPlan(orgId, planId) {
 }
 
 export async function setUserRole(userId, role) {
-  const { data, error } = await supabase.rpc('set_user_role', { p_user_id: userId, p_role: role })
+  const { data, error } = await supabase.rpc('set_member_role', { p_user_id: userId, p_role: role })
   if (error) throw error
   return data
 }

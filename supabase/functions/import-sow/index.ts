@@ -1,3 +1,4 @@
+// Authorization: a verified user must share the target's org and have a non-BDR profile before any write.
 // import-sow v1
 //
 // Takes an AE-uploaded Statement of Work PDF, sends it to Claude with a
@@ -16,12 +17,7 @@
 // in dealroom-access deliberately serves only the two durations.
 //
 // Project conventions:
-// - verify_jwt false, so this function does its own caller check: it resolves
-//   the bearer token to a user and requires that user's profile.org_id to match
-//   the SOW's org before doing anything. Worth stating plainly because the
-//   sibling import-order-schedule claims this in its header comment but does
-//   not actually implement it, and this endpoint both spends money on a Claude
-//   call and rewrites a deal's schedule.
+// - Gateway JWT configuration is managed at deployment; user authorization is checked here.
 // - Version stamps in every error: "import-sow v1: <reason>".
 
 // @ts-nocheck
@@ -30,7 +26,6 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY')!
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!
 
 const CLAUDE_MODEL = 'claude-opus-5'
 
@@ -146,33 +141,41 @@ Deno.serve(async (req) => {
 
   const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
   let sowId: string | null = null
+  let authorized = false
 
   try {
+    const authorization = req.headers.get('Authorization')
+    if (!authorization) return resp({ error: 'Authorization required' }, 401)
+    const asUser = createClient(SUPABASE_URL, Deno.env.get('SUPABASE_ANON_KEY')!, {
+      global: { headers: { Authorization: authorization } },
+      auth: { persistSession: false, autoRefreshToken: false },
+    })
+    const { data: userData, error: authError } = await asUser.auth.getUser()
+    if (authError || !userData?.user) return resp({ error: 'Not signed in' }, 401)
     const { sow_document_id, apply = true } = await req.json()
     sowId = sow_document_id
     if (!sowId) return resp({ error: 'import-sow v1: sow_document_id required' }, 400)
 
     const { data: sow, error: sErr } = await sb.from('sow_documents')
-      .select('id, org_id, deal_id, storage_path, filename').eq('id', sowId).single()
+      .select('*').eq('id', sowId).single()
     if (sErr || !sow) return resp({ error: `import-sow v1: sow not found: ${sErr?.message}` }, 404)
     if (!sow.storage_path) return resp({ error: 'import-sow v1: sow has no stored file' }, 400)
 
-    // Caller check. A service-role bearer is trusted (server-to-server); any
-    // other token must resolve to a user in this SOW's org.
-    const bearer = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim()
-    if (!bearer) return resp({ error: 'import-sow v1: authorization required' }, 401)
-    if (bearer !== SUPABASE_SERVICE_ROLE_KEY) {
-      const asUser = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-        global: { headers: { Authorization: `Bearer ${bearer}` } },
-      })
-      const { data: userRes, error: uErr } = await asUser.auth.getUser()
-      const uid = userRes?.user?.id
-      if (uErr || !uid) return resp({ error: 'import-sow v1: not signed in' }, 401)
-      const { data: profile } = await sb.from('profiles').select('org_id').eq('id', uid).maybeSingle()
-      if (!profile?.org_id || profile.org_id !== sow.org_id) {
-        return resp({ error: 'import-sow v1: this SOW belongs to another organization' }, 403)
-      }
+    const { data: profile, error: profileError } = await sb.from('profiles')
+      .select('org_id, role').eq('id', userData.user.id).maybeSingle()
+    if (profileError || !profile?.org_id || !profile.role || profile.role === 'bdr' || profile.org_id !== sow.org_id) {
+      return resp({ error: 'Not authorized' }, 403)
     }
+    // SOW imports write the deal's implementation schedule. Verify that target too.
+    const { data: deal, error: dealError } = await sb.from('deals').select('org_id').eq('id', sow.deal_id).maybeSingle()
+    if (dealError || deal?.org_id !== profile.org_id || sow.storage_path.split('/')[0] !== sow.deal_id) {
+      return resp({ error: 'Not authorized' }, 403)
+    }
+    if (sow.quote_id) {
+      const { data: quote, error: quoteError } = await sb.from('quotes').select('org_id, deal_id').eq('id', sow.quote_id).maybeSingle()
+      if (quoteError || quote?.org_id !== profile.org_id || quote?.deal_id !== sow.deal_id) return resp({ error: 'Not authorized' }, 403)
+    }
+    authorized = true
 
     await sb.from('sow_documents').update({ status: 'parsing', status_message: null }).eq('id', sowId)
 
@@ -327,7 +330,7 @@ Deno.serve(async (req) => {
     return resp({ ok: true, extraction: { ...header, phases, milestones }, items_written: itemsWritten, warnings })
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e)
-    if (sowId) {
+    if (authorized && sowId) {
       await sb.from('sow_documents').update({ status: 'error', status_message: message.slice(0, 500) }).eq('id', sowId)
     }
     return resp({ error: message }, 500)

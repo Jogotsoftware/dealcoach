@@ -63,6 +63,14 @@ Deno.serve(async (req: Request) => {
     const { user_id } = input;
     if (!user_id) return resp({ error: 'v9: user_id required' }, 400);
 
+    // Explicit selections only; legacy callers get no module grants.
+    const founderModules = input.founderModules ?? [];
+    const teamMembers = input.teamMembers ?? [];
+    const isModuleList = (value: any) => Array.isArray(value) && value.every((key: any) => typeof key === 'string');
+    if (!isModuleList(founderModules) || !Array.isArray(teamMembers) || teamMembers.some((m: any) => !m || !isModuleList(m.modules ?? []))) {
+      return resp({ error: 'Module selections must be arrays of keys' }, 400);
+    }
+
     console.log('=== ONBOARD v9 START ===', input.companyName);
 
     // ─── 1. CREATE ORG ───
@@ -77,7 +85,7 @@ Deno.serve(async (req: Request) => {
       trial_ends_at: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
       owner_id: user_id,
       max_users: input.teamSize === '50+' ? 100 : input.teamSize === '16-50' ? 50 : input.teamSize === '6-15' ? 15 : 5,
-      settings: { onboarding: input, created_via: 'onboarding_wizard' },
+      settings: { onboarding: input, created_via: 'onboarding_wizard', founder_modules: [...new Set(founderModules)] },
     }).select('id').single();
     if (orgErr) throw new Error(`v9: Org create failed: ${orgErr.message}`);
     const orgId = org.id;
@@ -307,11 +315,10 @@ ${marketResearch ? `\nMARKET RESEARCH:\n${marketResearch}` : ''}
     } catch (e: any) { console.log('Widget layout skipped:', e.message); }
 
     // ─── 18. TEAM INVITATIONS ───
-    const teamMembers = input.teamMembers || [];
     let inviteCount = 0;
     for (const member of teamMembers) {
       if (!member.email) continue;
-      try { await sb.from('invitations').insert({ org_id: orgId, email: member.email, role: 'rep', invited_by: user_id, status: 'pending' }); inviteCount++; }
+      try { await sb.from('invitations').insert({ org_id: orgId, email: member.email, role: 'rep', invitation_type: 'teammate', modules: [...new Set(member.modules ?? [])], invited_by: user_id, status: 'pending' }); inviteCount++; }
       catch (e: any) { console.log(`Invite skip ${member.email}:`, e.message); }
     }
     for (const member of teamMembers) {

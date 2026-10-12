@@ -1,3 +1,4 @@
+import ModuleAccessPicker from '../../components/ModuleAccessPicker'
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
@@ -30,6 +31,7 @@ export default function Invitations() {
   const [name, setName] = useState('')
   const [message, setMessage] = useState('')
   const [role, setRole] = useState('admin')
+  const [inviteModules, setInviteModules] = useState([])
 
   useEffect(() => { loadInvitations() }, [])
 
@@ -53,7 +55,7 @@ export default function Invitations() {
     setSending(true)
     try {
       const { data: inv, error: insertErr } = await supabase.from('invitations').insert({
-        invitation_type: 'new_instance',
+        invitation_type: 'new_instance', modules: inviteModules,
         org_id: null,
         role,
         email: email.trim().toLowerCase(),
@@ -69,7 +71,7 @@ export default function Invitations() {
       } else {
         showToast(`Invitation sent to ${email}`)
       }
-      setEmail(''); setName(''); setMessage('')
+      setEmail(''); setName(''); setMessage(''); setInviteModules([])
       loadInvitations()
     } catch (err) {
       showToast(err.message, true)
@@ -141,6 +143,7 @@ export default function Invitations() {
                 <option value="rep">Rep</option>
               </select>
             </div>
+            <ModuleAccessPicker explicitOnly value={inviteModules} onChange={setInviteModules} />
             <Button primary onClick={sendNewInvite} disabled={!email.trim() || sending}>{sending ? 'Sending...' : 'Send Invitation'}</Button>
           </div>
         </Card>

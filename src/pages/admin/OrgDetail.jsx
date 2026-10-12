@@ -1,3 +1,4 @@
+import ModuleAccessPicker from '../../components/ModuleAccessPicker'
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
@@ -37,7 +38,7 @@ export default function OrgDetail() {
   const [grantAmount, setGrantAmount] = useState('')
   const [grantDesc, setGrantDesc] = useState('')
   const [showInviteModal, setShowInviteModal] = useState(false)
-  const [inviteForm, setInviteForm] = useState({ email: '', role: 'rep', message: '' })
+  const [inviteForm, setInviteForm] = useState({ email: '', role: 'rep', message: '', modules: [] })
   const [changePlanId, setChangePlanId] = useState('')
 
   useEffect(() => { loadOrg() }, [orgId])
@@ -121,14 +122,16 @@ export default function OrgDetail() {
   }
 
   async function handleChangeRole(userId, newRole) {
-    await setUserRole(userId, newRole)
+    try { await setUserRole(userId, newRole) }
+    catch (error) { showToastMsg(error.message, true); return }
     setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u))
     showToastMsg('Role updated')
   }
 
   async function removeFromOrg(userId) {
     if (!window.confirm('Remove this user from the org?')) return
-    await supabase.from('profiles').update({ org_id: null, role: 'rep' }).eq('id', userId)
+    const { error } = await supabase.rpc('remove_member', { p_user_id: userId })
+    if (error) { showToastMsg(error.message, true); return }
     setUsers(prev => prev.filter(u => u.id !== userId))
     showToastMsg('User removed')
   }
@@ -136,14 +139,14 @@ export default function OrgDetail() {
   async function sendOrgInvite() {
     if (!inviteForm.email.trim()) return
     const { data: inv, error } = await supabase.from('invitations').insert({
-      org_id: orgId, email: inviteForm.email.trim().toLowerCase(), role: inviteForm.role,
+      org_id: orgId, email: inviteForm.email.trim().toLowerCase(), role: inviteForm.role, modules: inviteForm.modules,
       invited_by: profile.id, invitation_type: 'teammate', personal_message: inviteForm.message || null,
     }).select().single()
     if (error) { showToastMsg(error.message, true); return }
     const res = await callSendInvitation(inv.id)
     if (res.error) showToastMsg(`Created but email failed: ${res.error}`, true)
     else showToastMsg(`Invitation sent to ${inviteForm.email}`)
-    setShowInviteModal(false); setInviteForm({ email: '', role: 'rep', message: '' })
+    setShowInviteModal(false); setInviteForm({ email: '', role: 'rep', message: '', modules: [] })
     loadTabData()
   }
 
@@ -274,7 +277,8 @@ export default function OrgDetail() {
                       <td style={{ padding: '8px', color: T.textMuted }}>{u.email}</td>
                       <td style={{ padding: '8px' }}>
                         <select style={{ ...inputStyle, padding: '3px 8px', fontSize: 11, width: 'auto', cursor: 'pointer' }} value={u.role || 'rep'} onChange={e => handleChangeRole(u.id, e.target.value)}>
-                          <option value="rep">Rep</option><option value="admin">Admin</option><option value="system_admin">System Admin</option>
+                          {u.role === 'system_admin' && <option value="system_admin" disabled>System Admin (existing)</option>}
+                          <option value="rep">Rep</option><option value="admin">Admin</option><option value="manager">Manager</option><option value="bdr">BDR</option><option value="sc">SC</option>
                         </select>
                       </td>
                       <td style={{ padding: '8px', color: T.textMuted }}>{u.created_at?.split('T')[0]}</td>
@@ -306,6 +310,7 @@ export default function OrgDetail() {
                   <h3 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 700 }}>Invite to {org.name}</h3>
                   <div style={{ marginBottom: 10 }}><label style={labelStyle}>Email *</label><input style={inputStyle} value={inviteForm.email} onChange={e => setInviteForm(p => ({ ...p, email: e.target.value }))} placeholder="user@company.com" /></div>
                   <div style={{ marginBottom: 10 }}><label style={labelStyle}>Role</label><select style={{ ...inputStyle, cursor: 'pointer' }} value={inviteForm.role} onChange={e => setInviteForm(p => ({ ...p, role: e.target.value }))}><option value="rep">Rep</option><option value="admin">Admin</option></select></div>
+                  <ModuleAccessPicker explicitOnly value={inviteForm.modules} onChange={modules => setInviteForm(p => ({ ...p, modules }))} orgId={orgId} />
                   <div style={{ marginBottom: 16 }}><label style={labelStyle}>Message (optional)</label><textarea style={{ ...inputStyle, minHeight: 60, resize: 'vertical' }} value={inviteForm.message} onChange={e => setInviteForm(p => ({ ...p, message: e.target.value }))} /></div>
                   <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                     <Button onClick={() => setShowInviteModal(false)}>Cancel</Button>

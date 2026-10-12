@@ -38,7 +38,7 @@ export default function AcceptInvite() {
     if (!rpcErr && rpcData) inv = Array.isArray(rpcData) ? rpcData[0] : rpcData
     if (!inv) {
       const { data } = await supabase.from('invitations')
-        .select('id, email, token, status, role, invitation_type, org_id, expires_at, personal_message, invited_name, organizations(name), profiles!invitations_invited_by_fkey(full_name)')
+        .select('*, organizations(name), profiles!invitations_invited_by_fkey(full_name)')
         .eq('token', token).maybeSingle()
       inv = data
     }
@@ -46,7 +46,7 @@ export default function AcceptInvite() {
     if (!inv) { setState('invalid'); return }
     setInvitation(inv)
 
-    const invalid = inv.status === 'revoked' || inv.status === 'accepted' ||
+    const invalid = !['teammate', 'new_instance'].includes(inv.invitation_type) || inv.target_app === 'evaluation_room' || inv.status === 'revoked' || inv.status === 'accepted' ||
       (inv.expires_at && new Date(inv.expires_at) < new Date())
     if (invalid) { setState('invalid'); return }
 
@@ -100,8 +100,10 @@ export default function AcceptInvite() {
     setSubmitting(true)
     setError(null)
     try {
-      const { error: rpcErr } = await supabase.rpc('accept_invitation', { p_token: token, p_user_id: sessionUser.id })
+      const { data: acceptance, error: rpcErr } = await supabase.rpc('accept_invitation', { p_token: token, p_user_id: sessionUser.id })
       if (rpcErr) throw new Error(rpcErr.message)
+      const accepted = Array.isArray(acceptance) ? acceptance[0] : acceptance
+      if (!accepted?.success) throw new Error('This invitation cannot be accepted here.')
       try { await supabase.rpc('apply_invitation_module_access', { p_invitation_id: invitation.id, p_user_id: sessionUser.id }) } catch (_) {}
       navigate('/onboarding')
     } catch (err) {

@@ -1,3 +1,4 @@
+import ModuleAccessPicker from '../components/ModuleAccessPicker'
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
@@ -87,7 +88,7 @@ export default function Settings() {
   const [orgPlan, setOrgPlan] = useState(null)
   const [orgTeam, setOrgTeam] = useState([])
   const [showOrgInvite, setShowOrgInvite] = useState(false)
-  const [orgInvite, setOrgInvite] = useState({ email: '', role: 'rep' })
+  const [orgInvite, setOrgInvite] = useState({ email: '', role: 'rep', modules: [] })
 
   // Team members
   const [teamMembers, setTeamMembers] = useState([])
@@ -360,12 +361,14 @@ export default function Settings() {
     if (!orgInvite.email || !profile.org_id) return
     const token = crypto.randomUUID()
     const expires = new Date(Date.now() + 7 * 86400000).toISOString()
-    await supabase.from('invitations').insert({
-      email: orgInvite.email, org_id: profile.org_id, role: orgInvite.role,
+    const { error } = await supabase.from('invitations').insert({
+      email: orgInvite.email, org_id: profile.org_id, role: orgInvite.role, modules: orgInvite.modules,
+      invitation_type: 'teammate', invited_by: profile.id,
       token, status: 'pending', expires_at: expires,
     })
+    if (error) { alert(error.message); return }
     setShowOrgInvite(false)
-    setOrgInvite({ email: '', role: 'rep' })
+    setOrgInvite({ email: '', role: 'rep', modules: [] })
     alert(`Invitation created. Share this link:\n${window.location.origin}/invite/${token}`)
   }
 
@@ -378,6 +381,23 @@ export default function Settings() {
       </div>
 
       <div style={{ padding: '16px 24px' }}>
+
+        {profile?.org_id && ['admin', 'system_admin'].includes(profile.role) && (
+          <SectionCard id="invite" title="Invite a teammate" action={<Button onClick={() => setShowOrgInvite(v => !v)}>{showOrgInvite ? 'Cancel' : 'Invite'}</Button>}>
+            {showOrgInvite && (
+              <div>
+                <label style={labelStyle}>Email</label>
+                <input style={inputStyle} type="email" value={orgInvite.email} onChange={e => setOrgInvite(p => ({ ...p, email: e.target.value }))} />
+                <label style={labelStyle}>Role</label>
+                <select style={inputStyle} value={orgInvite.role} onChange={e => setOrgInvite(p => ({ ...p, role: e.target.value }))}>
+                  <option value="rep">Rep</option><option value="manager">Manager</option><option value="admin">Admin</option>
+                </select>
+                <ModuleAccessPicker explicitOnly value={orgInvite.modules} onChange={modules => setOrgInvite(p => ({ ...p, modules }))} orgId={profile.org_id} />
+                <Button primary onClick={sendOrgInvite} disabled={!orgInvite.email.trim()}>Create invitation link</Button>
+              </div>
+            )}
+          </SectionCard>
+        )}
 
         {/* Profile */}
         <SectionCard id="profile" title="Profile" action={profileSaved ? <span style={{ fontSize: 12, color: T.success, fontWeight: 600 }}>Saved</span> : null}>

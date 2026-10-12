@@ -1,3 +1,4 @@
+import ModuleAccessPicker from '../../components/ModuleAccessPicker'
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
@@ -215,6 +216,7 @@ function MembersAndInvitationsSection({ org, plan, user, isAdmin, isSystemAdmin 
   const [showInvite, setShowInvite] = useState(false)
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteRole, setInviteRole] = useState('rep')
+  const [inviteModules, setInviteModules] = useState([])
   const [copiedLink, setCopiedLink] = useState(null)
   const [sendingEmail, setSendingEmail] = useState(null)
   const [toast, setToast] = useState(null)
@@ -244,12 +246,13 @@ function MembersAndInvitationsSection({ org, plan, user, isAdmin, isSystemAdmin 
       return
     }
     const { data, error } = await supabase.from('invitations').insert({
-      org_id: org.id, email: inviteEmail, role: inviteRole, invited_by: user.id, invitation_type: 'teammate',
+      org_id: org.id, email: inviteEmail, role: inviteRole, modules: inviteModules, invited_by: user.id, invitation_type: 'teammate',
     }).select().single()
     if (!error && data) {
       setInvitations(prev => [data, ...prev])
       setShowInvite(false)
       setInviteEmail('')
+      setInviteModules([])
       const res = await callSendInvitation(data.id)
       if (res.error) flash(`Invitation created but email failed: ${res.error}`, true)
       else flash(`Invitation email sent to ${data.email}`)
@@ -257,12 +260,14 @@ function MembersAndInvitationsSection({ org, plan, user, isAdmin, isSystemAdmin 
     }
   }
   async function changeRole(memberId, newRole) {
-    await supabase.from('profiles').update({ role: newRole }).eq('id', memberId)
+    const { error } = await supabase.rpc('set_member_role', { p_user_id: memberId, p_role: newRole })
+    if (error) { flash(error.message, true); return }
     setMembers(prev => prev.map(m => m.id === memberId ? { ...m, role: newRole } : m))
   }
   async function removeMember(memberId) {
     if (!window.confirm('Remove this member from the organization? They will lose access.')) return
-    await supabase.from('profiles').update({ org_id: null, role: 'rep' }).eq('id', memberId)
+    const { error } = await supabase.rpc('remove_member', { p_user_id: memberId })
+    if (error) { flash(error.message, true); return }
     setMembers(prev => prev.filter(m => m.id !== memberId))
   }
   async function revokeInvite(invId) {
@@ -293,7 +298,7 @@ function MembersAndInvitationsSection({ org, plan, user, isAdmin, isSystemAdmin 
         </Button>
       }>
         {showInvite && (
-          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', marginBottom: 12, padding: 12, background: T.surfaceAlt, borderRadius: 6, border: `1px solid ${T.borderLight}` }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end', marginBottom: 12, padding: 12, background: T.surfaceAlt, borderRadius: 6, border: `1px solid ${T.borderLight}` }}>
             <div style={{ flex: 1 }}>
               <label style={labelStyle}>Email</label>
               <input style={inputStyle} value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="name@company.com" onKeyDown={e => e.key === 'Enter' && sendInvite()} />
@@ -305,6 +310,7 @@ function MembersAndInvitationsSection({ org, plan, user, isAdmin, isSystemAdmin 
                 <option value="admin">Admin</option>
               </select>
             </div>
+            <ModuleAccessPicker explicitOnly value={inviteModules} onChange={setInviteModules} orgId={org.id} />
             <Button primary onClick={sendInvite}>Send</Button>
           </div>
         )}

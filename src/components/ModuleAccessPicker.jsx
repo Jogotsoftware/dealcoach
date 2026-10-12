@@ -3,17 +3,17 @@ import { supabase } from '../lib/supabase'
 import { theme as T } from '../lib/theme'
 import { Spinner } from './Shared'
 
-export default function ModuleAccessPicker({ value, onChange, orgId }) {
+export default function ModuleAccessPicker({ value, onChange, orgId, explicitOnly = false }) {
   const [modules, setModules] = useState([])
   const [loading, setLoading] = useState(true)
-  const isInherit = value === null
+  const isInherit = !explicitOnly && value === null
 
-  useEffect(() => { loadModules() }, [orgId])
+  useEffect(() => { loadModules() }, [orgId, explicitOnly])
 
   async function loadModules() {
     setLoading(true)
     let query = supabase.from('modules').select('module_key, module_name, description, is_premium').eq('active', true).order('sort_order')
-    if (orgId) {
+    if (orgId && !explicitOnly) {
       const { data: orgKeys } = await supabase.rpc('resolve_org_modules', { p_org_id: orgId })
       if (orgKeys?.length) query = query.in('module_key', orgKeys)
     }
@@ -38,7 +38,7 @@ export default function ModuleAccessPicker({ value, onChange, orgId }) {
 
   return (
     <div style={{ marginTop: 8 }}>
-      <div style={{ display: 'flex', gap: 2, marginBottom: 10, background: T.surfaceAlt, borderRadius: 6, padding: 2, border: `1px solid ${T.border}` }}>
+      {!explicitOnly && <div style={{ display: 'flex', gap: 2, marginBottom: 10, background: T.surfaceAlt, borderRadius: 6, padding: 2, border: `1px solid ${T.border}` }}>
         <button onClick={() => setMode(true)} style={{
           flex: 1, padding: '6px 10px', fontSize: 11, fontWeight: 600, border: 'none', borderRadius: 4, cursor: 'pointer', fontFamily: T.font,
           background: isInherit ? T.primary : 'transparent', color: isInherit ? '#fff' : T.textMuted,
@@ -47,7 +47,7 @@ export default function ModuleAccessPicker({ value, onChange, orgId }) {
           flex: 1, padding: '6px 10px', fontSize: 11, fontWeight: 600, border: 'none', borderRadius: 4, cursor: 'pointer', fontFamily: T.font,
           background: !isInherit ? T.primary : 'transparent', color: !isInherit ? '#fff' : T.textMuted,
         }}>Choose specific modules</button>
-      </div>
+      </div>}
 
       {!isInherit && (
         <>
@@ -66,7 +66,7 @@ export default function ModuleAccessPicker({ value, onChange, orgId }) {
               )
             })}
           </div>
-          <div style={{ fontSize: 10, color: T.textMuted, marginTop: 6 }}>Unselected modules will be invisible to this user.</div>
+          <div style={{ fontSize: 10, color: T.textMuted, marginTop: 6 }}>{explicitOnly ? 'Choose the modules to grant. Nothing selected means no modules.' : 'Unselected modules will be invisible to this user.'}</div>
         </>
       )}
     </div>

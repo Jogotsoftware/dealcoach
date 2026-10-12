@@ -1,3 +1,4 @@
+import ModuleAccessPicker from '../components/ModuleAccessPicker'
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useSearchParams, Navigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
@@ -30,7 +31,7 @@ const INDUSTRIES = ['SaaS / Technology', 'Financial Services', 'Healthcare', 'Ma
 const COMPANY_SIZES = ['1-50', '51-200', '201-1000', '1000-5000', '5000+']
 const REVENUE_RANGES = ['< $5M', '$5M-$25M', '$25M-$100M', '$100M-$500M', '$500M+']
 
-const STEP_NAMES = ['Company', 'Product', 'Your market', 'Wins & losses', 'Your buyers', 'How you sell', 'Review']
+const STEP_NAMES = ['Company', 'Product', 'Your market', 'Wins & losses', 'Your buyers', 'How you sell', 'Modules', 'Review']
 const STEP_TITLES = [
   { title: 'Tell us about your company',
     subtitle: "We'll research your market so your AI coach starts with context on your competitive landscape and buyers." },
@@ -44,6 +45,7 @@ const STEP_TITLES = [
     subtitle: "Understanding your buyers helps the AI know whose voice matters most on a call and what drives their decisions." },
   { title: "What's your sales methodology?",
     subtitle: 'Your coach uses these frameworks to evaluate calls and give targeted coaching at every stage.' },
+  { title: 'Choose your modules', subtitle: 'Select the modules for your founding admin account. You can leave all unchecked.' },
   { title: 'Ready to launch.',
     subtitle: "Here's what we'll configure. You can change any of this in Settings after launch." },
 ]
@@ -127,7 +129,8 @@ export default function Onboarding() {
     return <Navigate to="/" replace />
   }
 
-  const [step, setStep] = useState(0) // 0=welcome, 1..7 wizard, 8=processing
+  const [founderModules, setFounderModules] = useState([])
+  const [step, setStep] = useState(0) // 0=welcome, 1..8 wizard, 9=processing
   const goingBackRef = useRef(false)
   const [renderKey, setRenderKey] = useState(0)
   const [inviterName, setInviterName] = useState('')
@@ -172,7 +175,7 @@ export default function Onboarding() {
 
   // Redirect if already has org (shouldn't be here)
   useEffect(() => {
-    if (profile?.org_id && step !== 8 && !procDone) navigate('/', { replace: true })
+    if (profile?.org_id && step !== 9 && !procDone) navigate('/', { replace: true })
   }, [profile?.org_id])
 
   // On mount: look up the inviter for a personalised welcome
@@ -229,7 +232,7 @@ export default function Onboarding() {
     setProcProgress(5)
     setProcDone(false)
     setProcMessageIdx(0)
-    go(8)
+    go(9)
     try {
       const { data: { session } } = await supabase.auth.getSession()
       const res = await fetch(
@@ -285,6 +288,7 @@ export default function Onboarding() {
               { id: 'champion', name: 'Champion Strength', active: true, details: {} },
             ],
             teamMembers: [],
+            founderModules,
           }),
         }
       )
@@ -344,7 +348,7 @@ export default function Onboarding() {
 
   // Processing: cycle message every 3.5s with 250ms fade
   useEffect(() => {
-    if (step !== 8 || procDone || procError) return
+    if (step !== 9 || procDone || procError) return
     const interval = setInterval(() => {
       setProcMessageFading(true)
       setTimeout(() => {
@@ -357,7 +361,7 @@ export default function Onboarding() {
 
   // Processing: bump progress 2% every 2s, cap at 90 until real completion
   useEffect(() => {
-    if (step !== 8 || procDone || procError) return
+    if (step !== 9 || procDone || procError) return
     const interval = setInterval(() => {
       setProcProgress(p => Math.min(p + 2, 90))
     }, 2000)
@@ -371,8 +375,8 @@ export default function Onboarding() {
 
   function toggleArr(arr, setArr, val) { setArr(prev => prev.includes(val) ? prev.filter(v => v !== val) : [...prev, val]) }
 
-  // ─── PROCESSING SCREEN (step 8, full viewport) ───
-  if (step === 8) {
+  // ─── PROCESSING SCREEN (step 9, full viewport) ───
+  if (step === 9) {
     return (
       <div style={{
         minHeight: '100vh', display: 'flex', flexDirection: 'column',
@@ -452,8 +456,8 @@ export default function Onboarding() {
         width: '100%', maxWidth: 560, background: '#fff',
         borderRadius: 12, boxShadow: SHADOW_LG, padding: 40,
       }}>
-        {step >= 1 && step <= 7 && (
-          <StepIndicator current={step} total={7} currentName={STEP_NAMES[step - 1]} />
+        {step >= 1 && step <= 8 && (
+          <StepIndicator current={step} total={8} currentName={STEP_NAMES[step - 1]} />
         )}
 
         <div key={renderKey} style={{ animation: `${goingBackRef.current ? 'stepBack' : 'stepIn'} 0.22s ease` }}>
@@ -490,7 +494,7 @@ export default function Onboarding() {
             </div>
           )}
 
-          {step >= 1 && step <= 7 && (
+          {step >= 1 && step <= 8 && (
             <>
               <h2 style={{ fontSize: 24, fontWeight: 700, color: T.text, margin: 0, marginBottom: 8, letterSpacing: '-0.01em' }}>
                 {STEP_TITLES[step - 1].title}
@@ -682,8 +686,16 @@ export default function Onboarding() {
 
           {step === 7 && (
             <>
+              <ModuleAccessPicker explicitOnly value={founderModules} onChange={setFounderModules} />
+              <StepFooter onBack={() => go(6)} onContinue={() => go(8)} />
+            </>
+          )}
+
+          {step === 8 && (
+            <>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
                 {[
+                  ['Modules', founderModules.join(', ') || 'None'],
                   ['Company', orgName],
                   ['Website', website || '—'],
                   ['Product', productName || orgName],
@@ -705,7 +717,7 @@ export default function Onboarding() {
                 ))}
               </div>
               {error && <div style={{ color: T.error, fontSize: 12, marginBottom: 12, padding: 8, background: T.errorLight, borderRadius: 6 }}>{error}</div>}
-              <StepFooter onBack={() => go(6)} onContinue={launchOrg} continueLabel="Launch my workspace →" />
+              <StepFooter onBack={() => go(7)} onContinue={launchOrg} continueLabel="Launch my workspace →" />
             </>
           )}
         </div>

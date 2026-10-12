@@ -138,7 +138,7 @@ function OrganizationsTab() {
   const [moduleToggles, setModuleToggles] = useState({})
   const [deals, setDeals] = useState([])
   const [showInviteOrg, setShowInviteOrg] = useState(false)
-  const [inviteOrgForm, setInviteOrgForm] = useState({ email: '', name: '', orgName: '', message: '', modules: null })
+  const [inviteOrgForm, setInviteOrgForm] = useState({ email: '', name: '', orgName: '', message: '', modules: [] })
 
   useEffect(() => { loadOrgs() }, [])
 
@@ -213,7 +213,7 @@ function OrganizationsTab() {
     if (error) { alert(error.message); return }
     await callSendInvitation(data.id || data).catch(() => {})
     setShowInviteOrg(false)
-    setInviteOrgForm({ email: '', name: '', orgName: '', message: '', modules: null })
+    setInviteOrgForm({ email: '', name: '', orgName: '', message: '', modules: [] })
     loadOrgs()
   }
 
@@ -281,7 +281,7 @@ function OrganizationsTab() {
             <div style={{ marginBottom: 10 }}><label style={labelStyle}>Organization Name</label><input style={smallInput} value={inviteOrgForm.orgName} onChange={e => setInviteOrgForm(p => ({ ...p, orgName: e.target.value }))} placeholder="Acme Corp" /></div>
             <div style={{ marginBottom: 10 }}><label style={labelStyle}>Personal Message</label><textarea style={{ ...smallInput, minHeight: 50, resize: 'vertical' }} value={inviteOrgForm.message} onChange={e => setInviteOrgForm(p => ({ ...p, message: e.target.value.slice(0, 500) }))} placeholder="Optional..." /></div>
             <label style={labelStyle}>Module Access</label>
-            <ModuleAccessPicker value={inviteOrgForm.modules} onChange={v => setInviteOrgForm(p => ({ ...p, modules: v }))} orgId={null} />
+            <ModuleAccessPicker explicitOnly value={inviteOrgForm.modules} onChange={v => setInviteOrgForm(p => ({ ...p, modules: v }))} orgId={null} />
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
               <Button onClick={() => setShowInviteOrg(false)}>Cancel</Button>
               <Button primary onClick={inviteOrg} disabled={!inviteOrgForm.email.trim()}>Send Invitation</Button>
@@ -425,7 +425,7 @@ function UsersTab() {
   const [editingId, setEditingId] = useState(null)
   const [editData, setEditData] = useState({})
   const [showInvite, setShowInvite] = useState(false)
-  const [invite, setInvite] = useState({ email: '', name: '', org_id: '', role: 'rep', message: '' })
+  const [invite, setInvite] = useState({ email: '', name: '', org_id: '', role: 'rep', message: '', modules: [] })
   const [invitations, setInvitations] = useState([])
   const [sortCol, setSortCol] = useState('created_at')
   const [sortDir, setSortDir] = useState('desc')
@@ -462,17 +462,18 @@ function UsersTab() {
   async function saveEdit() {
     // Guard: platform admins always keep access_mode='full'.
     const nextAccess = platformAdminIds.has(editingId) ? 'full' : (editData.access_mode || 'full')
-    await supabase.from('profiles').update({
-      role: editData.role,
-      org_id: editData.org_id || null,
-      access_mode: nextAccess,
-    }).eq('id', editingId)
+    const { error } = await supabase.rpc('set_member_admin_fields', {
+      p_user_id: editingId, p_role: editData.role,
+      p_org_id: editData.org_id || null, p_access_mode: nextAccess,
+    })
+    if (error) { alert(error.message); return }
     setEditingId(null)
     loadUsers()
   }
 
   async function updateRole(userId, role) {
-    await supabase.from('profiles').update({ role }).eq('id', userId)
+    const { error } = await supabase.rpc('set_member_role', { p_user_id: userId, p_role: role })
+    if (error) { alert(error.message); return }
     loadUsers()
   }
 
@@ -527,7 +528,7 @@ function UsersTab() {
       email: invite.email.trim().toLowerCase(),
       invited_name: invite.name || null,
       org_id: isNewInstance ? null : invite.org_id,
-      role: invite.role,
+      role: invite.role, modules: invite.modules,
       invitation_type: isNewInstance ? 'new_instance' : 'teammate',
       personal_message: invite.message || null,
       invited_by: null, // platform admin context; invited_by can be set if profile available
@@ -545,7 +546,7 @@ function UsersTab() {
       }
     } catch (e) { /* edge function may not be deployed yet */ }
     setShowInvite(false)
-    setInvite({ email: '', name: '', org_id: '', role: 'rep', message: '' })
+    setInvite({ email: '', name: '', org_id: '', role: 'rep', message: '', modules: [] })
     loadUsers()
   }
 
@@ -572,11 +573,12 @@ function UsersTab() {
             <div>
               <label style={labelStyle}>Role</label>
               <select style={{ ...smallInput, cursor: 'pointer' }} value={invite.role} onChange={e => setInvite({ ...invite, role: e.target.value })}>
-                {['admin', 'rep', 'manager', 'system_admin'].map(r => <option key={r} value={r}>{r}</option>)}
+                {['admin', 'rep', 'manager'].map(r => <option key={r} value={r}>{r}</option>)}
               </select>
             </div>
           </div>
           <div style={{ marginBottom: 10 }}><label style={labelStyle}>Personal message</label><textarea style={{ ...smallInput, minHeight: 40, resize: 'vertical' }} value={invite.message} onChange={e => setInvite({ ...invite, message: e.target.value.slice(0, 500) })} placeholder="Optional message in the email..." /></div>
+          <ModuleAccessPicker explicitOnly value={invite.modules} onChange={modules => setInvite(p => ({ ...p, modules }))} orgId={invite.org_id || null} />
           <Button primary onClick={sendInvite} disabled={!invite.email.trim()}>Send Invite</Button>
           <Button style={{ marginLeft: 8 }} onClick={() => setShowInvite(false)}>Cancel</Button>
         </div>
@@ -619,7 +621,8 @@ function UsersTab() {
                 </td>
                 <td style={cellStyle}>
                   <select style={smallInput} value={editData.role} onChange={e => setEditData({ ...editData, role: e.target.value })}>
-                    {['rep', 'manager', 'admin', 'system_admin'].map(r => <option key={r} value={r}>{r}</option>)}
+                    {u.role === 'system_admin' && <option value="system_admin" disabled>system_admin (existing)</option>}
+                    {['rep', 'manager', 'admin', 'bdr', 'sc'].map(r => <option key={r} value={r}>{r}</option>)}
                   </select>
                 </td>
                 <td style={cellStyle}>
@@ -647,7 +650,8 @@ function UsersTab() {
                     onChange={e => updateRole(u.id, e.target.value)}
                     style={{ ...smallInput, padding: '3px 6px', fontSize: 11, width: 'auto' }}
                   >
-                    {['rep', 'manager', 'admin', 'system_admin'].map(r => <option key={r} value={r}>{r}</option>)}
+                    {u.role === 'system_admin' && <option value="system_admin" disabled>system_admin (existing)</option>}
+                    {['rep', 'manager', 'admin', 'bdr', 'sc'].map(r => <option key={r} value={r}>{r}</option>)}
                   </select>
                 </td>
                 <td style={cellStyle}>

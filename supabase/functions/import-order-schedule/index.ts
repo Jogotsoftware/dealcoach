@@ -1,3 +1,4 @@
+// Authorization: a verified user must share the target's org and have a non-BDR profile before any write.
 // import-order-schedule v2
 //
 // Takes an AE-uploaded PDF order schedule, sends it to Claude with a structured
@@ -19,8 +20,7 @@
 //   }
 //
 // Project conventions:
-// - verify_jwt: false (we authenticate via supabase service-role and re-check
-//   that the caller's session can access the quote's org).
+// - Gateway JWT configuration is managed at deployment; user authorization is checked here.
 // - apikey header required by Kong.
 // - Version stamps in every error: "import-order-schedule v2: <reason>".
 
@@ -163,6 +163,14 @@ Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors() })
 
   try {
+    const authorization = req.headers.get('Authorization')
+    if (!authorization) return resp({ error: 'Authorization required' }, 401)
+    const asUser = createClient(SUPABASE_URL, Deno.env.get('SUPABASE_ANON_KEY')!, {
+      global: { headers: { Authorization: authorization } },
+      auth: { persistSession: false, autoRefreshToken: false },
+    })
+    const { data: userData, error: authError } = await asUser.auth.getUser()
+    if (authError || !userData?.user) return resp({ error: 'Not signed in' }, 401)
     const body = await req.json()
     const quoteId = String(body.quote_id || '')
     const storagePath = String(body.storage_path || '')
@@ -179,6 +187,14 @@ Deno.serve(async (req: Request) => {
       .eq('id', quoteId)
       .single()
     if (qErr || !quote) return resp({ error: `v2: quote not found: ${qErr?.message}` }, 404)
+
+    const { data: profile, error: profileError } = await sb.from('profiles')
+      .select('org_id, role').eq('id', userData.user.id).maybeSingle()
+    if (profileError || !profile?.org_id || !profile.role || profile.role === 'bdr' || profile.org_id !== quote.org_id) {
+      return resp({ error: 'Not authorized' }, 403)
+    }
+    // The service client must not download another org's input file.
+    if (storagePath.split('/')[0] !== profile.org_id) return resp({ error: 'Not authorized' }, 403)
 
     // 2. Download the PDF from storage.
     const { data: file, error: fErr } = await sb.storage

@@ -27,6 +27,10 @@ serve(async (req) => {
     const { data: inv, error: invErr } = await admin
       .from('invitations').select('*').eq('token', token).single()
     if (invErr || !inv) return jsonResp(404, { error: 'Invitation not found' })
+    // select('*') tolerates target_app being absent until Evaluation Room adds it.
+    if (!['teammate', 'new_instance'].includes(inv.invitation_type) || inv.target_app === 'evaluation_room') {
+      return jsonResp(400, { error: 'This invitation cannot be accepted here.' })
+    }
     if (inv.status !== 'pending') return jsonResp(400, { error: `Invitation is ${inv.status}` })
     if (inv.expires_at && new Date(inv.expires_at) < new Date()) {
       return jsonResp(400, { error: 'Invitation has expired' })
@@ -71,7 +75,9 @@ serve(async (req) => {
     }, { onConflict: 'id' })
 
     // Accept invitation
-    await admin.rpc('accept_invitation', { p_token: token, p_user_id: userId })
+    const { data: acceptance, error: acceptError } = await admin.rpc('accept_invitation', { p_token: token, p_user_id: userId })
+    const accepted = Array.isArray(acceptance) ? acceptance[0] : acceptance
+    if (acceptError || !accepted?.success) return jsonResp(400, { error: 'This invitation cannot be accepted here.' })
 
     // Apply module access (best-effort)
     try {
